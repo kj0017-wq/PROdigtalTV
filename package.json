@@ -1,0 +1,17 @@
+{
+  "name": "prodigitaltv-platform",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/serve.mjs",
+    "preview": "node scripts/serve.mjs dist",
+    "firebase:seed": "node scripts/exportDemoToFirebase.mjs",
+    "firebase:events:pipeline": "node scripts/eventsPipeline.mjs"
+  },
+  "description": "PROdigitalTV B2B-Branchenplattform, PWA und webbasiertes CMS mit Firebase-Integration.",
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}

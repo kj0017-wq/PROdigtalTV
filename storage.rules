@@ -1,0 +1,56 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function user() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+    function editor() {
+      return signedIn() && (user().role == "admin" || user().role == "editor") && user().status == "active";
+    }
+    function member() {
+      return signedIn() && (user().role == "member" || user().role == "admin" || user().role == "editor") && user().status == "active";
+    }
+
+    match /events/{eventId}/{mediaId}/{fileName} {
+      allow write: if editor() && request.resource.size < 30 * 1024 * 1024;
+      allow read: if editor()
+        || (
+          firestore.get(/databases/(default)/documents/eventMedia/$(mediaId)).data.eventId == eventId
+          && firestore.get(/databases/(default)/documents/eventMedia/$(mediaId)).data.status == "approved"
+          && (
+            firestore.get(/databases/(default)/documents/eventMedia/$(mediaId)).data.visibility == "public"
+            || (member() && firestore.get(/databases/(default)/documents/eventMedia/$(mediaId)).data.visibility == "members")
+          )
+        );
+    }
+
+    match /members/{memberId}/{fileName} {
+      allow read: if true;
+      allow write: if editor() && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    match /board/{boardMemberId}/{fileName} {
+      allow read: if true;
+      allow write: if editor() && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    match /speakers/{speakerId}/{fileName} {
+      allow read: if editor()
+        || firestore.get(/databases/(default)/documents/speakers/$(speakerId)).data.status == "published";
+      allow write: if editor() && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    match /sponsors/{sponsorId}/{fileName} {
+      allow read: if editor()
+        || firestore.get(/databases/(default)/documents/sponsors/$(sponsorId)).data.status == "published";
+      allow write: if editor() && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

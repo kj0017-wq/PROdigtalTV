@@ -1,0 +1,155 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function profile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function roleIs(role) {
+      return signedIn() && profile().role == role && profile().status == "active";
+    }
+    function member() {
+      return roleIs("member") || editor();
+    }
+    function editor() {
+      return roleIs("editor") || admin();
+    }
+    function admin() {
+      return roleIs("admin");
+    }
+    function publicPublished() {
+      return resource.data.status == "published" && resource.data.visibility == "public";
+    }
+    function registrationEvent() {
+      return get(/databases/$(database)/documents/events/$(request.resource.data.eventId)).data;
+    }
+    function allowedRegistrationTarget() {
+      return registrationEvent().registrationEnabled == true
+        && (
+          (registrationEvent().accessType == "public" && registrationEvent().allowPublicRegistration == true)
+          || (member() && registrationEvent().accessType == "members_only" && registrationEvent().allowMemberRegistration == true)
+        );
+    }
+
+    match /events/{eventId} {
+      allow read: if publicPublished()
+        || (member() && resource.data.accessType == "members_only")
+        || editor();
+      allow create, update, delete: if editor();
+    }
+
+    match /topics/{id} {
+      allow read: if resource.data.status == "active" || editor();
+      allow write: if editor();
+    }
+
+    match /editorialContent/{id} {
+      allow read: if publicPublished()
+        || (member() && resource.data.visibility == "members")
+        || editor();
+      allow write: if editor();
+    }
+
+    match /members/{id} {
+      allow read: if resource.data.visibility == "public" && resource.data.status == "active" || editor();
+      allow write: if editor();
+    }
+
+    match /boardMembers/{id} {
+      allow read: if resource.data.visibility == "public" && resource.data.status == "active" || editor();
+      allow write: if editor();
+    }
+
+    match /speakers/{id} {
+      allow read: if resource.data.status == "published" || editor();
+      allow write: if editor();
+    }
+
+    match /sponsors/{id} {
+      allow read: if resource.data.status == "published" || editor();
+      allow write: if editor();
+    }
+
+    match /eventMedia/{id} {
+      allow read: if resource.data.visibility == "public" && resource.data.status == "approved"
+        || (member() && resource.data.visibility == "members" && resource.data.status == "approved")
+        || editor();
+      allow write: if editor();
+    }
+
+    match /media/{id} {
+      allow read, write: if editor();
+    }
+
+    match /downloads/{id} {
+      allow read: if publicPublished()
+        || (member() && resource.data.visibility == "members")
+        || editor();
+      allow write: if editor();
+    }
+
+    match /galleries/{id} {
+      allow read: if publicPublished()
+        || (member() && resource.data.visibility == "members")
+        || editor();
+      allow write: if editor();
+    }
+
+    match /galleryImages/{id} {
+      allow read: if resource.data.visibility == "public" && resource.data.status == "approved"
+        || (member() && resource.data.visibility == "members" && resource.data.status == "approved")
+        || editor();
+      allow write: if editor();
+    }
+
+    match /registrations/{id} {
+      // The client can initiate a public registration but cannot create tokens or set confirmation.
+      allow create: if request.resource.data.status == "pending_email_confirmation"
+        && request.resource.data.emailConfirmed == false
+        && request.resource.data.privacyAccepted == true
+        && allowedRegistrationTarget()
+        && !request.resource.data.keys().hasAny(["confirmationTokenHash", "confirmedAt", "internalNote"]);
+      allow read: if editor() || (signedIn() && resource.data.userId == request.auth.uid);
+      allow update, delete: if editor();
+    }
+
+    match /mailQueue/{id} {
+      allow read: if editor();
+      allow write: if false;
+    }
+
+    match /aiLogs/{id} {
+      allow read: if editor();
+      allow create: if editor();
+      allow update, delete: if false;
+    }
+
+    match /aiDrafts/{id} {
+      allow read: if editor() || (signedIn() && resource.data.userId == request.auth.uid);
+      allow create, update: if editor();
+      allow delete: if admin();
+    }
+
+    match /users/{userId} {
+      allow read: if admin() || (signedIn() && request.auth.uid == userId);
+      allow write: if admin();
+    }
+
+    match /settings/{id} {
+      allow read: if editor();
+      allow write: if admin() || (editor() && id == "eventTypes");
+    }
+
+    match /system/{id} {
+      allow read, write: if admin();
+    }
+
+    match /auditLog/{id} {
+      allow read: if admin();
+      allow create: if editor();
+      allow update, delete: if false;
+    }
+  }
+}

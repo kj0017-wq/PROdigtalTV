@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" role="img" aria-label="Plattformstrategien Themenbild">
+  <defs><linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#071a33"/><stop offset="1" stop-color="#0f2f5c"/></linearGradient></defs>
+  <rect width="1200" height="720" fill="url(#bg)"/>
+  <g stroke="#fff" stroke-opacity=".45" stroke-width="12" fill="none">
+    <path d="M600 360L300 235M600 360l300-125M600 360L310 505M600 360l300 145M600 360V170M600 360v190"/>
+  </g>
+  <circle cx="600" cy="360" r="92" fill="#e30613"/>
+  <g fill="#f5f7fb">
+    <circle cx="300" cy="235" r="58"/><circle cx="900" cy="235" r="58"/>
+    <circle cx="310" cy="505" r="58"/><circle cx="900" cy="505" r="58"/>
+    <circle cx="600" cy="170" r="58"/><circle cx="600" cy="550" r="58"/>
+  </g>
+  <text x="90" y="105" fill="#fff" font-family="Arial, sans-serif" font-size="44" font-weight="700">Plattformstrategien</text>
+</svg>

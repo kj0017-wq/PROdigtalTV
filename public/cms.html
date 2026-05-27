@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#071a33">
+    <meta name="description" content="PROdigitalTV CMS">
+    <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/src/styles/main.css">
+    <title>PROdigitalTV | CMS</title>
+  </head>
+  <body>
+    <div id="app" aria-live="polite"></div>
+    <script>
+      if (!window.location.hash || window.location.hash === "#") {
+        window.location.hash = "#/cms";
+      }
+    </script>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
