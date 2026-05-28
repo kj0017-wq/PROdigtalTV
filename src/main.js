@@ -1,7 +1,7 @@
 import { route, onRouteChange, go } from "./utils/router.js";
 import {
   homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
-  aboutPage, membersPage, boardPage, archivePage, joinPage, loginPage, portalPage, legalPage, notFoundPage
+  newsPage, newsDetailPage, aboutPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, portalPage, legalPage, notFoundPage
 } from "./pages/publicPages.js";
 import {
   dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage, moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage
@@ -14,8 +14,10 @@ import { checkFirebaseConnection, checkFirestoreStructure, initializeDatabase, c
 import { downloadRegistrationsCsv } from "./utils/csv.js";
 import { escapeHtml } from "./utils/format.js";
 import { callChatGptAction, saveAiDraft } from "./ai/openaiService.js";
+import { generateArticleSpeechAsset } from "./ai/ttsService.js";
 
 const root = document.querySelector("#app");
+const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 
 async function viewForRoute(current) {
   if (current.path === "home") return homePage();
@@ -24,10 +26,13 @@ async function viewForRoute(current) {
   if (current.path === "register") return registrationPage(current.id);
   if (current.path === "topics") return topicsPage();
   if (current.path === "topic") return topicDetailPage(current.id);
+  if (current.path === "news" && current.id) return newsDetailPage(current.id);
+  if (current.path === "news") return newsPage();
   if (current.path === "about") return aboutPage();
   if (current.path === "board") return boardPage();
   if (current.path === "members") return membersPage();
   if (current.path === "join") return joinPage();
+  if (current.path === "downloads") return downloadsPage();
   if (current.path === "archive") return archivePage();
   if (current.path === "login") return loginPage();
   if (current.path === "portal") return portalPage();
@@ -42,12 +47,13 @@ async function viewForRoute(current) {
   if (current.path === "cms" && current.id === "speakers") return moduleListPage("speakers");
   if (current.path === "cms" && current.id === "sponsors") return moduleListPage("sponsors");
   if (current.path === "cms" && current.id === "members") return moduleListPage("members");
+  if (current.path === "cms" && current.id === "membership-applications") return moduleListPage("membershipApplications");
   if (current.path === "cms" && current.id === "board") return moduleListPage("boardMembers");
-  if (current.path === "cms" && current.id === "editorial") return moduleListPage("editorialContent");
+  if (current.path === "cms" && current.id === "editorial") return moduleListPage("editorialContent", current.section || "press");
   if (current.path === "cms" && current.id === "mail") return moduleListPage("mailQueue");
   if (current.path === "cms" && current.id === "chatgpt") return chatGptPage();
   if (current.path === "cms" && current.id === "ai-settings") return aiSettingsPage();
-  if (current.path === "cms" && current.id === "edit") return contentEditPage(current.query.get("module"), current.query.get("id"));
+  if (current.path === "cms" && current.id === "edit") return contentEditPage(current.query.get("module"), current.query.get("id"), current.query);
   if (current.path === "cms" && current.id === "setup") return setupPage();
   return notFoundPage();
 }
@@ -56,11 +62,46 @@ async function render() {
   try {
     root.innerHTML = await viewForRoute(route());
     wireActions();
+    updateMobileQrCode();
     window.scrollTo({ top: 0 });
   } catch (error) {
     console.error(error);
     root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Seite konnte nicht geladen werden</p><h1>Bitte neu laden</h1><p style="margin:14px 0 24px">${escapeHtml(error.message || String(error))}</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
   }
+}
+
+function mobileUrlForCurrentRoute() {
+  const current = route();
+  const query = current.query;
+  let hash = location.hash || "#/home";
+  let path = location.pathname || "/";
+  if (current.path === "cms") {
+    path = "/";
+    if (current.id === "events") hash = "#/events";
+    else if (current.id === "event" && current.section) hash = `#/event/${current.section}`;
+    else if (current.id === "topics") hash = "#/topics";
+    else if (current.id === "members") hash = "#/members";
+    else if (current.id === "board") hash = "#/board";
+    else if (current.id === "editorial" && current.section === "news") hash = "#/news";
+    else if (current.id === "edit" && query.get("module") === "topics" && query.get("id")) hash = `#/topic/${query.get("id")}`;
+    else if (current.id === "edit" && query.get("module") === "editorialContent" && query.get("section") === "news" && query.get("id")) hash = `#/news/${query.get("id")}`;
+    else hash = "#/home";
+  }
+  const search = location.search || "";
+  const origin = ["localhost", "127.0.0.1", ""].includes(location.hostname) || location.protocol === "file:"
+    ? mobilePublicOrigin
+    : location.origin;
+  return `${origin}${path}${search}${hash}`;
+}
+
+function updateMobileQrCode() {
+  const link = document.querySelector("[data-mobile-qr-link]");
+  const image = document.querySelector("[data-mobile-qr-code]");
+  if (!link || !image) return;
+  const mobileUrl = mobileUrlForCurrentRoute();
+  link.href = mobileUrl;
+  link.title = mobileUrl;
+  image.src = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&margin=1&data=${encodeURIComponent(mobileUrl)}`;
 }
 
 document.addEventListener("click", (event) => {
@@ -92,7 +133,8 @@ function imageFileFromDropzone(form, inputName, entityId) {
   const file = input?.files?.[0];
   if (file) return file;
   const dataUrl = form.elements[`${inputName}DataUrl`]?.value;
-  return dataUrlToFile(dataUrl, `${entityId || "image"}-240x180.jpg`);
+  const fileName = form.elements[`${inputName}FileName`]?.value || `${entityId || "image"}-240x180.jpg`;
+  return dataUrlToFile(dataUrl, fileName);
 }
 
 function findAiSource(button) {
@@ -170,14 +212,30 @@ function wireImageDropzones() {
     const input = zone.querySelector('input[type="file"]');
     const removeInput = zone.querySelector('input[type="hidden"]');
     const dataInput = zone.querySelector(`input[name="${input?.name}DataUrl"]`);
+    const fileNameInput = zone.querySelector(`input[name="${input?.name}FileName"]`);
     const preview = zone.querySelector("[data-image-preview]");
     const removeButton = zone.querySelector("[data-image-remove]");
     const tools = zone.querySelector("[data-image-tools]");
     const zoom = zone.querySelector("[data-image-zoom]");
+    const sizeSelect = zone.querySelector("[data-image-size]");
+    const resolution = zone.querySelector("[data-image-resolution]");
     const cropButton = zone.querySelector("[data-image-crop]");
     const status = zone.querySelector("[data-image-status]");
     const emptyText = preview?.querySelector("span")?.textContent || "Bild per Drag-and-drop oder Klick hochladen";
     const crop = { file: null, src: "", img: null, x: 0, y: 0, scale: 1, dragging: false, startX: 0, startY: 0, originX: 0, originY: 0 };
+    const selectedSize = () => {
+      const [width, height] = String(sizeSelect?.value || "240x180").split("x").map((value) => Number(value));
+      return { width: width || 240, height: height || 180 };
+    };
+    const updateResolution = () => {
+      const size = selectedSize();
+      if (resolution) resolution.textContent = `Ausgabeformat: ${size.width} x ${size.height} px.`;
+      if (preview) {
+        const previewWidth = size.width / size.height > 1.4 ? 320 : 240;
+        preview.style.width = `${previewWidth}px`;
+        preview.style.height = `${Math.round(previewWidth * size.height / size.width)}px`;
+      }
+    };
     const renderCrop = () => {
       if (!crop.img) return;
       crop.img.style.width = "auto";
@@ -204,7 +262,9 @@ function wireImageDropzones() {
         zoom.value = "1";
         removeInput.value = "";
         if (dataInput) dataInput.value = "";
-        status.textContent = "Neues Bild ausgewählt. Bitte Crop anwenden und speichern.";
+        if (fileNameInput) fileNameInput.value = "";
+        updateResolution();
+        status.textContent = "Neues Bild ausgewaehlt. Bitte Aufloesung waehlen, Crop anwenden und speichern.";
         renderCrop();
       });
       reader.readAsDataURL(file);
@@ -234,26 +294,35 @@ function wireImageDropzones() {
       crop.scale = Number(zoom.value || 1);
       renderCrop();
     });
+    sizeSelect?.addEventListener("change", () => {
+      form?.classList.remove("is-saved");
+      updateResolution();
+    });
     cropButton?.addEventListener("click", async () => {
       if (!crop.img || !crop.file) return;
+      const size = selectedSize();
       const canvas = document.createElement("canvas");
-      canvas.width = 240;
-      canvas.height = 180;
+      canvas.width = size.width;
+      canvas.height = size.height;
       const ctx = canvas.getContext("2d");
       ctx.fillStyle = "#fff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       const baseScale = Math.max(canvas.width / crop.img.naturalWidth, canvas.height / crop.img.naturalHeight);
       const width = crop.img.naturalWidth * baseScale * crop.scale;
       const height = crop.img.naturalHeight * baseScale * crop.scale;
-      ctx.drawImage(crop.img, (canvas.width - width) / 2 + crop.x, (canvas.height - height) / 2 + crop.y, width, height);
+      const previewRect = preview.getBoundingClientRect();
+      const offsetX = crop.x * (canvas.width / Math.max(1, previewRect.width));
+      const offsetY = crop.y * (canvas.height / Math.max(1, previewRect.height));
+      ctx.drawImage(crop.img, (canvas.width - width) / 2 + offsetX, (canvas.height - height) / 2 + offsetY, width, height);
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", .9));
-      const croppedFile = new File([blob], crop.file.name.replace(/\.[^.]+$/, "") + "-240x180.jpg", { type: "image/jpeg" });
+      const croppedFile = new File([blob], crop.file.name.replace(/\.[^.]+$/, "") + `-${size.width}x${size.height}.jpg`, { type: "image/jpeg" });
       const transfer = new DataTransfer();
       transfer.items.add(croppedFile);
       input.files = transfer.files;
       crop.file = croppedFile;
       crop.src = canvas.toDataURL("image/jpeg", .9);
       if (dataInput) dataInput.value = crop.src;
+      if (fileNameInput) fileNameInput.value = croppedFile.name;
       preview.innerHTML = `<img src="${crop.src}" alt="">`;
       crop.img = preview.querySelector("img");
       crop.x = 0;
@@ -261,7 +330,7 @@ function wireImageDropzones() {
       crop.scale = 1;
       zoom.value = "1";
       tools.hidden = true;
-      status.textContent = "Bild zugeschnitten. Bitte speichern.";
+      status.textContent = `Bild zugeschnitten (${size.width} x ${size.height} px). Bitte speichern.`;
       renderCrop();
     });
     zone.addEventListener("dragover", (event) => {
@@ -284,6 +353,7 @@ function wireImageDropzones() {
       input.value = "";
       removeInput.value = "1";
       if (dataInput) dataInput.value = "";
+      if (fileNameInput) fileNameInput.value = "";
       crop.file = null;
       crop.src = "";
       crop.img = null;
@@ -292,6 +362,7 @@ function wireImageDropzones() {
       preview.classList.remove("has-image");
       status.textContent = "Bild zum Löschen markiert. Bitte speichern.";
     });
+    updateResolution();
   });
 }
 
@@ -307,6 +378,7 @@ function updateDropzoneSavedImage(form, imageUrl) {
   const tools = form.querySelector("[data-image-tools]");
   const input = form.querySelector("[data-image-dropzone] input[type='file']");
   const dataInput = form.querySelector(`[name="${input?.name}DataUrl"]`);
+  const fileNameInput = form.querySelector(`[name="${input?.name}FileName"]`);
   if (!preview) return;
   if (imageUrl) {
     preview.innerHTML = `<img src="${imageUrl}" alt="">`;
@@ -317,6 +389,7 @@ function updateDropzoneSavedImage(form, imageUrl) {
   }
   if (input) input.value = "";
   if (dataInput) dataInput.value = "";
+  if (fileNameInput) fileNameInput.value = "";
   if (tools) tools.hidden = true;
 }
 
@@ -367,6 +440,53 @@ async function saveEventTopicSpeakerForm(form) {
 
 function wireActions() {
   wireImageDropzones();
+  document.querySelectorAll("[data-generate-article-speech]").forEach((button) => button.addEventListener("click", async () => {
+    const result = button.parentElement?.querySelector("[data-speech-result]");
+    const audioUrl = button.dataset.audioUrl || "";
+    if (audioUrl && button.classList.contains("audio-play-button")) {
+      const activeAudio = document.querySelector("audio[data-list-audio-player]");
+      const activeButton = document.querySelector(".audio-play-button.is-playing");
+      if (button.classList.contains("is-playing") && activeAudio) {
+        activeAudio.pause();
+        activeAudio.remove();
+        button.classList.remove("is-playing");
+        return;
+      }
+      if (activeAudio) activeAudio.remove();
+      if (activeButton) activeButton.classList.remove("is-playing");
+      const audio = document.createElement("audio");
+      audio.dataset.listAudioPlayer = "1";
+      audio.src = audioUrl;
+      audio.hidden = true;
+      document.body.append(audio);
+      button.classList.add("is-playing");
+      audio.addEventListener("ended", () => {
+        button.classList.remove("is-playing");
+        audio.remove();
+      });
+      audio.addEventListener("pause", () => {
+        if (!audio.ended) button.classList.remove("is-playing");
+      });
+      await audio.play();
+      return;
+    }
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.classList.add("is-generating");
+    button.textContent = "Audio wird erzeugt ...";
+    if (result) result.innerHTML = `<div class="alert">Gemini erzeugt und speichert die Audiodatei ...</div>`;
+    try {
+      const speech = await generateArticleSpeechAsset({ collection: button.dataset.collection, id: button.dataset.recordId });
+      if (result) result.innerHTML = `<div class="alert alert--success">Audio gespeichert.${speech.truncated ? " Der Text wurde fuer die Sprachausgabe gekuerzt." : ""}</div>`;
+      await render();
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Audio konnte nicht erzeugt werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.classList.remove("is-generating");
+      button.textContent = originalLabel;
+    }
+  }));
   document.querySelectorAll("form.is-save-aware input, form.is-save-aware textarea, form.is-save-aware select").forEach((field) => {
     field.addEventListener("input", () => field.form?.classList.remove("is-saved"));
     field.addEventListener("change", () => field.form?.classList.remove("is-saved"));
@@ -647,7 +767,7 @@ function wireActions() {
       updatedAt: new Date().toISOString()
     });
     await upsert("events", { ...existingEvent, topicIds, updatedAt: new Date().toISOString() });
-    form.querySelector("#event-topic-editor-result").innerHTML = `<div class="alert alert--success">Thema wurde gespeichert.</div>`;
+    form.querySelector("#event-topic-editor-result").innerHTML = `<div class="alert alert--success">Vortrag wurde gespeichert.</div>`;
     const imageStatus = form.querySelector("[data-image-status]");
     if (imageStatus) imageStatus.textContent = imageUpdate.imageUrl ? "Bild wurde gespeichert." : imageUpdate.imageUrl === "" ? "Bild wurde gelöscht." : imageStatus.textContent;
     if (Object.prototype.hasOwnProperty.call(imageUpdate, "imageUrl")) {
@@ -663,7 +783,7 @@ function wireActions() {
     const existingEvent = await getOne("events", form.dataset.eventId);
     const topicIds = Array.from(new Set([...(existingEvent.topicIds || []), form.elements.topicId.value]));
     await upsert("events", { ...existingEvent, topicIds, updatedAt: new Date().toISOString() });
-    form.querySelector("#event-topic-assign-result").innerHTML = `<div class="alert alert--success">Thema wurde zugeordnet.</div>`;
+    form.querySelector("#event-topic-assign-result").innerHTML = `<div class="alert alert--success">Vortrag wurde zugeordnet.</div>`;
     go(`cms/event/${form.dataset.eventId}?tab=topics&mode=edit&topic=${form.elements.topicId.value}`);
   });
 
@@ -700,7 +820,7 @@ function wireActions() {
     const speaker = await getOne("speakers", button.dataset.removeEventTopicSpeaker);
     const existingEvent = await getOne("events", button.dataset.eventId);
     if (!speaker || !existingEvent) return;
-    if (!window.confirm(`${speaker.name || "Referent"} aus diesem Thema entfernen?`)) return;
+    if (!window.confirm(`${speaker.name || "Referent"} aus diesem Vortrag entfernen?`)) return;
     const topicIds = new Set(Array.isArray(speaker.topicIds) ? speaker.topicIds : []);
     topicIds.delete(button.dataset.topicId);
     const remainingEventTopicIds = Array.from(topicIds).filter((topicId) => (existingEvent.topicIds || []).includes(topicId));
@@ -719,6 +839,27 @@ function wireActions() {
     });
     await upsert("events", { ...existingEvent, speakerIds, updatedAt: new Date().toISOString() });
     go(`cms/event/${button.dataset.eventId}?tab=topics&mode=edit&topic=${button.dataset.topicId}`);
+  }));
+
+  document.querySelectorAll("[data-copy-talk-to-topic]").forEach((button) => button.addEventListener("click", async () => {
+    const talk = await getOne("topics", button.dataset.copyTalkToTopic);
+    if (!talk) return;
+    const id = `topics-${crypto.randomUUID()}`;
+    await upsert("topics", {
+      ...talk,
+      id,
+      title: talk.title || "Neues Thema",
+      sourceTalkId: talk.id,
+      sourceEventId: button.dataset.eventId || "",
+      eventIds: [],
+      topicIds: [],
+      isEditorialTopic: true,
+      status: talk.status || "active",
+      visibility: talk.visibility || "public",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    go(`cms/edit?module=topics&id=${id}`);
   }));
 
   document.querySelector("#event-partners-form")?.addEventListener("submit", async (event) => {
@@ -764,22 +905,90 @@ function wireActions() {
   document.querySelector("#content-edit-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
-    const existing = (await getOne(form.dataset.module, form.dataset.id)) || { id: form.dataset.id, createdAt: new Date().toISOString() };
-    const values = formObject(form);
-    const image = form.querySelector('input[name="assetFile"]')?.files?.[0];
-    if (image) {
-      const asset = await uploadEntityImage(form.dataset.module, form.dataset.id, image);
-      if (form.dataset.module === "topics") values.imageUrl = asset.url;
-      if (form.dataset.module === "members") values.logoUrl = asset.url;
-      if (form.dataset.module === "boardMembers") values.photoUrl = asset.url;
-      if (form.dataset.module === "speakers") values.photoUrl = asset.url;
-      if (form.dataset.module === "sponsors") values.logoUrl = asset.url;
-      if (form.dataset.module === "editorialContent") values.imageUrl = asset.url;
-      values.assetStoragePath = asset.storagePath;
+    const result = form.querySelector("#content-save-result");
+    const submitButton = form.querySelector('button[type="submit"], button:not([type])');
+    if (submitButton) submitButton.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Speichere...</div>`;
+    try {
+      const existing = (await getOne(form.dataset.module, form.dataset.id)) || { id: form.dataset.id, createdAt: new Date().toISOString() };
+      const values = formObject(form);
+      if (form.dataset.module === "editorialContent" && values.publishDate) values.validFrom = values.publishDate;
+      const image = imageFileFromDropzone(form, "assetFile", form.dataset.id);
+      if (values.removeAssetFile === "1") {
+        await deleteStoredAsset(existing);
+        values.imageUrl = "";
+        values.documentUrl = "";
+        values.assetUrl = "";
+        values.assetFileName = "";
+        values.assetType = "";
+        values.logoUrl = "";
+        values.photoUrl = "";
+        values.assetStoragePath = "";
+      }
+      if (image) {
+        await deleteStoredAsset(existing);
+        const asset = await uploadEntityImage(form.dataset.module, form.dataset.id, image);
+        if (form.dataset.module === "topics") values.imageUrl = asset.url;
+        if (form.dataset.module === "members") values.logoUrl = asset.url;
+        if (form.dataset.module === "boardMembers") values.photoUrl = asset.url;
+        if (form.dataset.module === "speakers") values.photoUrl = asset.url;
+        if (form.dataset.module === "sponsors") values.logoUrl = asset.url;
+        if (form.dataset.module === "editorialContent") {
+          values.assetUrl = asset.url;
+          values.assetFileName = image.name;
+          values.assetType = image.type.startsWith("image/") ? "image" : "document";
+          if (image.type.startsWith("image/")) {
+            values.imageUrl = asset.url;
+            values.documentUrl = "";
+          } else {
+            values.documentUrl = asset.url;
+            values.imageUrl = "";
+          }
+        }
+        values.assetStoragePath = asset.storagePath;
+      }
+      delete values.assetFile;
+      delete values.assetFileDataUrl;
+      delete values.removeAssetFile;
+      await upsert(form.dataset.module, { ...existing, ...values });
+      if (result) {
+        result.innerHTML = `<div class="alert alert--success">Gespeichert.</div>`;
+        result.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Speichern fehlgeschlagen: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+    } finally {
+      if (submitButton) submitButton.disabled = false;
     }
-    delete values.assetFile;
-    await upsert(form.dataset.module, { ...existing, ...values });
-    form.querySelector("#content-save-result").innerHTML = `<div class="alert alert--success">Inhalt wurde gespeichert und steht den freigegebenen Ausgaben zur Verfuegung.</div>`;
+  });
+
+  document.querySelector("#membership-application-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = form.querySelector("#membership-application-result");
+    const submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Antrag wird gespeichert...</div>`;
+    try {
+      const values = formObject(form);
+      if (!values.privacyAccepted) throw new Error("Bitte Datenschutzerklaerung akzeptieren.");
+      if (!values.statutesAccepted) throw new Error("Bitte Vereinssatzung akzeptieren.");
+      if (!values.feeInfoAccepted) throw new Error("Bitte Beitragsinformationen bestaetigen.");
+      const id = `membershipApplications-${crypto.randomUUID()}`;
+      await upsert("membershipApplications", {
+        id,
+        ...values,
+        status: "new",
+        source: "website",
+        submittedAt: new Date().toISOString()
+      });
+      form.reset();
+      if (result) result.innerHTML = `<div class="alert alert--success">Vielen Dank. Der Mitgliedsantrag wurde gespeichert.</div>`;
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Absenden fehlgeschlagen: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
   });
 
   document.querySelector("#topic-editor-form")?.addEventListener("submit", async (event) => {
@@ -787,10 +996,33 @@ function wireActions() {
     const form = event.currentTarget;
     const topicId = form.dataset.topicId;
     const topic = (await getOne("topics", topicId)) || { id: topicId, status: "active", visibility: "public" };
+    const image = imageFileFromDropzone(form, "topicImage", topicId);
+    const imageUpdate = {};
+    if (form.elements.removeTopicImage?.value === "1") {
+      await deleteStoredAsset(topic);
+      imageUpdate.imageUrl = "";
+      imageUpdate.assetStoragePath = "";
+    }
+    if (image) {
+      await deleteStoredAsset(topic);
+      const asset = await uploadEntityImage("topics", topicId, image);
+      imageUpdate.imageUrl = asset.url;
+      imageUpdate.assetStoragePath = asset.storagePath;
+    }
     await upsert("topics", {
       ...topic,
-      title: form.elements.title.value,
-      shortDescription: form.elements.shortDescription.value,
+      title: form.elements.title?.value || "",
+      subtitle: form.elements.subtitle?.value || "",
+      category: form.elements.category?.value || "Thema",
+      publishDate: form.elements.publishDate?.value || "",
+      validFrom: form.elements.publishDate?.value || topic.validFrom || "",
+      validTo: form.elements.validTo?.value || "",
+      shortDescription: form.elements.shortDescription?.value || "",
+      introText: form.elements.shortDescription?.value || "",
+      longDescription: form.elements.longDescription?.value || "",
+      bodyText: form.elements.longDescription?.value || "",
+      status: form.elements.status?.value || topic.status || "active",
+      ...imageUpdate,
       updatedAt: new Date().toISOString()
     });
 
@@ -829,7 +1061,10 @@ function wireActions() {
         createdAt: new Date().toISOString()
       });
     }
-    form.querySelector("#topic-editor-result").innerHTML = `<div class="alert alert--success">Thema und Referenten wurden gespeichert.</div>`;
+    const imageStatus = form.querySelector("[data-image-status]");
+    if (imageStatus) imageStatus.textContent = imageUpdate.imageUrl ? "Bild wurde gespeichert." : imageUpdate.imageUrl === "" ? "Bild wurde geloescht." : imageStatus.textContent;
+    if (Object.prototype.hasOwnProperty.call(imageUpdate, "imageUrl")) updateDropzoneSavedImage(form, imageUpdate.imageUrl);
+    form.querySelector("#topic-editor-result").innerHTML = `<div class="alert alert--success">Thema wurde gespeichert.</div>`;
     await render();
   });
 

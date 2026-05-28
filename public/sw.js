@@ -1,4 +1,4 @@
-const CACHE = "pdt-platform-v57";
+const CACHE = "pdt-platform-v117";
 const SHELL = ["/", "/index.html", "/manifest.json", "/assets/icon.svg", "/src/styles/main.css", "/src/main.js"];
 
 self.addEventListener("install", (event) => {

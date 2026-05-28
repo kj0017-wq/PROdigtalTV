@@ -106,6 +106,39 @@ function stripTags(html = "") {
     .replace(/<[^>]+>/g, " "));
 }
 
+function pageContentHtml(html = "") {
+  const pageMatch = html.match(/<div\b[^>]*class=["'][^"']*\bpage\b[^"']*\blarge-9\b[^"']*\bcolumn\b[^"']*["'][^>]*>([\s\S]*?)(?:<div\b[^>]*class=["'][^"']*\blarge-3\b[^"']*\bcolumn\b|<footer\b|<\/body>)/i);
+  const main = pageMatch?.[1]
+    || html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1]
+    || html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1]
+    || html.match(/<div\b[^>]*class=["'][^"']*(?:content|main|text|article)[^"']*["'][^>]*>([\s\S]*?)<\/div>/i)?.[1]
+    || html;
+  return main
+    .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
+    .replace(/<header[\s\S]*?<\/header>/gi, " ")
+    .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
+    .replace(/<aside[\s\S]*?<\/aside>/gi, " ");
+}
+
+function cleanImportedText(text = "", title = "") {
+  const navigation = /^(PROdigital TV e\.V\.|-|Menu|AKTUELLES|MITGLIEDER|UNSERE MITGLIEDER|MITGLIED WERDEN|MITGLIEDER-BEREICH|VERANSTALTUNGEN|ANMELDUNG|ARCHIV|VORSTAND|PRESSE|SPONSOREN & PARTNER|LOGIN|Dates|NewsPresses)$/i;
+  const lines = normalize(text).split("\n").map(normalize).filter(Boolean);
+  const result = [];
+  let started = false;
+  for (const line of lines) {
+    if (navigation.test(line)) continue;
+    if (/^-\s*$/.test(line)) continue;
+    if (!started && title && line === title) {
+      started = true;
+      continue;
+    }
+    if (!started && /^(PRESSEMITTEILUNG|EINLADUNG|Liebe Mitglieder|PROdigitalTV|Zur Berlinale|Veranstaltungstag:|Die Location)/i.test(line)) started = true;
+    if (started) result.push(line);
+  }
+  const cleaned = result.length ? result.join("\n\n") : lines.filter((line) => !navigation.test(line)).join("\n\n");
+  return normalize(cleaned);
+}
+
 function slugify(value = "") {
   return normalize(value).toLowerCase()
     .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
@@ -193,16 +226,19 @@ function statusFor(date) {
 }
 
 function parsePressRelease(url, html) {
-  const text = stripTags(html);
+  const fullText = stripTags(html);
+  const rawText = stripTags(pageContentHtml(html));
   const headings = extractHeadings(html);
   const officialId = url.match(/\/presse\/(\d+)\//)?.[1] || slugify(url);
   const title = headings.at(-1) || `Pressemeldung ${officialId}`;
-  const publishDate = firstDate(text);
+  const text = cleanImportedText(rawText, title);
+  const publishDate = firstDate(rawText) || firstDate(fullText) || firstDate(text);
   return {
     id: `press-${officialId}`,
     key: `press.${officialId}`,
     page: "press",
     section: "pressRelease",
+    category: "Presse",
     title,
     subtitle: publishDate ? `Pressemeldung vom ${publishDate.split("-").reverse().join(".")}` : "Pressemeldung",
     introText: text.split("\n").find((line) => line.length > 90 && !line.includes(title))?.slice(0, 260) || "",
@@ -210,6 +246,8 @@ function parsePressRelease(url, html) {
     seoTitle: title,
     seoDescription: text.replace(/\s+/g, " ").slice(0, 155),
     publishDate,
+    validFrom: publishDate,
+    validTo: "",
     sourceUrl: url,
     sourceSystem: "prodigitaltv.de",
     visibility: "public",
@@ -218,11 +256,13 @@ function parsePressRelease(url, html) {
 }
 
 function parseEvent(url, html) {
-  const text = stripTags(html);
+  const fullText = stripTags(html);
+  const rawText = stripTags(pageContentHtml(html));
   const headings = extractHeadings(html);
   const officialId = url.match(/\/veranstaltungen\/(\d+)\//)?.[1] || slugify(url);
   const title = headings.at(-1) || `Veranstaltung ${officialId}`;
-  const { date, city: eventDayCity } = eventDateFrom(text);
+  const text = cleanImportedText(rawText, title);
+  const { date, city: eventDayCity } = eventDateFrom(rawText).date ? eventDateFrom(rawText) : eventDateFrom(fullText);
   if (!date) return null;
   const { startTime, endTime } = timeRangeFrom(text);
   const { locationName, address } = locationFrom(text);
@@ -234,6 +274,8 @@ function parseEvent(url, html) {
     subtitle: "Importierte Veranstaltungsdaten von prodigitaltv.de",
     description: text.replace(/\s+/g, " ").slice(0, 500),
     date,
+    validFrom: date,
+    validTo: "",
     displayDate: date.split("-").reverse().join("."),
     startTime,
     endTime,
@@ -350,9 +392,15 @@ function isEmpty(value) {
 
 function mergeRecord(existing, incoming) {
   const result = { ...(existing || {}) };
+  const importedExisting = existing?.sourceImport?.origin === "prodigitaltv.de" || existing?.sourceSystem === "prodigitaltv.de";
+  const refreshImportedFields = new Set([
+    "bodyText", "introText", "seoDescription", "description", "postEventSummary",
+    "publishDate", "validFrom", "validTo", "date", "displayDate", "startTime", "endTime",
+    "locationName", "address", "city"
+  ]);
   for (const [key, value] of Object.entries(incoming)) {
     if (key === "id") continue;
-    if (overwrite || isEmpty(result[key])) result[key] = value;
+    if (overwrite || isEmpty(result[key]) || (importedExisting && refreshImportedFields.has(key))) result[key] = value;
   }
   result.sourceImport = {
     origin: "prodigitaltv.de",

@@ -46,6 +46,34 @@ function articleParagraphs(text = "") {
   return text.split(/\n+/).filter(Boolean).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("");
 }
 
+function ttsReader({ title = "", audioUrl = "" }) {
+  if (!audioUrl) return "";
+  return `<div class="tts-reader" data-tts-reader>
+    <p class="eyebrow">Audio</p>
+    <strong>${escapeHtml(title || "Artikel vorlesen")}</strong>
+    <audio controls preload="none" src="${escapeHtml(audioUrl)}"></audio>
+  </div>`;
+}
+
+function teaserText(value = "", length = 118) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > length ? `${text.slice(0, Math.max(0, length - 3))}...` : text;
+}
+
+function downloadUrl(item = {}, fallback = "#/downloads") {
+  return item.documentUrl || item.assetUrl || item.fileUrl || fallback;
+}
+
+function downloadCard(item) {
+  const url = downloadUrl(item);
+  const active = url !== "#/downloads";
+  return `<a class="quick-card download-card" href="${escapeHtml(url)}" ${active ? `target="_blank" rel="noreferrer"` : ""}>
+    <p class="eyebrow">${escapeHtml(item.category || "Download")}</p>
+    <h3>${escapeHtml(item.title || item.fileName || "Download")}</h3>
+    <p>${escapeHtml(item.description || item.bodyText || item.fileName || "PDF wird oeffentlich bereitgestellt.")}</p>
+  </a>`;
+}
+
 function eventExpires(event) {
   if (!event.expiresAt) return false;
   return new Date(event.expiresAt).getTime() <= Date.now();
@@ -72,6 +100,43 @@ export async function homePage() {
   const primaryButtonUrl = hero.buttonUrl || (next ? `#/event/${next.id}` : "#/events");
   const secondaryButtonText = hero.secondaryButtonText || "Mitglied werden";
   const secondaryButtonUrl = hero.secondaryButtonUrl || "#/join";
+  const latestNews = editorial
+    .filter((content) => content.page === "news" && content.status === "published")
+    .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")))[0];
+  const featuredTopic = topics[0];
+  const homeTopics = topics.filter((topic) => topic.id !== featuredTopic?.id).slice(0, 3);
+  const aboutIntro = editorial.find((content) => content.id === "about-intro" || content.key === "about.intro");
+  const featuredMember = members.find((member) => member.featured) || members[0];
+  const quickCards = [
+    {
+      eyebrow: "News",
+      title: latestNews?.title || "Aktuelles von PROdigitalTV",
+      text: teaserText(latestNews?.subtitle || latestNews?.introText || latestNews?.shortText || latestNews?.bodyText || "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.", 118),
+      url: latestNews ? `#/news/${latestNews.id}` : "#/news",
+      link: latestNews ? "News lesen" : "Alle News"
+    },
+    {
+      eyebrow: "Thema",
+      title: featuredTopic?.title || "Branchenagenda",
+      text: teaserText(featuredTopic?.longDescription || featuredTopic?.articleText || featuredTopic?.shortDescription || "Strategische Themen fuer digitale Medien, Distribution und Vermarktung.", 190),
+      url: featuredTopic ? `#/topic/${featuredTopic.id}` : "#/topics",
+      link: featuredTopic ? "Thema lesen" : "Themen ansehen"
+    },
+    {
+      eyebrow: "Verein",
+      title: aboutIntro?.title || "Ueber PROdigitalTV",
+      text: teaserText(aboutIntro?.introText || aboutIntro?.bodyText || "Das Netzwerk verbindet Entscheider, Impulsgeber und Unternehmen der digitalen Medienwirtschaft.", 118),
+      url: "#/about",
+      link: "Mehr erfahren"
+    },
+    {
+      eyebrow: "Netzwerk",
+      title: featuredMember?.name || `${members.length || 35}+ Mitglieder`,
+      text: featuredMember ? `${members.length || "Viele"} Unternehmen im Netzwerk. Beispiel: ${teaserText(featuredMember.description || featuredMember.city || "Mitgliedsunternehmen", 82)}` : "Unternehmen aus Medien, Technologie, Distribution und Vermarktung im gemeinsamen Austausch.",
+      url: "#/members",
+      link: "Mitglieder ansehen"
+    }
+  ];
   return publicShell("home", `
     <section class="hero"><div class="container hero__grid">
       <div><p class="eyebrow">${escapeHtml(hero.teaserText || "PROdigitalTV")}</p><h1>${escapeHtml(hero.title)}</h1><p class="lead">${escapeHtml(hero.subtitle)}</p>
@@ -79,9 +144,9 @@ export async function homePage() {
       </div>
       <article class="next-event"><p class="eyebrow">Naechstes Event</p>${next ? `<h2>${escapeHtml(next.title)}</h2><p>${formatDate(next.date)} · ${next.city}</p><p style="margin:18px 0">${escapeHtml(next.subtitle)}</p><a class="button button--primary button--small" href="#/register/${next.id}">Jetzt anmelden</a>` : `<h2>Neue Termine in Vorbereitung</h2><p>Unsere naechsten Formate werden in Kuerze veroeffentlicht.</p>`}</article>
     </div></section>
-    <section class="section"><div class="container">
-      <div class="quick-grid">
-        ${[["Events", "E", "Kommende Veranstaltungen", "#/events"], ["Themen", "T", "Branchenagenda entdecken", "#/topics"], ["Ueber uns", "P", "Netzwerk kennenlernen", "#/about"], ["Mitglieder", "M", "Unternehmen im Netzwerk", "#/members"]].map(([title, icon, text, url]) => `<a class="quick-card" href="${url}"><span class="quick-card__icon">${icon}</span><h3>${title}</h3><p>${text}</p></a>`).join("")}
+    <section class="section quick-links-section"><div class="container">
+      <div class="quick-grid quick-grid--navigation">
+        ${quickCards.map((card, index) => `<a class="quick-card quick-card--navigation" href="${escapeHtml(card.url)}"><span class="quick-card__icon">${String(index + 1).padStart(2, "0")}</span><span class="quick-card__arrow">&rarr;</span><p class="quick-card__eyebrow">${escapeHtml(card.eyebrow)}</p><h3>${escapeHtml(card.title)}</h3><p>${escapeHtml(card.text)}</p><strong>${escapeHtml(card.link)}</strong></a>`).join("")}
       </div>
       <nav class="mobile-sublinks" aria-label="Weitere Informationen"><a href="#/board">Vorstand</a><a href="#/join">Mitglied werden</a><a href="#/archive">Rueckblicke</a></nav>
     </div></section>
@@ -89,7 +154,7 @@ export async function homePage() {
       ${upcoming.length ? `<div class="card-grid card-grid--three">${upcoming.map((event) => eventCard(event, false, sponsors)).join("")}</div>` : `<div class="alert">Neue Veranstaltungen sind aktuell in Vorbereitung. Entdecken Sie inzwischen unsere Rueckblicke und Netzwerk-Themen.</div>`}
     </div></section>
     <section class="section"><div class="container"><div class="section-head"><div><p class="eyebrow">Agenda</p><h2>Relevante Themen</h2></div></div>
-      <div class="card-grid card-grid--three">${topics.slice(0, 3).map(topicCard).join("")}</div>
+      <div class="card-grid card-grid--three">${homeTopics.map(topicCard).join("")}</div>
     </div></section>
     <section class="section section--white"><div class="container feature"><div><p class="eyebrow">Netzwerk</p><h2>Mehr als 35 Mitgliedsunternehmen.</h2><p class="lead">Mitglieder profitieren von Fachimpulsen, Medienfruehstuecken und relevanten Branchenkontakten.</p></div><div class="member-logos">${members.filter((member) => member.featured).slice(0, 8).map((member) => `<div class="member-tile">${memberLogo(member)}</div>`).join("")}</div></div></section>
   `);
@@ -179,13 +244,44 @@ export async function topicsPage() {
     <section class="section"><div class="container"><div class="card-grid card-grid--three">${topics.map(topicCard).join("")}</div></div></section>`);
 }
 
+export async function newsPage() {
+  const news = (await listPublicContent("editorialContent"))
+    .filter((item) => item.page === "news" || item.section === "news")
+    .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")));
+  return publicShell("news", `${subhero("News", "Aktuelles von PROdigitalTV.", "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.")}
+    <section class="section"><div class="container">${news.length ? `<div class="card-grid card-grid--three">${news.map((item) => `<a class="quick-card news-card" href="#/news/${item.id}">${item.imageUrl ? `<figure class="news-card__thumb"><img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.title || "News")}"></figure>` : ""}<p class="eyebrow">${escapeHtml(item.category || "News")}</p><h3>${escapeHtml(item.title || "")}</h3>${item.subtitle ? `<p class="news-card__subtitle">${escapeHtml(item.subtitle)}</p>` : ""}<p>${escapeHtml(item.shortText || item.teaserText || item.introText || item.bodyText || "").slice(0, 180)}</p></a>`).join("")}</div>` : `<div class="alert">Aktuell sind keine News veroeffentlicht.</div>`}</div></section>`);
+}
+
+export async function newsDetailPage(id) {
+  const item = await getOne("editorialContent", id);
+  if (!item || (item.page !== "news" && item.section !== "news")) return notFoundPage();
+  const date = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
+  const text = item.bodyText || item.mainText || item.text || item.shortText || item.teaserText || "";
+  return publicShell("news", `${subhero("News", escapeHtml(item.title || "News"), escapeHtml(item.subtitle || item.shortText || ""))}
+    <section class="section"><div class="container detail-grid">
+      <article class="detail-main news-detail">
+        <a class="link news-detail__back" href="#/news">Zurueck zu News</a>
+        <p class="eyebrow">${escapeHtml(item.category || "News")}${date ? ` · ${formatDate(date)}` : ""}</p>
+        <h2>${escapeHtml(item.title || "")}</h2>
+        ${item.subtitle ? `<p class="lead">${escapeHtml(item.subtitle)}</p>` : ""}
+        ${ttsReader({ title: item.title || "", audioUrl: item.audioUrl || "" })}
+        <div class="editorial-text">${item.imageUrl ? `<figure class="news-detail__thumb news-detail__thumb--in-text"><img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.title || "News")}"></figure>` : ""}${articleParagraphs(text)}</div>
+      </article>
+      <aside class="detail-aside">
+        <div class="fact"><label>Rubrik</label><strong>${escapeHtml(item.category || "News")}</strong></div>
+        ${date ? `<div class="fact"><label>Datum</label><strong>${formatDate(date)}</strong></div>` : ""}
+        <a class="button button--secondary" href="#/news">Alle News</a>
+      </aside>
+    </div></section>`);
+}
+
 export async function topicDetailPage(id) {
   const [topic, events, sponsors] = await Promise.all([getOne("topics", id), listPublicEvents(), listPublicContent("sponsors")]);
   if (!topic) return notFoundPage();
   const linked = events.filter((event) => event.topicIds.includes(id) && event.visibility === "public" && !isPastEvent(event));
   return publicShell("topics", `${subhero("Thema", escapeHtml(topic.title), escapeHtml(topic.longDescription))}
     ${topic.imageUrl ? `<section class="section section--flush"><div class="container"><figure class="topic-hero-image"><img src="${escapeHtml(topic.imageUrl)}" alt="Themenbild ${escapeHtml(topic.title)}"></figure></div></section>` : ""}
-    <section class="section section--white"><div class="container topic-article"><p class="eyebrow">Redaktioneller Beitrag</p><h2>${escapeHtml(topic.title)} einordnen</h2>${articleParagraphs(topic.articleText || topic.longDescription)}</div></section>
+    <section class="section section--white"><div class="container topic-article"><p class="eyebrow">Redaktioneller Beitrag</p><h2>${escapeHtml(topic.title)} einordnen</h2>${ttsReader({ title: topic.title || "", audioUrl: topic.audioUrl || "" })}${articleParagraphs(topic.articleText || topic.longDescription)}</div></section>
     <section class="section"><div class="container"><div class="section-head"><div><p class="eyebrow">Verknuepfte Events</p><h2>Im Dialog</h2></div></div><div class="card-grid card-grid--three">${linked.map((event) => eventCard(event, event.date < "2026-05-26", sponsors)).join("")}</div></div></section>`);
 }
 
@@ -219,9 +315,46 @@ export async function archivePage() {
     <section class="section"><div class="container archive-list">${events.map((event) => archiveArticle(event, sponsors)).join("")}</div></section>`);
 }
 
+export async function downloadsPage() {
+  const downloads = (await listPublicContent("downloads"))
+    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  return publicShell("downloads", `${subhero("Downloads", "Oeffentliche Downloads.", "Vereinssatzung, Beitraege und weitere oeffentliche Dokumente von PROdigitalTV.")}
+    <section class="section"><div class="container">${downloads.length ? `<div class="card-grid card-grid--three">${downloads.map(downloadCard).join("")}</div>` : `<div class="alert">Oeffentliche Downloads werden aktuell vorbereitet.</div>`}</div></section>`);
+}
+
 export async function joinPage() {
-  return publicShell("members", `${subhero("Mitglied werden", "Gemeinsam mehr bewegen.", "Mitgliedschaft fuer Unternehmen, die sich substantiell im Branchendialog engagieren moechten.")}
-  <section class="section"><div class="container detail-grid"><article class="detail-main"><h2>Ihre Vorteile</h2><div class="quick-grid"><div class="quick-card"><h3>Exklusive Events</h3><p>Zugang zu Mitgliedsformaten.</p></div><div class="quick-card"><h3>Sichtbarkeit</h3><p>Praesenz im Netzwerk.</p></div><div class="quick-card"><h3>Impulse</h3><p>Fachlicher Austausch.</p></div></div></article><form class="form-card"><p class="eyebrow">Kontaktaufnahme</p><h2 style="margin-bottom:20px">Interesse an Mitgliedschaft</h2><div class="form-grid"><div class="field"><label>Unternehmen</label><input></div><div class="field"><label>E-Mail</label><input type="email"></div><button class="button button--primary">Anfrage senden</button></div></form></div></section>`);
+  const [intro, downloads, editorial] = await Promise.all([getOne("editorialContent", "join-intro"), listPublicContent("downloads"), listPublicContent("editorialContent")]);
+  const publicDownloads = downloads
+    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+  const downloadInfo = (item) => {
+    const key = /satzung/i.test(item.title || item.fileName || "") ? "join.downloadInfo.satzung" : /beitrag/i.test(item.title || item.fileName || "") ? "join.downloadInfo.membershipFees" : "";
+    return editorial.find((content) => content.key === key || content.title === item.title);
+  };
+  const downloadField = (item) => {
+    const url = downloadUrl(item);
+    const info = downloadInfo(item);
+    return `<details class="download-field"><summary><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.fileName || item.description || "Download")}</span></summary><div class="download-field__body"><p>${escapeHtml(info?.bodyText || item.description || "Weitere Informationen zu diesem Dokument.")}</p><a class="link" href="${escapeHtml(url)}" ${url !== "#/downloads" ? `target="_blank" rel="noreferrer"` : ""}>PDF oeffnen</a></div></details>`;
+  };
+  const benefitKeys = ["join.benefit.events", "join.benefit.visibility", "join.benefit.impulses"];
+  const benefits = benefitKeys.map((key) => editorial.find((content) => content.key === key)).filter(Boolean);
+  const benefitFields = benefits.length ? benefits.map((item) => `<details class="download-field"><summary><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.introText || "Mitgliedervorteil")}</span></summary><div class="download-field__body"><p>${escapeHtml(item.bodyText || "")}</p></div></details>`).join("") : `<details class="download-field"><summary><strong>Exklusive Events</strong><span>Mitgliedervorteil</span></summary><div class="download-field__body"><p>Zugang zu Mitgliedsformaten.</p></div></details><details class="download-field"><summary><strong>Sichtbarkeit</strong><span>Mitgliedervorteil</span></summary><div class="download-field__body"><p>Praesenz im Netzwerk.</p></div></details><details class="download-field"><summary><strong>Impulse</strong><span>Mitgliedervorteil</span></summary><div class="download-field__body"><p>Fachlicher Austausch.</p></div></details>`;
+  return publicShell("join", `${subhero("Mitglied werden", intro?.title || "Gemeinsam mehr bewegen.", intro?.introText || "Mitgliedschaft fuer Unternehmen, die sich substantiell im Branchendialog engagieren moechten.")}
+  <section class="section"><div class="container join-layout"><form id="membership-application-form" class="form-card form-grid join-form">
+    <p class="eyebrow">Mitgliedsantrag</p><h2 style="margin-bottom:6px">Mitglied werden</h2>
+    <div class="form-grid--two"><div class="field"><label>Unternehmen / Organisation *</label><input name="company" required></div><div class="field"><label>Rechtsform</label><input name="legalForm" placeholder="z. B. GmbH, AG, e.V."></div></div>
+    <div class="form-grid--two"><div class="field"><label>Strasse und Hausnummer *</label><input name="street" required></div><div class="field"><label>PLZ / Ort *</label><input name="city" required></div></div>
+    <div class="form-grid--two"><div class="field"><label>Land</label><input name="country" value="Deutschland"></div><div class="field"><label>Website</label><input name="website" type="url" placeholder="https://"></div></div>
+    <div class="form-grid--two"><div class="field"><label>Ansprechpartner Vorname *</label><input name="firstName" required></div><div class="field"><label>Ansprechpartner Nachname *</label><input name="lastName" required></div></div>
+    <div class="form-grid--two"><div class="field"><label>Position / Funktion *</label><input name="position" required></div><div class="field"><label>E-Mail *</label><input name="email" type="email" required></div></div>
+    <div class="form-grid--two"><div class="field"><label>Telefon</label><input name="phone" type="tel"></div><div class="field"><label>Mitgliedschaft</label><select name="membershipType"><option value="company">Unternehmensmitglied</option><option value="individual">Einzelmitglied</option></select></div></div>
+    <div class="field"><label>Kurzbeschreibung Unternehmen</label><textarea name="companyDescription" placeholder="Taetigkeitsfeld, Bezug zur digitalen Medienwirtschaft"></textarea></div>
+    <div class="field"><label>Nachricht / Rueckfragen</label><textarea name="message"></textarea></div>
+    <label class="checkbox"><input type="checkbox" name="statutesAccepted" required> Ich habe die Vereinssatzung gelesen und akzeptiere sie. *</label>
+    <label class="checkbox"><input type="checkbox" name="feeInfoAccepted" required> Ich habe die Informationen zu Mitgliedsbeitraegen zur Kenntnis genommen. *</label>
+    <label class="checkbox"><input type="checkbox" name="privacyAccepted" required> Ich akzeptiere die Datenschutzerklaerung zur Verarbeitung meines Mitgliedsantrags. *</label>
+    <label class="checkbox"><input type="checkbox" name="newsletterConsent"> Ich moechte Informationen zu Veranstaltungen und Vereinsaktivitaeten erhalten.</label>
+    <button class="button button--primary" type="submit">Mitgliedsantrag absenden</button><div id="membership-application-result"></div>
+  </form><aside class="join-aside"><h2>Downloads</h2>${publicDownloads.length ? `<div class="join-download-fields">${publicDownloads.map(downloadField).join("")}</div>` : `<a class="button button--secondary" href="#/downloads">Zu den oeffentlichen Downloads</a>`}<h2>Ihre Vorteile</h2><div class="join-download-fields">${benefitFields}</div></aside></div></section>`);
 }
 
 export async function loginPage() {
@@ -245,8 +378,12 @@ export async function portalPage() {
 
 export async function legalPage(type) {
   const privacy = type === "privacy";
-  return publicShell("", `${subhero(privacy ? "Rechtliches" : "Anbieter", privacy ? "Datenschutz" : "Impressum", privacy ? "Informationen zur Verarbeitung personenbezogener Daten." : "Angaben gemaess den gesetzlichen Informationspflichten.")}
-  <section class="section"><div class="container detail-main" style="max-width:820px"><h2>${privacy ? "Datenschutz bei Event-Anmeldungen" : "PROdigitalTV - Interessengemeinschaft Digitale Medien e.V."}</h2><p>${privacy ? "Anmeldedaten werden ausschliesslich zur Organisation des gewaelten Events, zur Bestaetigung der E-Mail-Adresse und fuer erteilte Einwilligungen verarbeitet. Die finale Datenschutzerklaerung ist vor Livegang rechtlich abzustimmen." : "Vereins- und Geschaeftssitz:<br>Wandalenweg 26<br>20097 Hamburg<br>Telefon: +49 40 44506617<br>E-Mail: post@prodigitaltv.de<br>Internet: www.prodigitaltv.de<br><br>Eingetragen im Vereinsregister Hamburg: VR 19974<br>Verantwortliche Personen: Vorstand von PROdigitalTV."}</p></div></section>`);
+  const fallback = privacy
+    ? { title: "Datenschutz bei Event-Anmeldungen", introText: "Informationen zur Verarbeitung personenbezogener Daten.", bodyText: "Anmeldedaten werden ausschliesslich zur Organisation des gewaelten Events, zur Bestaetigung der E-Mail-Adresse und fuer erteilte Einwilligungen verarbeitet. Die finale Datenschutzerklaerung ist vor Livegang rechtlich abzustimmen." }
+    : { title: "PROdigitalTV - Interessengemeinschaft Digitale Medien e.V.", introText: "Angaben gemaess den gesetzlichen Informationspflichten.", bodyText: "Vereins- und Geschaeftssitz:\nWandalenweg 26\n20097 Hamburg\nTelefon: +49 40 44506617\nE-Mail: post@prodigitaltv.de\nInternet: www.prodigitaltv.de\n\nEingetragen im Vereinsregister Hamburg: VR 19974\nVerantwortliche Personen: Vorstand von PROdigitalTV." };
+  const content = await getOne("editorialContent", privacy ? "legal-privacy" : "legal-imprint") || fallback;
+  return publicShell("", `${subhero("Rechtliches", privacy ? "Datenschutz" : "Impressum", content.introText || fallback.introText)}
+  <section class="section"><div class="container detail-main" style="max-width:820px"><h2>${escapeHtml(content.title || fallback.title)}</h2><div class="editorial-text">${articleParagraphs(content.bodyText || fallback.bodyText)}</div></div></section>`);
 }
 
 export function notFoundPage() {

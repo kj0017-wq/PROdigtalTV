@@ -2,7 +2,7 @@ import { cmsShell, cmsTitle } from "./cmsLayout.js";
 import { list, getOne } from "../firebase/dataService.js";
 import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js";
 import { accessLabels, lifecycleLabels } from "../data/demoData.js";
-import { escapeHtml, formatDate, formatDateTime } from "../utils/format.js";
+import { escapeHtml, formatDate, formatDateTime, formatShortDate } from "../utils/format.js";
 
 function protect(content, adminOnly = false) {
   const user = currentUser();
@@ -23,8 +23,35 @@ function denied(adminOnly = false) {
 
 function status(value) {
   const style = ["failed", "expired", "inactive", "archived"].includes(value) ? "status--error" : ["draft", "pending_email_confirmation", "queued", "in_review", "uploaded"].includes(value) ? "status--draft" : "";
-  const label = { active: "Aktiv", inactive: "Inaktiv", published: "Veroeffentlicht", draft: "Entwurf", archived: "Archiviert", approved: "Freigegeben", in_review: "In Pruefung" }[value] || value;
+  const label = { active: "Aktiv", inactive: "Inaktiv", published: "Veroeffentlicht", draft: "Entwurf", archived: "Archiviert", approved: "Freigegeben", new: "Neu", in_review: "In Pruefung" }[value] || value;
   return `<span class="status ${style}">${escapeHtml(label)}</span>`;
+}
+
+function iconImage(name) {
+  const icons = {
+    edit: "/assets/cms-icons/edit.png",
+    eye: "/assets/cms-icons/eye-on.png",
+    eyeOff: "/assets/cms-icons/eye-off.png",
+    trash: "/assets/cms-icons/trash.png"
+  };
+  return icons[name] ? `<img src="${icons[name]}" alt="" loading="lazy">` : "";
+}
+
+function editorialActionButtons(item, section, module, activeStatus, inactiveStatus) {
+  const isActive = ["published", "active", "approved"].includes(item.status);
+  const toggleStatus = isActive ? inactiveStatus : activeStatus;
+  const toggleClass = isActive ? "icon-button--visible" : "icon-button--hidden";
+  const toggleLabel = isActive ? "Aktiv: auf inaktiv setzen" : "Inaktiv: auf aktiv setzen";
+  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-record-status="${module}" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ? "eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="${module}" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
+}
+
+function editorialListStatus(item) {
+  return status(["published", "active", "approved"].includes(item.status) ? "active" : "inactive");
+}
+
+function listDate(item) {
+  const value = item.publishDate || item.validFrom || item.date || item.submittedAt || item.updatedAt || item.createdAt || "";
+  return value ? formatShortDate(value) : "-";
 }
 
 function aiButton(action, target, label = "Mit ChatGPT bearbeiten", extra = {}) {
@@ -33,6 +60,22 @@ function aiButton(action, target, label = "Mit ChatGPT bearbeiten", extra = {}) 
 
 function aiFieldActions(actions) {
   return `<div class="ai-field-actions">${actions.map((item) => aiButton(item.action, item.target, item.label, item)).join("")}</div>`;
+}
+
+function audioGenerationPanel(collection, item) {
+  return `<div class="audio-generation-panel">
+    <div><label>Audio / Vorlesen</label><p class="muted">${item.audioUrl ? "Audio ist gespeichert und wird im Frontend abgespielt." : "Noch kein Audio gespeichert. Bitte Text speichern, dann Audio erzeugen."}</p></div>
+    ${item.audioUrl ? `<audio controls preload="none" src="${escapeHtml(item.audioUrl)}"></audio>` : ""}
+    <button type="button" class="button button--secondary button--small" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}">${item.audioUrl ? "Audio neu erzeugen" : "Audio erzeugen und speichern"}</button>
+    <div class="audio-generation-panel__result" data-speech-result></div>
+  </div>`;
+}
+
+function audioListCell(collection, item) {
+  return `<div class="audio-list-cell">
+    <button type="button" class="audio-play-button ${item.audioUrl ? "audio-play-button--ready" : "audio-play-button--missing"}" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}" data-audio-url="${escapeHtml(item.audioUrl || "")}" title="${item.audioUrl ? "Audio abspielen" : "Audio erzeugen"}" aria-label="${item.audioUrl ? "Audio abspielen" : "Audio erzeugen"}"><span></span></button>
+    <div class="audio-list-cell__result" data-speech-result></div>
+  </div>`;
 }
 
 function chatGptHints(events, media, downloads = []) {
@@ -114,12 +157,12 @@ export async function eventFollowUpPage() {
 }
 
 function eventTabs(id, active) {
-  return `<nav class="tabs">${[["base", "Stammdaten"], ["pre", "Vorlauf"], ["topics", "Themen / Referenten"], ["partners", "Sponsoren / Gastgeber"], ["registration", "Anmeldung"], ["post", "Nachlauf"], ["media", "Fotogalerie / Downloads"], ["ai", "KI-Pruefung"]].map(([key, label]) => `<button data-event-tab="${key}" data-event-id="${id}" class="${active === key ? "active" : ""}">${label}</button>`).join("")}</nav>`;
+  return `<nav class="tabs">${[["base", "Stammdaten"], ["pre", "Vorlauf"], ["topics", "Vortraege / Referenten"], ["partners", "Sponsoren / Gastgeber"], ["registration", "Anmeldung"], ["post", "Nachlauf"], ["media", "Fotogalerie / Downloads"], ["ai", "KI-Pruefung"]].map(([key, label]) => `<button data-event-tab="${key}" data-event-id="${id}" class="${active === key ? "active" : ""}">${label}</button>`).join("")}</nav>`;
 }
 
 function shortText(value = "", length = 112) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
-  return text.length > length ? `${text.slice(0, length - 1)}...` : text;
+  return text.length > length ? `${text.slice(0, Math.max(0, length - 3))}...` : text;
 }
 
 function personInitials(name = "") {
@@ -136,10 +179,11 @@ function topicThumb(topic) {
     : `<span>Bild</span>`;
 }
 
-function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild" }) {
+function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", defaultSize = "240x180" }) {
   return `<div class="image-dropzone" data-image-dropzone>
     <input type="hidden" name="${removeName}" value="">
     <input type="hidden" name="${inputName}DataUrl" value="">
+    <input type="hidden" name="${inputName}FileName" value="">
     <input class="image-dropzone__input" type="file" name="${inputName}" accept="image/*">
     <div class="image-dropzone__preview ${imageUrl ? "has-image" : ""}" data-image-preview>
       ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="">` : `<span>${escapeHtml(label)} per Drag-and-drop oder Klick hochladen</span>`}
@@ -147,9 +191,12 @@ function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild" })
     <button type="button" class="image-dropzone__remove" data-image-remove aria-label="Bild entfernen">x</button>
     <div class="image-dropzone__tools" data-image-tools hidden>
       <label>Zoom <input type="range" min="0.5" max="3" step="0.01" value="1" data-image-zoom></label>
+      <label>Aufloesung <select data-image-size>
+        ${[["240x180", "Thumb 240 x 180"], ["480x360", "Thumb 480 x 360"], ["1200x675", "Artikel 1200 x 675"], ["1600x900", "Hero 1600 x 900"]].map(([value, text]) => `<option value="${value}" ${value === defaultSize ? "selected" : ""}>${text}</option>`).join("")}
+      </select></label>
       <button type="button" class="button button--secondary button--small" data-image-crop>Crop anwenden</button>
     </div>
-    <p class="muted">Ausgabeformat: 240 x 180 px.</p>
+    <p class="muted" data-image-resolution>Ausgabeformat: ${escapeHtml(defaultSize.replace("x", " x "))} px.</p>
     <p class="image-dropzone__status" data-image-status>${imageUrl ? "Bild ist gespeichert." : "Kein Bild gespeichert."}</p>
   </div>`;
 }
@@ -165,7 +212,7 @@ function topicSpeakersForEvent(topic, event, speakers) {
 
 function eventTopicSpeakerActions(event, topic, topicSpeakers) {
   if (!topicSpeakers.length) return "";
-  return `<div class="topic-speaker-stack"><h3>Referenten dieses Themas</h3>${topicSpeakers.map((speaker) => `<div class="speaker-action-card">
+  return `<div class="topic-speaker-stack"><h3>Referenten dieses Vortrags</h3>${topicSpeakers.map((speaker) => `<div class="speaker-action-card">
     ${speakerAvatar(speaker)}
     <div><strong>${escapeHtml(speaker.name || "")}</strong><small>${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" - "))}</small></div>
     <div class="speaker-action-card__actions">
@@ -181,13 +228,13 @@ function topicEditorPanel(event, topics, speakers, mode, selectedTopicId, select
   if (mode === "remove") {
     const assignedTopics = topics.filter((topic) => (event.topicIds || []).includes(topic.id));
     return `<aside class="topic-detail-panel"><div class="topic-panel-head"><h2>Zuordnung loeschen</h2><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics">Schliessen</a></div>
-      <div class="topic-remove-list">${assignedTopics.length ? assignedTopics.map((topic) => `<div class="topic-remove-row"><div><strong>${escapeHtml(topic.title || "")}</strong><p>${escapeHtml(shortText(topic.shortDescription || topic.longDescription || ""))}</p></div><button class="button button--secondary button--small" data-unassign-event-topic="${topic.id}" data-event-id="${event.id}">Zuordnung entfernen</button></div>`).join("") : `<div class="alert">Dieses Event hat noch keine Themenzuordnung.</div>`}</div>
+      <div class="topic-remove-list">${assignedTopics.length ? assignedTopics.map((topic) => `<div class="topic-remove-row"><div><strong>${escapeHtml(topic.title || "")}</strong><p>${escapeHtml(shortText(topic.shortDescription || topic.longDescription || ""))}</p></div><button class="button button--secondary button--small" data-unassign-event-topic="${topic.id}" data-event-id="${event.id}">Zuordnung entfernen</button></div>`).join("") : `<div class="alert">Dieses Event hat noch keine Vortragszuordnung.</div>`}</div>
     </aside>`;
   }
   if (mode === "referent" && selectedTopic) {
     const topicSpeakers = topicSpeakersForEvent(selectedTopic, event, speakers);
     const selectedSpeaker = speakers.find((speaker) => speaker.id === selectedSpeakerId) || { id: "", name: "", company: "", position: "", photoUrl: "" };
-    return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">Referent</p><h2>${selectedSpeaker.id ? "Referent bearbeiten" : "Referent anlegen"}</h2></div><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${selectedTopic.id}">Thema bearbeiten</a></div>
+    return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">Referent</p><h2>${selectedSpeaker.id ? "Referent bearbeiten" : "Referent anlegen"}</h2></div><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${selectedTopic.id}">Vortrag bearbeiten</a></div>
       <form id="event-topic-speaker-form" data-event-id="${event.id}" data-topic-id="${selectedTopic.id}" data-speaker-id="${selectedSpeaker.id || ""}" class="form-grid is-save-aware">
         <div class="field"><label>Name</label><input name="name" value="${escapeHtml(selectedSpeaker.name || "")}" required></div>
         <div class="field"><label>Firma</label><input name="company" value="${escapeHtml(selectedSpeaker.company || "")}"></div>
@@ -203,15 +250,15 @@ function topicEditorPanel(event, topics, speakers, mode, selectedTopicId, select
   const topicSpeakers = selectedTopic?.id ? topicSpeakersForEvent(selectedTopic, event, speakers) : [];
   const firstTopicSpeaker = topicSpeakers[0];
   const topicHeadActions = selectedTopic.id
-    ? `<div class="topic-panel-actions">${firstTopicSpeaker ? `<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}&speaker=${firstTopicSpeaker.id}">Referent bearbeiten</a>` : `<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}">Referent hinzufuegen</a>`}<a class="link-button" href="#/cms/event/${event.id}?tab=topics">Schliessen</a></div>`
+    ? `<div class="topic-panel-actions">${firstTopicSpeaker ? `<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}&speaker=${firstTopicSpeaker.id}">Referent bearbeiten</a>` : `<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}">Referent hinzufuegen</a>`}<button class="button button--secondary button--small" type="button" data-copy-talk-to-topic="${selectedTopic.id}" data-event-id="${event.id}">Vortrag als Thema kopieren</button><a class="link-button" href="#/cms/event/${event.id}?tab=topics">Schliessen</a></div>`
     : `<a class="link-button" href="#/cms/event/${event.id}?tab=topics">Schliessen</a>`;
   const topicEntityId = selectedTopic.id || "";
-  return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">${mode === "new" ? "Neu" : "Thema bearbeiten"}</p><h2>${mode === "new" ? "Neues Thema" : escapeHtml(selectedTopic.title || "")}</h2></div>${topicHeadActions}</div>
+  return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">${mode === "new" ? "Neu" : "Vortrag bearbeiten"}</p><h2>${mode === "new" ? "Neuer Vortrag" : escapeHtml(selectedTopic.title || "")}</h2></div>${topicHeadActions}</div>
     <form id="event-topic-editor-form" data-event-id="${event.id}" data-topic-id="${selectedTopic.id || ""}" class="form-grid">
       <div class="field"><label>Ueberschrift</label><input name="title" value="${escapeHtml(selectedTopic.title || "")}" required>${aiFieldActions([{ action: "improveText", target: "title", label: "Ueberschrift mit ChatGPT", entityType: "topics", entityId: topicEntityId, fieldName: "title" }])}</div>
       <div class="field"><label>Text</label><textarea name="text" required>${escapeHtml(selectedTopic.longDescription || selectedTopic.shortDescription || "")}</textarea>${aiFieldActions([{ action: "generateTopicDescription", target: "text", label: "Text mit ChatGPT", entityType: "topics", entityId: topicEntityId, fieldName: "longDescription" }])}</div>
-      <div class="field"><label>Thumb optional</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: selectedTopic.imageUrl || "", label: "Themenbild" })}</div>
-      ${selectedTopic.id ? "" : `<p class="muted">Referenten koennen nach dem Speichern des neuen Themas hinzugefuegt werden.</p>`}
+      <div class="field"><label>Thumb optional</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: selectedTopic.imageUrl || "", label: "Vortragsbild" })}</div>
+      ${selectedTopic.id ? "" : `<p class="muted">Referenten koennen nach dem Speichern des neuen Vortrags hinzugefuegt werden.</p>`}
       ${eventTopicSpeakerActions(event, selectedTopic, topicSpeakers)}
       <div class="actions"><a class="button button--secondary" href="#/cms/event/${event.id}?tab=topics">Abbrechen</a><button class="button button--primary">Speichern</button></div>
       <div id="event-topic-editor-result"></div>
@@ -223,9 +270,9 @@ function topicAssignPanel(event, topics, mode) {
   if (mode !== "assign") return "";
   const assigned = new Set(event.topicIds || []);
   const candidates = topics.filter((topic) => !assigned.has(topic.id));
-  return `<div class="topic-inline-panel"><div class="topic-panel-head"><h2>Thema zuordnen</h2><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics">Schliessen</a></div>
+  return `<div class="topic-inline-panel"><div class="topic-panel-head"><h2>Vortrag zuordnen</h2><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics">Schliessen</a></div>
     <form id="event-topic-assign-form" data-event-id="${event.id}" class="form-grid">
-      <div class="selection-grid">${candidates.length ? candidates.map((topic) => `<label class="selection-item"><input type="radio" name="topicId" value="${topic.id}" required><span><strong>${escapeHtml(topic.title || "")}</strong><small>${escapeHtml(shortText(topic.shortDescription || topic.longDescription || ""))}</small></span></label>`).join("") : `<div class="alert">Alle vorhandenen Themen sind bereits zugeordnet.</div>`}</div>
+      <div class="selection-grid">${candidates.length ? candidates.map((topic) => `<label class="selection-item"><input type="radio" name="topicId" value="${topic.id}" required><span><strong>${escapeHtml(topic.title || "")}</strong><small>${escapeHtml(shortText(topic.shortDescription || topic.longDescription || ""))}</small></span></label>`).join("") : `<div class="alert">Alle vorhandenen Vortraege sind bereits zugeordnet.</div>`}</div>
       <div class="actions"><button class="button button--primary" ${candidates.length ? "" : "disabled"}>Zuordnen</button></div>
       <div id="event-topic-assign-result"></div>
     </form>
@@ -260,7 +307,7 @@ function eventTopicsEditor(event, topics, speakers, allEvents, query = new URLSe
         const topicSpeakers = topicSpeakersForEvent(topic, event, speakers);
         const excerpt = shortText(topic.longDescription || topic.shortDescription || "");
         return `<div class="assigned-topic-card ${selectedTopicId === topic.id ? "active" : ""}" draggable="true" data-topic-drag-id="${topic.id}" data-event-id="${event.id}">
-          <button type="button" class="drag-handle" aria-label="Thema verschieben">::</button>
+          <button type="button" class="drag-handle" aria-label="Vortrag verschieben">::</button>
           <a class="assigned-topic-card__link" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}">
           <div class="topic-thumb">${topicThumb(topic)}</div>
           <div class="assigned-topic-card__body"><h3>${escapeHtml(topic.title || "")}</h3><p>${escapeHtml(excerpt)}</p></div>
@@ -268,8 +315,8 @@ function eventTopicsEditor(event, topics, speakers, allEvents, query = new URLSe
           <b>&gt;</b>
           </a>
         </div>`;
-      }).join("") : `<div class="empty">Noch keine Themen zugeordnet. Starte mit Neu oder Zuordnen.</div>`}</div>
-      <p class="muted">${assignedTopics.length} Themen</p>
+      }).join("") : `<div class="empty">Noch keine Vortraege zugeordnet. Starte mit Neu oder Zuordnen.</div>`}</div>
+      <p class="muted">${assignedTopics.length} Vortraege</p>
     </section>
   </div>`;
 }
@@ -330,25 +377,88 @@ export async function registrationsPage() {
   return protect(cmsShell("cms/registrations", `${cmsTitle("Teilnehmermanagement", "Anmeldungen")}<section class="panel"><div class="field" style="max-width:390px;margin-bottom:18px"><label>Event auswaehlen</label><select>${events.map((event) => `<option>${escapeHtml(event.title)}</option>`).join("")}</select></div><div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Event</th><th>Bestaetigung</th><th>Mailstatus</th></tr></thead><tbody>${registrations.map((record) => `<tr><td>${record.firstName} ${record.lastName}</td><td>${record.eventTitle}</td><td>${status(record.status)}</td><td>${status(record.mailStatus)}</td></tr>`).join("")}</tbody></table></div></section>`));
 }
 
-export async function moduleListPage(module) {
+const editorialSections = {
+  all: {
+    active: "cms/editorial/press",
+    title: "Presse",
+    itemLabel: "Pressemeldung",
+    route: "cms/editorial/press",
+    createParams: "&page=press&section=pressRelease",
+    filter: (item) => item.page === "press" || item.section === "pressRelease"
+  },
+  press: {
+    active: "cms/editorial/press",
+    title: "Presse",
+    itemLabel: "Pressemeldung",
+    route: "cms/editorial/press",
+    createParams: "&page=press&section=pressRelease",
+    filter: (item) => item.page === "press" || item.section === "pressRelease"
+  },
+  news: {
+    active: "cms/editorial/news",
+    title: "News",
+    itemLabel: "News",
+    route: "cms/editorial/news",
+    createParams: "&page=news&section=news",
+    filter: (item) => item.page === "news" || item.section === "news"
+  },
+  interna: {
+    active: "cms/editorial/interna",
+    title: "Interna",
+    itemLabel: "Seitentext",
+    route: "cms/editorial/interna",
+    createParams: "&page=about&section=internal",
+    filter: (item) => isInternalEditorialItem(item)
+  }
+};
+
+function isInternalEditorialItem(item = {}) {
+  if (item.section === "download" || String(item.migratedTo || "").startsWith("downloads/")) return false;
+  return !["press", "news"].includes(item.page)
+    && !["pressRelease", "news"].includes(item.section)
+    && (["home", "about", "join", "imprint", "privacy", "legal", "contact", "login", "members", "board"].includes(item.page)
+      || ["intro", "hero", "legal", "internal", "footer"].includes(item.section));
+}
+
+export async function moduleListPage(module, section = "all") {
   if (!hasCmsAccess()) return denied();
   const config = {
-    topics: ["Themen", "Thema", "title", "shortDescription"],
+    topics: ["Redaktionelle Themen", "Thema", "title", "shortDescription"],
     speakers: ["Referenten", "Referent", "name", "company"],
     sponsors: ["Sponsoren / Gastgeber", "Partner", "name", "role"],
     members: ["Mitglieder", "Mitglied", "name", "description"],
+    membershipApplications: ["Mitgliedsantraege", "Antrag", "company", "email"],
     boardMembers: ["Vorstandsgalerie", "Vorstandsmitglied", "name", "role"],
     editorialContent: ["Redaktion / Seiteninhalte", "Inhalt", "title", "page"],
     mailQueue: ["Mail-Queue", "Mail", "to", "subject"],
     eventMedia: ["Event-Nachlauf / Medien", "Medium", "title", "visibility"]
   }[module];
-  const records = await list(module);
-  const active = { topics: "cms/topics", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", boardMembers: "cms/board", editorialContent: "cms/editorial", mailQueue: "cms/mail", eventMedia: "cms/followup" }[module];
+  const editorialConfig = module === "editorialContent" ? editorialSections[section] || editorialSections.all : null;
+  const records = (await list(module))
+    .filter((item) => !editorialConfig || editorialConfig.filter(item))
+    .sort((a, b) => {
+      const dateA = a.publishDate || a.date || a.validFrom || a.updatedAt || a.createdAt || "";
+      const dateB = b.publishDate || b.date || b.validFrom || b.updatedAt || b.createdAt || "";
+      if (dateA || dateB) return String(dateB).localeCompare(String(dateA));
+      return Number(b.sortOrder || 0) - Number(a.sortOrder || 0);
+    });
+  const active = editorialConfig?.active || { topics: "cms/topics", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", membershipApplications: "cms/membership-applications", boardMembers: "cms/board", editorialContent: "cms/editorial", mailQueue: "cms/mail", eventMedia: "cms/followup" }[module];
   const editable = !["mailQueue", "eventMedia"].includes(module);
   const manageable = module !== "mailQueue";
   const inactiveStatus = module === "editorialContent" || module === "eventMedia" || module === "speakers" || module === "sponsors" ? "archived" : "inactive";
   const activeStatus = ["editorialContent", "speakers", "sponsors"].includes(module) ? "published" : module === "eventMedia" ? "approved" : "active";
-  return protect(cmsShell(active, `${cmsTitle("Contentmanagement", config[0], editable ? `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${config[1]} anlegen</a>` : "")}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>${config[1]}</th><th>Beschreibung / Zuordnung</th><th>Status</th>${editable || manageable ? "<th>Aktionen</th>" : ""}</tr></thead><tbody>${records.map((item) => `<tr><td>${escapeHtml(item[config[2]] || "-")}</td><td>${escapeHtml(item[config[3]] || "-")}</td><td>${status(item.status || item.visibility || "active")}</td>${editable || manageable ? `<td><div class="table-actions">${editable ? `<a class="link" href="#/cms/edit?module=${module}&id=${item.id}">Bearbeiten</a>` : ""}${manageable ? `<button class="link-button" data-record-status="${module}" data-record-id="${item.id}" data-status="${activeStatus}">Aktiv</button><button class="link-button" data-record-status="${module}" data-record-id="${item.id}" data-status="${inactiveStatus}">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="${module}" data-record-id="${item.id}">Loeschen</button>` : ""}</div></td>` : ""}</tr>`).join("")}</tbody></table></div></section>`));
+  const title = editorialConfig?.title || config[0];
+  const itemLabel = editorialConfig?.itemLabel || config[1];
+  const createParams = editorialConfig?.createParams || "";
+  const emptyText = editorialConfig ? `Noch keine Inhalte in ${escapeHtml(title)}.` : "Noch keine Eintraege vorhanden.";
+  if (module === "topics") {
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--topics"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table">${topicThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>Thema</td><td>${audioListCell("topics", item)}</td><td>${editorialListStatus(item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="7">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+  }
+  if (module === "editorialContent") {
+    const showAudio = section === "news";
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Titel</th><th>Datum</th><th>Rubrik</th>${showAudio ? "<th>Audio</th>" : ""}<th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td>${showAudio ? `<td>${audioListCell("editorialContent", item)}</td>` : ""}<td>${editorialListStatus(item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${showAudio ? 6 : 5}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+  }
+  return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, editable ? `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>` : "")}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>${itemLabel}</th><th>Datum / Gueltigkeit</th><th>Beschreibung / Zuordnung</th><th>Status</th>${editable || manageable ? "<th>Aktionen</th>" : ""}</tr></thead><tbody>${records.length ? records.map((item) => `<tr><td>${escapeHtml(item[config[2]] || "-")}</td><td>${escapeHtml(item.publishDate || item.date || "-")}<br><small>${escapeHtml(item.validFrom || "-")} bis ${escapeHtml(item.validTo || "unendlich")}</small></td><td>${escapeHtml(item[config[3]] || "-")}</td><td>${status(item.status || item.visibility || "active")}</td>${editable || manageable ? `<td><div class="table-actions">${editable ? `<a class="link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}">Bearbeiten</a>` : ""}${manageable ? `<button class="link-button" data-record-status="${module}" data-record-id="${item.id}" data-status="${activeStatus}">Aktiv</button><button class="link-button" data-record-status="${module}" data-record-id="${item.id}" data-status="${inactiveStatus}">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="${module}" data-record-id="${item.id}">Loeschen</button>` : ""}</div></td>` : ""}</tr>`).join("") : `<tr><td colspan="${editable || manageable ? 5 : 4}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
 }
 
 function topicSpeakerEditor(topic, speaker) {
@@ -360,25 +470,73 @@ function topicSpeakerManager(topic, speakers) {
   return `<div class="form-grid" style="margin-top:18px"><h2>Referenten</h2><div class="selection-grid">${speakers.length ? speakers.map((speaker) => `<label class="selection-item"><input type="checkbox" name="assignedSpeakerIds" value="${speaker.id}" ${speaker.topicId === topic.id || (speaker.topicIds || []).includes(topic.id) ? "checked" : ""}><span><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml(speaker.company || "")}</small></span></label>`).join("") : `<div class="alert">Noch keine Referenten vorhanden.</div>`}</div>${assigned.length ? assigned.map((speaker) => `<section class="panel"><h3>${escapeHtml(speaker.name || "Referent")}</h3>${topicSpeakerEditor(topic, speaker)}</section>`).join("") : ""}<section class="panel"><h3>Neuen Referenten anlegen</h3><div class="form-grid--two"><div class="field"><label>Referentname</label><input name="newSpeakerName"></div><div class="field"><label>Firma</label><input name="newSpeakerCompany"></div><div class="field"><label>Position</label><input name="newSpeakerPosition"></div><div class="field"><label>Kurzvita</label><textarea name="newSpeakerShortBio"></textarea></div></div></section></div>`;
 }
 
-export async function contentEditPage(module, id) {
+export async function contentEditPage(module, id, query = new URLSearchParams()) {
   if (!hasCmsAccess()) return denied();
   const definitions = {
-    topics: { title: "Thema", fields: [["title", "Thema"], ["shortDescription", "Kurze Beschreibung"]] },
+    topics: { title: "Redaktionelles Thema", fields: [["title", "Thema"], ["shortDescription", "Kurze Beschreibung"]] },
     speakers: { title: "Referent", fields: [["name", "Referent Name"], ["company", "Firma"]] },
     sponsors: { title: "Sponsor / Gastgeber", fields: [["name", "Name"], ["role", "Sponsor / Gastgeber"], ["address", "Adresse"], ["website", "Webseite"]] },
     members: { title: "Mitglied", fields: [["name", "Firmenname"], ["description", "Beschreibung"], ["website", "Website"], ["category", "Kategorie"], ["city", "Ort"], ["contactEmail", "Kontakt E-Mail"]] },
+    membershipApplications: { title: "Mitgliedsantrag", fields: [["company", "Unternehmen / Name"], ["legalForm", "Rechtsform"], ["street", "Strasse"], ["city", "PLZ / Ort"], ["country", "Land"], ["website", "Website"], ["firstName", "Vorname"], ["lastName", "Nachname"], ["position", "Position"], ["email", "E-Mail"], ["phone", "Telefon"], ["membershipType", "Mitgliedschaft: company oder individual"], ["companyDescription", "Kurzbeschreibung"], ["message", "Nachricht"], ["status", "Status"], ["submittedAt", "Eingegangen"]] },
     boardMembers: { title: "Vorstandsmitglied", fields: [["name", "Name"], ["role", "Funktion / Rolle"], ["company", "Unternehmen"], ["shortBio", "Kurzbeschreibung"], ["linkedIn", "LinkedIn"], ["website", "Website"]] },
-    editorialContent: { title: "Redaktioneller Inhalt", fields: [["title", "Seitentitel"], ["subtitle", "Untertitel"], ["introText", "Introtext"], ["bodyText", "Haupttext"], ["buttonText", "Button-Text"], ["buttonUrl", "Button-Link"], ["seoTitle", "SEO-Titel"], ["seoDescription", "SEO-Beschreibung"]] }
+    editorialContent: { title: "Redaktioneller Inhalt", fields: [["title", "Seitentitel"], ["page", "Bereich"], ["section", "Sektion"], ["key", "Inhaltsschluessel"], ["publishDate", "Datum"], ["validFrom", "Gueltig von"], ["validTo", "Gueltig bis (leer = unendlich)"], ["subtitle", "Untertitel"], ["introText", "Introtext"], ["bodyText", "Haupttext"], ["buttonText", "Button-Text"], ["buttonUrl", "Button-Link"], ["seoTitle", "SEO-Titel"], ["seoDescription", "SEO-Beschreibung"]] }
   };
   const definition = definitions[module];
   if (!definition) return dashboardPage();
-  const item = id === "new" ? { id: `${module}-${crypto.randomUUID()}`, status: module === "topics" ? "active" : "draft", visibility: "public" } : await getOne(module, id);
+  const item = id === "new" ? { id: `${module}-${crypto.randomUUID()}`, page: query.get("page") || "", section: query.get("section") || "", key: query.get("page") && query.get("section") ? `${query.get("page")}.${query.get("section")}` : "", category: module === "topics" ? "Thema" : "", status: module === "topics" ? "active" : "draft", visibility: "public" } : await getOne(module, id);
   const topicSpeakers = module === "topics" ? await list("speakers") : [];
+  if (module === "editorialContent" && ["press", "news"].includes(item.page || query.get("page"))) {
+    const sectionKey = item.page === "news" || query.get("page") === "news" ? "news" : "press";
+    const allEditorial = await list("editorialContent");
+    const categories = Array.from(new Set(allEditorial
+      .filter((entry) => entry.page === sectionKey)
+      .map((entry) => entry.category || (sectionKey === "press" ? "Presse" : "News"))
+      .filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    const categoryValue = item.category || (sectionKey === "press" ? "Presse" : "News");
+    const categoryOptions = Array.from(new Set([categoryValue, ...categories])).filter(Boolean);
+    const backPath = sectionKey === "press" ? "editorial/press" : "editorial/news";
+    return protect(cmsShell(`cms/${backPath}`, `${cmsTitle("Redaktion", sectionKey === "press" ? "Pressemeldung bearbeiten" : "News bearbeiten", `<a class="button button--secondary button--small" href="#/cms/${backPath}">Zurueck</a>`)}
+      <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid">
+        <input type="hidden" name="page" value="${escapeHtml(sectionKey)}">
+        <input type="hidden" name="section" value="${escapeHtml(sectionKey === "press" ? "pressRelease" : "news")}">
+        <input type="hidden" name="key" value="${escapeHtml(item.key || `${sectionKey}.${item.id}`)}">
+        <input type="hidden" name="validFrom" value="${escapeHtml(item.validFrom || item.publishDate || "")}">
+        <div class="form-grid--two">
+          <div class="field"><label>Datum der Veroeffentlichung</label><input type="date" name="publishDate" value="${escapeHtml(item.publishDate || "")}"></div>
+          <div class="field"><label>Enddatum der Gueltigkeit</label><input type="date" name="validTo" value="${escapeHtml(item.validTo || "")}"><p class="muted">Leer lassen = unendlich.</p></div>
+          <div class="field"><label>Kategorie</label><select name="category">${categoryOptions.map((category) => `<option value="${escapeHtml(category)}" ${category === categoryValue ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}</select></div>
+          <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="published" ${item.status === "published" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div>
+        </div>
+        <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(item.title || "")}" required>${aiFieldActions([{ action: "improveText", target: "title", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "title" }])}</div>
+        <div class="field"><label>Subtitel</label><input name="subtitle" value="${escapeHtml(item.subtitle || "")}">${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div>
+        <div class="field"><label>Haupttext</label><textarea name="bodyText" required>${escapeHtml(item.bodyText || "")}</textarea>${aiFieldActions([{ action: "improveText", target: "bodyText", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div>
+        <div class="field"><label>Optionaler Short Text</label><textarea name="introText">${escapeHtml(item.introText || "")}</textarea>${aiFieldActions([{ action: "shortenText", target: "introText", label: "Mit ChatGPT kuerzen", entityType: module, entityId: item.id, fieldName: "introText" }])}</div>
+        <div class="field"><label>Bild / Thumb optional</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultSize: "1200x675" })}</div>
+        ${sectionKey === "news" ? audioGenerationPanel("editorialContent", item) : ""}
+        <input type="hidden" name="visibility" value="${escapeHtml(item.visibility || "public")}">
+        <button class="button button--primary">Speichern</button><div id="content-save-result"></div>
+      </form></section>`));
+  }
   if (module === "topics") {
-    return protect(cmsShell("cms/topics", `${cmsTitle("Bearbeiten", "Thema pflegen", `<a class="button button--secondary button--small" href="#/cms/topics">Zurueck</a>`)}<section class="panel"><form id="topic-editor-form" data-topic-id="${item.id}" class="form-grid"><div class="form-grid--two"><div class="field"><label>Thema</label><input name="title" value="${escapeHtml(item.title || "")}" required></div><div class="field"><label>Kurze Beschreibung</label><textarea name="shortDescription">${escapeHtml(item.shortDescription || "")}</textarea></div></div>${topicSpeakerManager(item, topicSpeakers)}<div class="actions"><button class="button button--primary">Speichern</button></div><div id="topic-editor-result"></div></form></section>`));
+    return protect(cmsShell("cms/topics", `${cmsTitle("Redaktion", "Thema bearbeiten", `<a class="button button--secondary button--small" href="#/cms/topics">Zurueck</a>`)}
+      <section class="panel"><form id="topic-editor-form" data-topic-id="${item.id}" class="form-grid is-save-aware">
+        <div class="form-grid--two">
+          <div class="field"><label>Datum der Veroeffentlichung</label><input type="date" name="publishDate" value="${escapeHtml(item.publishDate || "")}"></div>
+          <div class="field"><label>Enddatum der Gueltigkeit</label><input type="date" name="validTo" value="${escapeHtml(item.validTo || "")}"><p class="muted">Leer lassen = unendlich.</p></div>
+          <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(item.category || "Thema")}"></div>
+          <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="active" ${item.status === "active" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="inactive" ${item.status === "inactive" ? "selected" : ""}>Inaktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div>
+        </div>
+        <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(item.title || "")}">${aiFieldActions([{ action: "improveText", target: "title", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "title" }])}</div>
+        <div class="field"><label>Subtitel</label><input name="subtitle" value="${escapeHtml(item.subtitle || "")}">${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div>
+        <div class="field"><label>Haupttext</label><textarea name="longDescription">${escapeHtml(item.longDescription || item.bodyText || "")}</textarea>${aiFieldActions([{ action: "generateTopicDescription", target: "longDescription", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "longDescription" }])}</div>
+        <div class="field"><label>Optionaler Short Text</label><textarea name="shortDescription">${escapeHtml(item.shortDescription || item.introText || "")}</textarea>${aiFieldActions([{ action: "shortenText", target: "shortDescription", label: "Mit ChatGPT kuerzen", entityType: module, entityId: item.id, fieldName: "shortDescription" }])}</div>
+        <div class="field"><label>Bild / Thumb optional</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: item.imageUrl || "", label: "Themenbild", defaultSize: "1200x675" })}</div>
+        ${audioGenerationPanel("topics", item)}
+        <div class="actions"><button class="button button--primary">Speichern</button></div><div id="topic-editor-result"></div>
+      </form></section>`));
   }
   if (module === "editorialContent" && (item.key === "home.hero" || item.id === "home-hero")) {
-    return protect(cmsShell("cms/editorial", `${cmsTitle("Startseite", "Hero bearbeiten", `<a class="button button--secondary button--small" href="#/cms/editorial">Zurueck</a>`)}
+    return protect(cmsShell("cms/editorial/interna", `${cmsTitle("Startseite", "Hero bearbeiten", `<a class="button button--secondary button--small" href="#/cms/editorial/interna">Zurueck</a>`)}
       <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid">
         <div class="field"><label>Claim / Eyebrow</label><input name="teaserText" value="${escapeHtml(item.teaserText || "PROdigitalTV")}"></div>
         <div class="field"><label>Hero-Headline</label><textarea name="title" required>${escapeHtml(item.title || "")}</textarea>${aiFieldActions([{ action: "improveText", target: "title", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "title" }])}</div>
@@ -391,6 +549,21 @@ export async function contentEditPage(module, id) {
         </div>
         <div class="field"><label>Hero-Bild optional</label><input type="file" name="assetFile" accept="image/*"><p class="muted">${item.imageUrl ? "Aktuelles Bild ist zugeordnet. Neue Auswahl ersetzt es beim Speichern." : "Bild ueber Dateiauswahl zuordnen."}</p></div>
         <div class="form-grid--two"><div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="published" ${item.status === "published" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Sichtbarkeit</label><select name="visibility"><option value="public" ${item.visibility === "public" ? "selected" : ""}>Oeffentlich</option><option value="members" ${item.visibility === "members" ? "selected" : ""}>Mitglieder</option><option value="internal" ${item.visibility === "internal" ? "selected" : ""}>Intern</option></select></div></div>
+        <button class="button button--primary">Speichern</button><div id="content-save-result"></div>
+      </form></section>`));
+  }
+  if (module === "editorialContent" && isInternalEditorialItem(item)) {
+    return protect(cmsShell("cms/editorial/interna", `${cmsTitle("Interna", "Textbaustein bearbeiten", `<a class="button button--secondary button--small" href="#/cms/editorial/interna">Zurueck</a>`)}
+      <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid form-grid--compact">
+        <input type="hidden" name="page" value="${escapeHtml(item.page || "")}">
+        <input type="hidden" name="section" value="${escapeHtml(item.section || "")}">
+        <input type="hidden" name="key" value="${escapeHtml(item.key || "")}">
+        <input type="hidden" name="status" value="published">
+        <input type="hidden" name="visibility" value="public">
+        <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(item.title || "")}">${aiFieldActions([{ action: "improveText", target: "title", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "title" }])}</div>
+        <div class="field"><label>Text</label><textarea name="bodyText">${escapeHtml(item.bodyText || "")}</textarea>${aiFieldActions([{ action: "improveText", target: "bodyText", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div>
+        <div class="field"><label>Bild oder PDF</label>${item.imageUrl ? `<div class="asset-preview"><img src="${escapeHtml(item.imageUrl)}" alt=""></div>` : item.documentUrl || item.assetUrl ? `<p><a class="link" href="${escapeHtml(item.documentUrl || item.assetUrl)}" target="_blank" rel="noreferrer">${escapeHtml(item.assetFileName || "Datei oeffnen")}</a></p>` : `<p class="muted">Noch keine Datei gespeichert.</p>`}<input type="file" name="assetFile" accept="image/*,.pdf,application/pdf"><label class="checkbox-line"><input type="checkbox" name="removeAssetFile" value="1"> Datei loeschen</label><p class="muted">Bilder und PDFs koennen hier als Baustein-Asset hinterlegt werden.</p></div>
+        <p class="muted">Baustein: ${escapeHtml(item.key || [item.page, item.section].filter(Boolean).join(" / ") || item.id)}</p>
         <button class="button button--primary">Speichern</button><div id="content-save-result"></div>
       </form></section>`));
   }
@@ -413,8 +586,9 @@ export async function contentEditPage(module, id) {
       : "";
   const speakerManager = module === "topics" ? topicSpeakerManager(item, topicSpeakers) : "";
   const activeStatus = ["topics", "members", "boardMembers"].includes(module) ? "active" : "published";
-  const backSection = { boardMembers: "board", editorialContent: "editorial", speakers: "speakers", sponsors: "sponsors" }[module] || module;
-  const activeSection = { topics: "cms/topics", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", boardMembers: "cms/board", editorialContent: "cms/editorial" }[module] || "cms/editorial";
+  const editorialBack = query.get("section") && editorialSections[query.get("section")] ? `editorial/${query.get("section")}` : item.page === "press" ? "editorial/press" : item.page === "news" ? "editorial/news" : module === "editorialContent" ? "editorial/interna" : "editorial";
+  const backSection = { boardMembers: "board", editorialContent: editorialBack, speakers: "speakers", sponsors: "sponsors" }[module] || module;
+  const activeSection = { topics: "cms/topics", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", boardMembers: "cms/board", editorialContent: `cms/${editorialBack}` }[module] || "cms/editorial";
   return protect(cmsShell(activeSection, `${cmsTitle("Bearbeiten", `${definition.title} pflegen`, `<a class="button button--secondary button--small" href="#/cms/${backSection}">Zurueck</a>`)}<section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid">${fieldHtml}${imageUpload}<div class="form-grid--two"><div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="${activeStatus}" ${item.status === activeStatus ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Sichtbarkeit</label><select name="visibility"><option value="public" ${item.visibility === "public" ? "selected" : ""}>Oeffentlich</option><option value="members" ${item.visibility === "members" ? "selected" : ""}>Mitglieder</option><option value="internal" ${item.visibility === "internal" ? "selected" : ""}>Intern</option></select></div></div><button class="button button--primary">Speichern</button><div id="content-save-result"></div></form></section>${speakerManager}`));
 }
 

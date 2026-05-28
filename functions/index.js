@@ -11,6 +11,8 @@ const region = "europe-west3";
 
 const openaiFunctions = require("./openaiFunctions");
 Object.assign(exports, openaiFunctions);
+const geminiTtsFunctions = require("./geminiTtsFunctions");
+Object.assign(exports, geminiTtsFunctions);
 
 function hashToken(token) {
   return createHash("sha256").update(token).digest("hex");

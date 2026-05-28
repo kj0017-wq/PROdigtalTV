@@ -21,6 +21,7 @@ function localDb() {
     mergeMissingDemoRecords(db, "members");
     mergeMissingDemoRecords(db, "events");
     mergeMissingDemoRecords(db, "eventMedia");
+    mergeMissingDemoRecords(db, "downloads");
     ["event-salzburg-red-bull-hangar7-2026", "event-berlinale-2026", "event-leica-welt-2026", "event-salzburg-2025"].forEach((eventId) => {
       const demoEvent = demoDatabase.events.find((event) => event.id === eventId);
       const localEvent = (db.events || []).find((event) => event.id === eventId);

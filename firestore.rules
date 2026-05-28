@@ -115,6 +115,18 @@ service cloud.firestore {
       allow update, delete: if editor();
     }
 
+    match /membershipApplications/{id} {
+      allow create: if request.resource.data.status == "new"
+        && request.resource.data.source == "website"
+        && request.resource.data.privacyAccepted == true
+        && request.resource.data.statutesAccepted == true
+        && request.resource.data.feeInfoAccepted == true
+        && request.resource.data.company is string
+        && request.resource.data.email is string
+        && !request.resource.data.keys().hasAny(["internalNote", "reviewedAt", "reviewedBy"]);
+      allow read, update, delete: if editor();
+    }
+
     match /mailQueue/{id} {
       allow read: if editor();
       allow write: if false;
