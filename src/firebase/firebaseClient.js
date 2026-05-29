@@ -2,10 +2,16 @@ import { firebaseConfig, useFirebase } from "./firebaseConfig.js";
 
 let servicesPromise;
 
+function timeout(ms) {
+  return new Promise((_, reject) => {
+    window.setTimeout(() => reject(new Error("Firebase konnte nicht rechtzeitig initialisiert werden.")), ms);
+  });
+}
+
 export async function getFirebaseServices() {
   if (!useFirebase) return null;
   if (!servicesPromise) {
-    servicesPromise = Promise.all([
+    servicesPromise = Promise.race([Promise.all([
       import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"),
       import("https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js"),
       import("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js"),
@@ -21,6 +27,10 @@ export async function getFirebaseServices() {
         functions: functions.getFunctions(app, "europe-west3"),
         firestore, authLib: auth, storageLib: storage, functionsLib: functions
       };
+    }), timeout(8000)]).catch((error) => {
+      console.warn(error);
+      servicesPromise = null;
+      return null;
     });
   }
   return servicesPromise;

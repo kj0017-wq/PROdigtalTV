@@ -29,10 +29,10 @@ function status(value) {
 
 function iconImage(name) {
   const icons = {
-    edit: "/assets/cms-icons/edit.png",
-    eye: "/assets/cms-icons/eye-on.png",
-    eyeOff: "/assets/cms-icons/eye-off.png",
-    trash: "/assets/cms-icons/trash.png"
+    edit: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAA+ElEQVR4AeyUwRHCIBBFE0vQAqJFeLIzG7Axj/ZgkrPWgP9nlkwCm0CA3HSyLizwnoOEQ7Xz5y+omqZ5Igzio+121hYB+gb0huBzQt+wMY1kAWCEn6cwtlH/MttIEgCiwgV6lDykzYIAvDLGvAayfG0STOFd19WAPYRjU9v3/dV2mKMFLpyLAbszS7SQXqQ9piiBBicBdXtqVDjnBAWAjH8ofmHNRQzUg3DOWxUAkgVfFZSALwpKwVVBSbgnKA33BCgMd0vKacFa9QmdoqijqJKlqAqwVbzfs+F0qAIOSCy+oTIeTDMB994J724JEp0JM4EzVqS7u+AHAAD//wiOVHUAAAAGSURBVAMAkZiJMfsBJ98AAAAASUVORK5CYII=",
+    eye: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAACjklEQVR4AeyTO28TQRDH92wZdwQngAzBDwkkJBKggA9AaJCoExEINTRQQcWr4FVBBQ3UBIKSGomG8AGgABIkJJD8IMEi73SOZV9+/83t6eLIujTpYu1PMzs7M/+bPV/C7PBvVyD2gmOvqFAojMAC+G3MF4vFS3EKHQVoNg4+Dd5AN7SvHt/3x5QD4+2Hbr9FIJ/PZyhQ48Eg6Wer1bpQLpe9cgTOzsM0aA2qJpfLHdYmyiYBRj7ned6iEni6atCwL5lMfqfBCrhrWkT0F+f94JE/AyaRSMyoh3xHKCB1mk4GB88rlUpePhOdIf4Pfy+4lVEzavoVQOQI9iUYciepycgXoYAKFIB3FNzG2sVEX+TU6/WDxO018fTHFKPmh6zg7CbNX8unxt6CfCvA6He1gTUSr2DtIn7ROsY8rdVqc4FvqtXqH/wnYCI5hqmvE2uA4g9lrQDOYzAod8k6eKLT8rGjslGYYkx7zmyOfNFoNPbJwn0wTuCeNiSvyDoQ/CYfOyIbhesZ1p4zmyNfpFKpZVl4BBsCXIsdl8AeRn6LtYv4B+sYcyebzR4IfMPLPYpvrzWSY3i5r4inwBB/IOsmMIzcqwBcRuQZ1i6mOisnnU7/J27/pjz9b8WoOSkrOHvBNNfkUxN+mKEAL26WhAElwC2epoLVi/tK/BD+Kri1RPNeaqYUoPlf7A3QexzgZS/JF6GANqVS6bNTp2mOQj3xdLPZPMXIXWD/pthupjjO+RToq7fTS1Q91MuxSUBBqdNAX+eE9nCCZh/VKArxT9AHWhOqYaJZbaJsEXCHFAyBhK4SCz8cfLcWmHJYOTDkgu22o4BLpHgUesBdj7P7uY73Lq+TjRXoVLjd+K5A7E2tAwAA//+mcuG+AAAABklEQVQDAIijNECIR6TkAAAAAElFTkSuQmCC",
+    eyeOff: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAACtUlEQVR4AdyUu4tTQRTG5yZEJQSjrCnUPISgKRQbRdTCQrGxc0Es/A8EqxVUcFFUUFC30n9hi+21UmHXwsIVRGGLLUyyeYCFi6/AQl7+viEz3JvVWGy22XC+ex5zzvlmzp2bmNnk3xYiKBQKa/l8/u64J2ZHlM1mj9J4exAEd4ZJIJ4EP0B/CN/JvUTdSLEE9Xr9E1mngfkLyUPiO8GwpMmdG5C+Hl50viWQU61W3/X7/fOyKfQnIV6KxWIH0EEY5Jwi/73ywVkRMYmD2BHxBIpStE1awPYk5XK5yjgW1GSA1W63u8LvhEjJbwATj8eXc7ncGdkOngD2/QRfAMkDPcIkNFPhF8XBbk7VoNkRbANJFv0MGOLzmUwmJVvwBLDXFQAzFExz/MPYkXdCvAiCdrud1xrNPksLxK9R80h2Mpn8JS1YAo49LQeskTiFNux4CT0JIiTym81mDf0YGGovSAvU3ILkt2zit6UtAcY9YBKJxC5pB5JLzg6PSzH8WWlydMVlWqRSqQlrGHNf2hFcl8PRv0o70ETX17mRk1QqlY8sLEPwCu2l1WqVB85TaUvAWKxDIM3RnqOtEH9pjdADUn+7WC/VarVFt0ytRr1PPmt205ZAgU6ns0caXCXxCdoKOzxujdAjTOLCXOMb2HbU1BSxrXiCRqPxrdfr6SpqYYqCFRm8uA803Iv9E3gh5k+iIP5FaZpfpsZdZ+MJtMhx3/Ie7BWkIMdJ9P+zyEd1iCOngf2a3UbI8SSsnaR5keZz6uUQIVBQV5DkAPsNkBzjvs8PyETYx1/QghAmobnfudaEdQQKCpCcAyK6gh8ZD75klYf9ZsIkxCLyTwKXBcks8OPBtmNCT4AZxrLui3e10v8lUNIoMJalUSQbJhD5EMlNxRzGQqBmjoSx7ZDvMDYCNRSJdBh/AAAA///ZsAk1AAAABklEQVQDABUiTEDAfB/UAAAAAElFTkSuQmCC",
+    trash: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAlElEQVR4AeyUXQqAIBCE2y7iWbp5R1lP0s/DQLQTjpFEZCCj267fOoLj0Pj7CSCltCQyFHeDRTUbKbkBoHRVkxMAOWfDBvtcGcd8zKEBgB9PqQSA14Ce14gzlQCsUI11QNGpbtFHLMJzgXbPa8SZvnvJeBJKyjpHjJ7AzCYkqGoXNRTg7jN8VtW3GtYMBbDEu7HmgBUAAP//nstLKAAAAAZJREFUAwAtM3oxRhnWAgAAAABJRU5ErkJggg=="
   };
   return icons[name] ? `<img src="${icons[name]}" alt="" loading="lazy">` : "";
 }
@@ -47,6 +47,50 @@ function editorialActionButtons(item, section, module, activeStatus, inactiveSta
 
 function editorialListStatus(item) {
   return status(["published", "active", "approved"].includes(item.status) ? "active" : "inactive");
+}
+
+function galleryPlayerButton(gallery, label = "Galerie abspielen") {
+  const images = Array.isArray(gallery.images)
+    ? gallery.images.filter((image) => image.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+    : [];
+  if (!images.length) return "";
+  const payload = escapeHtml(JSON.stringify({
+    title: gallery.title || "Bildergalerie",
+    images: images.map((image) => ({
+      url: image.url,
+      caption: image.caption || image.title || "",
+      altText: image.altText || image.caption || gallery.title || "Galeriebild"
+    }))
+  }));
+  return `<button class="gallery-play-button" type="button" data-gallery-play data-gallery-payload="${payload}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"><span aria-hidden="true"></span></button>`;
+}
+
+function galleryActionButtons(item, section) {
+  const isVisible = item.status === "published" && (item.visibility || "public") === "public";
+  const nextVisibility = isVisible ? "internal" : "public";
+  const nextStatus = isVisible ? item.status : "published";
+  const toggleClass = isVisible ? "icon-button--visible" : "icon-button--hidden";
+  const toggleLabel = isVisible ? "Sichtbar: ausblenden" : "Unsichtbar: sichtbar machen";
+  return `<div class="table-actions table-actions--icons">${galleryPlayerButton(item)}<a class="icon-button icon-button--edit" href="#/cms/edit?module=galleries&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-record-visibility="galleries" data-record-id="${item.id}" data-visibility="${nextVisibility}" data-status="${nextStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isVisible ? "eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="galleries" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
+}
+
+function galleryPayloadAttribute(gallery) {
+  const images = Array.isArray(gallery.images)
+    ? gallery.images.filter((image) => image.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+    : [];
+  return escapeHtml(JSON.stringify({
+    title: gallery.title || "Bildergalerie",
+    images: images.map((image) => ({
+      url: image.url,
+      caption: image.caption || image.title || "",
+      altText: image.altText || image.caption || gallery.title || "Galeriebild"
+    }))
+  }));
+}
+
+function galleryListStatus(item) {
+  const isVisible = item.status === "published" && (item.visibility || "public") === "public";
+  return status(isVisible ? "active" : "inactive");
 }
 
 function listDate(item) {
@@ -66,7 +110,10 @@ function audioGenerationPanel(collection, item) {
   return `<div class="audio-generation-panel">
     <div><label>Audio / Vorlesen</label><p class="muted">${item.audioUrl ? "Audio ist gespeichert und wird im Frontend abgespielt." : "Noch kein Audio gespeichert. Bitte Text speichern, dann Audio erzeugen."}</p></div>
     ${item.audioUrl ? `<audio controls preload="none" src="${escapeHtml(item.audioUrl)}"></audio>` : ""}
-    <button type="button" class="button button--secondary button--small" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}">${item.audioUrl ? "Audio neu erzeugen" : "Audio erzeugen und speichern"}</button>
+    <div class="tool-button-row">
+      <button type="button" class="button button--secondary button--small" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}">${item.audioUrl ? "Audio neu erzeugen" : "Audio erzeugen und speichern"}</button>
+      ${item.audioUrl ? `<button type="button" class="icon-button icon-button--danger" data-clear-linked-media="audio" title="Audio-Verknuepfung loesen" aria-label="Audio-Verknuepfung loesen">${iconImage("trash")}</button>` : ""}
+    </div>
     <div class="audio-generation-panel__result" data-speech-result></div>
   </div>`;
 }
@@ -179,16 +226,35 @@ function topicThumb(topic) {
     : `<span>Bild</span>`;
 }
 
-function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", defaultSize = "240x180" }) {
+function galleryThumb(gallery) {
+  const images = Array.isArray(gallery.images) ? gallery.images : [];
+  const first = images
+    .filter((image) => image.url)
+    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))[0];
+  return first?.url
+    ? `<img src="${escapeHtml(first.url)}" alt="">`
+    : `<span>Galerie</span>`;
+}
+
+function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", defaultSize = "240x180", aiCollage = false }) {
   return `<div class="image-dropzone" data-image-dropzone>
     <input type="hidden" name="${removeName}" value="">
     <input type="hidden" name="${inputName}DataUrl" value="">
     <input type="hidden" name="${inputName}FileName" value="">
     <input class="image-dropzone__input" type="file" name="${inputName}" accept="image/*">
+    ${aiCollage ? `<div class="image-mode-switch" role="group" aria-label="Bildquelle waehlen">
+      <button class="is-active" type="button" data-image-mode="upload">Bild hochladen</button>
+      <button type="button" data-image-mode="ai">Bild erzeugen</button>
+    </div>` : ""}
+    <div data-image-mode-panel="upload">
+    <div class="image-dropzone__header">
+      <div><strong>${escapeHtml(label)} hochladen</strong><p>Drag-and-drop, Klick auf die Vorschau oder Datei auswaehlen.</p></div>
+    </div>
     <div class="image-dropzone__preview ${imageUrl ? "has-image" : ""}" data-image-preview>
       ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="">` : `<span>${escapeHtml(label)} per Drag-and-drop oder Klick hochladen</span>`}
     </div>
-    <button type="button" class="image-dropzone__remove" data-image-remove aria-label="Bild entfernen">x</button>
+    </div>
+    <button type="button" class="image-dropzone__remove" data-image-remove aria-label="Bild-Verknuepfung loesen" title="Bild-Verknuepfung loesen">${iconImage("trash")}</button>
     <div class="image-dropzone__tools" data-image-tools hidden>
       <label>Zoom <input type="range" min="0.5" max="3" step="0.01" value="1" data-image-zoom></label>
       <label>Aufloesung <select data-image-size>
@@ -197,6 +263,11 @@ function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", d
       <button type="button" class="button button--secondary button--small" data-image-crop>Crop anwenden</button>
     </div>
     <p class="muted" data-image-resolution>Ausgabeformat: ${escapeHtml(defaultSize.replace("x", " x "))} px.</p>
+    ${aiCollage ? `<div class="image-dropzone__ai" data-image-mode-panel="ai" hidden>
+      <label>KI-Collage erzeugen</label>
+      <textarea name="${inputName}AiPrompt" data-ai-image-prompt placeholder="Optional: Motiv, Stil oder Schwerpunkt fuer die Collage beschreiben. Leer lassen = aus Titel, Subtitel und Text ableiten."></textarea>
+      <button class="button button--secondary button--small" type="button" data-ai-image-generate>KI-Collage als Thumb erzeugen</button>
+    </div>` : ""}
     <p class="image-dropzone__status" data-image-status>${imageUrl ? "Bild ist gespeichert." : "Kein Bild gespeichert."}</p>
   </div>`;
 }
@@ -430,6 +501,7 @@ export async function moduleListPage(module, section = "all") {
     membershipApplications: ["Mitgliedsantraege", "Antrag", "company", "email"],
     boardMembers: ["Vorstandsgalerie", "Vorstandsmitglied", "name", "role"],
     editorialContent: ["Redaktion / Seiteninhalte", "Inhalt", "title", "page"],
+    galleries: ["Bildergalerien", "Galerie", "title", "description"],
     mailQueue: ["Mail-Queue", "Mail", "to", "subject"],
     eventMedia: ["Event-Nachlauf / Medien", "Medium", "title", "visibility"]
   }[module];
@@ -442,17 +514,20 @@ export async function moduleListPage(module, section = "all") {
       if (dateA || dateB) return String(dateB).localeCompare(String(dateA));
       return Number(b.sortOrder || 0) - Number(a.sortOrder || 0);
     });
-  const active = editorialConfig?.active || { topics: "cms/topics", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", membershipApplications: "cms/membership-applications", boardMembers: "cms/board", editorialContent: "cms/editorial", mailQueue: "cms/mail", eventMedia: "cms/followup" }[module];
+  const active = editorialConfig?.active || { topics: "cms/topics", galleries: "cms/galleries", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", membershipApplications: "cms/membership-applications", boardMembers: "cms/board", editorialContent: "cms/editorial", mailQueue: "cms/mail", eventMedia: "cms/followup" }[module];
   const editable = !["mailQueue", "eventMedia"].includes(module);
   const manageable = module !== "mailQueue";
-  const inactiveStatus = module === "editorialContent" || module === "eventMedia" || module === "speakers" || module === "sponsors" ? "archived" : "inactive";
-  const activeStatus = ["editorialContent", "speakers", "sponsors"].includes(module) ? "published" : module === "eventMedia" ? "approved" : "active";
+  const inactiveStatus = module === "editorialContent" || module === "eventMedia" || module === "speakers" || module === "sponsors" || module === "galleries" ? "archived" : "inactive";
+  const activeStatus = ["editorialContent", "speakers", "sponsors", "galleries"].includes(module) ? "published" : module === "eventMedia" ? "approved" : "active";
   const title = editorialConfig?.title || config[0];
   const itemLabel = editorialConfig?.itemLabel || config[1];
   const createParams = editorialConfig?.createParams || "";
   const emptyText = editorialConfig ? `Noch keine Inhalte in ${escapeHtml(title)}.` : "Noch keine Eintraege vorhanden.";
   if (module === "topics") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--topics"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table">${topicThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>Thema</td><td>${audioListCell("topics", item)}</td><td>${editorialListStatus(item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="7">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+  }
+  if (module === "galleries") {
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--galleries"><thead><tr><th>Bild</th><th>Titel</th><th>Bilder</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table gallery-thumb--table">${galleryThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a><small>${escapeHtml(shortText(item.description || "-", 90))}</small></td><td>${(item.images || []).length}</td><td>${galleryListStatus(item)}</td><td>${galleryActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="5">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "editorialContent") {
     const showAudio = section === "news";
@@ -479,15 +554,40 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
     members: { title: "Mitglied", fields: [["name", "Firmenname"], ["description", "Beschreibung"], ["website", "Website"], ["category", "Kategorie"], ["city", "Ort"], ["contactEmail", "Kontakt E-Mail"]] },
     membershipApplications: { title: "Mitgliedsantrag", fields: [["company", "Unternehmen / Name"], ["legalForm", "Rechtsform"], ["street", "Strasse"], ["city", "PLZ / Ort"], ["country", "Land"], ["website", "Website"], ["firstName", "Vorname"], ["lastName", "Nachname"], ["position", "Position"], ["email", "E-Mail"], ["phone", "Telefon"], ["membershipType", "Mitgliedschaft: company oder individual"], ["companyDescription", "Kurzbeschreibung"], ["message", "Nachricht"], ["status", "Status"], ["submittedAt", "Eingegangen"]] },
     boardMembers: { title: "Vorstandsmitglied", fields: [["name", "Name"], ["role", "Funktion / Rolle"], ["company", "Unternehmen"], ["shortBio", "Kurzbeschreibung"], ["linkedIn", "LinkedIn"], ["website", "Website"]] },
+    galleries: { title: "Bildergalerie", fields: [["title", "Titel"], ["description", "Beschreibung"]] },
     editorialContent: { title: "Redaktioneller Inhalt", fields: [["title", "Seitentitel"], ["page", "Bereich"], ["section", "Sektion"], ["key", "Inhaltsschluessel"], ["publishDate", "Datum"], ["validFrom", "Gueltig von"], ["validTo", "Gueltig bis (leer = unendlich)"], ["subtitle", "Untertitel"], ["introText", "Introtext"], ["bodyText", "Haupttext"], ["buttonText", "Button-Text"], ["buttonUrl", "Button-Link"], ["seoTitle", "SEO-Titel"], ["seoDescription", "SEO-Beschreibung"]] }
   };
   const definition = definitions[module];
   if (!definition) return dashboardPage();
-  const item = id === "new" ? { id: `${module}-${crypto.randomUUID()}`, page: query.get("page") || "", section: query.get("section") || "", key: query.get("page") && query.get("section") ? `${query.get("page")}.${query.get("section")}` : "", category: module === "topics" ? "Thema" : "", status: module === "topics" ? "active" : "draft", visibility: "public" } : await getOne(module, id);
+  const fallbackItem = { id, page: query.get("page") || "", section: query.get("section") || "", key: query.get("page") && query.get("section") ? `${query.get("page")}.${query.get("section")}` : "", category: module === "topics" ? "Thema" : "", title: id, status: module === "topics" ? "active" : module === "galleries" ? "published" : "draft", visibility: "public", images: [], createdAt: new Date().toISOString() };
+  const item = id === "new" ? { ...fallbackItem, id: `${module}-${crypto.randomUUID()}` } : (await getOne(module, id)) || fallbackItem;
   const topicSpeakers = module === "topics" ? await list("speakers") : [];
+  if (module === "galleries") {
+    const images = Array.isArray(item.images) ? item.images.slice().sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)) : [];
+    return protect(cmsShell("cms/galleries", `${cmsTitle("Bildergalerien", "Galerie bearbeiten", `<a class="button button--secondary button--small" href="#/cms/galleries">Zurueck</a>`)}
+      <section class="panel"><form id="gallery-edit-form" data-gallery-id="${escapeHtml(item.id)}" class="form-grid">
+        <div class="form-grid--two">
+          <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(item.title || "")}" required></div>
+          <div class="field"><label>Status</label><select name="status"><option value="published" ${item.status === "published" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div>
+        </div>
+        <div class="field"><label>Beschreibung</label><textarea name="description">${escapeHtml(item.description || "")}</textarea></div>
+        <input type="hidden" name="visibility" value="${escapeHtml(item.visibility || "public")}">
+        <section class="gallery-editor">
+          <div class="gallery-editor__head"><div><p class="eyebrow">Bilder</p><h3>${images.length} Bilder in dieser Galerie</h3></div><label class="button button--secondary button--small">Bilder hochladen<input type="file" name="galleryImages" accept="image/*" multiple hidden></label></div>
+          <label class="gallery-dropzone" data-gallery-dropzone>
+            <strong>Bilder hier ablegen</strong>
+            <span>Drag-and-drop oder Klick zum Auswaehlen. Mehrere Bilder sind moeglich.</span>
+            <input type="file" name="galleryImagesDrop" accept="image/*" multiple hidden>
+          </label>
+          <p class="muted">Reihenfolge: Bildkarten ziehen und vor dem Speichern neu anordnen.</p>
+          <div class="gallery-editor__grid" data-gallery-sortable>${images.length ? images.map((image, index) => `<article class="gallery-editor__item" draggable="true" data-gallery-image-item><button class="gallery-editor__drag" type="button" aria-label="Bild verschieben">↕</button><img src="${escapeHtml(image.url)}" alt=""><input type="hidden" name="image-${index}-id" value="${escapeHtml(image.id || "")}"><input type="hidden" name="image-${index}-url" value="${escapeHtml(image.url || "")}"><input type="hidden" name="image-${index}-storagePath" value="${escapeHtml(image.storagePath || "")}"><input type="hidden" name="image-${index}-fileName" value="${escapeHtml(image.fileName || "")}"><div class="field"><label>Bildtitel / Caption</label><input name="image-${index}-caption" value="${escapeHtml(image.caption || image.title || "")}"></div><div class="field"><label>Alt-Text</label><input name="image-${index}-altText" value="${escapeHtml(image.altText || image.fileName || "")}"></div><label class="checkbox-line"><input type="checkbox" name="image-${index}-remove"> Bild aus Galerie entfernen</label></article>`).join("") : `<div class="alert">Noch keine Bilder. Bitte Bilder hochladen und speichern.</div>`}</div>
+        </section>
+        <button class="button button--primary">Galerie speichern</button><div id="gallery-save-result"></div>
+      </form></section>`));
+  }
   if (module === "editorialContent" && ["press", "news"].includes(item.page || query.get("page"))) {
     const sectionKey = item.page === "news" || query.get("page") === "news" ? "news" : "press";
-    const allEditorial = await list("editorialContent");
+    const [allEditorial, events, sponsors, galleries] = await Promise.all([list("editorialContent"), list("events"), list("sponsors"), list("galleries")]);
     const categories = Array.from(new Set(allEditorial
       .filter((entry) => entry.page === sectionKey)
       .map((entry) => entry.category || (sectionKey === "press" ? "Presse" : "News"))
@@ -495,6 +595,27 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
     const categoryValue = item.category || (sectionKey === "press" ? "Presse" : "News");
     const categoryOptions = Array.from(new Set([categoryValue, ...categories])).filter(Boolean);
     const backPath = sectionKey === "press" ? "editorial/press" : "editorial/news";
+    const retrospectivePrompt = item.retrospectivePrompt || "Erstelle aus der vorhandenen Pressemitteilung oder Einladung einen redaktionellen Rueckblick als Fliesstext. Formuliere konsequent in der Vergangenheit. Beginne nach Moeglichkeit konkret: Am [Datum] fand das [Eventtitel] bei [Gastgeber] im [Ort/Location] statt. Im Mittelpunkt standen [Themen]. Verwende Präteritum oder Perfekt, zum Beispiel: fand statt, diskutierten, standen im Mittelpunkt, bot, zeigte, erörterten. Verwende keine Zukunftsform, keine Einladung, keine Anmeldung und keine Formulierungen wie findet statt, wird stattfinden, lädt ein, melden Sie sich an. Schreibe sachlich, hochwertig und nachtraeglich berichtend. Nutze nur belegte Informationen.";
+    const eventOptions = [`<option value="">Kein Event verknuepfen</option>`, ...events
+      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
+      .map((event) => `<option value="${escapeHtml(event.id)}" ${item.linkedEventId === event.id ? "selected" : ""}>${escapeHtml([event.date, event.title].filter(Boolean).join(" · "))}</option>`)].join("");
+    const sponsorOptions = [`<option value="">Kein Sponsorlogo</option>`, ...sponsors
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
+      .map((sponsor) => `<option value="${escapeHtml(sponsor.id)}" ${item.sponsorId === sponsor.id ? "selected" : ""}>${escapeHtml([sponsor.name, sponsor.role].filter(Boolean).join(" · "))}</option>`)].join("");
+    const galleryOptions = [`<option value="">Keine Galerie</option>`, ...galleries
+      .filter((gallery) => gallery.status !== "archived")
+      .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")))
+      .map((gallery) => `<option value="${escapeHtml(gallery.id)}" data-gallery-payload="${galleryPayloadAttribute(gallery)}" ${item.galleryId === gallery.id ? "selected" : ""}>${escapeHtml(gallery.title || gallery.id)} (${(gallery.images || []).length})</option>`)].join("");
+    const selectedGallery = item.galleryId ? galleries.find((gallery) => gallery.id === item.galleryId) : null;
+    const selectedGalleryPreview = selectedGallery
+      ? `<div class="editor-gallery-preview" data-editor-gallery-preview>
+          <div>
+            <strong>${escapeHtml(selectedGallery.title || "Bildergalerie")}</strong>
+            <span>${(selectedGallery.images || []).length} Bilder</span>
+          </div>
+          ${galleryPlayerButton(selectedGallery, "Galerie abspielen")}
+        </div>`
+      : `<div class="editor-gallery-preview editor-gallery-preview--empty" data-editor-gallery-preview><p class="muted">Keine Galerie ausgewaehlt. Nach dem Speichern erscheint hier der Playbutton fuer die verknuepfte Galerie.</p></div>`;
     return protect(cmsShell(`cms/${backPath}`, `${cmsTitle("Redaktion", sectionKey === "press" ? "Pressemeldung bearbeiten" : "News bearbeiten", `<a class="button button--secondary button--small" href="#/cms/${backPath}">Zurueck</a>`)}
       <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid">
         <input type="hidden" name="page" value="${escapeHtml(sectionKey)}">
@@ -507,17 +628,58 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
           <div class="field"><label>Kategorie</label><select name="category">${categoryOptions.map((category) => `<option value="${escapeHtml(category)}" ${category === categoryValue ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}</select></div>
           <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="published" ${item.status === "published" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div>
         </div>
-        <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(item.title || "")}" required>${aiFieldActions([{ action: "improveText", target: "title", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "title" }])}</div>
-        <div class="field"><label>Subtitel</label><input name="subtitle" value="${escapeHtml(item.subtitle || "")}">${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div>
-        <div class="field"><label>Haupttext</label><textarea name="bodyText" required>${escapeHtml(item.bodyText || "")}</textarea>${aiFieldActions([{ action: "improveText", target: "bodyText", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div>
-        <div class="field"><label>Optionaler Short Text</label><textarea name="introText">${escapeHtml(item.introText || "")}</textarea>${aiFieldActions([{ action: "shortenText", target: "introText", label: "Mit ChatGPT kuerzen", entityType: module, entityId: item.id, fieldName: "introText" }])}</div>
-        <div class="field"><label>Bild / Thumb optional</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultSize: "1200x675" })}</div>
-        ${sectionKey === "news" ? audioGenerationPanel("editorialContent", item) : ""}
+        <div class="editorial-workspace">
+          <div class="editorial-workspace__main">
+            <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(item.title || "")}" required>${aiFieldActions([{ action: "improveText", target: "title", label: "Headline erzeugen", entityType: module, entityId: item.id, fieldName: "title" }])}</div>
+            <div class="field"><label>Subtitel</label><input name="subtitle" value="${escapeHtml(item.subtitle || "")}">${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Subline erzeugen", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div>
+            <div class="field"><label>Haupttext</label><textarea name="bodyText" required>${escapeHtml(item.bodyText || "")}</textarea>${aiFieldActions([{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div>
+            <div class="field"><label>Optionaler Short Text</label><textarea name="introText">${escapeHtml(item.introText || "")}</textarea>${aiFieldActions([{ action: "shortenText", target: "introText", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "introText" }])}</div>
+          </div>
+          <aside class="editorial-tools">
+            <div class="editorial-tools__head"><p class="eyebrow">Werkzeuge</p><h3>Medien & KI</h3></div>
+            <section class="retrospective-tool">
+              <div class="field"><label>Rückblick-Prompt</label><textarea name="retrospectivePrompt">${escapeHtml(retrospectivePrompt)}</textarea></div>
+              <div class="field"><label>Event-Bezug</label><select name="linkedEventId">${eventOptions}</select></div>
+              <div class="field"><label>Sponsorlogo</label><select name="sponsorId">${sponsorOptions}</select></div>
+              <div class="editor-tool-section editor-tool-section--gallery">
+                <div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Eine ausgewaehlte Galerie wird im Artikel als Playbutton mit Slideshow-Layer eingebunden.</p></div>
+                ${selectedGalleryPreview}
+                <div class="tool-button-row">
+                  <button class="button button--secondary button--small" type="button" data-save-gallery-link>Galerie verknuepfen</button>
+                  <button class="icon-button icon-button--danger" type="button" data-clear-linked-media="gallery" title="Galerie-Verknuepfung loesen" aria-label="Galerie-Verknuepfung loesen">${iconImage("trash")}</button>
+                </div>
+                <div class="gallery-link-result" data-gallery-link-result></div>
+              </div>
+              <label class="checkbox-line"><input type="checkbox" name="isRetrospective" ${item.isRetrospective ? "checked" : ""}> Unter Rückblicke / Event-Nachlauf anzeigen</label>
+              <label class="checkbox-line"><input type="checkbox" name="showGallery" ${item.showGallery ? "checked" : ""}> Bildergalerie aus Event-Medien anzeigen</label>
+              <input type="hidden" name="galleryEventId" value="${escapeHtml(item.galleryEventId || item.linkedEventId || "")}">
+              <p class="muted">Im Rückblick-Modus formuliert ChatGPT Headline, Subline und Haupttext als nachträgliche Berichterstattung über das vergangene Event.</p>
+              ${aiFieldActions([{ action: "generateEventRetrospective", target: "bodyText", label: "Rückblick-Fliesstext erzeugen", entityType: module, entityId: item.id, fieldName: "bodyText" }])}
+            </section>
+            <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultSize: "1200x675", aiCollage: true })}</div></div>
+            <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("editorialContent", item)}</div>
+          </aside>
+        </div>
         <input type="hidden" name="visibility" value="${escapeHtml(item.visibility || "public")}">
         <button class="button button--primary">Speichern</button><div id="content-save-result"></div>
       </form></section>`));
   }
   if (module === "topics") {
+    const galleries = await list("galleries");
+    const galleryOptions = [`<option value="">Keine Galerie</option>`, ...galleries
+      .filter((gallery) => gallery.status !== "archived")
+      .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")))
+      .map((gallery) => `<option value="${escapeHtml(gallery.id)}" data-gallery-payload="${galleryPayloadAttribute(gallery)}" ${item.galleryId === gallery.id ? "selected" : ""}>${escapeHtml(gallery.title || gallery.id)} (${(gallery.images || []).length})</option>`)].join("");
+    const selectedGallery = item.galleryId ? galleries.find((gallery) => gallery.id === item.galleryId) : null;
+    const selectedGalleryPreview = selectedGallery
+      ? `<div class="editor-gallery-preview" data-editor-gallery-preview>
+          <div>
+            <strong>${escapeHtml(selectedGallery.title || "Bildergalerie")}</strong>
+            <span>${(selectedGallery.images || []).length} Bilder</span>
+          </div>
+          ${galleryPlayerButton(selectedGallery, "Galerie abspielen")}
+        </div>`
+      : `<div class="editor-gallery-preview editor-gallery-preview--empty" data-editor-gallery-preview><p class="muted">Keine Galerie verknuepft. Galerie auswaehlen, speichern, danach kann sie hier abgespielt werden.</p></div>`;
     return protect(cmsShell("cms/topics", `${cmsTitle("Redaktion", "Thema bearbeiten", `<a class="button button--secondary button--small" href="#/cms/topics">Zurueck</a>`)}
       <section class="panel"><form id="topic-editor-form" data-topic-id="${item.id}" class="form-grid is-save-aware">
         <div class="form-grid--two">
@@ -526,12 +688,28 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
           <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(item.category || "Thema")}"></div>
           <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="active" ${item.status === "active" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="inactive" ${item.status === "inactive" ? "selected" : ""}>Inaktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div>
         </div>
-        <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(item.title || "")}">${aiFieldActions([{ action: "improveText", target: "title", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "title" }])}</div>
-        <div class="field"><label>Subtitel</label><input name="subtitle" value="${escapeHtml(item.subtitle || "")}">${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div>
-        <div class="field"><label>Haupttext</label><textarea name="longDescription">${escapeHtml(item.longDescription || item.bodyText || "")}</textarea>${aiFieldActions([{ action: "generateTopicDescription", target: "longDescription", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "longDescription" }])}</div>
-        <div class="field"><label>Optionaler Short Text</label><textarea name="shortDescription">${escapeHtml(item.shortDescription || item.introText || "")}</textarea>${aiFieldActions([{ action: "shortenText", target: "shortDescription", label: "Mit ChatGPT kuerzen", entityType: module, entityId: item.id, fieldName: "shortDescription" }])}</div>
-        <div class="field"><label>Bild / Thumb optional</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: item.imageUrl || "", label: "Themenbild", defaultSize: "1200x675" })}</div>
-        ${audioGenerationPanel("topics", item)}
+        <div class="editorial-workspace">
+          <div class="editorial-workspace__main">
+            <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(item.title || "")}">${aiFieldActions([{ action: "improveText", target: "title", label: "Headline erzeugen", entityType: module, entityId: item.id, fieldName: "title" }])}</div>
+            <div class="field"><label>Subtitel</label><input name="subtitle" value="${escapeHtml(item.subtitle || "")}">${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Subline erzeugen", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div>
+            <div class="field"><label>Haupttext</label><textarea name="longDescription">${escapeHtml(item.longDescription || item.bodyText || "")}</textarea>${aiFieldActions([{ action: "generateTopicDescription", target: "longDescription", label: "Text erzeugen", entityType: module, entityId: item.id, fieldName: "longDescription" }])}</div>
+            <div class="field"><label>Optionaler Short Text</label><textarea name="shortDescription">${escapeHtml(item.shortDescription || item.introText || "")}</textarea>${aiFieldActions([{ action: "shortenText", target: "shortDescription", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "shortDescription" }])}</div>
+          </div>
+          <aside class="editorial-tools">
+            <div class="editorial-tools__head"><p class="eyebrow">Werkzeuge</p><h3>Thumb, Audio & Galerie</h3></div>
+            <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: item.imageUrl || "", label: "Themenbild", defaultSize: "1200x675", aiCollage: true })}</div></div>
+            <div class="editor-tool-section editor-tool-section--gallery">
+              <div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Die Galerie wird mit dem Thema verknuepft und im Frontend als Slideshow-Playbutton angezeigt.</p></div>
+              ${selectedGalleryPreview}
+              <div class="tool-button-row">
+                <button class="button button--secondary button--small" type="button" data-save-gallery-link>Galerie verknuepfen</button>
+                <button class="icon-button icon-button--danger" type="button" data-clear-linked-media="gallery" title="Galerie-Verknuepfung loesen" aria-label="Galerie-Verknuepfung loesen">${iconImage("trash")}</button>
+              </div>
+              <div class="gallery-link-result" data-gallery-link-result></div>
+            </div>
+            <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("topics", item)}</div>
+          </aside>
+        </div>
         <div class="actions"><button class="button button--primary">Speichern</button></div><div id="topic-editor-result"></div>
       </form></section>`));
   }

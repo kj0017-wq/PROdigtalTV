@@ -6,16 +6,28 @@
     <meta name="theme-color" content="#071a33">
     <meta name="description" content="PROdigitalTV CMS">
     <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/src/styles/main.css">
+    <link rel="stylesheet" href="/src/styles/main.css?v=166">
     <title>PROdigitalTV | CMS</title>
   </head>
   <body>
     <div id="app" aria-live="polite"></div>
     <script>
+      window.addEventListener("error", (event) => {
+        const app = document.getElementById("app");
+        if (app && !app.innerHTML) {
+          app.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS Fehler</p><h1>Modul konnte nicht geladen werden</h1><p>${String(event.message || "Unbekannter Fehler")}</p></div></section>`;
+        }
+      });
+      window.addEventListener("unhandledrejection", (event) => {
+        const app = document.getElementById("app");
+        if (app && !app.innerHTML) {
+          app.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS Fehler</p><h1>Modul konnte nicht geladen werden</h1><p>${String(event.reason?.message || event.reason || "Unbekannter Fehler")}</p></div></section>`;
+        }
+      });
       if (!window.location.hash || window.location.hash === "#") {
         window.location.hash = "#/cms";
       }
     </script>
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="/src/main.js?v=166"></script>
   </body>
 </html>

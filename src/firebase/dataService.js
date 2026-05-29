@@ -52,7 +52,6 @@ function localDb() {
       const localTopic = (db.topics || []).find((topic) => topic.id === demoTopic.id);
       if (localTopic) {
         if (!Object.prototype.hasOwnProperty.call(localTopic, "imageUrl")) localTopic.imageUrl = demoTopic.imageUrl;
-        if (!Object.prototype.hasOwnProperty.call(localTopic, "articleText")) localTopic.articleText = demoTopic.articleText;
         if (!Object.prototype.hasOwnProperty.call(localTopic, "longDescription")) localTopic.longDescription = demoTopic.longDescription;
         if (!Object.prototype.hasOwnProperty.call(localTopic, "shortDescription")) localTopic.shortDescription = demoTopic.shortDescription;
       }
@@ -121,6 +120,7 @@ export async function listPublicContent(collectionName) {
     members: [["status", "==", "active"], ["visibility", "==", "public"]],
     boardMembers: [["status", "==", "active"], ["visibility", "==", "public"]],
     editorialContent: [["status", "==", "published"], ["visibility", "==", "public"]],
+    galleries: [["status", "==", "published"], ["visibility", "==", "public"]],
     eventMedia: [["status", "==", "approved"], ["visibility", "==", "public"]]
   };
   return constrainedList(collectionName, filters[collectionName] || []);

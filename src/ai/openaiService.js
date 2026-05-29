@@ -72,6 +72,28 @@ export async function callChatGptAction(action, payload = {}) {
   return result.data;
 }
 
+function localThumbSvg(payload = {}) {
+  const context = payload.context || {};
+  const title = String(context.title || "PROdigitalTV").replace(/[<&>]/g, "");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 1024"><rect width="1536" height="1024" fill="#071a33"/><path d="M0 718c247-152 432-132 668-40s392 66 868-118v464H0z" fill="#123b72"/><circle cx="1190" cy="238" r="142" fill="#e30613"/><g fill="none" stroke="#fff" stroke-width="28" opacity=".88"><path d="M245 280h470v270H245z"/><path d="M335 635h290M480 550v85"/><path d="M890 365h245M890 455h190M890 545h285"/></g><text x="96" y="910" fill="#fff" font-family="Arial, sans-serif" font-size="52" font-weight="700">${title.slice(0, 42)}</text></svg>`;
+  return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+}
+
+export async function generateCmsThumbCollage(payload = {}) {
+  const firebase = await getFirebaseServices();
+  if (!firebase) {
+    return {
+      imageDataUrl: localThumbSvg(payload),
+      mimeType: "image/svg+xml",
+      fileName: `${payload.entityId || "cms-thumb"}-ki-collage.svg`,
+      prompt: payload.prompt || "Lokale Vorschau-Collage. Fuer echte KI bitte Firebase Function mit OPENAI_API_KEY nutzen."
+    };
+  }
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "generateCmsThumbCollage");
+  const result = await callable(payload);
+  return result.data;
+}
+
 export function improveCmsText(payload) {
   return callChatGptAction(payload.action || "improveText", payload);
 }

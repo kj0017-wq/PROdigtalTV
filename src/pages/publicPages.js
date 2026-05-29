@@ -7,7 +7,7 @@ import { accessLabels, lifecycleLabels } from "../data/demoData.js";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
 
 function subhero(eyebrow, title, text) {
-  return `<section class="subhero"><div class="container"><p class="eyebrow">${eyebrow}</p><h1>${title}</h1><p>${text}</p></div></section>`;
+  return `<section class="subhero"><div class="container">${eyebrow ? `<p class="eyebrow">${eyebrow}</p>` : ""}<h1>${title}</h1><p>${text}</p></div></section>`;
 }
 
 function memberLogo(member) {
@@ -42,6 +42,21 @@ function archiveArticle(event, partners = []) {
   </article>`;
 }
 
+function archiveEditorialArticle(item, partners = []) {
+  const sponsor = item.sponsorId ? partners.find((partner) => partner.id === item.sponsorId) : null;
+  const dateLabel = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
+  return `<article class="archive-article">
+    ${item.imageUrl ? `<figure class="archive-article__image"><img src="${escapeHtml(item.imageUrl)}" alt="Rueckblick ${escapeHtml(item.title || "")}"></figure>` : `<div class="archive-article__placeholder"><span>Rueckblick</span></div>`}
+    <div class="archive-article__body">
+      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Event-Nachlauf"}${sponsor ? ` · ${escapeHtml(sponsor.name)}` : ""}</p>
+      <h2>${escapeHtml(item.title || "Rueckblick")}</h2>
+      ${item.subtitle ? `<p class="archive-article__meta">${escapeHtml(item.subtitle)}</p>` : ""}
+      <p>${escapeHtml(teaserText(item.introText || item.bodyText || "", 260))}</p>
+      <a class="link" href="#/retrospective/${item.id}">Rueckblick lesen →</a>
+    </div>
+  </article>`;
+}
+
 function articleParagraphs(text = "") {
   return text.split(/\n+/).filter(Boolean).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("");
 }
@@ -50,9 +65,21 @@ function ttsReader({ title = "", audioUrl = "" }) {
   if (!audioUrl) return "";
   return `<div class="tts-reader" data-tts-reader>
     <p class="eyebrow">Audio</p>
-    <strong>${escapeHtml(title || "Artikel vorlesen")}</strong>
     <audio controls preload="none" src="${escapeHtml(audioUrl)}"></audio>
   </div>`;
+}
+
+function galleryPlayCta(gallery, images) {
+  if (!gallery || !images.length) return "";
+  const payload = escapeHtml(JSON.stringify({
+    title: gallery.title || "Bildergalerie",
+    images: images.map((image) => ({
+      url: image.url,
+      caption: image.caption || image.title || "",
+      altText: image.altText || image.caption || gallery.title || "Galeriebild"
+    }))
+  }));
+  return `<section class="article-gallery-cta"><div><p class="eyebrow">Bildergalerie</p><h3>${escapeHtml(gallery.title || "Bilder ansehen")}</h3><p>${images.length} Bilder als Slideshow ansehen.</p></div><button class="button button--primary gallery-play-cta__button" type="button" data-gallery-play data-gallery-payload="${payload}"><span>▶</span> Galerie abspielen</button></section>`;
 }
 
 function teaserText(value = "", length = 118) {
@@ -100,43 +127,19 @@ export async function homePage() {
   const primaryButtonUrl = hero.buttonUrl || (next ? `#/event/${next.id}` : "#/events");
   const secondaryButtonText = hero.secondaryButtonText || "Mitglied werden";
   const secondaryButtonUrl = hero.secondaryButtonUrl || "#/join";
-  const latestNews = editorial
+  const latestNewsItems = editorial
     .filter((content) => content.page === "news" && content.status === "published")
-    .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")))[0];
+    .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")))
+    .slice(0, 4);
   const featuredTopic = topics[0];
   const homeTopics = topics.filter((topic) => topic.id !== featuredTopic?.id).slice(0, 3);
-  const aboutIntro = editorial.find((content) => content.id === "about-intro" || content.key === "about.intro");
-  const featuredMember = members.find((member) => member.featured) || members[0];
-  const quickCards = [
-    {
-      eyebrow: "News",
-      title: latestNews?.title || "Aktuelles von PROdigitalTV",
-      text: teaserText(latestNews?.subtitle || latestNews?.introText || latestNews?.shortText || latestNews?.bodyText || "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.", 118),
-      url: latestNews ? `#/news/${latestNews.id}` : "#/news",
-      link: latestNews ? "News lesen" : "Alle News"
-    },
-    {
-      eyebrow: "Thema",
-      title: featuredTopic?.title || "Branchenagenda",
-      text: teaserText(featuredTopic?.longDescription || featuredTopic?.articleText || featuredTopic?.shortDescription || "Strategische Themen fuer digitale Medien, Distribution und Vermarktung.", 190),
-      url: featuredTopic ? `#/topic/${featuredTopic.id}` : "#/topics",
-      link: featuredTopic ? "Thema lesen" : "Themen ansehen"
-    },
-    {
-      eyebrow: "Verein",
-      title: aboutIntro?.title || "Ueber PROdigitalTV",
-      text: teaserText(aboutIntro?.introText || aboutIntro?.bodyText || "Das Netzwerk verbindet Entscheider, Impulsgeber und Unternehmen der digitalen Medienwirtschaft.", 118),
-      url: "#/about",
-      link: "Mehr erfahren"
-    },
-    {
-      eyebrow: "Netzwerk",
-      title: featuredMember?.name || `${members.length || 35}+ Mitglieder`,
-      text: featuredMember ? `${members.length || "Viele"} Unternehmen im Netzwerk. Beispiel: ${teaserText(featuredMember.description || featuredMember.city || "Mitgliedsunternehmen", 82)}` : "Unternehmen aus Medien, Technologie, Distribution und Vermarktung im gemeinsamen Austausch.",
-      url: "#/members",
-      link: "Mitglieder ansehen"
-    }
-  ];
+  const quickCards = latestNewsItems.map((item) => ({
+    eyebrow: item.category || "News",
+    title: item.title || "Aktuelles von PROdigitalTV",
+    text: teaserText(item.subtitle || item.introText || item.shortText || item.teaserText || item.bodyText || "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.", 130),
+    url: `#/news/${item.id}`,
+    link: "News lesen"
+  }));
   return publicShell("home", `
     <section class="hero"><div class="container hero__grid">
       <div><p class="eyebrow">${escapeHtml(hero.teaserText || "PROdigitalTV")}</p><h1>${escapeHtml(hero.title)}</h1><p class="lead">${escapeHtml(hero.subtitle)}</p>
@@ -254,34 +257,68 @@ export async function newsPage() {
 
 export async function newsDetailPage(id) {
   const item = await getOne("editorialContent", id);
-  if (!item || (item.page !== "news" && item.section !== "news")) return notFoundPage();
+  if (!item || (item.page !== "news" && item.section !== "news" && !item.isRetrospective)) return notFoundPage();
+  const [sponsors, media, galleries] = await Promise.all([listPublicContent("sponsors"), listPublicContent("eventMedia"), listPublicContent("galleries")]);
   const date = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   const text = item.bodyText || item.mainText || item.text || item.shortText || item.teaserText || "";
-  return publicShell("news", `${subhero("News", escapeHtml(item.title || "News"), escapeHtml(item.subtitle || item.shortText || ""))}
+  const sponsor = item.sponsorId ? sponsors.find((entry) => entry.id === item.sponsorId) : null;
+  const galleryEventId = item.galleryEventId || item.linkedEventId || "";
+  const galleryItems = item.showGallery && galleryEventId
+    ? media.filter((entry) => entry.eventId === galleryEventId && entry.mediaType === "image" && entry.fileUrl).slice(0, 12)
+    : [];
+  const selectedGallery = item.galleryId ? galleries.find((gallery) => gallery.id === item.galleryId) : null;
+  const attachedGalleryImages = Array.isArray(selectedGallery?.images)
+    ? [...selectedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 12)
+    : [];
+  const leadMedia = attachedGalleryImages.length
+    ? galleryPlayCta(selectedGallery, attachedGalleryImages)
+    : item.imageUrl ? `<figure class="news-detail__thumb news-detail__thumb--in-text"><img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.title || "News")}"></figure>` : "";
+  const detailSection = item.isRetrospective ? "archive" : "news";
+  const detailTitle = item.isRetrospective ? "Rückblicke" : "News";
+  const detailIntro = item.isRetrospective ? "Nachberichte, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen." : "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.";
+  const backHref = item.isRetrospective ? "#/archive" : "#/news";
+  const backText = item.isRetrospective ? "Zurueck zu Rückblicke" : "Zurueck zu News";
+  const sectionLabel = item.isRetrospective ? "Event-Nachlauf" : item.category || "News";
+  const allText = item.isRetrospective ? "Alle Rückblicke" : "Alle News";
+  return publicShell(detailSection, `${subhero("", detailTitle, detailIntro)}
     <section class="section"><div class="container detail-grid">
       <article class="detail-main news-detail">
-        <a class="link news-detail__back" href="#/news">Zurueck zu News</a>
+        <a class="link news-detail__back" href="${backHref}">${backText}</a>
         <p class="eyebrow">${escapeHtml(item.category || "News")}${date ? ` · ${formatDate(date)}` : ""}</p>
         <h2>${escapeHtml(item.title || "")}</h2>
         ${item.subtitle ? `<p class="lead">${escapeHtml(item.subtitle)}</p>` : ""}
         ${ttsReader({ title: item.title || "", audioUrl: item.audioUrl || "" })}
-        <div class="editorial-text">${item.imageUrl ? `<figure class="news-detail__thumb news-detail__thumb--in-text"><img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.title || "News")}"></figure>` : ""}${articleParagraphs(text)}</div>
+        <div class="editorial-text">${leadMedia}${articleParagraphs(text)}</div>
+        ${!attachedGalleryImages.length && galleryItems.length ? `<h2>Bildergalerie</h2><div class="gallery editorial-gallery">${galleryItems.map((entry) => `<figure class="editorial-gallery__item"><img src="${escapeHtml(entry.fileUrl)}" alt="${escapeHtml(entry.altText || entry.title || "Eventbild")}">${entry.title ? `<figcaption>${escapeHtml(entry.title)}</figcaption>` : ""}</figure>`).join("")}</div>` : ""}
       </article>
       <aside class="detail-aside">
-        <div class="fact"><label>Rubrik</label><strong>${escapeHtml(item.category || "News")}</strong></div>
+        ${sponsor?.logoUrl ? `<div class="sponsor-logo-card"><span>${escapeHtml(sponsor.role || "Sponsor")}</span><img src="${escapeHtml(sponsor.logoUrl)}" alt="Logo ${escapeHtml(sponsor.name || "")}"><strong>${escapeHtml(sponsor.name || "")}</strong></div>` : ""}
+        <div class="fact"><label>Rubrik</label><strong>${escapeHtml(item.isRetrospective ? "Rückblick" : item.category || "News")}</strong></div>
         ${date ? `<div class="fact"><label>Datum</label><strong>${formatDate(date)}</strong></div>` : ""}
-        <a class="button button--secondary" href="#/news">Alle News</a>
+        <a class="button button--secondary" href="${backHref}">${allText}</a>
       </aside>
     </div></section>`);
 }
 
 export async function topicDetailPage(id) {
-  const [topic, events, sponsors] = await Promise.all([getOne("topics", id), listPublicEvents(), listPublicContent("sponsors")]);
+  const [topic, events, sponsors, galleries] = await Promise.all([getOne("topics", id), listPublicEvents(), listPublicContent("sponsors"), listPublicContent("galleries")]);
   if (!topic) return notFoundPage();
   const linked = events.filter((event) => event.topicIds.includes(id) && event.visibility === "public" && !isPastEvent(event));
-  return publicShell("topics", `${subhero("Thema", escapeHtml(topic.title), escapeHtml(topic.longDescription))}
-    ${topic.imageUrl ? `<section class="section section--flush"><div class="container"><figure class="topic-hero-image"><img src="${escapeHtml(topic.imageUrl)}" alt="Themenbild ${escapeHtml(topic.title)}"></figure></div></section>` : ""}
-    <section class="section section--white"><div class="container topic-article"><p class="eyebrow">Redaktioneller Beitrag</p><h2>${escapeHtml(topic.title)} einordnen</h2>${ttsReader({ title: topic.title || "", audioUrl: topic.audioUrl || "" })}${articleParagraphs(topic.articleText || topic.longDescription)}</div></section>
+  const topicIntro = topic.shortDescription || topic.subtitle || topic.longDescription || topic.bodyText || "";
+  const topicText = topic.longDescription || topic.bodyText || topic.shortDescription || "";
+  const selectedGallery = topic.galleryId ? galleries.find((gallery) => gallery.id === topic.galleryId) : null;
+  const attachedGalleryImages = Array.isArray(selectedGallery?.images)
+    ? [...selectedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 12)
+    : [];
+  const leadMedia = attachedGalleryImages.length
+    ? galleryPlayCta(selectedGallery, attachedGalleryImages)
+    : topic.imageUrl ? `<figure class="topic-hero-image"><img src="${escapeHtml(topic.imageUrl)}" alt="Themenbild ${escapeHtml(topic.title)}"></figure>` : "";
+  const editorialBlock = topicText
+    ? `<section class="section section--white"><div class="container topic-article">${ttsReader({ title: topic.title || "", audioUrl: topic.audioUrl || "" })}${articleParagraphs(topicText)}</div></section>`
+    : "";
+  return publicShell("topics", `${subhero("Thema", escapeHtml(topic.title), escapeHtml(topicIntro))}
+    ${leadMedia ? `<section class="section section--flush"><div class="container">${leadMedia}</div></section>` : ""}
+    ${editorialBlock}
     <section class="section"><div class="container"><div class="section-head"><div><p class="eyebrow">Verknuepfte Events</p><h2>Im Dialog</h2></div></div><div class="card-grid card-grid--three">${linked.map((event) => eventCard(event, event.date < "2026-05-26", sponsors)).join("")}</div></div></section>`);
 }
 
@@ -308,11 +345,14 @@ export async function boardPage() {
 }
 
 export async function archivePage() {
-  const [allEvents, sponsors] = await Promise.all([listPublicEvents(), listPublicContent("sponsors")]);
+  const [allEvents, sponsors, editorial] = await Promise.all([listPublicEvents(), listPublicContent("sponsors"), listPublicContent("editorialContent")]);
   const events = allEvents.filter((event) => isPastEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
+  const retrospectives = editorial
+    .filter((item) => item.isRetrospective)
+    .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")));
   return publicShell("archive", `${subhero("Event-Nachlauf", "Eventarchiv", "Nachberichte, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen.")}
-    <section class="section"><div class="container archive-list">${events.map((event) => archiveArticle(event, sponsors)).join("")}</div></section>`);
+    <section class="section"><div class="container archive-list">${retrospectives.map((item) => archiveEditorialArticle(item, sponsors)).join("")}${events.map((event) => archiveArticle(event, sponsors)).join("")}</div></section>`);
 }
 
 export async function downloadsPage() {

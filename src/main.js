@@ -5,15 +5,15 @@ import {
 } from "./pages/publicPages.js";
 import {
   dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage, moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage
-} from "./cms/cmsPages.js";
+} from "./cms/cmsPages.js?v=166";
 import { createRegistration } from "./firebase/registrationService.js";
 import { login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js";
 import { getOne, list, upsert, remove } from "./firebase/dataService.js";
-import { deleteStoredAsset, uploadEntityImage, uploadEventMedia } from "./firebase/storageService.js";
+import { deleteStoredAsset, uploadEntityImage, uploadEventMedia, uploadGalleryImages } from "./firebase/storageService.js";
 import { checkFirebaseConnection, checkFirestoreStructure, initializeDatabase, createDemoData, removeDemoData } from "./firebase/setupService.js";
 import { downloadRegistrationsCsv } from "./utils/csv.js";
 import { escapeHtml } from "./utils/format.js";
-import { callChatGptAction, saveAiDraft } from "./ai/openaiService.js";
+import { callChatGptAction, generateCmsThumbCollage, saveAiDraft } from "./ai/openaiService.js";
 import { generateArticleSpeechAsset } from "./ai/ttsService.js";
 
 const root = document.querySelector("#app");
@@ -28,6 +28,7 @@ async function viewForRoute(current) {
   if (current.path === "topic") return topicDetailPage(current.id);
   if (current.path === "news" && current.id) return newsDetailPage(current.id);
   if (current.path === "news") return newsPage();
+  if (current.path === "retrospective" && current.id) return newsDetailPage(current.id);
   if (current.path === "about") return aboutPage();
   if (current.path === "board") return boardPage();
   if (current.path === "members") return membersPage();
@@ -44,6 +45,7 @@ async function viewForRoute(current) {
   if (current.path === "cms" && current.id === "registrations") return registrationsPage();
   if (current.path === "cms" && ["followup", "media"].includes(current.id)) return eventFollowUpPage();
   if (current.path === "cms" && current.id === "topics") return moduleListPage("topics");
+  if (current.path === "cms" && current.id === "galleries") return moduleListPage("galleries");
   if (current.path === "cms" && current.id === "speakers") return moduleListPage("speakers");
   if (current.path === "cms" && current.id === "sponsors") return moduleListPage("sponsors");
   if (current.path === "cms" && current.id === "members") return moduleListPage("members");
@@ -60,6 +62,9 @@ async function viewForRoute(current) {
 
 async function render() {
   try {
+    if (root && !root.innerHTML) {
+      root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS</p><h1>Lade Inhalte ...</h1></div></section>`;
+    }
     root.innerHTML = await viewForRoute(route());
     wireActions();
     updateMobileQrCode();
@@ -128,6 +133,49 @@ function dataUrlToFile(dataUrl, fileName) {
   return new File([bytes], fileName, { type: mime });
 }
 
+function loadImageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => resolve(image), { once: true });
+    image.addEventListener("error", () => reject(new Error("Bilddaten konnten nicht geladen werden.")), { once: true });
+    image.src = dataUrl;
+  });
+}
+
+async function generatedThumbToJpeg(dataUrl, fileName, size = { width: 1200, height: 675 }) {
+  const image = await loadImageFromDataUrl(dataUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = size.width || 1200;
+  canvas.height = size.height || 675;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  const scale = Math.max(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+  const width = image.naturalWidth * scale;
+  const height = image.naturalHeight * scale;
+  context.drawImage(image, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
+  if (!blob) throw new Error("KI-Bild konnte nicht komprimiert werden.");
+  const safeName = String(fileName || "ki-collage.jpg").replace(/\.[^.]+$/, "") + `-${canvas.width}x${canvas.height}.jpg`;
+  return {
+    file: new File([blob], safeName, { type: "image/jpeg" }),
+    dataUrl: canvas.toDataURL("image/jpeg", 0.82)
+  };
+}
+
+function fileToInput(input, file) {
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  input.files = transfer.files;
+}
+
+function filesToInput(input, files) {
+  if (!input) return;
+  const transfer = new DataTransfer();
+  files.forEach((file) => transfer.items.add(file));
+  input.files = transfer.files;
+}
+
 function imageFileFromDropzone(form, inputName, entityId) {
   const input = form.querySelector(`input[name="${inputName}"]`);
   const file = input?.files?.[0];
@@ -148,6 +196,8 @@ function findAiSource(button) {
 function eventContext(button) {
   const form = button.closest("form");
   const formValues = form ? formObject(form) : {};
+  const linkedEventOption = form?.elements.linkedEventId?.selectedOptions?.[0]?.textContent || "";
+  const sponsorOption = form?.elements.sponsorId?.selectedOptions?.[0]?.textContent || "";
   const hiddenContext = document.getElementById(button.dataset.aiTarget)?.textContent;
   let parsedContext = {};
   if (hiddenContext) {
@@ -156,7 +206,21 @@ function eventContext(button) {
   return {
     ...parsedContext,
     ...formValues,
+    linkedEventLabel: linkedEventOption,
+    sponsorLabel: sponsorOption,
     placeholders: ["{{firstName}}", "{{lastName}}", "{{eventTitle}}", "{{eventDate}}", "{{eventLocation}}", "{{confirmationLink}}"]
+  };
+}
+
+function imageGenerationContext(form) {
+  const values = formObject(form);
+  return {
+    title: values.title || "",
+    subtitle: values.subtitle || values.shortDescription || values.introText || "",
+    bodyText: values.bodyText || values.longDescription || "",
+    shortDescription: values.shortDescription || values.introText || "",
+    category: values.category || "",
+    module: form.dataset.module || (form.id === "topic-editor-form" ? "topics" : "editorialContent")
   };
 }
 
@@ -166,9 +230,72 @@ function structuredToText(value) {
   return JSON.stringify(value, null, 2);
 }
 
+function compactAiText(value = "", maxLength = 12000) {
+  const clean = String(value || "").replace(/\r/g, "").trim();
+  if (clean.length <= maxLength) return clean;
+  const headLength = Math.floor(maxLength * 0.72);
+  const tailLength = maxLength - headLength;
+  return `${clean.slice(0, headLength).trim()}\n\n[Ausgangstext gekuerzt]\n\n${clean.slice(-tailLength).trim()}`;
+}
+
+const AI_FIELD_LIMITS = {
+  title: 90,
+  subtitle: 150,
+  shortDescription: 180,
+  introText: 220,
+  seoTitle: 70,
+  seoDescription: 160
+};
+
+function limitText(value = "", maxLength = 0) {
+  const clean = String(value || "").replace(/\s+/g, " ").trim();
+  if (!maxLength || clean.length <= maxLength) return clean;
+  const clipped = clean.slice(0, maxLength + 1);
+  const boundary = clipped.lastIndexOf(" ");
+  return clipped.slice(0, boundary > Math.floor(maxLength * 0.65) ? boundary : maxLength).trim();
+}
+
+function aiFieldLimit(button, sourceField) {
+  const fieldName = button.dataset.aiField || sourceField?.name || button.dataset.aiTarget || "";
+  const tag = sourceField?.tagName?.toLowerCase() || "";
+  if (AI_FIELD_LIMITS[fieldName]) return AI_FIELD_LIMITS[fieldName];
+  if (tag === "input") return 120;
+  return 0;
+}
+
+function normalizeAiSuggestion(value, button, sourceField) {
+  const maxLength = aiFieldLimit(button, sourceField);
+  return maxLength ? limitText(value, maxLength) : String(value || "").trim();
+}
+
+function progressMarkup(label, width = 45) {
+  return `<span class="cms-progress"><span>${escapeHtml(label)}</span><span class="progress progress--indeterminate"><i style="width:${width}%"></i></span></span>`;
+}
+
+function submitFormAndWait(form) {
+  if (!form) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      form.removeEventListener("cms-form-saved", onSaved);
+      form.removeEventListener("cms-form-save-failed", onFailed);
+    };
+    const onSaved = (event) => {
+      cleanup();
+      resolve(event.detail || {});
+    };
+    const onFailed = (event) => {
+      cleanup();
+      reject(event.detail?.error || new Error("Speichern fehlgeschlagen."));
+    };
+    form.addEventListener("cms-form-saved", onSaved, { once: true });
+    form.addEventListener("cms-form-save-failed", onFailed, { once: true });
+    form.requestSubmit();
+  });
+}
+
 function showAiDialog({ button, originalText, result, sourceField }) {
   document.querySelector(".ai-dialog-backdrop")?.remove();
-  const suggestedText = result.suggestedText || structuredToText(result.structured);
+  const suggestedText = normalizeAiSuggestion(result.suggestedText || structuredToText(result.structured), button, sourceField);
   const wrapper = document.createElement("div");
   wrapper.className = "ai-dialog-backdrop";
   wrapper.innerHTML = `<div class="ai-dialog" role="dialog" aria-modal="true">
@@ -184,7 +311,7 @@ function showAiDialog({ button, originalText, result, sourceField }) {
   document.body.append(wrapper);
   wrapper.querySelectorAll("[data-ai-close]").forEach((item) => item.addEventListener("click", () => wrapper.remove()));
   wrapper.querySelector("[data-ai-accept]").addEventListener("click", () => {
-    const value = wrapper.querySelector("[data-ai-suggestion]").value;
+    const value = normalizeAiSuggestion(wrapper.querySelector("[data-ai-suggestion]").value, button, sourceField);
     if (sourceField && "value" in sourceField) sourceField.value = value;
     wrapper.remove();
   });
@@ -214,6 +341,7 @@ function wireImageDropzones() {
     const dataInput = zone.querySelector(`input[name="${input?.name}DataUrl"]`);
     const fileNameInput = zone.querySelector(`input[name="${input?.name}FileName"]`);
     const preview = zone.querySelector("[data-image-preview]");
+    const selectButton = zone.querySelector("[data-image-select]");
     const removeButton = zone.querySelector("[data-image-remove]");
     const tools = zone.querySelector("[data-image-tools]");
     const zoom = zone.querySelector("[data-image-zoom]");
@@ -222,6 +350,15 @@ function wireImageDropzones() {
     const cropButton = zone.querySelector("[data-image-crop]");
     const status = zone.querySelector("[data-image-status]");
     const emptyText = preview?.querySelector("span")?.textContent || "Bild per Drag-and-drop oder Klick hochladen";
+    zone.querySelectorAll("[data-image-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const mode = button.dataset.imageMode;
+        zone.querySelectorAll("[data-image-mode]").forEach((item) => item.classList.toggle("is-active", item === button));
+        zone.querySelectorAll("[data-image-mode-panel]").forEach((panel) => {
+          panel.hidden = panel.dataset.imageModePanel !== mode;
+        });
+      });
+    });
     const crop = { file: null, src: "", img: null, x: 0, y: 0, scale: 1, dragging: false, startX: 0, startY: 0, originX: 0, originY: 0 };
     const selectedSize = () => {
       const [width, height] = String(sizeSelect?.value || "240x180").split("x").map((value) => Number(value));
@@ -231,21 +368,23 @@ function wireImageDropzones() {
       const size = selectedSize();
       if (resolution) resolution.textContent = `Ausgabeformat: ${size.width} x ${size.height} px.`;
       if (preview) {
-        const previewWidth = size.width / size.height > 1.4 ? 320 : 240;
+        const availableWidth = Math.max(240, Math.min(640, (zone.clientWidth || 720) - 28));
+        const previewWidth = size.width / size.height > 1.4 ? availableWidth : Math.min(420, availableWidth);
         preview.style.width = `${previewWidth}px`;
         preview.style.height = `${Math.round(previewWidth * size.height / size.width)}px`;
       }
     };
     const renderCrop = () => {
       if (!crop.img) return;
-      crop.img.style.width = "auto";
-      crop.img.style.height = "auto";
-      crop.img.style.maxWidth = "none";
-      crop.img.style.maxHeight = "none";
+      crop.img.style.width = "100%";
+      crop.img.style.height = "100%";
+      crop.img.style.maxWidth = "100%";
+      crop.img.style.maxHeight = "100%";
+      crop.img.style.objectFit = "contain";
       crop.img.style.transform = `translate(${crop.x}px, ${crop.y}px) scale(${crop.scale})`;
       crop.img.style.transformOrigin = "center";
     };
-    const showFile = (file) => {
+    const showFile = (file, options = {}) => {
       if (!file || !file.type.startsWith("image/")) return;
       form?.classList.remove("is-saved");
       const reader = new FileReader();
@@ -261,10 +400,10 @@ function wireImageDropzones() {
         tools.hidden = false;
         zoom.value = "1";
         removeInput.value = "";
-        if (dataInput) dataInput.value = "";
-        if (fileNameInput) fileNameInput.value = "";
+        if (dataInput) dataInput.value = options.dataUrl || "";
+        if (fileNameInput) fileNameInput.value = options.fileName || "";
         updateResolution();
-        status.textContent = "Neues Bild ausgewaehlt. Bitte Aufloesung waehlen, Crop anwenden und speichern.";
+        status.textContent = options.statusText || "Neues Bild ausgewaehlt. Das gesamte Motiv ist sichtbar. Bei Bedarf zoomen/verschieben oder direkt speichern.";
         renderCrop();
       });
       reader.readAsDataURL(file);
@@ -273,6 +412,7 @@ function wireImageDropzones() {
       if (preview.classList.contains("has-image")) return;
       input.click();
     });
+    selectButton?.addEventListener("click", () => input.click());
     input?.addEventListener("change", () => showFile(input.files?.[0]));
     preview?.addEventListener("pointerdown", (event) => {
       if (!crop.img) return;
@@ -316,9 +456,7 @@ function wireImageDropzones() {
       ctx.drawImage(crop.img, (canvas.width - width) / 2 + offsetX, (canvas.height - height) / 2 + offsetY, width, height);
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", .9));
       const croppedFile = new File([blob], crop.file.name.replace(/\.[^.]+$/, "") + `-${size.width}x${size.height}.jpg`, { type: "image/jpeg" });
-      const transfer = new DataTransfer();
-      transfer.items.add(croppedFile);
-      input.files = transfer.files;
+      fileToInput(input, croppedFile);
       crop.file = croppedFile;
       crop.src = canvas.toDataURL("image/jpeg", .9);
       if (dataInput) dataInput.value = crop.src;
@@ -343,10 +481,51 @@ function wireImageDropzones() {
       zone.classList.remove("is-dragover");
       const file = event.dataTransfer?.files?.[0];
       if (!file) return;
-      const transfer = new DataTransfer();
-      transfer.items.add(file);
-      input.files = transfer.files;
+      fileToInput(input, file);
       showFile(file);
+    });
+    zone.querySelector("[data-ai-image-generate]")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      const promptField = zone.querySelector("[data-ai-image-prompt]");
+      const originalLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = "KI erzeugt Collage ...";
+      status.innerHTML = progressMarkup("KI erzeugt eine redaktionelle Collage ...", 35);
+      try {
+        const generated = await generateCmsThumbCollage({
+          entityType: form?.dataset.module || "cms",
+          entityId: form?.dataset.id || form?.dataset.topicId || "",
+          prompt: promptField?.value || "",
+          context: form ? imageGenerationContext(form) : {},
+          size: "1536x1024",
+          quality: "medium"
+        });
+        if (promptField && generated.prompt) promptField.value = generated.prompt;
+        const normalized = await generatedThumbToJpeg(generated.imageDataUrl, generated.fileName || `${form?.dataset.id || form?.dataset.topicId || "cms-thumb"}-ki-collage.png`, selectedSize());
+        const file = normalized.file;
+        fileToInput(input, file);
+        showFile(file, {
+          dataUrl: normalized.dataUrl,
+          fileName: file.name,
+          statusText: "KI-Collage erzeugt. Speichere Bild automatisch ..."
+        });
+        status.innerHTML = progressMarkup("KI-Collage erzeugt. Bild wird gespeichert ...", 78);
+        try {
+          const saved = await submitFormAndWait(form);
+          const savedImageUrl = saved.imageUrl || saved.assetUrl || saved.logoUrl || saved.photoUrl || normalized.dataUrl;
+          updateDropzoneSavedImage(form, savedImageUrl);
+          status.textContent = "KI-Collage wurde erzeugt und gespeichert.";
+        } catch (saveError) {
+          if (!String(saveError?.message || saveError).includes("storage/unauthorized")) throw saveError;
+          await saveGeneratedImageFallback(form, normalized.dataUrl, file.name);
+          status.textContent = "KI-Collage wurde erzeugt und direkt im Datensatz gespeichert.";
+        }
+      } catch (error) {
+        status.textContent = `KI-Bild konnte nicht erzeugt werden: ${error.message || String(error)}`;
+      } finally {
+        button.disabled = false;
+        button.textContent = originalLabel;
+      }
     });
     removeButton?.addEventListener("click", () => {
       form?.classList.remove("is-saved");
@@ -364,6 +543,272 @@ function wireImageDropzones() {
     });
     updateResolution();
   });
+}
+
+function wireGalleryEditor() {
+  const form = document.querySelector("#gallery-edit-form");
+  if (!form) return;
+  const dropzone = form.querySelector("[data-gallery-dropzone]");
+  const dropInput = form.elements.galleryImagesDrop;
+  const buttonInput = form.elements.galleryImages;
+  const result = form.querySelector("#gallery-save-result");
+  const updateDropzoneText = (files) => {
+    const count = files?.length || 0;
+    const label = dropzone?.querySelector("span");
+    if (label && count) label.textContent = `${count} Bild${count === 1 ? "" : "er"} ausgewaehlt. Upload startet automatisch.`;
+  };
+  const autosaveDroppedFiles = (images) => {
+    if (!images.length) return;
+    if (!form.elements.title.value.trim()) form.elements.title.value = "Neue Bildergalerie";
+    updateDropzoneText(images);
+    if (result) result.innerHTML = `<div class="alert">${progressMarkup("Bilder abgelegt. Galerie wird automatisch gespeichert ...", 35)}</div>`;
+    window.setTimeout(() => form.requestSubmit(), 0);
+  };
+  const acceptFiles = (files, autosave = false) => {
+    const images = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
+    if (!images.length) return;
+    filesToInput(dropInput, images);
+    if (buttonInput) buttonInput.value = "";
+    updateDropzoneText(images);
+    if (autosave) autosaveDroppedFiles(images);
+  };
+  const hasImageFiles = (files) => Array.from(files || []).some((file) => file.type.startsWith("image/"));
+  dropzone?.addEventListener("click", () => dropInput?.click());
+  dropInput?.addEventListener("change", () => acceptFiles(dropInput.files, true));
+  dropzone?.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    dropzone.classList.add("is-dragover");
+  });
+  dropzone?.addEventListener("dragleave", () => dropzone.classList.remove("is-dragover"));
+  dropzone?.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dropzone.classList.remove("is-dragover");
+    acceptFiles(event.dataTransfer?.files, true);
+  });
+
+  const sortable = form.querySelector("[data-gallery-sortable]");
+  let dragged = null;
+  sortable?.addEventListener("dragover", (event) => {
+    if (!hasImageFiles(event.dataTransfer?.files)) return;
+    event.preventDefault();
+    dropzone?.classList.add("is-dragover");
+  });
+  sortable?.addEventListener("dragleave", () => dropzone?.classList.remove("is-dragover"));
+  sortable?.addEventListener("drop", (event) => {
+    if (!hasImageFiles(event.dataTransfer?.files)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dropzone?.classList.remove("is-dragover");
+    acceptFiles(event.dataTransfer?.files, true);
+  });
+  sortable?.querySelectorAll("[data-gallery-image-item]").forEach((item) => {
+    item.addEventListener("dragstart", () => {
+      dragged = item;
+      item.classList.add("is-dragging");
+    });
+    item.addEventListener("dragend", () => {
+      item.classList.remove("is-dragging");
+      dragged = null;
+    });
+    item.addEventListener("dragover", (event) => {
+      if (hasImageFiles(event.dataTransfer?.files)) return;
+      event.preventDefault();
+    });
+    item.addEventListener("drop", (event) => {
+      if (hasImageFiles(event.dataTransfer?.files)) return;
+      event.preventDefault();
+      const target = event.currentTarget;
+      if (!dragged || dragged === target) return;
+      const rect = target.getBoundingClientRect();
+      const after = event.clientY > rect.top + rect.height / 2 || event.clientX > rect.left + rect.width / 2;
+      sortable.insertBefore(dragged, after ? target.nextSibling : target);
+    });
+  });
+}
+
+function openGalleryPlayer(gallery) {
+  const images = Array.isArray(gallery?.images) ? gallery.images.filter((image) => image.url) : [];
+  if (!images.length) return;
+  let index = 0;
+  let timer = null;
+  const overlay = document.createElement("div");
+  overlay.className = "gallery-player";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  const renderSlide = () => {
+    const image = images[index];
+    overlay.innerHTML = `<div class="gallery-player__panel">
+      <div class="gallery-player__top"><strong>${escapeHtml(gallery.title || "Bildergalerie")}</strong><button class="gallery-player__close" type="button" data-gallery-close aria-label="Schliessen">×</button></div>
+      <figure class="gallery-player__stage"><img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.altText || image.caption || "Galeriebild")}">${image.caption ? `<figcaption>${escapeHtml(image.caption)}</figcaption>` : ""}</figure>
+      <div class="gallery-player__controls">
+        <button type="button" data-gallery-prev aria-label="Vorheriges Bild">‹</button>
+        <span>${index + 1} / ${images.length}</span>
+        <button type="button" data-gallery-next aria-label="Naechstes Bild">›</button>
+        <button type="button" data-gallery-toggle>${timer ? "Pause" : "Play"}</button>
+      </div>
+    </div>`;
+  };
+  const stop = () => {
+    if (timer) window.clearInterval(timer);
+    timer = null;
+  };
+  const next = () => {
+    index = (index + 1) % images.length;
+    renderSlide();
+  };
+  const previous = () => {
+    index = (index - 1 + images.length) % images.length;
+    renderSlide();
+  };
+  const start = () => {
+    stop();
+    timer = window.setInterval(next, 3600);
+  };
+  const close = () => {
+    stop();
+    overlay.remove();
+    document.removeEventListener("keydown", onKey);
+  };
+  const onKey = (event) => {
+    if (event.key === "Escape") close();
+    if (event.key === "ArrowRight") next();
+    if (event.key === "ArrowLeft") previous();
+  };
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay || event.target.closest("[data-gallery-close]")) close();
+    if (event.target.closest("[data-gallery-next]")) next();
+    if (event.target.closest("[data-gallery-prev]")) previous();
+    if (event.target.closest("[data-gallery-toggle]")) {
+      if (timer) stop();
+      else start();
+      renderSlide();
+    }
+  });
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(overlay);
+  renderSlide();
+  start();
+  renderSlide();
+}
+
+function wireGalleryPlayers() {
+  document.querySelectorAll("[data-gallery-play]").forEach((button) => {
+    if (button.dataset.galleryPlayerWired === "1") return;
+    button.dataset.galleryPlayerWired = "1";
+    button.addEventListener("click", () => {
+    try {
+      openGalleryPlayer(JSON.parse(button.dataset.galleryPayload || "{}"));
+    } catch (error) {
+      console.error("Galerie konnte nicht geoeffnet werden", error);
+    }
+    });
+  });
+}
+
+function renderEditorGalleryPreview(select) {
+  const preview = select.closest("form")?.querySelector("[data-editor-gallery-preview]");
+  if (!preview) return;
+  const option = select.selectedOptions?.[0];
+  const payloadText = option?.dataset.galleryPayload || "";
+  if (!payloadText) {
+    preview.className = "editor-gallery-preview editor-gallery-preview--empty";
+    preview.innerHTML = `<p class="muted">Keine Galerie verknuepft. Galerie auswaehlen und speichern, um sie mit diesem Inhalt zu verbinden.</p>`;
+    return;
+  }
+  try {
+    const gallery = JSON.parse(payloadText);
+    const imageCount = Array.isArray(gallery.images) ? gallery.images.length : 0;
+    preview.className = "editor-gallery-preview";
+    preview.innerHTML = `<div><strong>${escapeHtml(gallery.title || "Bildergalerie")}</strong><span>${imageCount} Bilder</span></div><button class="gallery-play-button" type="button" data-gallery-play data-gallery-payload="${escapeHtml(payloadText)}" title="Galerie abspielen" aria-label="Galerie abspielen"><span aria-hidden="true"></span></button>`;
+    wireGalleryPlayers();
+  } catch (error) {
+    preview.className = "editor-gallery-preview editor-gallery-preview--empty";
+    preview.innerHTML = `<p class="muted">Galerie-Vorschau konnte nicht geladen werden.</p>`;
+  }
+}
+
+function wireEditorGallerySelects() {
+  document.querySelectorAll('select[name="galleryId"]').forEach((select) => {
+    if (select.dataset.editorGalleryWired === "1") return;
+    select.dataset.editorGalleryWired = "1";
+    select.addEventListener("change", () => renderEditorGalleryPreview(select));
+  });
+}
+
+function wireGalleryLinkSaves() {
+  document.querySelectorAll("[data-save-gallery-link]").forEach((button) => {
+    if (button.dataset.galleryLinkWired === "1") return;
+    button.dataset.galleryLinkWired = "1";
+    button.addEventListener("click", async () => {
+      const form = button.closest("form");
+      const select = form?.querySelector('select[name="galleryId"]');
+      const result = form?.querySelector("[data-gallery-link-result]");
+      if (!form || !select) return;
+      const module = form.dataset.module || (form.id === "topic-editor-form" ? "topics" : "editorialContent");
+      const id = form.dataset.id || form.dataset.topicId;
+      button.disabled = true;
+      if (result) result.innerHTML = `<div class="alert">Galerie-Verknuepfung wird gespeichert...</div>`;
+      try {
+        const existing = (await getOne(module, id)) || { id, createdAt: new Date().toISOString() };
+        await upsert(module, {
+          ...existing,
+          galleryId: select.value || "",
+          updatedAt: new Date().toISOString()
+        });
+        if (result) result.innerHTML = `<div class="alert alert--success">Galerie-Verknuepfung gespeichert.</div>`;
+      } catch (error) {
+        if (result) result.innerHTML = `<div class="alert alert--error">Galerie konnte nicht verknuepft werden: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+}
+
+function wireLinkedMediaClears() {
+  document.querySelectorAll("[data-clear-linked-media]").forEach((button) => {
+    if (button.dataset.clearLinkedMediaWired === "1") return;
+    button.dataset.clearLinkedMediaWired = "1";
+    button.addEventListener("click", async () => {
+      const form = button.closest("form");
+      if (!form) return;
+      const module = form.dataset.module || (form.id === "topic-editor-form" ? "topics" : "editorialContent");
+      const id = form.dataset.id || form.dataset.topicId;
+      const kind = button.dataset.clearLinkedMedia;
+      const result = kind === "audio"
+        ? form.querySelector("[data-speech-result]")
+        : form.querySelector("[data-gallery-link-result]");
+      button.disabled = true;
+      if (result) result.innerHTML = `<div class="alert">Verknuepfung wird geloest...</div>`;
+      try {
+        const existing = (await getOne(module, id)) || { id, createdAt: new Date().toISOString() };
+        const update = kind === "audio"
+          ? { audioUrl: "", audioStoragePath: "", audioMimeType: "", audioTextLength: 0, audioTextTruncated: false }
+          : { galleryId: "" };
+        await upsert(module, { ...existing, ...update, updatedAt: new Date().toISOString() });
+        if (kind === "gallery") {
+          const select = form.querySelector('select[name="galleryId"]');
+          if (select) {
+            await selectOptionByValue(select, "");
+            renderEditorGalleryPreview(select);
+          }
+        }
+        if (kind === "audio") {
+          button.closest(".audio-generation-panel")?.querySelector("audio")?.remove();
+        }
+        if (result) result.innerHTML = `<div class="alert alert--success">Verknuepfung geloest.</div>`;
+      } catch (error) {
+        if (result) result.innerHTML = `<div class="alert alert--error">Verknuepfung konnte nicht geloest werden: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+}
+
+async function selectOptionByValue(select, value) {
+  select.value = value;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 function updateTopicThumbInList(topicId, imageUrl) {
@@ -391,6 +836,21 @@ function updateDropzoneSavedImage(form, imageUrl) {
   if (dataInput) dataInput.value = "";
   if (fileNameInput) fileNameInput.value = "";
   if (tools) tools.hidden = true;
+}
+
+async function saveGeneratedImageFallback(form, dataUrl, fileName) {
+  const module = form.dataset.module || (form.id === "topic-editor-form" ? "topics" : "editorialContent");
+  const id = form.dataset.id || form.dataset.topicId;
+  const existing = (await getOne(module, id)) || { id, createdAt: new Date().toISOString() };
+  const values = { ...existing, imageUrl: dataUrl, assetStoragePath: "", updatedAt: new Date().toISOString() };
+  if (module === "editorialContent") {
+    values.assetUrl = dataUrl;
+    values.assetFileName = fileName || `${id}-ki-thumb.jpg`;
+    values.assetType = "image";
+    values.documentUrl = "";
+  }
+  await upsert(module, values);
+  updateDropzoneSavedImage(form, dataUrl);
 }
 
 async function saveEventTopicSpeakerForm(form) {
@@ -440,8 +900,13 @@ async function saveEventTopicSpeakerForm(form) {
 
 function wireActions() {
   wireImageDropzones();
+  wireGalleryEditor();
+  wireGalleryPlayers();
+  wireEditorGallerySelects();
+  wireGalleryLinkSaves();
+  wireLinkedMediaClears();
   document.querySelectorAll("[data-generate-article-speech]").forEach((button) => button.addEventListener("click", async () => {
-    const result = button.parentElement?.querySelector("[data-speech-result]");
+    const result = button.closest(".audio-list-cell, .audio-generation-panel")?.querySelector("[data-speech-result]");
     const audioUrl = button.dataset.audioUrl || "";
     if (audioUrl && button.classList.contains("audio-play-button")) {
       const activeAudio = document.querySelector("audio[data-list-audio-player]");
@@ -470,12 +935,20 @@ function wireActions() {
       await audio.play();
       return;
     }
+    const isIconAudioButton = button.classList.contains("audio-play-button");
     const originalLabel = button.textContent;
+    const originalAriaLabel = button.getAttribute("aria-label") || "";
     button.disabled = true;
     button.classList.add("is-generating");
-    button.textContent = "Audio wird erzeugt ...";
-    if (result) result.innerHTML = `<div class="alert">Gemini erzeugt und speichert die Audiodatei ...</div>`;
+    if (isIconAudioButton) button.setAttribute("aria-label", "Audio wird erzeugt");
+    else button.textContent = "Audio wird erzeugt ...";
+    const form = button.closest("form");
+    if (result) result.innerHTML = `<div class="alert">${progressMarkup(form ? "Aktuelle Texte werden zuerst gespeichert ..." : "Gemini erzeugt und speichert die Audiodatei ...", 30)}</div>`;
     try {
+      if (form?.matches("#topic-editor-form, #content-edit-form")) {
+        await submitFormAndWait(form);
+        if (result) result.innerHTML = `<div class="alert">${progressMarkup("Gemini erzeugt und speichert die Audiodatei ...", 72)}</div>`;
+      }
       const speech = await generateArticleSpeechAsset({ collection: button.dataset.collection, id: button.dataset.recordId });
       if (result) result.innerHTML = `<div class="alert alert--success">Audio gespeichert.${speech.truncated ? " Der Text wurde fuer die Sprachausgabe gekuerzt." : ""}</div>`;
       await render();
@@ -484,7 +957,8 @@ function wireActions() {
     } finally {
       button.disabled = false;
       button.classList.remove("is-generating");
-      button.textContent = originalLabel;
+      if (isIconAudioButton) button.setAttribute("aria-label", originalAriaLabel);
+      else button.textContent = originalLabel;
     }
   }));
   document.querySelectorAll("form.is-save-aware input, form.is-save-aware textarea, form.is-save-aware select").forEach((field) => {
@@ -494,6 +968,7 @@ function wireActions() {
   document.querySelectorAll(".ai-action").forEach((button) => button.addEventListener("click", async () => {
     const originalLabel = button.textContent;
     const { text, field } = findAiSource(button);
+    const compactText = compactAiText(text, button.dataset.aiAction === "generateEventRetrospective" ? 9000 : 12000);
     button.disabled = true;
     button.textContent = "ChatGPT arbeitet ...";
     try {
@@ -502,7 +977,7 @@ function wireActions() {
         entityType: button.dataset.aiEntityType,
         entityId: button.dataset.aiEntityId,
         fieldName: button.dataset.aiField,
-        originalText: text,
+        originalText: compactText,
         context: eventContext(button)
       });
       showAiDialog({ button, originalText: text, result, sourceField: field });
@@ -747,7 +1222,6 @@ function wireActions() {
     const image = imageFileFromDropzone(form, "topicImage", topicId);
     const imageUpdate = {};
     if (form.elements.removeTopicImage?.value === "1") {
-      await deleteStoredAsset(existingTopic);
       imageUpdate.imageUrl = "";
       imageUpdate.assetStoragePath = "";
     }
@@ -902,6 +1376,66 @@ function wireActions() {
     await render();
   });
 
+  document.querySelector("#gallery-edit-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = form.querySelector("#gallery-save-result");
+    const submitButton = form.querySelector('button[type="submit"], button:not([type])');
+    if (submitButton) submitButton.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">${progressMarkup("Galerie wird gespeichert ...", 20)}</div>`;
+    try {
+      const galleryId = form.dataset.galleryId;
+      const existing = (await getOne("galleries", galleryId)) || { id: galleryId, createdAt: new Date().toISOString() };
+      const keptImages = [];
+      form.querySelectorAll("[data-gallery-image-item]").forEach((item) => {
+        if (item.querySelector('input[name$="-remove"]')?.checked) return;
+        keptImages.push({
+          id: item.querySelector('input[name$="-id"]')?.value || `gallery-image-${crypto.randomUUID()}`,
+          url: item.querySelector('input[name$="-url"]')?.value || "",
+          storagePath: item.querySelector('input[name$="-storagePath"]')?.value || "",
+          fileName: item.querySelector('input[name$="-fileName"]')?.value || "",
+          caption: item.querySelector('input[name$="-caption"]')?.value || "",
+          altText: item.querySelector('input[name$="-altText"]')?.value || "",
+          sortOrder: keptImages.length + 1
+        });
+      });
+      const files = [...Array.from(form.elements.galleryImages?.files || []), ...Array.from(form.elements.galleryImagesDrop?.files || [])];
+      const uploadedImages = files.length
+        ? await uploadGalleryImages(galleryId, files, (progress) => {
+            if (result) result.innerHTML = `<div class="alert">${progressMarkup(`Bilder werden hochgeladen (${progress}%) ...`, Math.max(30, progress))}</div>`;
+          })
+        : [];
+      const images = [...keptImages, ...uploadedImages.map((image, index) => ({ ...image, sortOrder: keptImages.length + index + 1 }))];
+      await upsert("galleries", {
+        ...existing,
+        id: galleryId,
+        title: form.elements.title.value.trim(),
+        description: form.elements.description.value.trim(),
+        status: form.elements.status.value,
+        visibility: form.elements.visibility.value || "public",
+        images,
+        updatedAt: new Date().toISOString()
+      });
+      if (result) {
+        result.innerHTML = `<div class="alert alert--success">Galerie gespeichert. ${images.length} Bild${images.length === 1 ? "" : "er"} sind zugeordnet.</div>`;
+        result.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+      form.elements.galleryImages.value = "";
+      form.elements.galleryImagesDrop.value = "";
+      const current = route();
+      const target = `cms/edit?module=galleries&id=${galleryId}`;
+      if (current.path === "cms" && current.id === "edit" && current.query.get("module") === "galleries" && current.query.get("id") !== galleryId) {
+        go(target);
+      } else {
+        await render();
+      }
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Galerie konnte nicht gespeichert werden: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+
   document.querySelector("#content-edit-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -912,10 +1446,14 @@ function wireActions() {
     try {
       const existing = (await getOne(form.dataset.module, form.dataset.id)) || { id: form.dataset.id, createdAt: new Date().toISOString() };
       const values = formObject(form);
+      const removeAssetRequested = values.removeAssetFile === "1";
       if (form.dataset.module === "editorialContent" && values.publishDate) values.validFrom = values.publishDate;
+      if (form.dataset.module === "editorialContent" && Object.prototype.hasOwnProperty.call(values, "linkedEventId")) {
+        values.galleryEventId = values.linkedEventId || "";
+        if (values.isRetrospective) values.category = "Rückblick";
+      }
       const image = imageFileFromDropzone(form, "assetFile", form.dataset.id);
-      if (values.removeAssetFile === "1") {
-        await deleteStoredAsset(existing);
+      if (removeAssetRequested) {
         values.imageUrl = "";
         values.documentUrl = "";
         values.assetUrl = "";
@@ -950,13 +1488,19 @@ function wireActions() {
       delete values.assetFile;
       delete values.assetFileDataUrl;
       delete values.removeAssetFile;
-      await upsert(form.dataset.module, { ...existing, ...values });
+      const savedValues = { ...existing, ...values };
+      await upsert(form.dataset.module, savedValues);
+      if (image || removeAssetRequested) {
+        updateDropzoneSavedImage(form, savedValues.imageUrl || savedValues.logoUrl || savedValues.photoUrl || "");
+      }
       if (result) {
         result.innerHTML = `<div class="alert alert--success">Gespeichert.</div>`;
         result.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
+      form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: savedValues }));
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--error">Speichern fehlgeschlagen: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+      form.dispatchEvent(new CustomEvent("cms-form-save-failed", { detail: { error } }));
     } finally {
       if (submitButton) submitButton.disabled = false;
     }
@@ -994,12 +1538,16 @@ function wireActions() {
   document.querySelector("#topic-editor-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
+    const result = form.querySelector("#topic-editor-result");
+    const submitButton = form.querySelector('button[type="submit"], .actions .button');
+    if (submitButton) submitButton.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Thema wird gespeichert ...</div>`;
+    try {
     const topicId = form.dataset.topicId;
     const topic = (await getOne("topics", topicId)) || { id: topicId, status: "active", visibility: "public" };
     const image = imageFileFromDropzone(form, "topicImage", topicId);
     const imageUpdate = {};
     if (form.elements.removeTopicImage?.value === "1") {
-      await deleteStoredAsset(topic);
       imageUpdate.imageUrl = "";
       imageUpdate.assetStoragePath = "";
     }
@@ -1009,7 +1557,7 @@ function wireActions() {
       imageUpdate.imageUrl = asset.url;
       imageUpdate.assetStoragePath = asset.storagePath;
     }
-    await upsert("topics", {
+    const savedTopic = {
       ...topic,
       title: form.elements.title?.value || "",
       subtitle: form.elements.subtitle?.value || "",
@@ -1021,10 +1569,13 @@ function wireActions() {
       introText: form.elements.shortDescription?.value || "",
       longDescription: form.elements.longDescription?.value || "",
       bodyText: form.elements.longDescription?.value || "",
+      articleText: form.elements.longDescription?.value || "",
+      galleryId: form.elements.galleryId?.value || "",
       status: form.elements.status?.value || topic.status || "active",
       ...imageUpdate,
       updatedAt: new Date().toISOString()
-    });
+    };
+    await upsert("topics", savedTopic);
 
     const selected = new Set(Array.from(form.querySelectorAll('input[name="assignedSpeakerIds"]:checked')).map((input) => input.value));
     const speakers = await list("speakers");
@@ -1064,8 +1615,18 @@ function wireActions() {
     const imageStatus = form.querySelector("[data-image-status]");
     if (imageStatus) imageStatus.textContent = imageUpdate.imageUrl ? "Bild wurde gespeichert." : imageUpdate.imageUrl === "" ? "Bild wurde geloescht." : imageStatus.textContent;
     if (Object.prototype.hasOwnProperty.call(imageUpdate, "imageUrl")) updateDropzoneSavedImage(form, imageUpdate.imageUrl);
-    form.querySelector("#topic-editor-result").innerHTML = `<div class="alert alert--success">Thema wurde gespeichert.</div>`;
-    await render();
+    if (result) {
+      result.innerHTML = `<div class="alert alert--success">Thema wurde gespeichert.${imageUpdate.imageUrl ? " Bild wurde hochgeladen." : ""}</div>`;
+      result.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    form.classList.add("is-saved");
+    form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: savedTopic }));
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Speichern fehlgeschlagen: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+      form.dispatchEvent(new CustomEvent("cms-form-save-failed", { detail: { error } }));
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
   });
 
   document.querySelector("#topic-speakers-form")?.addEventListener("submit", async (event) => {
@@ -1186,6 +1747,17 @@ function wireActions() {
     await render();
   }));
 
+  document.querySelectorAll("[data-record-visibility]").forEach((button) => button.addEventListener("click", async () => {
+    const record = await getOne(button.dataset.recordVisibility, button.dataset.recordId);
+    await upsert(button.dataset.recordVisibility, {
+      ...record,
+      visibility: button.dataset.visibility,
+      status: button.dataset.status || record.status,
+      updatedAt: new Date().toISOString()
+    });
+    await render();
+  }));
+
   document.querySelectorAll("[data-event-status]").forEach((button) => button.addEventListener("click", async () => {
     const existing = await getOne("events", button.dataset.eventStatus);
     await upsert("events", { ...existing, status: button.dataset.status });
@@ -1222,8 +1794,11 @@ function wireActions() {
   }));
 }
 
-if ("serviceWorker" in navigator && location.protocol !== "file:") {
+if ("serviceWorker" in navigator && ["localhost", "127.0.0.1"].includes(location.hostname)) {
+  navigator.serviceWorker.getRegistrations?.().then((registrations) => registrations.forEach((registration) => registration.unregister())).catch(() => {});
+} else if ("serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 onRouteChange(render);
+render();
 waitForAuthReady().finally(render);

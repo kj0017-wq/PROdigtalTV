@@ -141,7 +141,7 @@ exports.generateArticleSpeechAsset = onCall({ region, secrets: [geminiApiKey], t
     if (!snapshot.exists) throw new HttpsError("not-found", "Artikel nicht gefunden.");
     const item = snapshot.data();
     const text = collection === "topics"
-      ? [item.subtitle, item.articleText, item.longDescription, item.shortDescription].filter(Boolean).join("\n\n")
+      ? [item.subtitle, item.longDescription, item.bodyText, item.shortDescription].filter(Boolean).join("\n\n")
       : [item.subtitle, item.bodyText, item.introText, item.shortText, item.teaserText].filter(Boolean).join("\n\n");
     const speech = await createSpeechBuffer({ title: item.title || "", text });
     const bucket = getStorage().bucket(storageBucket);

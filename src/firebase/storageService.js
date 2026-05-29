@@ -56,6 +56,38 @@ export async function uploadEntityImage(collection, entityId, file) {
   return { url: await firebase.storageLib.getDownloadURL(reference), storagePath };
 }
 
+export async function uploadGalleryImages(galleryId, files, onProgress = () => {}) {
+  const firebase = await getFirebaseServices();
+  const results = [];
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    const extension = file.name.includes(".") ? file.name.split(".").pop().toLowerCase() : "jpg";
+    const uniqueName = `${Date.now()}-${crypto.randomUUID()}.${extension}`;
+    const storagePath = `galleries/${galleryId}/${uniqueName}`;
+    let url = "";
+    if (firebase) {
+      const reference = firebase.storageLib.ref(firebase.storage, storagePath);
+      await firebase.storageLib.uploadBytes(reference, file, { contentType: file.type });
+      url = await firebase.storageLib.getDownloadURL(reference);
+    } else {
+      url = await fileAsDataUrl(file);
+    }
+    results.push({
+      id: `gallery-image-${crypto.randomUUID()}`,
+      fileName: file.name,
+      url,
+      storagePath: firebase ? storagePath : "",
+      contentType: file.type,
+      altText: file.name,
+      caption: "",
+      sortOrder: index + 1,
+      uploadedAt: new Date().toISOString()
+    });
+    onProgress(Math.round(((index + 1) / files.length) * 100));
+  }
+  return results;
+}
+
 export async function deleteStoredAsset(entity) {
   if (!entity?.storagePath && !entity?.assetStoragePath) return;
   const firebase = await getFirebaseServices();

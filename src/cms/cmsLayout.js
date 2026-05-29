@@ -14,6 +14,7 @@ const sections = [
       ["cms/editorial/interna", "Interna"]
     ]
   },
+  ["cms/galleries", "Bildergalerien"],
   ["cms/mail", "Mail-Queue"], ["cms/chatgpt", "ChatGPT"], ["cms/ai-settings", "ChatGPT-Einstellungen"], ["cms/setup", "System / Einrichtung"]
 ];
 

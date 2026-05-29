@@ -7,11 +7,31 @@ service firebase.storage {
     function user() {
       return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
     }
+    function userProfileExists() {
+      return signedIn() && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
+    }
     function editor() {
-      return signedIn() && (user().role == "admin" || user().role == "editor") && user().status == "active";
+      return signedIn() && (
+        (
+          userProfileExists()
+          && (user().role == "admin" || user().role == "editor")
+          && user().status != "inactive"
+        )
+        || request.auth.token.role == "admin"
+        || request.auth.token.role == "editor"
+      );
     }
     function member() {
-      return signedIn() && (user().role == "member" || user().role == "admin" || user().role == "editor") && user().status == "active";
+      return signedIn() && (
+        (
+          userProfileExists()
+          && (user().role == "member" || user().role == "admin" || user().role == "editor")
+          && user().status != "inactive"
+        )
+        || request.auth.token.role == "member"
+        || request.auth.token.role == "admin"
+        || request.auth.token.role == "editor"
+      );
     }
 
     match /events/{eventId}/{mediaId}/{fileName} {
@@ -35,6 +55,21 @@ service firebase.storage {
     match /board/{boardMemberId}/{fileName} {
       allow read: if true;
       allow write: if editor() && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    match /topics/{topicId}/{fileName} {
+      allow read: if true;
+      allow write: if editor() && request.resource.size < 20 * 1024 * 1024;
+    }
+
+    match /editorial/{contentId}/{fileName} {
+      allow read: if true;
+      allow write: if editor() && request.resource.size < 20 * 1024 * 1024;
+    }
+
+    match /galleries/{galleryId}/{fileName} {
+      allow read: if true;
+      allow write: if editor() && request.resource.size < 15 * 1024 * 1024;
     }
 
     match /speakers/{speakerId}/{fileName} {
