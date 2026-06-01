@@ -1,4 +1,4 @@
-import { currentUser, isAdmin } from "../firebase/authService.js?v=250";
+import { currentUser, isAdmin } from "../firebase/authService.js?v=251";
 import { logo } from "../components/layout.js";
 
 const sections = [
@@ -18,7 +18,7 @@ const sections = [
     route: "cms/ai-editorial/dashboard",
     title: "KI-Redaktion",
     children: [
-      ["cms/ai-editorial/dashboard", "Dashboard"],
+      ["cms/ai-editorial/dashboard", "Themenliste"],
       ["cms/ai-editorial/articles", "Beitraege"],
       ["cms/ai-editorial/sources", "Quellen"],
       ["cms/ai-editorial/prompts", "Prompts"],

@@ -5,16 +5,16 @@ import {
 } from "./pages/publicPages.js";
 import {
   dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage, moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage
-} from "./cms/cmsPages.js?v=250";
-import { aiEditorialPage } from "./cms/aiEditorialPages.js?v=250";
+} from "./cms/cmsPages.js?v=251";
+import { aiEditorialPage } from "./cms/aiEditorialPages.js?v=251";
 import { createRegistration } from "./firebase/registrationService.js";
-import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=250";
+import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=251";
 import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=250";
 import { deleteStoredAsset, uploadEntityImage, uploadEventMedia, uploadGalleryImages } from "./firebase/storageService.js";
 import { checkFirebaseConnection, checkFirestoreStructure, initializeDatabase, createDemoData, removeDemoData } from "./firebase/setupService.js";
 import { downloadRegistrationsCsv } from "./utils/csv.js";
 import { escapeHtml } from "./utils/format.js";
-import { callChatGptAction, generateCmsThumbCollage, saveAiDraft, runAiEditorialTask, saveAiEditorialSettings, generateAiEditorialThumbnail, generateAiTopicSuggestions } from "./ai/openaiService.js?v=250";
+import { callChatGptAction, generateCmsThumbCollage, saveAiDraft, runAiEditorialTask, saveAiEditorialSettings, generateAiEditorialThumbnail, generateAiTopicSuggestions } from "./ai/openaiService.js?v=251";
 import { generateArticleSpeechAsset } from "./ai/ttsService.js";
 
 const root = document.querySelector("#app");
