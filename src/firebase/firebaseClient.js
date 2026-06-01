@@ -9,6 +9,7 @@ function timeout(ms) {
 }
 
 export async function getFirebaseServices() {
+  if (localPreviewMode()) return null;
   if (!useFirebase) return null;
   if (!servicesPromise) {
     servicesPromise = Promise.race([Promise.all([
@@ -37,5 +38,9 @@ export async function getFirebaseServices() {
 }
 
 export function firebaseEnabled() {
-  return useFirebase;
+  return useFirebase && !localPreviewMode();
+}
+
+export function localPreviewMode() {
+  return ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
 }

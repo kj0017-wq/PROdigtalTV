@@ -483,8 +483,25 @@ const editorialSections = {
   }
 };
 
+function isAiGeneratedEditorialItem(item = {}) {
+  return item.author_type === "ai"
+    || item.authorType === "ai"
+    || item.aiGenerated === true
+    || Boolean(item.source_snapshot_json)
+    || Boolean(item.sourceSnapshotJson)
+    || Boolean(item.ai_log_json)
+    || Boolean(item.aiLogJson)
+    || Boolean(item.duplicate_check_json)
+    || Boolean(item.final_check_json)
+    || Boolean(item.source_status)
+    || Boolean(item.duplicate_status)
+    || Boolean(item.ai_check_status)
+    || Boolean(item.publication_status);
+}
+
 function isInternalEditorialItem(item = {}) {
   if (item.section === "download" || String(item.migratedTo || "").startsWith("downloads/")) return false;
+  if (isAiGeneratedEditorialItem(item)) return false;
   return !["press", "news"].includes(item.page)
     && !["pressRelease", "news"].includes(item.section)
     && (["home", "about", "join", "imprint", "privacy", "legal", "contact", "login", "members", "board"].includes(item.page)
@@ -507,6 +524,7 @@ export async function moduleListPage(module, section = "all") {
   }[module];
   const editorialConfig = module === "editorialContent" ? editorialSections[section] || editorialSections.all : null;
   const records = (await list(module))
+    .filter((item) => module !== "editorialContent" || !isAiGeneratedEditorialItem(item))
     .filter((item) => !editorialConfig || editorialConfig.filter(item))
     .sort((a, b) => {
       const dateA = a.publishDate || a.date || a.validFrom || a.updatedAt || a.createdAt || "";

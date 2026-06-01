@@ -1,4 +1,4 @@
-import { getFirebaseServices } from "./firebaseClient.js";
+import { getFirebaseServices, localPreviewMode } from "./firebaseClient.js";
 
 const USER_KEY = "prodigitaltv-user";
 let authReadyPromise;
@@ -35,6 +35,12 @@ async function userFromCredential(firebase, firebaseUser, fallbackRole = "guest"
 }
 
 export async function login(email, password, demoRole = "member") {
+  if (localPreviewMode() && password === "demo") {
+    const role = demoRole || "admin";
+    const user = { uid: `demo-${role}`, email, displayName: email.split("@")[0] || "Demo", role, status: "active", idToken: "demo-token", tokenExpiresAt: "Lokale Vorschau" };
+    sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+    return user;
+  }
   const firebase = await getFirebaseServices();
   if (!firebase) {
     const user = { uid: `demo-${demoRole}`, email, displayName: email.split("@")[0], role: demoRole, idToken: "demo-token", tokenExpiresAt: "" };
@@ -46,6 +52,12 @@ export async function login(email, password, demoRole = "member") {
 }
 
 export async function loginWithGoogle(demoRole = "member") {
+  if (localPreviewMode()) {
+    const role = demoRole || "admin";
+    const user = { uid: `demo-google-${role}`, email: "google-demo@prodigitaltv.de", displayName: "Google Demo", role, status: "active", providerId: "google.com", idToken: "demo-token", tokenExpiresAt: "Lokale Vorschau" };
+    sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+    return user;
+  }
   const firebase = await getFirebaseServices();
   if (!firebase) {
     const user = { uid: `demo-google-${demoRole}`, email: "google-demo@prodigitaltv.de", displayName: "Google Demo", role: demoRole, providerId: "google.com", idToken: "demo-token", tokenExpiresAt: "" };

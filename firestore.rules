@@ -144,6 +144,36 @@ service cloud.firestore {
       allow delete: if admin();
     }
 
+    match /verified_sources/{id} {
+      allow read, write: if editor();
+    }
+
+    match /article_sources/{id} {
+      allow read, write: if editor();
+    }
+
+    match /article_keywords/{id} {
+      allow read, write: if editor();
+    }
+
+    match /ai_prompts/{id} {
+      allow read, write: if editor();
+    }
+
+    match /ai_prompt_versions/{id} {
+      allow read, write: if editor();
+    }
+
+    match /ai_prompt_tests/{id} {
+      allow read, write: if editor();
+    }
+
+    match /ai_editorial_logs/{id} {
+      allow read: if editor();
+      allow create: if editor();
+      allow update, delete: if false;
+    }
+
     match /users/{userId} {
       allow read: if admin() || (signedIn() && request.auth.uid == userId);
       allow write: if admin();

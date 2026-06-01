@@ -1,6 +1,6 @@
 import { listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js";
 import { currentUser, isMember } from "../firebase/authService.js";
-import { firebaseEnabled } from "../firebase/firebaseClient.js";
+import { firebaseEnabled, localPreviewMode } from "../firebase/firebaseClient.js";
 import { publicShell, logo } from "../components/layout.js";
 import { eventCard, topicCard } from "../components/cards.js";
 import { accessLabels, lifecycleLabels } from "../data/demoData.js";
@@ -59,6 +59,32 @@ function archiveEditorialArticle(item, partners = []) {
 
 function articleParagraphs(text = "") {
   return text.split(/\n+/).filter(Boolean).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("");
+}
+
+function articleSourcesList(item = {}) {
+  const rawSources = Array.isArray(item.sources)
+    ? item.sources
+    : Array.isArray(item.source_snapshot_json)
+      ? item.source_snapshot_json
+      : Array.isArray(item.sourceSnapshotJson)
+        ? item.sourceSnapshotJson
+        : [];
+  const sources = rawSources
+    .filter((source) => source?.url && (source.title || source.publisher || source.name))
+    .slice(0, 8);
+  if (!sources.length) return "";
+  return `<details class="sources-list" open><summary>Quellen anzeigen</summary><ul>${sources.map((source) => `<li><a class="link" href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.publisher || source.name || "Quelle")}: ${escapeHtml(source.title || source.relevance_note || source.url)}</a></li>`).join("")}</ul></details>`;
+}
+
+function isAiGeneratedArticle(item = {}) {
+  return item.author_type === "ai" || item.authorType === "ai" || item.aiGenerated === true;
+}
+
+function editorialPrioritySort(a = {}, b = {}) {
+  const manualA = isAiGeneratedArticle(a) ? 0 : 1;
+  const manualB = isAiGeneratedArticle(b) ? 0 : 1;
+  if (manualA !== manualB) return manualB - manualA;
+  return String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || ""));
 }
 
 function ttsReader({ title = "", audioUrl = "" }) {
@@ -250,7 +276,7 @@ export async function topicsPage() {
 export async function newsPage() {
   const news = (await listPublicContent("editorialContent"))
     .filter((item) => item.page === "news" || item.section === "news")
-    .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")));
+    .sort(editorialPrioritySort);
   return publicShell("news", `${subhero("News", "Aktuelles von PROdigitalTV.", "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.")}
     <section class="section"><div class="container">${news.length ? `<div class="card-grid card-grid--three">${news.map((item) => `<a class="quick-card news-card" href="#/news/${item.id}">${item.imageUrl ? `<figure class="news-card__thumb"><img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.title || "News")}"></figure>` : ""}<p class="eyebrow">${escapeHtml(item.category || "News")}</p><h3>${escapeHtml(item.title || "")}</h3>${item.subtitle ? `<p class="news-card__subtitle">${escapeHtml(item.subtitle)}</p>` : ""}<p>${escapeHtml(item.shortText || item.teaserText || item.introText || item.bodyText || "").slice(0, 180)}</p></a>`).join("")}</div>` : `<div class="alert">Aktuell sind keine News veroeffentlicht.</div>`}</div></section>`);
 }
@@ -289,6 +315,7 @@ export async function newsDetailPage(id) {
         ${item.subtitle ? `<p class="lead">${escapeHtml(item.subtitle)}</p>` : ""}
         ${ttsReader({ title: item.title || "", audioUrl: item.audioUrl || "" })}
         <div class="editorial-text">${leadMedia}${articleParagraphs(text)}</div>
+        ${articleSourcesList(item)}
         ${!attachedGalleryImages.length && galleryItems.length ? `<h2>Bildergalerie</h2><div class="gallery editorial-gallery">${galleryItems.map((entry) => `<figure class="editorial-gallery__item"><img src="${escapeHtml(entry.fileUrl)}" alt="${escapeHtml(entry.altText || entry.title || "Eventbild")}">${entry.title ? `<figcaption>${escapeHtml(entry.title)}</figcaption>` : ""}</figure>`).join("")}</div>` : ""}
       </article>
       <aside class="detail-aside">
@@ -398,9 +425,10 @@ export async function joinPage() {
 }
 
 export async function loginPage() {
-  const demoControls = firebaseEnabled() ? "" : `<div class="field"><label>Demo-Rolle fuer lokale Vorschau</label><select name="role"><option value="admin">Admin</option><option value="editor">Redakteur</option><option value="member">Mitglied</option></select></div>`;
-  const emailValue = firebaseEnabled() ? "" : "admin@prodigitaltv.de";
-  const passwordValue = firebaseEnabled() ? "" : "demo";
+  const demoAvailable = !firebaseEnabled() || localPreviewMode();
+  const demoControls = demoAvailable ? `<div class="field"><label>Demo-Rolle fuer lokale Vorschau</label><select name="role"><option value="admin">Admin</option><option value="editor">Redakteur</option><option value="member">Mitglied</option></select></div>` : "";
+  const emailValue = demoAvailable ? "admin@prodigitaltv.de" : "";
+  const passwordValue = demoAvailable ? "demo" : "";
   return publicShell("login", `<section class="login-wrap"><div class="container"><form id="login-form" class="form-card login-card">${logo()}<p class="eyebrow">Mitgliederbereich</p><h1 style="margin-bottom:10px">Anmelden</h1><p style="margin-bottom:25px">Zugriff auf exklusive Events, Downloads und CMS-Funktionen. Nach erfolgreichem Login wird ein Firebase-ID-Token fuer die aktuelle Sitzung gespeichert.</p><div class="form-grid"><button id="google-login-button" class="button button--secondary" type="button">Mit Google anmelden</button><div class="login-divider"><span>oder mit E-Mail</span></div><div class="field"><label>E-Mail</label><input name="email" type="email" value="${emailValue}" required></div><div class="field"><label>Passwort</label><input name="password" type="password" value="${passwordValue}" required></div>${demoControls}<button class="button button--primary">Einloggen</button><p class="muted">Produktiv zaehlt die Rolle aus Firestore unter <code>users/{uid}</code>. Der Token wird automatisch erneuert und beim Logout geloescht.</p><div id="login-result"></div></div></form></div></section>`);
 }
 

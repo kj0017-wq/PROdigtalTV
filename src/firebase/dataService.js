@@ -21,7 +21,13 @@ function localDb() {
     mergeMissingDemoRecords(db, "members");
     mergeMissingDemoRecords(db, "events");
     mergeMissingDemoRecords(db, "eventMedia");
+    mergeMissingDemoRecords(db, "galleries");
     mergeMissingDemoRecords(db, "downloads");
+    mergeMissingDemoRecords(db, "editorialContent");
+    mergeMissingDemoRecords(db, "verified_sources");
+    mergeMissingDemoRecords(db, "ai_prompts");
+    mergeMissingDemoRecords(db, "ai_prompt_versions");
+    mergeMissingDemoRecords(db, "ai_editorial_logs");
     ["event-salzburg-red-bull-hangar7-2026", "event-berlinale-2026", "event-leica-welt-2026", "event-salzburg-2025"].forEach((eventId) => {
       const demoEvent = demoDatabase.events.find((event) => event.id === eventId);
       const localEvent = (db.events || []).find((event) => event.id === eventId);
@@ -47,6 +53,15 @@ function localDb() {
     });
     (db.events || []).forEach((event) => {
       delete event.sourceUrl;
+    });
+    (db.editorialContent || []).forEach((item) => {
+      if (typeof item.title === "string") item.title = item.title.replace(/^Themenvorschlag:\s*/i, "");
+      if (typeof item.headline === "string") item.headline = item.headline.replace(/^Themenvorschlag:\s*/i, "");
+      if (typeof item.bodyText === "string") {
+        item.bodyText = item.bodyText
+          .replace(/^Dies ist ein sicherer Themenvorschlag der lokalen KI-Redaktion\.\s*/i, "")
+          .replace(/Der Themenvorschlag betrifft/i, "Der Beitrag betrifft");
+      }
     });
     (demoDatabase.topics || []).forEach((demoTopic) => {
       const localTopic = (db.topics || []).find((topic) => topic.id === demoTopic.id);

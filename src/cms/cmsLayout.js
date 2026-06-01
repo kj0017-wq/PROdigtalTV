@@ -14,6 +14,18 @@ const sections = [
       ["cms/editorial/interna", "Interna"]
     ]
   },
+  {
+    route: "cms/ai-editorial/dashboard",
+    title: "KI-Redaktion",
+    children: [
+      ["cms/ai-editorial/dashboard", "Dashboard"],
+      ["cms/ai-editorial/articles", "Beitraege"],
+      ["cms/ai-editorial/sources", "Quellen"],
+      ["cms/ai-editorial/prompts", "Prompts"],
+      ["cms/ai-editorial/automation", "Automatisierung"],
+      ["cms/ai-editorial/logs", "Logs"]
+    ]
+  },
   ["cms/galleries", "Bildergalerien"],
   ["cms/mail", "Mail-Queue"], ["cms/chatgpt", "ChatGPT"], ["cms/ai-settings", "ChatGPT-Einstellungen"], ["cms/setup", "System / Einrichtung"]
 ];

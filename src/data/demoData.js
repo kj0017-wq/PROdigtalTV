@@ -452,8 +452,45 @@ export const eventMedia = [
   }
 ];
 
+export const galleries = [
+  {
+    id: "gallery-salzburg-hangar7-2026",
+    title: "Medienfruehstueck im Hangar-7 Salzburg",
+    description: "Bildergalerie zum PROdigitalTV Medienfruehstueck im Red Bull Hangar-7.",
+    status: "published",
+    visibility: "public",
+    eventId: "event-salzburg-red-bull-hangar7-2026",
+    images: [
+      {
+        id: "gallery-salzburg-hangar7-2026-1",
+        url: salzburgHangarImageUrl,
+        fileName: "DSC06819.jpg",
+        storagePath: "Images/DSC06819.jpg",
+        caption: "Red Bull Hangar-7 Salzburg",
+        altText: "Eventbild Red Bull Hangar-7 Salzburg",
+        sortOrder: 1
+      }
+    ],
+    createdAt: "2026-05-26T10:00:00",
+    updatedAt: "2026-05-26T10:00:00"
+  },
+  {
+    id: "gallery-prodigtaltv-branchendialog",
+    title: "PROdigitalTV Branchendialog",
+    description: "Allgemeine Bildergalerie fuer redaktionelle Rueckblicke und Veranstaltungsbeitraege.",
+    status: "draft",
+    visibility: "internal",
+    images: [],
+    createdAt: "2026-05-26T10:00:00",
+    updatedAt: "2026-05-26T10:00:00"
+  }
+];
+
 export const editorialContent = [
   { id: "home-hero", key: "home.hero", page: "home", section: "hero", title: "Die Zukunft digitaler Medien gemeinsam gestalten.", subtitle: "PROdigitalTV verbindet Entscheider, Impulsgeber und Unternehmen der digitalen Medienwirtschaft.", teaserText: "Das Branchennetzwerk der digitalen Medienwirtschaft.", buttonText: "Naechstes Event", buttonUrl: "#/events", validFrom: "", validTo: "", visibility: "public", status: "published", sortOrder: 1 },
+  { id: "press-hangar7-salzburg-2026", key: "press.hangar7.2026", page: "press", section: "pressRelease", title: "PROdigitalTV Medienfruehstueck im Hangar-7", subtitle: "Branchendialog in Salzburg mit Gaesten aus Medien, Technik und Vermarktung.", introText: "PROdigitalTV laedt zum Medienfruehstueck im Red Bull Hangar-7 nach Salzburg ein.", bodyText: "Das Medienfruehstueck bringt Entscheiderinnen und Entscheider aus TV, Streaming, Produktion, Technologie und Vermarktung zusammen. Im Mittelpunkt stehen aktuelle Fragen der digitalen Medienwirtschaft: Wie entwickeln sich Plattformen, welche Rolle spielen neue Distributionsmodelle, und wie koennen Anbieter ihre Inhalte sichtbar und wirtschaftlich tragfaehig positionieren?\n\nDer Austausch im Netzwerk soll Orientierung geben und konkrete Erfahrungen aus der Branche sichtbar machen. PROdigitalTV versteht das Format als kompakten Rahmen fuer Wissenstransfer, persoenliche Begegnung und neue Kooperationen.", category: "Presse", publishDate: "2026-05-20", validFrom: "2026-05-20", validTo: "", visibility: "public", status: "published", sortOrder: 10 },
+  { id: "news-ki-medienwirtschaft", key: "news.ki.medienwirtschaft", page: "news", section: "news", title: "KI bleibt ein zentrales Thema der Medienwirtschaft", subtitle: "Redaktion, Produktion und Distribution brauchen klare Regeln fuer KI-Werkzeuge.", introText: "Kuenstliche Intelligenz veraendert Arbeitsablaeufe in Redaktion, Produktion und Auswertung.", bodyText: "KI-Werkzeuge koennen Medienunternehmen bei Recherche, Transkription, Untertitelung, Archivsuche und Content-Planung unterstuetzen. Gleichzeitig steigen die Anforderungen an Kontrolle, Transparenz und Verantwortung.\n\nFuer die Branche ist entscheidend, dass automatisierte Prozesse nicht zu ungeprueften Aussagen, unklaren Quellen oder rechtlichen Risiken fuehren. PROdigitalTV betrachtet KI deshalb als strategisches Thema, das Technik, Redaktion, Recht und Management gemeinsam betrifft.", category: "KI", publishDate: "2026-05-22", validFrom: "2026-05-22", validTo: "", visibility: "public", status: "published", sortOrder: 11 },
+  { id: "news-fast-channels-distribution", key: "news.fast.distribution", page: "news", section: "news", title: "FAST-Channels gewinnen als Distributionsmodell an Bedeutung", subtitle: "Lineare Streaming-Angebote schaffen neue Optionen fuer Reichweite und Vermarktung.", introText: "FAST-Channels verbinden kuratierte Programme mit digitaler Ausspielung.", bodyText: "Werbefinanzierte lineare Streaming-Kanaele koennen vorhandene Inhalte neu buendeln und Zielgruppen in digitalen Umgebungen erreichen. Fuer Anbieter entstehen Chancen bei Reichweite, Markenbildung und Vermarktung.\n\nEntscheidend bleiben redaktionelle Programmierung, verlaessliche Technik, Rechteklaerung und klare Messbarkeit. Damit wird FAST nicht nur zu einem technischen, sondern auch zu einem strategischen Thema fuer Medienanbieter und Plattformen.", category: "Distribution", publishDate: "2026-05-24", validFrom: "2026-05-24", validTo: "", visibility: "public", status: "published", sortOrder: 12 },
   { id: "about-intro", key: "about.intro", page: "about", section: "intro", title: "Das Branchennetzwerk der digitalen Medienwirtschaft.", introText: "PROdigitalTV vernetzt Unternehmen und Akteure der digitalen Medienwirtschaft im deutschsprachigen Raum.", bodyText: "PROdigitalTV e.V. vernetzt Unternehmen und Akteure der digitalen Medienwirtschaft im deutschsprachigen Raum und begleitet die Branche aktiv im digitalen Wandel. In einer Zeit, in der sich Mediennutzung, Technologien und Geschaeftsmodelle rasant veraendern, schaffen wir eine Plattform fuer Austausch, Kooperation und praxisnahes Lernen. Unsere Mitglieder kommen aus den Bereichen TV, Streaming, Plattformen, Produktion, Distribution, Technologie, Start-ups und Medienservices - verbunden durch das gemeinsame Ziel, die Zukunft digitaler Medien aktiv mitzugestalten.\n\nDer Verein foerdert den Dialog zwischen etablierten Marktteilnehmern und innovativen Unternehmen, unterstuetzt den Wissenstransfer zu aktuellen Entwicklungen und bietet Raum fuer neue Ideen und Partnerschaften. Durch Veranstaltungen wie Medienfruehstuecke, Fachgespraeche und Interviewformate wie \"Von den Besten lernen\" entstehen wertvolle Kontakte und Impulse zu Themen wie digitale Transformation, Content-Strategien, neue Technologien, Monetarisierung, KI, Streaming oder die Zukunft des Fernsehens.\n\nMitglieder profitieren von einem starken Netzwerk, hoher Branchenkompetenz und einer Plattform, die den persoenlichen Austausch in den Mittelpunkt stellt. Gleichzeitig unterstuetzt PROdigitalTV die Sichtbarkeit seiner Mitglieder innerhalb der Medienbranche und schafft Verbindungen zwischen Technologie, Content und Vermarktung. Fuer TV-Sender bietet der Verein darueber hinaus die Moeglichkeit, von einem Vereinsrabatt bei der GEMA zu profitieren.\n\nPROdigitalTV versteht sich als unabhaengiges Netzwerk und Impulsgeber fuer die digitale Medienwelt - offen, praxisorientiert und zukunftsgerichtet.", validFrom: "", validTo: "", visibility: "public", status: "published", sortOrder: 1 },
   { id: "join-intro", key: "join.intro", page: "join", section: "intro", title: "Mitglied werden", introText: "Werden Sie Teil eines aktiven B2B-Netzwerks mit direktem Zugang zu Expertise und Entscheiderinnen und Entscheidern.", validFrom: "", validTo: "", visibility: "public", status: "published", sortOrder: 1 },
   { id: "download-info-satzung", key: "join.downloadInfo.satzung", page: "join", section: "internal", title: "Vereinssatzung", bodyText: "Die Vereinssatzung regelt Zweck, Mitgliedschaft, Organe und grundlegende Arbeitsweise von PROdigitalTV e.V. Bitte lesen Sie die Satzung vor dem Absenden des Mitgliedsantrags.", validFrom: "", validTo: "", visibility: "public", status: "published", sortOrder: 2 },
@@ -480,9 +517,45 @@ export const settings = [
   { id: "roles", key: "roles", group: "authorization", value: ["admin", "editor", "member", "guest"], description: "Systemrollen" }
 ];
 
+export const verified_sources = [
+  { id: "verified-source-eu-commission", name: "Europaeische Kommission", domain: "ec.europa.eu", url: "https://commission.europa.eu", source_type: "Behoerde", source_status: "bevorzugt", category: "Plattformregulierung", trust_score: 95, language: "de/en", country: "EU", notes: "Primaerquelle fuer EU-Regulierung.", priority: 1, default_for_categories: ["Plattformregulierung", "Barrierefreiheit", "Medienrecht"], created_at: "2026-05-29T10:00:00", updated_at: "2026-05-29T10:00:00", checked_at: "2026-05-29T10:00:00", checked_by: "System" },
+  { id: "verified-source-eurlex", name: "EUR-Lex", domain: "eur-lex.europa.eu", url: "https://eur-lex.europa.eu", source_type: "Rechtsquelle", source_status: "bevorzugt", category: "Medienrecht", trust_score: 98, language: "de/en", country: "EU", notes: "Rechtsakte und Gesetzesstaende der EU.", priority: 1, default_for_categories: ["Medienrecht", "Urheberrecht", "Plattformregulierung"], created_at: "2026-05-29T10:00:00", updated_at: "2026-05-29T10:00:00", checked_at: "2026-05-29T10:00:00", checked_by: "System" },
+  { id: "verified-source-hbbtv", name: "HbbTV Association", domain: "hbbtv.org", url: "https://www.hbbtv.org", source_type: "Technischer Standard", source_status: "bevorzugt", category: "HbbTV", trust_score: 92, language: "en", country: "international", notes: "Primaerquelle fuer HbbTV-Standards.", priority: 2, default_for_categories: ["HbbTV", "Smart-TV", "Streaming-Technologie"], created_at: "2026-05-29T10:00:00", updated_at: "2026-05-29T10:00:00", checked_at: "2026-05-29T10:00:00", checked_by: "System" },
+  { id: "verified-source-w3c", name: "W3C", domain: "w3.org", url: "https://www.w3.org", source_type: "Technischer Standard", source_status: "bevorzugt", category: "Webstandards", trust_score: 96, language: "en", country: "international", notes: "Technische Standards fuer Web und Medien.", priority: 2, default_for_categories: ["Streaming-Technologie", "Barrierefreiheit", "Untertitel"], created_at: "2026-05-29T10:00:00", updated_at: "2026-05-29T10:00:00", checked_at: "2026-05-29T10:00:00", checked_by: "System" },
+  { id: "verified-source-gema", name: "GEMA", domain: "gema.de", url: "https://www.gema.de", source_type: "Verwertungsgesellschaft", source_status: "erlaubt", category: "Musikrechte", trust_score: 88, language: "de", country: "DE", notes: "Quelle fuer Musikrechte und GEMA-Informationen.", priority: 3, default_for_categories: ["Musikrechte", "GEMA", "Verwertungsrecht"], created_at: "2026-05-29T10:00:00", updated_at: "2026-05-29T10:00:00", checked_at: "2026-05-29T10:00:00", checked_by: "System" }
+];
+
+export const ai_prompts = [
+  { id: "ai-prompt-editorial-final-check", name: "Endpruefung Quellen, Dubletten und Halluzinationen", prompt_type: "Endpruefung", description: "Prueft, ob ein KI-Beitrag gespeichert oder veroeffentlicht werden darf.", prompt_text: "Pruefe {{BEITRAGSTEXT}} gegen {{QUELLEN}}, {{DUBLETTENLISTE}} und {{VERIFIZIERTE_QUELLEN}}. Antworte nur als JSON mit status, blockers, warnings, publication_status und explanation.", system_instructions: "Keine Halluzinationen. Keine Veroeffentlichung ohne mindestens zwei belastbare gepruefte Quellen. Keine Veroeffentlichung bei Dubletten.", output_format: "json", model: "gpt-4.1-mini", temperature: 0.1, max_tokens: 1200, is_active: true, status: "aktiv", version: 1, created_at: "2026-05-29T10:00:00", updated_at: "2026-05-29T10:00:00", created_by: "System", updated_by: "System" },
+  { id: "ai-prompt-editorial-keywords", name: "Keyword-Erstellung mit Relevanz", prompt_type: "Keywords", description: "Erzeugt Keywords mit Typ und Relevanzscore.", prompt_text: "Erzeuge Keywords fuer {{BEITRAGSTEXT}}. Speichere nur Begriffe ab Relevanz 50. Antworte als JSON-array mit keyword, keyword_type, relevance_score, is_primary und explanation.", system_instructions: "Nur aus dem Beitrag und den Quellen ableiten, keine Trendbegriffe erfinden.", output_format: "json", model: "gpt-4.1-mini", temperature: 0.2, max_tokens: 900, is_active: true, status: "aktiv", version: 1, created_at: "2026-05-29T10:00:00", updated_at: "2026-05-29T10:00:00", created_by: "System", updated_by: "System" }
+];
+
+export const ai_prompt_versions = ai_prompts.map((prompt) => ({
+  id: `${prompt.id}-v1`,
+  prompt_id: prompt.id,
+  version: 1,
+  prompt_text: prompt.prompt_text,
+  system_instructions: prompt.system_instructions,
+  output_format: prompt.output_format,
+  model: prompt.model,
+  temperature: prompt.temperature,
+  max_tokens: prompt.max_tokens,
+  change_note: "Initiale Systemversion.",
+  status: prompt.status,
+  created_at: prompt.created_at,
+  created_by: prompt.created_by
+}));
+
+export const article_sources = [];
+export const article_keywords = [];
+export const ai_prompt_tests = [];
+export const ai_editorial_logs = [
+  { id: "ai-editorial-log-initial", article_id: "", task_name: "KI_Redaktion_Taeglicher_Beitrag", status: "blocked", message: "Initialer Sicherheitsstatus: Ohne aktuelle Quellenrecherche wird kein Beitrag erzeugt.", found_topics_json: [], rejected_topics_json: [], used_sources_json: [], source_check_json: { source_status: "unzureichend" }, duplicate_check_json: {}, keyword_result_json: {}, ai_check_json: { status: "nicht bestanden" }, error_json: {}, created_at: "2026-05-29T10:00:00" }
+];
+
 export const demoDatabase = {
-  events: [...events, ...additionalArchiveEvents], topics, speakers, sponsors, members, boardMembers, registrations, membershipApplications, downloads, eventMedia,
-  editorialContent, mailQueue, settings,
+  events: [...events, ...additionalArchiveEvents], topics, speakers, sponsors, members, boardMembers, registrations, membershipApplications, downloads, eventMedia, galleries,
+  editorialContent, mailQueue, settings, verified_sources, article_sources, article_keywords, ai_prompts, ai_prompt_versions, ai_prompt_tests, ai_editorial_logs,
   users: [{ id: "demo-admin", email: "admin@prodigitaltv.de", displayName: "Demo Administrator", role: "admin", status: "active" }],
   system: [{ id: "setup", installed: true, version: "1.0.0-demo", demoDataInstalled: true, installedAt: "2026-05-26T08:00:00" }],
   auditLog: []
