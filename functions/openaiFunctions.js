@@ -223,6 +223,125 @@ function callable(action) {
   return onCall({ region, secrets: [openAiApiKey] }, (request) => runAiAction(action, request));
 }
 
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeTopicSuggestion(item = {}, index = 0, context = {}) {
+  const now = new Date().toISOString();
+  const title = String(item.title || item.thema || item.topic || "").trim().slice(0, 180);
+  const headline = String(item.headline || title || "").trim().slice(0, 180);
+  const subline = String(item.subline || item.thubline || item.summary || "").trim().slice(0, 220);
+  const rawKeywords = safeArray(item.keywords || item.tags).map((keyword) => String(keyword || "").trim()).filter(Boolean).slice(0, 10);
+  const keyBase = title || headline || `KI-Thema ${index + 1}`;
+  const topicKey = String(item.topic_key || keyBase)
+    .toLowerCase()
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 80);
+  return {
+    id: `ai-topic-suggestion-${Date.now()}-${index + 1}-${topicKey || "thema"}`,
+    topic_key: topicKey || `thema-${index + 1}`,
+    title: title || headline || `KI-Thema ${index + 1}`,
+    headline: headline || title || `KI-Thema ${index + 1}`,
+    subline,
+    category: String(item.category || context.category || "Medienbranche").trim().slice(0, 120),
+    keywords: rawKeywords,
+    thumbnail_idea: String(item.thumbnail_idea || item.thumbnailIdea || "").trim().slice(0, 500),
+    actuality_score: Math.max(0, Math.min(100, Number(item.actuality_score ?? item.aktualitaet ?? 70))),
+    industry_score: Math.max(0, Math.min(100, Number(item.industry_score ?? item.branchenrelevanz ?? 75))),
+    relevance_score: Math.max(0, Math.min(100, Number(item.relevance_score ?? item.relevanz ?? 75))),
+    duplicate_status: String(item.duplicate_status || "noch nicht geprueft").slice(0, 80),
+    source_status: String(item.source_status || "Recherche erforderlich").slice(0, 100),
+    status: "vorgeschlagen",
+    queue_status: "nicht uebernommen",
+    rank: index + 1,
+    reason: String(item.reason || item.begruendung || "").trim().slice(0, 800),
+    possible_sources: safeArray(item.possible_sources || item.quellenarten).map((source) => String(source || "").trim()).filter(Boolean).slice(0, 8),
+    research_category: context.category || "",
+    research_keywords: context.keywords || "",
+    origin: "openai_topic_research",
+    created_at: now,
+    updated_at: now
+  };
+}
+
+exports.generateAiEditorialTopicSuggestions = onCall({ region, secrets: [openAiApiKey], timeoutSeconds: 120, memory: "512MiB" }, async (request) => {
+  const payload = request.data || {};
+  const { profile, settings } = await requireAiAccess(request);
+  const key = openAiApiKey.value() || process.env.OPENAI_API_KEY;
+  if (!key) throw new HttpsError("failed-precondition", "OPENAI_API_KEY ist nicht als Firebase Secret/Environment gesetzt.");
+  const limit = Math.max(1, Math.min(10, Number(payload.limit || 10)));
+  const category = String(payload.category || "").trim();
+  const keywords = String(payload.keywords || "").trim();
+  const prompt = [
+    "Erzeuge fuer die PROdigitalTV KI-Redaktion genau 10 redaktionelle Themenvorschlaege.",
+    "Die Vorschlaege sollen fuer TV, Streaming, Digitalmedien, Medienrecht, Produktion, KI, Distribution, Vermarktung, HbbTV, OTT, FAST-Channels, Barrierefreiheit oder Plattformregulierung geeignet sein.",
+    category ? `Lenke die Recherche auf die Kategorie: ${category}` : "Nutze eine ausgewogene Rotation ueber die relevanten Themenbereiche.",
+    keywords ? `Beruecksichtige diese Stichworte: ${keywords}` : "",
+    "Wichtig: Es entstehen noch keine fertigen Artikel. Es geht nur um eine Themenliste fuer die redaktionelle Auswahl.",
+    "Keine konkreten Zahlen, Studien, URLs, Zitate oder tagesaktuellen Fakten erfinden. Wenn ein Thema Quellenrecherche braucht, markiere source_status als 'Recherche erforderlich'.",
+    "Bewerte Aktualitaet, Branchenrelevanz und Gesamt-Relevanz jeweils von 0 bis 100.",
+    "Antworte ausschliesslich als valides JSON-Objekt mit dem Feld suggestions. suggestions ist ein Array aus 10 Objekten mit: title, headline, subline, category, keywords, thumbnail_idea, actuality_score, industry_score, relevance_score, source_status, duplicate_status, reason, possible_sources."
+  ].filter(Boolean).join("\n\n");
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: settings.model || "gpt-4.1-mini",
+      temperature: Number(settings.temperature ?? 0.3),
+      max_output_tokens: 2400,
+      text: { format: { type: "json_object" } },
+      input: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: prompt }
+      ]
+    })
+  });
+  const data = await response.json();
+  if (!response.ok) throw new HttpsError("internal", data.error?.message || "OpenAI API Fehler bei der Themenrecherche.");
+  const text = data.output_text || data.output?.flatMap((item) => item.content || []).map((item) => item.text).filter(Boolean).join("\n") || "";
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new HttpsError("internal", "OpenAI hat keine gueltige JSON-Themenliste geliefert.");
+  }
+  const rawSuggestions = safeArray(parsed.suggestions).slice(0, limit);
+  if (!rawSuggestions.length) throw new HttpsError("internal", "OpenAI hat keine Themenvorschlaege geliefert.");
+  const suggestions = rawSuggestions.map((item, index) => normalizeTopicSuggestion(item, index, { category, keywords }));
+  const batch = db.batch();
+  suggestions.forEach((suggestion, index) => {
+    const ref = db.collection("ai_topic_suggestions").doc(suggestion.id);
+    batch.set(ref, { ...suggestion, rank: index + 1, createdBy: profile.uid, updatedBy: profile.uid }, { merge: true });
+  });
+  const logRef = db.collection("ai_editorial_logs").doc();
+  batch.set(logRef, {
+    article_id: "",
+    task_name: "KI_Redaktion_Themenrecherche",
+    status: "suggested",
+    message: `10 KI-Themenvorschlaege erstellt${category || keywords ? ` fuer ${[category, keywords].filter(Boolean).join(" / ")}` : ""}.`,
+    found_topics_json: suggestions,
+    rejected_topics_json: [],
+    used_sources_json: [],
+    source_check_json: { source_status: "Recherche nach Auswahl erforderlich" },
+    duplicate_check_json: {},
+    keyword_result_json: {},
+    ai_check_json: { status: "Vorschlag", publication_status: "nicht freigegeben" },
+    error_json: {},
+    created_at: new Date().toISOString(),
+    createdAt: FieldValue.serverTimestamp(),
+    createdBy: profile.uid
+  });
+  await batch.commit();
+  await writeAiLog({ profile, settings, action: "generateAiEditorialTopicSuggestions", payload, result: { suggestions }, status: "success" }).catch(() => {});
+  return { ok: true, suggestions, message: "10 KI-Themenvorschlaege wurden erstellt. Bitte auswaehlen und in die Queue uebernehmen." };
+});
+
 exports.improveText = callable("improveText");
 exports.shortenText = callable("shortenText");
 exports.extendText = callable("extendText");
