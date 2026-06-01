@@ -41,6 +41,21 @@ export function firebaseEnabled() {
   return useFirebase && !localPreviewMode();
 }
 
+export function realDataMode() {
+  const hashQuery = new URLSearchParams(String(window.location.hash || "").split("?")[1] || "");
+  const pageQuery = new URLSearchParams(window.location.search || "");
+  const requested = pageQuery.get("real") || hashQuery.get("real");
+  if (requested === "1") localStorage.setItem("prodigitaltv-real-data", "1");
+  if (requested === "0") localStorage.removeItem("prodigitaltv-real-data");
+  return localStorage.getItem("prodigitaltv-real-data") === "1";
+}
+
 export function localPreviewMode() {
-  return ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
+  const hashQuery = new URLSearchParams(String(window.location.hash || "").split("?")[1] || "");
+  const pageQuery = new URLSearchParams(window.location.search || "");
+  if (realDataMode()) return false;
+  const demoFlag = pageQuery.get("demo") === "1"
+    || hashQuery.get("demo") === "1"
+    || localStorage.getItem("prodigitaltv-local-demo") === "1";
+  return window.location.protocol === "file:" || demoFlag;
 }

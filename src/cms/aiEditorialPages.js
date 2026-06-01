@@ -1,14 +1,13 @@
 import { cmsShell, cmsTitle } from "./cmsLayout.js";
-import { list, getOne } from "../firebase/dataService.js";
+import { list, getOne, upsert } from "../firebase/dataService.js?v=250";
 import { localPreviewMode } from "../firebase/firebaseClient.js";
-import { currentUser, canUseCms } from "../firebase/authService.js";
+import { authDebugState, currentUser, canUseCms, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=250";
 import { escapeHtml, formatDateTime, formatShortDate } from "../utils/format.js";
 
 const sections = [
-  ["dashboard", "Dashboard"],
+  ["dashboard", "Themenliste"],
   ["articles", "Beitraege"],
   ["sources", "Quellen"],
-  ["suggestions", "Quellenvorschlaege"],
   ["prompts", "Prompts"],
   ["keywords", "Keywords"],
   ["automation", "Automatisierung"],
@@ -56,10 +55,97 @@ const systemPromptCatalog = [
   ["Endpruefung", "Endpruefung"]
 ];
 
+const topicResearchCategories = [
+  "Alle Themenbereiche",
+  "Technik",
+  "Streaming-Technologie",
+  "Smart-TV / HbbTV",
+  "OTT / Distribution",
+  "KI in Redaktion und Produktion",
+  "KI in der Synchronbranche",
+  "Medienrecht / Verwertungsrecht",
+  "Produktion / Postproduktion",
+  "Barrierefreiheit",
+  "Plattformregulierung",
+  "Werbung / Vermarktung",
+  "FAST-Channels",
+  "Lokale und regionale Medien"
+];
+
+function defaultSystemPrompt(type, label) {
+  const now = new Date().toISOString();
+  const id = `ai-prompt-system-${type.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+  const promptText = type === "Themenrecherche"
+    ? [
+      "Aufgabe: Erzeuge fuer die PROdigitalTV KI-Redaktion genau 10 redaktionelle Themenvorschlaege.",
+      "Jeder Vorschlag muss ein konkretes Thema aus TV, Streaming, Digitalmedien, Medienrecht, Produktion, KI, Distribution oder Vermarktung sein.",
+      "Bewerte jeden Vorschlag mit Aktualitaetsbewertung 0-100, Branchenrelevanz 0-100 und kurzer Begruendung.",
+      "Gib zusaetzlich Kategorie, moegliche Headline, kurze Subline, 5-8 Keywords, moegliche Quellenarten und Dublettenhinweis aus.",
+      "Wichtig: Aus der Themenrecherche entsteht noch kein Artikel. Die Ausgabe ist eine Vorschlagsliste fuer die Redaktion.",
+      "Nur Themen, die ein Redakteur auswaehlt, duerfen in die Themen-Queue uebernommen werden.",
+      "Keine Quellen, Zahlen, Studien, URLs oder Fakten erfinden. Wenn Live-Quellen fehlen, Quellenstatus als Recherche erforderlich kennzeichnen.",
+      "Ausgabeformat: JSON-Array mit 10 Objekten: title, headline, subline, category, keywords, actuality_score, industry_score, relevance_score, source_status, duplicate_hint, reason."
+    ].join("\n")
+    : [
+      `Aufgabe: ${label} fuer die PROdigitalTV KI-Redaktion.`,
+      "Arbeite nur mit den gelieferten Platzhaltern und CMS-Daten.",
+      "Nutze {{THEMA}}, {{KATEGORIE}}, {{QUELLEN}}, {{BESTEHENDE_BEITRAEGE}}, {{SPRACHSTIL}}, {{TEXTLAENGE}}, {{HEUTIGES_DATUM}}, {{VERIFIZIERTE_QUELLEN}}, {{BEITRAGSTEXT}}, {{HEADLINE}}, {{SUBLINE}} und {{KEYWORDS}}, sofern vorhanden.",
+      "Keine Fakten, Zahlen, Quellen, URLs, Personen oder Organisationen erfinden.",
+      "Wenn die Quellenlage nicht reicht, gib eine Sperre oder Warnung aus statt fertiger Veroeffentlichung."
+    ].join("\n");
+  return {
+    id,
+    name: label,
+    prompt_type: type,
+    description: `Standardprompt fuer ${label}. Kann redaktionell angepasst werden.`,
+    prompt_text: promptText,
+    system_instructions: "Feste Schutzregeln: keine Halluzinationen, keine erfundenen Quellen, keine Veroeffentlichung ohne gepruefte Quellen, keine Veroeffentlichung bei Dubletten oder unklarem Faktenstand.",
+    output_format: ["Themenrecherche", "Quellenpruefung", "Dublettenpruefung", "Keywords", "SEO / Meta", "Endpruefung"].includes(type) ? "json" : "text",
+    model: "gpt-4.1-mini",
+    temperature: ["Headline", "Subline / Thubline", "Thumbnail-Idee", "Thumbnail-Prompt", "Thumbnail-Erstellung"].includes(type) ? 0.3 : 0.2,
+    max_tokens: ["Beitragstext", "Endpruefung"].includes(type) ? 1400 : 900,
+    is_active: true,
+    status: "aktiv",
+    version: 1,
+    created_at: now,
+    updated_at: now,
+    created_by: "System",
+    updated_by: "System"
+  };
+}
+
+async function ensureSystemPrompts(prompts = []) {
+  const existingTypes = new Set(prompts.filter((prompt) => !isArchivedPrompt(prompt)).map((prompt) => prompt.prompt_type || prompt.promptType));
+  const missing = systemPromptCatalog.filter(([type]) => !existingTypes.has(type));
+  if (!missing.length) return prompts;
+  const created = missing.map(([type, label]) => defaultSystemPrompt(type, label));
+  await Promise.all(created.map((prompt) => upsert("ai_prompts", prompt)));
+  await Promise.all(created.map((prompt) => upsert("ai_prompt_versions", {
+    id: `${prompt.id}-v1`,
+    prompt_id: prompt.id,
+    version: 1,
+    prompt_text: prompt.prompt_text,
+    system_instructions: prompt.system_instructions,
+    output_format: prompt.output_format,
+    model: prompt.model,
+    temperature: prompt.temperature,
+    max_tokens: prompt.max_tokens,
+    change_note: "Automatisch angelegte Systemversion.",
+    status: prompt.status,
+    created_at: prompt.created_at,
+    created_by: prompt.created_by
+  })));
+  return [...prompts, ...created];
+}
+
 function protect(content) {
   const user = currentUser();
   if (!canUseCms(user)) {
-    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Zugriff geschuetzt</p><h1>CMS-Login erforderlich</h1><p style="margin:14px 0 24px">Die KI-Redaktion steht Administratoren und Redakteuren zur Verfuegung.</p><a class="button button--primary" href="#/login">Anmelden</a></div></section>`;
+    const debug = authDebugState();
+    const userHint = user
+      ? `<div class="alert alert--warning" style="margin:16px 0">Angemeldet als <strong>${escapeHtml(user.email || user.displayName || user.uid || "-")}</strong>, erkannte Rolle: <strong>${escapeHtml(user.role || "guest")}</strong>. Fuer die KI-Redaktion ist <strong>admin</strong> oder <strong>editor</strong> noetig.</div>`
+      : "";
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Zugriff geschuetzt</p><h1>CMS-Login erforderlich</h1><p style="margin:14px 0 24px">Die KI-Redaktion steht Administratoren und Redakteuren zur Verfuegung.</p>${userHint}<div class="alert" style="margin:16px 0;text-align:left"><strong>Diagnose</strong><br>Session: ${debug.stored ? "vorhanden" : "leer"}<br>Firebase: ${escapeHtml(debug.firebaseAuthUser?.email || "nicht angemeldet")}<br>Real-Modus: ${debug.realDataMode ? "ja" : "nein"}<br>Lokale Vorschau: ${debug.localPreviewMode ? "ja" : "nein"}</div><a class="button button--primary" href="#/login">Anmelden</a></div></section>`;
   }
   return content;
 }
@@ -98,6 +184,16 @@ function nav(active) {
 
 function latest(items, field = "createdAt") {
   return [...items].sort((a, b) => String(b[field] || b.updatedAt || "").localeCompare(String(a[field] || a.updatedAt || "")))[0];
+}
+
+function promptPreview(prompt = {}) {
+  const text = String(prompt.prompt_text || prompt.promptText || prompt.description || "").trim();
+  if (!text) return "Kein Prompt-Text hinterlegt.";
+  return text.length > 260 ? `${text.slice(0, 260).trim()}...` : text;
+}
+
+function promptForType(prompts = [], type) {
+  return latest(prompts.filter((prompt) => (prompt.prompt_type || prompt.promptType) === type && !isArchivedPrompt(prompt)), "updated_at");
 }
 
 function sourceRows(sources) {
@@ -144,6 +240,7 @@ function promptRows(prompts) {
   return prompts.map((prompt) => `<tr>
     <td><strong>${escapeHtml(prompt.name || "-")}</strong><small>${escapeHtml(prompt.description || "")}</small></td>
     <td>${escapeHtml(prompt.prompt_type || prompt.promptType || "-")}</td>
+    <td class="prompt-preview-cell">${escapeHtml(promptPreview(prompt))}</td>
     <td>${badge(prompt.status || "Entwurf")}</td>
     <td>${prompt.is_active ? badge("aktiv") : badge("inaktiv")}</td>
     <td>v${Number(prompt.version || 1)}</td>
@@ -159,12 +256,12 @@ function isArchivedPrompt(prompt = {}) {
 
 function promptCatalogRows(prompts) {
   return systemPromptCatalog.map(([type, label]) => {
-    const matches = prompts.filter((prompt) => (prompt.prompt_type || prompt.promptType) === type && !isArchivedPrompt(prompt));
-    const prompt = latest(matches, "updated_at");
+    const prompt = promptForType(prompts, type);
     if (!prompt) {
       return `<tr>
         <td><strong>${escapeHtml(label)}</strong><small>Kein eigener aktiver Prompt. System-Fallback bleibt als Sicherheitsnetz aktiv.</small></td>
         <td>${escapeHtml(type)}</td>
+        <td class="prompt-preview-cell prompt-preview-cell--empty">System-Fallback wird verwendet, bis ein eigener Prompt angelegt ist.</td>
         <td>${badge("Fallback")}</td>
         <td>${badge("inaktiv")}</td>
         <td>-</td>
@@ -175,6 +272,7 @@ function promptCatalogRows(prompts) {
     return `<tr>
       <td><strong>${escapeHtml(label)}</strong><small>${escapeHtml(prompt.description || prompt.name || "")}</small></td>
       <td>${escapeHtml(type)}</td>
+      <td class="prompt-preview-cell">${escapeHtml(promptPreview(prompt))}</td>
       <td>${badge(prompt.status || "Entwurf")}</td>
       <td>${prompt.is_active ? badge("aktiv") : badge("inaktiv")}</td>
       <td>v${Number(prompt.version || 1)}</td>
@@ -184,12 +282,41 @@ function promptCatalogRows(prompts) {
   }).join("");
 }
 
+function promptNameNavigation(prompts = []) {
+  return `<div class="prompt-name-nav"><label for="ai-prompt-name-select">Prompt auswaehlen</label><select id="ai-prompt-name-select" data-ai-prompt-select><option value="">Bitte Prompt waehlen...</option>${systemPromptCatalog.map(([type, label]) => {
+    const prompt = promptForType(prompts, type);
+    if (!prompt) {
+      return `<option value="create:${escapeHtml(type)}" data-create-type="${escapeHtml(type)}" data-create-name="${escapeHtml(label)}">${escapeHtml(label)} - Fallback anlegen</option>`;
+    }
+    return `<option value="${escapeHtml(prompt.id)}">${escapeHtml(label)} - ${escapeHtml(prompt.is_active ? "aktiv" : "inaktiv")} - v${Number(prompt.version || 1)}</option>`;
+  }).join("")}</select></div>`;
+}
+
 function promptTestRows(tests) {
   return tests.map((test) => `<tr>
     <td>${escapeHtml(formatDateTime(test.created_at || test.createdAt || "")) || "-"}</td>
     <td>${escapeHtml(test.prompt_name || test.promptName || test.prompt_id || "-")}</td>
     <td>${badge(test.test_status || test.testStatus || "-")}</td>
     <td>${escapeHtml((test.warnings_json || test.warningsJson || []).join(", ") || "Keine Warnungen")}</td>
+  </tr>`).join("");
+}
+
+function topicSuggestionRows(suggestions = []) {
+  return suggestions.map((topic) => `<tr>
+    <td><label class="checkbox"><input type="checkbox" name="topicSuggestionIds" value="${escapeHtml(topic.id)}"><span><strong>${escapeHtml(topic.title || "-")}</strong><small>${escapeHtml(topic.reason || topic.subline || "")}</small></span></label></td>
+    <td>${escapeHtml(topic.category || "-")}</td>
+    <td><strong>${Number(topic.actuality_score || 0)}</strong><small>Relevanz ${Number(topic.relevance_score || 0)}</small></td>
+    <td>${badge(topic.queue_status || topic.status || "vorgeschlagen")}</td>
+  </tr>`).join("");
+}
+
+function topicQueueRows(queue = []) {
+  return queue.map((topic) => `<tr>
+    <td><strong>${escapeHtml(topic.title || "-")}</strong><small>${escapeHtml(topic.subline || topic.reason || "")}</small></td>
+    <td>${escapeHtml(topic.category || "-")}</td>
+    <td>${Number(topic.actuality_score || 0)}</td>
+    <td>${badge(topic.status || "in Queue")}</td>
+    <td>${escapeHtml(formatShortDate(topic.created_at || topic.createdAt || ""))}</td>
   </tr>`).join("");
 }
 
@@ -274,13 +401,16 @@ function editor(article, sources, keywords, logs) {
   const displayHeadline = String(article.headline || article.title || "KI-Beitrag").replace(/^Themenvorschlag:\s*/i, "");
   const displayTitle = String(article.title || article.headline || "").replace(/^Themenvorschlag:\s*/i, "");
   const origin = articleOrigin(article);
+  const publicationTarget = article.publication_target || article.publicationTarget || "news";
+  const publicationTargetLabel = publicationTarget === "monthly_topic" ? "Thema des Monats" : publicationTarget === "topic" ? "Langfristiges Thema" : "Daily News";
   const createLabel = localPreviewMode() ? "Demo-Beitrag erzeugen" : "Neu erzeugen";
   const thumbnailUrl = article.thumbnail_url || article.thumbnailUrl || article.imageUrl || "";
+  const audioUrl = article.audioUrl || article.audio_url || "";
   const canPublish = article.source_status === "geprueft"
     && !String(article.duplicate_status || "").toLowerCase().includes("dublette")
     && article.ai_check_status === "bestanden"
     && ["freigegeben", "geplant", "published", "veroeffentlicht"].includes(article.publication_status || article.status);
-  return `<div class="ai-editor-shell">
+  return `<div class="ai-editor-shell ai-editor-shell--news-layout">
     <div class="ai-editor-main">
       <div class="ai-editor-head">
         <div><p class="eyebrow">Beitraege &gt; Artikel bearbeiten</p><h2>${escapeHtml(displayHeadline)}</h2></div>
@@ -289,68 +419,92 @@ function editor(article, sources, keywords, logs) {
       <div class="ai-editor-actions">
         ${pictogram("+", createLabel, 'data-ai-editorial-run="manual"')}
         ${pictogram("O", "Vorschau", `data-ai-article-action="preview" data-article-id="${escapeHtml(article.id)}"`)}
-        ${pictogram("OK", "KI-Pruefung", `data-ai-article-action="check" data-article-id="${escapeHtml(article.id)}"`)}
-        ${pictogram("Q", "Belege bestaetigen", `data-ai-article-action="confirmClaims" data-article-id="${escapeHtml(article.id)}"`)}
-        ${pictogram("OK", "Freigeben", `data-ai-article-action="approve" data-article-id="${escapeHtml(article.id)}"`)}
-        ${pictogram("UP", "Veroeffentlichen", `data-ai-article-action="publish" data-article-id="${escapeHtml(article.id)}"`, !canPublish)}
+        ${pictogram("OK", "Pruefen & freigeben", `data-ai-article-action="reviewRelease" data-article-id="${escapeHtml(article.id)}"`)}
         ${pictogram("!", "Beitrag sperren", `data-ai-article-action="block" data-article-id="${escapeHtml(article.id)}"`)}
       </div>
       <div id="ai-editorial-run-result"></div>
       <div id="ai-article-action-result"></div>
-      <nav class="tabs ai-editor-tabs">${[
-        ["content", "Inhalt"],
-        ["sources", "Quellen"],
-        ["keywords", "Keywords"],
-        ["seo", "SEO / Meta"],
-        ["thumbnail", "Thumbnail"],
-        ["status", "Status & Pruefung"],
-        ["history", "Verlauf"]
-      ].map(([target, label], index) => `<button class="${index === 0 ? "active" : ""}" type="button" data-ai-editor-tab="${target}">${escapeHtml(label)}</button>`).join("")}</nav>
       <section class="panel ai-editor-panel" id="ai-editor-section-content" data-ai-editor-section="content">
         <form id="ai-article-edit-form" data-article-id="${escapeHtml(article.id)}" class="form-grid">
-          <div class="field"><label>Titel / Headline</label><input name="headline" value="${escapeHtml(displayHeadline || displayTitle)}"></div>
-          <div class="field"><label>Subline / Thubline</label><input name="subline" maxlength="90" value="${escapeHtml(article.subline || article.subtitle || "")}"></div>
-          <div class="form-grid--two">
-            <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(article.category || "")}"></div>
-            <div class="field"><label>Primaerkeyword</label><input name="primary_keyword" value="${escapeHtml(article.primary_keyword || article.primaryKeyword || "")}"></div>
-          </div>
-          <div class="field"><label>Beitragstext</label><textarea name="bodyText">${escapeHtml(article.body || article.bodyText || "")}</textarea></div>
-          <div class="ai-picto-row ai-text-tools">
-            ${pictogram("+", "Text vorbereiten", `data-ai-article-action="draftText" data-article-id="${escapeHtml(article.id)}"`)}
-            ${pictogram("OK", "Text pruefen", `data-ai-article-action="check" data-article-id="${escapeHtml(article.id)}"`)}
-            ${pictogram("R", "Text optimieren", `data-ai-article-action="optimizeText" data-article-id="${escapeHtml(article.id)}"`)}
-            ${pictogram("=", "Zusammenfassung", `data-ai-article-action="summary" data-article-id="${escapeHtml(article.id)}"`)}
-          </div>
-          <div class="form-grid--two" id="ai-editor-section-thumbnail" data-ai-editor-section="thumbnail">
-            <div class="field"><label>Thumbnail-Idee</label><textarea name="thumbnail_idea">${escapeHtml(article.thumbnail_idea || article.thumbnailIdea || "")}</textarea></div>
-            <div class="field"><label>Thumbnail-Prompt</label><textarea name="thumbnail_prompt" placeholder="Optional: eigener Prompt fuer genau diesen Artikel. Ueberschreibt den Default-Prompt.">${escapeHtml(article.thumbnail_prompt || article.thumbnailPrompt || "")}</textarea></div>
-          </div>
-          <div class="form-grid--two" id="ai-editor-section-seo" data-ai-editor-section="seo">
-            <div class="field"><label>Slug</label><input name="slug" value="${escapeHtml(article.slug || "")}" placeholder="barrierefreiheit-streaming-anbieter"></div>
-            <div class="field"><label>SEO-Titel</label><input name="seoTitle" maxlength="70" value="${escapeHtml(article.seoTitle || article.seo_title || "")}"></div>
-          </div>
-          <div class="field"><label>Meta-Beschreibung</label><textarea name="seoDescription">${escapeHtml(article.seoDescription || article.seo_description || "")}</textarea></div>
-          <div class="ai-picto-row">${pictogram("SEO", "SEO erzeugen", `data-ai-article-action="seo" data-article-id="${escapeHtml(article.id)}"`)}</div>
-          <div class="ai-thumbnail-box">
-            <div class="ai-thumbnail-preview ${thumbnailUrl ? "has-image" : ""}">${thumbnailUrl ? `<img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(displayHeadline || "Thumbnail")}">` : `<span>Noch kein Thumbnail erzeugt</span>`}</div>
-            <div class="ai-picto-row">${pictogram("IMG", "Thumbnail erzeugen", `data-ai-article-action="thumbnail" data-article-id="${escapeHtml(article.id)}"`)}</div>
+          <div class="editorial-workspace editorial-workspace--text-editor ai-newslike-editor">
+            <div class="editorial-workspace__main">
+              <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Titel / Headline</label><div class="ai-field-actions">${pictogram("+", "Headline erzeugen", `data-ai-article-action="headline" data-article-id="${escapeHtml(article.id)}"`)}</div></div><textarea name="headline" rows="2">${escapeHtml(displayHeadline || displayTitle)}</textarea></div>
+              <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Subline</label><div class="ai-field-actions">${pictogram("=", "Subline erzeugen", `data-ai-article-action="summary" data-article-id="${escapeHtml(article.id)}"`)}</div></div><textarea name="subline" rows="2" maxlength="90">${escapeHtml(article.subline || article.subtitle || "")}</textarea></div>
+              <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Haupttext</label><div class="ai-field-actions">${pictogram("+", "Text vorbereiten", `data-ai-article-action="draftText" data-article-id="${escapeHtml(article.id)}"`)}${pictogram("R", "Text optimieren", `data-ai-article-action="optimizeText" data-article-id="${escapeHtml(article.id)}"`)}</div></div><textarea name="bodyText">${escapeHtml(article.body || article.bodyText || "")}</textarea></div>
+              <div class="field editorial-text-field"><div class="editorial-field-head"><label>Shorttext / Intro</label><div class="ai-field-actions">${pictogram("=", "Kurztext erzeugen", `data-ai-article-action="summary" data-article-id="${escapeHtml(article.id)}"`)}</div></div><textarea name="introText">${escapeHtml(article.introText || article.shortText || article.teaserText || "")}</textarea></div>
+            </div>
+            <aside class="editorial-tools">
+              <section class="editorial-meta-panel">
+                <div class="editorial-tools__head"><p class="eyebrow">Meta</p><h3>Veroeffentlichung</h3></div>
+                <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(article.category || "")}"></div>
+                <div class="field"><label>Status</label><select name="publication_status"><option value="Entwurf" ${article.publication_status === "Entwurf" ? "selected" : ""}>Entwurf</option><option value="pruefpflichtig" ${article.publication_status === "pruefpflichtig" ? "selected" : ""}>Pruefpflichtig</option><option value="freigegeben" ${article.publication_status === "freigegeben" ? "selected" : ""}>Freigegeben</option><option value="veroeffentlicht" ${article.publication_status === "veroeffentlicht" ? "selected" : ""}>Veroeffentlicht</option></select></div>
+                <div class="field"><label>Redaktionelles Format</label><select name="publication_target"><option value="news" ${publicationTarget === "news" ? "selected" : ""}>Daily News</option><option value="topic" ${publicationTarget === "topic" ? "selected" : ""}>Langfristiges Thema</option><option value="monthly_topic" ${publicationTarget === "monthly_topic" ? "selected" : ""}>Thema des Monats</option></select></div>
+                <div class="meta-date-row"><div class="field"><label>Geplant fuer</label><input type="date" name="scheduled_date" value="${escapeHtml((article.scheduled_at || article.scheduledAt || "").slice(0, 10))}"></div><div class="field"><label>Veroeffentlicht</label><input type="date" name="published_date" value="${escapeHtml((article.published_at || article.publishedAt || "").slice(0, 10))}"></div></div>
+                <div class="ai-picto-row">${pictogram("UP", "Veroeffentlichen", `data-ai-article-action="publish" data-article-id="${escapeHtml(article.id)}"`, !canPublish)}</div>
+              </section>
+              <details class="editorial-tool-details"${thumbnailUrl ? " open" : ""} id="ai-editor-section-thumbnail" data-ai-editor-section="thumbnail">
+                <summary><span>Medien</span><strong>Bild / Thumb</strong><small class="editorial-tool-state ${thumbnailUrl ? "editorial-tool-state--ready" : ""}">${thumbnailUrl ? "Thumb vorhanden" : "Kein Thumb"}</small></summary>
+                <div class="editor-tool-section editor-tool-section--thumb">
+                  <div class="ai-thumbnail-box">
+                    <div class="ai-thumbnail-preview ${thumbnailUrl ? "has-image" : ""}">${thumbnailUrl ? `<img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(displayHeadline || "Thumbnail")}">` : `<span>Noch kein Thumbnail erzeugt</span>`}</div>
+                    <div class="field ai-thumb-text-field"><label>Thumbnail-Idee</label><textarea name="thumbnail_idea" rows="3">${escapeHtml(article.thumbnail_idea || article.thumbnailIdea || "")}</textarea></div>
+                    <div class="field ai-thumb-text-field"><label>Thumbnail-Prompt</label><textarea name="thumbnail_prompt" rows="3" placeholder="Optionaler Prompt fuer diesen Artikel. Ueberschreibt den Default-Prompt.">${escapeHtml(article.thumbnail_prompt || article.thumbnailPrompt || "")}</textarea></div>
+                    <div class="ai-picto-row">${pictogram("IMG", "Thumbnail erzeugen", `data-ai-article-action="thumbnail" data-article-id="${escapeHtml(article.id)}"`)}</div>
+                  </div>
+                </div>
+              </details>
+              <details class="editorial-tool-details"${audioUrl ? " open" : ""} id="ai-editor-section-audio" data-ai-editor-section="audio">
+                <summary><span>Audio</span><strong>Vorlesen</strong><small class="editorial-tool-state ${audioUrl ? "editorial-tool-state--ready" : ""}">${audioUrl ? "Audio vorhanden" : "Kein Audio"}</small></summary>
+                <div class="editor-tool-section editor-tool-section--audio audio-generation-panel">
+                  <p class="muted">${audioUrl ? "Audio ist gespeichert und kann im Frontend verwendet werden." : "Noch kein Audio gespeichert. Bitte Text speichern, dann Audio erzeugen."}</p>
+                  ${audioUrl ? `<audio controls preload="none" src="${escapeHtml(audioUrl)}"></audio>` : ""}
+                  <div class="ai-picto-row"><button type="button" class="ai-picto-button" data-generate-article-speech data-collection="editorialContent" data-record-id="${escapeHtml(article.id)}" data-audio-url="${escapeHtml(audioUrl)}"><span aria-hidden="true">A</span><strong>${audioUrl ? "Audio neu erzeugen" : "Audio erzeugen"}</strong></button></div>
+                  <div data-speech-result></div>
+                </div>
+              </details>
+              <details class="editorial-tool-details" id="ai-editor-section-seo" data-ai-editor-section="seo">
+                <summary><span>SEO</span><strong>Meta / Keywords</strong><small class="editorial-tool-state ${article.seoTitle || article.seo_title ? "editorial-tool-state--ready" : ""}">${article.seoTitle || article.seo_title ? "SEO vorhanden" : "SEO offen"}</small></summary>
+                <div class="editor-tool-section">
+                  <div class="field"><label>Primaerkeyword</label><input name="primary_keyword" value="${escapeHtml(article.primary_keyword || article.primaryKeyword || "")}"></div>
+                  <div class="field"><label>Slug</label><input name="slug" value="${escapeHtml(article.slug || "")}" placeholder="barrierefreiheit-streaming-anbieter"></div>
+                  <div class="field"><label>SEO-Titel</label><input name="seoTitle" maxlength="70" value="${escapeHtml(article.seoTitle || article.seo_title || "")}"></div>
+                  <div class="field"><label>Meta-Beschreibung</label><textarea name="seoDescription">${escapeHtml(article.seoDescription || article.seo_description || "")}</textarea></div>
+                  <div class="field"><label>SEO-Keywords</label><input name="seoKeywords" value="${escapeHtml(article.seoKeywords || article.seo_keywords || "")}" placeholder="Keyword 1, Keyword 2, Keyword 3"></div>
+                  <div class="ai-picto-row">${pictogram("SEO", "SEO erzeugen", `data-ai-article-action="seo" data-article-id="${escapeHtml(article.id)}"`)}${pictogram("+", "Keywords erzeugen", `data-ai-article-action="keywords" data-article-id="${escapeHtml(article.id)}"`)}</div>
+                </div>
+              </details>
+            </aside>
           </div>
           <div class="actions"><button class="button button--primary" type="submit">Aenderungen speichern</button><span class="muted">Speichern setzt den Beitrag wieder auf pruefpflichtig.</span></div>
           <div id="ai-article-save-result"></div>
         </form>
       </section>
-      <section class="panel" id="ai-editor-section-sources" data-ai-editor-section="sources"><h2>Quellen</h2><div class="ai-picto-row">${pictogram("OK", "Quellen pruefen", `data-ai-article-action="sources" data-article-id="${escapeHtml(article.id)}"`)}${pictogram("Q", "Belege zuordnen", `data-ai-article-action="mapClaims" data-article-id="${escapeHtml(article.id)}"`)}</div>${articleSources.length ? `<div class="ai-source-grid">${sourceCards(articleSources)}</div>` : `<p class="muted">Noch keine Quellen gespeichert.</p>`}<div class="table-wrap"><table class="table"><thead><tr><th>Quelle</th><th>Typ</th><th>Status</th><th>Trust</th><th>Link</th></tr></thead><tbody>${articleSources.length ? sourceRows(articleSources) : `<tr><td colspan="5">Noch keine Quellen gespeichert.</td></tr>`}</tbody></table></div></section>
-      <section class="panel" id="ai-editor-section-keywords" data-ai-editor-section="keywords"><h2>Keywords</h2><div class="ai-picto-row">${pictogram("+", "Keywords erzeugen", `data-ai-article-action="keywords" data-article-id="${escapeHtml(article.id)}"`)}</div><div class="ai-keyword-cloud">${articleKeywords.length ? articleKeywords.map((keyword) => `<span>${escapeHtml(keyword.keyword)} <strong>${Number(keyword.relevance_score || 0)}</strong></span>`).join("") : `<p class="muted">Noch keine Keywords gespeichert.</p>`}</div></section>
+      <section class="panel" id="ai-editor-section-sources" data-ai-editor-section="sources">
+        <h2>Quellen</h2>
+        <div class="alert alert--warning">Keine Freigabe ohne mindestens zwei belastbare, gepruefte Quellen. URLs duerfen nicht erfunden werden.</div>
+        <div class="ai-picto-row">${pictogram("OK", "Quellen pruefen", `data-ai-article-action="sources" data-article-id="${escapeHtml(article.id)}"`)}${pictogram("Q", "Belege bestaetigen", `data-ai-article-action="confirmClaims" data-article-id="${escapeHtml(article.id)}"`)}</div>
+        ${articleSources.length ? `<div class="ai-source-grid">${sourceCards(articleSources)}</div>` : `<p class="muted">Noch keine Quellen gespeichert. Bitte echte Quellen mit erreichbarer URL erfassen.</p>`}
+        <form id="ai-article-source-form" data-article-id="${escapeHtml(article.id)}" class="form-grid ai-source-entry-form">
+          <h3>Quelle hinzufuegen</h3>
+          <div class="form-grid--two">
+            <div class="field"><label>Titel</label><input name="title" required placeholder="z. B. European Accessibility Act"></div>
+            <div class="field"><label>Herausgeber</label><input name="publisher" required placeholder="z. B. EU-Kommission"></div>
+            <div class="field"><label>URL</label><input name="url" type="url" required placeholder="https://..."></div>
+            <div class="field"><label>Quellentyp</label><select name="source_type"><option>Primaerquelle</option><option>Behoerde</option><option>Verband</option><option>Fachmedium</option><option>Unternehmensmeldung</option><option>Standard / Spezifikation</option><option>Studie</option></select></div>
+            <div class="field"><label>Trust-Score</label><input name="trust_score" type="number" min="0" max="100" value="70"></div>
+            <div class="field"><label>Pruefstatus</label><select name="check_status"><option value="geprueft">geprueft</option><option value="teilweise geprueft">teilweise geprueft</option><option value="ungeprueft">ungeprueft</option></select></div>
+          </div>
+          <div class="field"><label>Belegte Aussage</label><textarea name="claim_reference" placeholder="Welche zentrale Aussage im Artikel wird durch diese Quelle belegt?"></textarea></div>
+          <div class="field"><label>Relevanznotiz</label><textarea name="relevance_note" placeholder="Warum ist diese Quelle belastbar und relevant?"></textarea></div>
+          <div class="actions"><button class="button button--primary">Quelle speichern</button></div>
+          <div id="ai-source-save-result"></div>
+        </form>
+        <div class="table-wrap"><table class="table"><thead><tr><th>Quelle</th><th>Typ</th><th>Status</th><th>Trust</th><th>Link</th></tr></thead><tbody>${articleSources.length ? sourceRows(articleSources) : `<tr><td colspan="5">Noch keine Quellen gespeichert.</td></tr>`}</tbody></table></div>
+      </section>
+      <section class="panel" id="ai-editor-section-keywords" data-ai-editor-section="keywords"><h2>Keywords</h2><div class="ai-picto-row">${pictogram("+", "Keywords erzeugen", `data-ai-article-action="keywords" data-article-id="${escapeHtml(article.id)}"`)}${pictogram("SEO", "SEO erzeugen", `data-ai-article-action="seo" data-article-id="${escapeHtml(article.id)}"`)}</div><div class="ai-keyword-cloud">${articleKeywords.length ? articleKeywords.map((keyword) => `<span>${escapeHtml(keyword.keyword)} <strong>${Number(keyword.relevance_score || 0)}</strong></span>`).join("") : `<p class="muted">Noch keine Keywords gespeichert.</p>`}</div></section>
       <section class="panel" id="ai-editor-section-status" data-ai-editor-section="status"><h2>Status & Pruefung</h2><div class="ai-status-stack">${badge(article.source_status || "-")}${badge(article.duplicate_status || "-")}${badge(article.ai_check_status || "-")}${badge(article.legal_check_status || "offen")}${badge(article.publication_status || article.status || "Entwurf")}</div></section>
       <section class="panel" id="ai-editor-section-history" data-ai-editor-section="history"><h2>Verlauf</h2><div class="table-wrap"><table class="table"><thead><tr><th>Zeit</th><th>Aufgabe</th><th>Status</th><th>Meldung</th></tr></thead><tbody>${articleLogs.length ? logRows(articleLogs) : `<tr><td colspan="4">Noch kein Verlauf.</td></tr>`}</tbody></table></div></section>
     </div>
-    <aside class="ai-editor-side">
-      <section class="panel"><h2>Herkunft</h2><div class="ai-status-stack">${badge(origin.label)}</div><p class="muted">${escapeHtml(origin.note)}</p></section>
-      <section class="panel"><h2>Veroeffentlichung</h2><div class="fact"><label>Status</label><strong>${escapeHtml(article.publication_status || article.status || "Entwurf")}</strong></div><div class="fact"><label>Geplant fuer</label><strong>${escapeHtml(article.scheduled_at || "-")}</strong></div><div class="fact"><label>Artikel-ID</label><strong>${escapeHtml(article.id || "-")}</strong></div></section>
-      <section class="panel"><h2>Pruefstatus</h2><div class="ai-status-stack">${badge(article.source_status || "-")}${badge(article.duplicate_status || "-")}${badge(article.ai_check_status || "-")}${badge(article.legal_check_status || "offen")}</div></section>
-      <section class="panel"><h2>Quellenuebersicht</h2><p>${articleSources.length} Quellen</p>${articleSources.slice(0, 3).map((source) => `<div class="fact"><label>${escapeHtml(source.publisher || source.name || source.title || "Quelle")}</label><strong>${Number(source.trust_score || 0)}</strong></div>`).join("")}</section>
-      <section class="panel"><h2>Keywords</h2><p>${escapeHtml(article.primary_keyword || article.primaryKeyword || "-")}</p><div class="ai-keyword-cloud">${articleKeywords.slice(0, 5).map((keyword) => `<span>${escapeHtml(keyword.keyword)}</span>`).join("")}</div></section>
-    </aside>
   </div>`;
 }
 
@@ -370,38 +524,38 @@ function settingsForm(settings) {
   </form>`;
 }
 
-function promptForm() {
+function promptForm(currentPrompt = null) {
+  const prompt = currentPrompt || {};
+  const promptType = prompt.prompt_type || prompt.promptType || "Themenrecherche";
+  const promptText = prompt.prompt_text || prompt.promptText || "";
+  const systemInstructions = prompt.system_instructions || prompt.systemInstructions || "";
   return `<form id="ai-prompt-form" class="form-grid">
-    <input type="hidden" name="prompt_id" value="">
-    <section class="ai-inline-builder">
-      <h3>Einfacher Assistent</h3>
-      <div class="form-grid--two">
-        <div class="field"><label>Was soll die KI tun?</label><select name="prompt_chat_template"><option value="">Eigene Aufgabe</option><option value="article_text">Artikeltext schreiben</option><option value="source_check">Quellen pruefen</option><option value="duplicate_check">Dubletten erkennen</option><option value="final_check">Beitrag vor Freigabe pruefen</option><option value="thumbnail">Thumbnail-Idee erstellen</option><option value="thumbnail_generation">Thumbnail erstellen</option><option value="keywords">Keywords erzeugen</option><option value="seo">SEO-Daten vorbereiten</option></select></div>
-        <div class="field"><label>Ausgangspunkt</label><select name="prompt_seed_mode"><option value="free_text">Normale Beschreibung</option><option value="chat">Beispiel-Chat / Ablauf</option></select></div>
+    <input type="hidden" name="prompt_id" value="${escapeHtml(prompt.id || "")}">
+    <input type="hidden" name="name" value="${escapeHtml(prompt.name || "")}">
+    <input type="hidden" name="prompt_type" value="${escapeHtml(promptType)}">
+    <input type="hidden" name="description" value="${escapeHtml(prompt.description || "")}">
+    <input type="hidden" name="model" value="${escapeHtml(prompt.model || "gpt-4.1-mini")}">
+    <input type="hidden" name="temperature" value="${Number(prompt.temperature ?? 0.2)}">
+    <input type="hidden" name="max_tokens" value="${Number(prompt.max_tokens || prompt.maxTokens || 1200)}">
+    <input type="hidden" name="output_format" value="${escapeHtml(prompt.output_format || prompt.outputFormat || "json")}">
+    <input type="hidden" name="prompt_seed_mode" value="free_text">
+    <input type="hidden" name="prompt_chat_template" value="">
+    <input type="hidden" name="prompt_seed_text" value="${escapeHtml(promptText || prompt.description || "")}">
+    <input type="hidden" name="test_input_json" value='{"THEMA":"Barrierefreiheit in Streaming-Angeboten","QUELLEN":"EU-Kommission, W3C","TEXTLAENGE":"250 bis 350 Woerter"}'>
+    <section class="prompt-simple-editor">
+      <div class="prompt-simple-editor__meta">
+        <div><span>Name</span><strong data-prompt-meta-name>${escapeHtml(prompt.name || "Neuer Prompt")}</strong></div>
+        <div><span>Typ</span><strong data-prompt-meta-type>${escapeHtml(promptType)}</strong></div>
+        <div><span>System</span><strong data-prompt-meta-system>${escapeHtml(prompt.model || "gpt-4.1-mini")} · Temp. ${Number(prompt.temperature ?? 0.2)} · ${Number(prompt.max_tokens || prompt.maxTokens || 1200)} Tokens</strong></div>
       </div>
-      <div class="field"><label>Beschreibe die Aufgabe in normaler Sprache</label><textarea name="prompt_seed_text" placeholder="Beispiel: Die KI soll einen fertigen Artikel vor der Freigabe pruefen. Sie soll kontrollieren, ob mindestens zwei gepruefte Quellen vorhanden sind, keine Dublette vorliegt, alle wichtigen Aussagen belegbar sind und keine erfundenen Angaben enthalten sind."></textarea></div>
-      <div class="actions">${iconButton(">", "Eingaben vorbereiten", "data-ai-prompt-generate-from-source")}</div>
+      <div class="field"><label>Prompt-Text</label><textarea name="prompt_text" placeholder="Nutze Platzhalter wie {{THEMA}}, {{QUELLEN}}, {{HEUTIGES_DATUM}}">${escapeHtml(promptText)}</textarea></div>
+      <div class="field prompt-system-field"><label>System-Instruktionen</label><textarea name="system_instructions" placeholder="Feste redaktionelle Leitplanken, z. B. keine Halluzinationen, keine erfundenen Quellen, keine Freigabe bei Dubletten.">${escapeHtml(systemInstructions)}</textarea></div>
+      <div class="form-grid--two">
+        <div class="field"><label>Status</label><select name="status">${["Entwurf", "wartet auf Freigabe", "freigegeben", "aktiv", "archiviert", "gesperrt"].map((status) => `<option ${status === (prompt.status || "aktiv") ? "selected" : ""}>${status}</option>`).join("")}</select></div>
+        <div class="field"><label>Aenderungsnotiz</label><input name="change_note" placeholder="Was wurde am Prompt geaendert?"></div>
+      </div>
     </section>
-    <details class="ai-advanced-prompt-fields">
-      <summary>Technische Details anzeigen</summary>
-    <div class="form-grid--two">
-      <div class="field"><label>Name</label><input name="name" placeholder="z. B. Endpruefung Quellen und Dubletten"></div>
-      <div class="field"><label>Prompt-Typ</label><select name="prompt_type">${promptTypes.map((type) => `<option>${escapeHtml(type)}</option>`).join("")}</select></div>
-    </div>
-    <div class="field"><label>Beschreibung</label><input name="description"></div>
-    <div class="field"><label>System-Instruktionen</label><textarea name="system_instructions" placeholder="Feste redaktionelle Leitplanken..."></textarea></div>
-    <div class="field"><label>Prompt-Text</label><textarea name="prompt_text" placeholder="Nutze Platzhalter wie {{THEMA}}, {{QUELLEN}}, {{HEUTIGES_DATUM}}"></textarea></div>
-    <div class="field"><label>Testdaten JSON</label><textarea name="test_input_json" placeholder='{"THEMA":"Barrierefreiheit in Streaming-Angeboten","QUELLEN":"EU-Kommission, W3C","TEXTLAENGE":"250 bis 350 Woerter"}'></textarea></div>
-    <div class="form-grid--two">
-      <div class="field"><label>Modell</label><input name="model" value="gpt-4.1-mini"></div>
-      <div class="field"><label>Temperatur</label><input name="temperature" type="number" step="0.1" min="0" max="1" value="0.2"></div>
-      <div class="field"><label>Max Tokens</label><input name="max_tokens" type="number" min="100" value="1200"></div>
-      <div class="field"><label>Output-Format</label><input name="output_format" value="json"></div>
-      <div class="field"><label>Status</label><select name="status"><option>Entwurf</option><option>wartet auf Freigabe</option><option>freigegeben</option><option>aktiv</option><option>archiviert</option><option>gesperrt</option></select></div>
-      <div class="field"><label>Aenderungsnotiz</label><input name="change_note" placeholder="Warum wurde der Prompt angelegt oder geaendert?"></div>
-    </div>
-    </details>
-    <label class="checkbox"><input type="checkbox" name="is_active"> Als aktiven Prompt verwenden</label>
+    <label class="checkbox"><input type="checkbox" name="is_active" ${prompt.is_active ? "checked" : ""}> Als aktiven Prompt verwenden</label>
     <div class="actions"><button class="button button--primary">Prompt speichern</button><button class="button button--secondary" type="button" data-ai-prompt-test>Prompt testen</button></div>
     <div id="ai-prompt-result"></div>
   </form>`;
@@ -409,21 +563,27 @@ function promptForm() {
 
 function demoModeNotice() {
   if (!localPreviewMode()) return "";
-  return `<div class="alert alert--warning ai-demo-mode-notice"><strong>Lokale Vorschau:</strong> Neue KI-Beitraege werden hier aus einem festen Demo-Themenpool erzeugt. Echte Themenrecherche, Quellenabruf und produktive KI-Pruefung laufen erst ueber die deployte Cloud Function.</div>`;
+  return `<div class="alert alert--warning ai-demo-mode-notice"><strong>Lokale Vorschau:</strong> Die Themenrecherche nutzt hier einen festen Demo-Themenpool. Echte Themenrecherche, Quellenabruf und produktive KI-Pruefung laufen erst ueber die deployte Cloud Function.</div>`;
 }
 
 export async function aiEditorialPage(section = "dashboard", query = new URLSearchParams()) {
   const active = section || "dashboard";
-  if (!canUseCms(currentUser())) return protect("");
-  const [articles, sources, prompts, promptTests, keywords, logs, settingsRecord] = await Promise.all([
+  let user = currentUser();
+  if (!canUseCms(user)) user = await waitForAuthReady();
+  if (!canUseCms(user)) user = await refreshAuthToken(true);
+  if (!canUseCms(user)) return protect("");
+  let [articles, sources, prompts, promptTests, keywords, logs, settingsRecord, topicSuggestions, topicQueue] = await Promise.all([
     list("editorialContent"),
     list("verified_sources"),
     list("ai_prompts"),
     list("ai_prompt_tests"),
     list("article_keywords"),
     list("ai_editorial_logs"),
-    getOne("settings", "aiEditorial")
+    getOne("settings", "aiEditorial"),
+    list("ai_topic_suggestions"),
+    list("ai_topic_queue")
   ]);
+  prompts = await ensureSystemPrompts(prompts);
   const aiArticles = articles.filter(isAiEditorialArticle);
   const sourceSuggestions = sources.filter((source) => source.suggested_by_ai || ["vorgeschlagen", "in Pruefung", "neu", "ungeprueft"].includes(source.review_status));
   const settings = {
@@ -436,6 +596,8 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
   };
   const latestArticle = latest(aiArticles);
   const latestLog = latest(logs, "created_at");
+  const openSuggestions = topicSuggestions.filter((topic) => !["uebernommen", "abgelehnt"].includes(topic.queue_status || topic.status));
+  const queuedTopics = topicQueue.filter((topic) => !["erledigt", "abgelehnt"].includes(topic.status));
   const editorId = query.get("id");
   const loadedArticle = editorId ? aiArticles.find((item) => item.id === editorId) || await getOne("editorialContent", editorId) : null;
   const articleForEditor = loadedArticle && isAiEditorialArticle(loadedArticle) ? loadedArticle : null;
@@ -443,27 +605,20 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
     return protect(cmsShell("cms/ai-editorial/articles", `${cmsTitle("KI-Redaktion", "Artikel-Editor", `<a class="button button--secondary button--small" href="#/cms/ai-editorial/articles">Zurueck</a>`)}${nav("articles")}${editor(articleForEditor, sources, keywords, logs)}`));
   }
   const createLabel = localPreviewMode() ? "Demo-Beitrag erzeugen" : "KI-Beitrag jetzt erzeugen";
-  const headerActions = `${pictogram("+", createLabel, 'data-ai-editorial-run="manual"')}${linkPictogram("=", "Logs oeffnen", "#/cms/ai-editorial/logs")}`;
+  const headerActions = "";
+  const topicResearchPanel = `<section class="panel ai-topic-research-panel"><h2>Themenrecherche</h2><p class="muted">Die KI erstellt zuerst 10 Themenvorschlaege mit Aktualitaetsbewertung. Quellen- und Dublettenpruefung erfolgen automatisch im Editor nach Auswahl eines Beitrags.</p><div class="form-grid--two ai-topic-research-controls"><div class="field"><label>Kategorie</label><select id="ai-topic-research-category">${topicResearchCategories.map((category) => `<option value="${category === "Alle Themenbereiche" ? "" : escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}</select></div><div class="field"><label>Stichworte</label><input id="ai-topic-research-keywords" placeholder="z. B. FAST, GEMA, Voice-Cloning"></div></div><div class="ai-picto-row">${pictogram("?", "Recherche starten", "data-ai-topic-research")}</div><div id="ai-topic-research-result"></div>${openSuggestions.length ? `<form id="ai-topic-suggestions-form"><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema</th><th>Kategorie</th><th>Aktualitaet</th><th>Status</th></tr></thead><tbody>${topicSuggestionRows(openSuggestions.sort((a, b) => Number(b.actuality_score || 0) - Number(a.actuality_score || 0)).slice(0, 10))}</tbody></table></div><div class="actions"><button class="button button--primary">OK - ausgewaehlte als Beitraege anlegen</button></div></form>` : `<div class="alert">Noch keine offenen Themenvorschlaege. Starte eine Themenrecherche.</div>`}</section><section class="panel"><h2>Themen-Queue</h2><div class="table-wrap"><table class="table"><thead><tr><th>Thema</th><th>Kategorie</th><th>Aktualitaet</th><th>Status</th><th>Datum</th></tr></thead><tbody>${queuedTopics.length ? topicQueueRows(queuedTopics) : `<tr><td colspan="5">Noch keine Themen in der Queue.</td></tr>`}</tbody></table></div></section>`;
   const content = {
-    dashboard: `${cmsTitle("KI-Redaktion", "Dashboard", headerActions)}
+    dashboard: `${cmsTitle("KI-Redaktion", "Themenliste")}
       ${nav(active)}
       ${demoModeNotice()}
-      <div class="ai-picto-row ai-picto-row--large">${pictogram("+", createLabel, 'data-ai-editorial-run="manual"')}${pictogram("OK", "Quellen pruefen")}${pictogram("O", "Dubletten pruefen")}${linkPictogram("T", "Prompt testen", "#/cms/ai-editorial/prompts")}${pictogram(">", "Automatik starten", 'data-ai-editorial-automation="start"')}${pictogram("||", "Automatik pausieren", 'data-ai-editorial-automation="pause"')}${linkPictogram("=", "Logs oeffnen", "#/cms/ai-editorial/logs")}</div>
-      <div class="ai-dashboard-grid">
-        <section class="panel"><h2>Automatisierung</h2><div class="setup-steps"><div class="setup-step"><span>Status</span>${badge(settings.automationEnabled ? "Automatik aktiv" : "inaktiv")}</div><div class="setup-step"><span>Letzter Lauf</span><strong>${escapeHtml(formatDateTime(latestLog?.created_at || latestLog?.createdAt || "")) || "-"}</strong></div><div class="setup-step"><span>Naechster Lauf</span><strong>${escapeHtml(settings.scheduleLabel || "Taeglich 06:00 Uhr")}</strong></div></div></section>
-        <section class="panel"><h2>Letzter KI-Beitrag</h2>${latestArticle ? `<h3>${escapeHtml(latestArticle.headline || latestArticle.title)}</h3><p class="muted">${escapeHtml(articleOrigin(latestArticle).note)}</p><div class="ai-status-stack">${badge(articleOrigin(latestArticle).label)}${badge(latestArticle.source_status || "-")}${badge(latestArticle.duplicate_status || "-")}${badge(latestArticle.publication_status || latestArticle.status || "-")}</div>` : `<p>Noch kein KI-Beitrag gespeichert.</p>`}</section>
-        <section class="panel"><h2>Pruefpflichtige Beitraege</h2><strong class="ai-big-number">${aiArticles.filter((item) => String(item.publication_status || item.status || "").includes("pruef")).length}</strong><a class="button button--secondary button--small" href="#/cms/ai-editorial/articles">anzeigen</a></section>
-        <section class="panel"><h2>Neue Quellenvorschlaege</h2><strong class="ai-big-number">${sourceSuggestions.length}</strong><a class="button button--secondary button--small" href="#/cms/ai-editorial/suggestions">pruefen</a></section>
-        <section class="panel"><h2>Warnungen / Sperren</h2><div class="setup-steps"><div class="setup-step"><span>Dubletten</span><strong>${aiArticles.filter((item) => String(item.duplicate_status || "").toLowerCase().includes("dublette")).length}</strong></div><div class="setup-step"><span>Quellenwarnungen</span><strong>${aiArticles.filter((item) => String(item.source_status || "").toLowerCase().includes("unzureichend")).length}</strong></div><div class="setup-step"><span>Fehler</span><strong>${logs.filter((log) => String(log.status || "").toLowerCase().includes("fehler")).length}</strong></div></div></section>
-        <section class="panel"><h2>Prompt-Verwaltung</h2><div class="setup-steps"><div class="setup-step"><span>Aktive Prompts</span><strong>${prompts.filter((prompt) => prompt.is_active).length}</strong></div><div class="setup-step"><span>Letzte Aenderung</span><strong>${escapeHtml(formatShortDate(latest(prompts, "updated_at")?.updated_at || "")) || "-"}</strong></div></div><a class="button button--secondary button--small" href="#/cms/ai-editorial/prompts">bearbeiten</a></section>
-      </div>
+      ${topicResearchPanel}
       <div id="ai-editorial-run-result"></div>`,
-    articles: `${cmsTitle("KI-Redaktion", "Beitraege", headerActions)}${nav(active)}${demoModeNotice()}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Beitrag</th><th>Herkunft</th><th>Kategorie</th><th>Quellen</th><th>Dubletten</th><th>KI-Pruefung</th><th>Status</th><th>Datum</th></tr></thead><tbody>${aiArticles.length ? articleRows(aiArticles) : `<tr><td colspan="8">Noch keine KI-Beitraege.</td></tr>`}</tbody></table></div></section><div id="ai-editorial-run-result"></div>`,
+    articles: `${cmsTitle("KI-Redaktion", "Beitraege")}${nav(active)}${demoModeNotice()}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Beitrag</th><th>Herkunft</th><th>Kategorie</th><th>Quellen</th><th>Dubletten</th><th>KI-Pruefung</th><th>Status</th><th>Datum</th></tr></thead><tbody>${aiArticles.length ? articleRows(aiArticles) : `<tr><td colspan="8">Noch keine KI-Beitraege.</td></tr>`}</tbody></table></div></section><div id="ai-editorial-run-result"></div>`,
     sources: `${cmsTitle("KI-Redaktion", "Verifizierte Quellen")}${nav(active)}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Quelle</th><th>Typ</th><th>Status</th><th>Trust</th><th>Link</th></tr></thead><tbody>${sources.length ? sourceRows(sources) : `<tr><td colspan="5">Noch keine Quellen erfasst.</td></tr>`}</tbody></table></div></section>`,
     suggestions: `${cmsTitle("KI-Redaktion", "Quellenvorschlaege")}${nav(active)}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Quelle</th><th>Typ</th><th>Status</th><th>Trust</th><th>Aktion</th></tr></thead><tbody>${sourceSuggestions.length ? sourceSuggestions.map((source) => `<tr><td><strong>${escapeHtml(source.name || source.title || "-")}</strong><small>${escapeHtml(source.suggestion_reason || source.domain || "")}</small></td><td>${escapeHtml(source.source_type || "-")}</td><td>${badge(source.review_status || "vorgeschlagen")}</td><td>${Number(source.suggested_trust_score || source.trust_score || 0)}</td><td><button class="button button--secondary button--small" data-ai-source-review="${escapeHtml(source.id)}" data-review-status="in Pruefung">in Pruefung</button></td></tr>`).join("") : `<tr><td colspan="5">Keine neuen Quellenvorschlaege.</td></tr>`}</tbody></table></div></section><div id="ai-source-review-result"></div>`,
-    prompts: `${cmsTitle("KI-Redaktion", "Prompt-Verwaltung")}${nav(active)}<div class="cms-columns"><section class="panel"><h2>System-Prompts</h2><div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Typ</th><th>Status</th><th>Aktiv</th><th>Version</th><th>Geaendert</th><th>Aktion</th></tr></thead><tbody>${promptCatalogRows(prompts)}</tbody></table></div><h2>Letzte Prompt-Tests</h2><div class="table-wrap"><table class="table"><thead><tr><th>Zeit</th><th>Prompt</th><th>Status</th><th>Warnungen</th></tr></thead><tbody>${promptTests.length ? promptTestRows([...promptTests].reverse().slice(0, 8)) : `<tr><td colspan="4">Noch keine Prompt-Tests.</td></tr>`}</tbody></table></div></section><section class="panel"><h2>Prompt anlegen / bearbeiten</h2>${promptForm()}</section></div>`,
+    prompts: `${cmsTitle("KI-Redaktion", "Prompt-Verwaltung")}${nav(active)}<section class="panel prompt-navigation-panel"><h2>Prompt-Navigation</h2>${promptNameNavigation(prompts)}</section><section class="panel prompt-edit-panel"><h2>Prompt anlegen / bearbeiten</h2>${promptForm(prompts.find((prompt) => !isArchivedPrompt(prompt)) || null)}</section><section class="panel"><h2>System-Prompts</h2><div class="table-wrap"><table class="table table--prompts"><thead><tr><th>Name</th><th>Typ</th><th>Aktueller Prompt</th><th>Status</th><th>Aktiv</th><th>Version</th><th>Geaendert</th><th>Aktion</th></tr></thead><tbody>${promptCatalogRows(prompts)}</tbody></table></div></section><section class="panel"><h2>Letzte Prompt-Tests</h2><div class="table-wrap"><table class="table"><thead><tr><th>Zeit</th><th>Prompt</th><th>Status</th><th>Warnungen</th></tr></thead><tbody>${promptTests.length ? promptTestRows([...promptTests].reverse().slice(0, 8)) : `<tr><td colspan="4">Noch keine Prompt-Tests.</td></tr>`}</tbody></table></div></section>`,
     keywords: `${cmsTitle("KI-Redaktion", "Keywords")}${nav(active)}<section class="panel"><div class="ai-keyword-cloud">${keywords.length ? keywords.map((keyword) => `<span>${escapeHtml(keyword.keyword)} <strong>${Number(keyword.relevance_score || 0)}</strong></span>`).join("") : `<p class="muted">Noch keine KI-Keywords gespeichert.</p>`}</div></section>`,
-    automation: `${cmsTitle("KI-Redaktion", "Automatisierung", headerActions)}${nav(active)}${demoModeNotice()}<div class="cms-columns"><section class="panel"><h2>Status</h2><div class="setup-steps"><div class="setup-step"><span>Automatisierung</span>${badge(settings.automationEnabled ? "Automatik aktiv" : "inaktiv")}</div><div class="setup-step"><span>Letzter Lauf</span><strong>${escapeHtml(formatDateTime(latestLog?.created_at || latestLog?.createdAt || "")) || "-"}</strong></div><div class="setup-step"><span>Letzte Warnung</span><strong>${escapeHtml(logs.find((log) => String(log.status || "").toLowerCase().includes("warn"))?.message || "-")}</strong></div></div><div class="ai-picto-row">${pictogram(">", "Automatik aktivieren", 'data-ai-editorial-automation="start"')}${pictogram("||", "Automatik pausieren", 'data-ai-editorial-automation="pause"')}${pictogram("+", createLabel, 'data-ai-editorial-run="manual"')}${pictogram("OK", "Quellen jetzt pruefen")}${pictogram("O", "Dubletten jetzt pruefen")}</div><div id="ai-editorial-run-result"></div></section><section class="panel"><h2>Einstellungen</h2>${settingsForm(settings)}</section></div>`,
+    automation: `${cmsTitle("KI-Redaktion", "Automatisierung")}${nav(active)}${demoModeNotice()}<div class="cms-columns"><section class="panel"><h2>Status</h2><div class="setup-steps"><div class="setup-step"><span>Automatisierung</span>${badge(settings.automationEnabled ? "Automatik aktiv" : "inaktiv")}</div><div class="setup-step"><span>Letzter Lauf</span><strong>${escapeHtml(formatDateTime(latestLog?.created_at || latestLog?.createdAt || "")) || "-"}</strong></div><div class="setup-step"><span>Letzte Warnung</span><strong>${escapeHtml(logs.find((log) => String(log.status || "").toLowerCase().includes("warn"))?.message || "-")}</strong></div></div><div class="ai-picto-row">${pictogram(">", "Automatik aktivieren", 'data-ai-editorial-automation="start"')}${pictogram("||", "Automatik pausieren", 'data-ai-editorial-automation="pause"')}</div><div id="ai-editorial-run-result"></div></section><section class="panel"><h2>Einstellungen</h2>${settingsForm(settings)}</section></div>`,
     logs: `${cmsTitle("KI-Redaktion", "Logs / Pruefberichte")}${nav(active)}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Zeit</th><th>Aufgabe</th><th>Status</th><th>Meldung</th></tr></thead><tbody>${logs.length ? logRows([...logs].reverse()) : `<tr><td colspan="4">Noch keine KI-Redaktionslogs.</td></tr>`}</tbody></table></div></section>`,
     settings: `${cmsTitle("KI-Redaktion", "Einstellungen")}${nav(active)}<section class="panel">${settingsForm(settings)}</section>`
   }[active] || "";

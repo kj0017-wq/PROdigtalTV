@@ -1,6 +1,6 @@
 import { cmsShell, cmsTitle } from "./cmsLayout.js";
-import { list, getOne } from "../firebase/dataService.js";
-import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js";
+import { list, getOne } from "../firebase/dataService.js?v=250";
+import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=250";
 import { accessLabels, lifecycleLabels } from "../data/demoData.js";
 import { escapeHtml, formatDate, formatDateTime, formatShortDate } from "../utils/format.js";
 
@@ -45,8 +45,28 @@ function editorialActionButtons(item, section, module, activeStatus, inactiveSta
   return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-record-status="${module}" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ? "eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="${module}" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
 }
 
+function lockedEditorialActionButtons(item, section, module) {
+  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a></div>`;
+}
+
 function editorialListStatus(item) {
   return status(["published", "active", "approved"].includes(item.status) ? "active" : "inactive");
+}
+
+function memberIsLive(item) {
+  return item.status === "active" && (item.visibility || "public") === "public" && item.isLive !== false;
+}
+
+function memberListStatus(item) {
+  return status(memberIsLive(item) ? "active" : "inactive");
+}
+
+function memberActionButtons(item, section) {
+  const isLive = memberIsLive(item);
+  const toggleStatus = isLive ? "inactive" : "active";
+  const toggleClass = isLive ? "icon-button--visible" : "icon-button--hidden";
+  const toggleLabel = isLive ? "Live: ausblenden" : "Inaktiv: live schalten";
+  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-record-status="members" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isLive ? "eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="members" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
 }
 
 function galleryPlayerButton(gallery, label = "Galerie abspielen") {
@@ -254,7 +274,7 @@ function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", d
       ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="">` : `<span>${escapeHtml(label)} per Drag-and-drop oder Klick hochladen</span>`}
     </div>
     </div>
-    <button type="button" class="image-dropzone__remove" data-image-remove aria-label="Bild-Verknuepfung loesen" title="Bild-Verknuepfung loesen">${iconImage("trash")}</button>
+    <button type="button" class="image-dropzone__remove" data-image-remove aria-label="Bild-Verknuepfung loesen" title="Bild-Verknuepfung loesen" ${imageUrl ? "" : "hidden"}>${iconImage("trash")}</button>
     <div class="image-dropzone__tools" data-image-tools hidden>
       <label>Zoom <input type="range" min="0.5" max="3" step="0.01" value="1" data-image-zoom></label>
       <label>Aufloesung <select data-image-size>
@@ -549,7 +569,11 @@ export async function moduleListPage(module, section = "all") {
   }
   if (module === "editorialContent") {
     const showAudio = section === "news";
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Titel</th><th>Datum</th><th>Rubrik</th>${showAudio ? "<th>Audio</th>" : ""}<th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td>${showAudio ? `<td>${audioListCell("editorialContent", item)}</td>` : ""}<td>${editorialListStatus(item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${showAudio ? 6 : 5}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    const actionButtons = section === "interna" ? lockedEditorialActionButtons : editorialActionButtons;
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Titel</th><th>Datum</th><th>Rubrik</th>${showAudio ? "<th>Audio</th>" : ""}<th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td>${showAudio ? `<td>${audioListCell("editorialContent", item)}</td>` : ""}<td>${editorialListStatus(item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${showAudio ? 6 : 5}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+  }
+  if (module === "members") {
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a><small>${escapeHtml(shortText(item.description || "-", 90))}</small></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml([item.category, item.city].filter(Boolean).join(" / ") || "-")}</td><td>${memberListStatus(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="5">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, editable ? `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>` : "")}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>${itemLabel}</th><th>Datum / Gueltigkeit</th><th>Beschreibung / Zuordnung</th><th>Status</th>${editable || manageable ? "<th>Aktionen</th>" : ""}</tr></thead><tbody>${records.length ? records.map((item) => `<tr><td>${escapeHtml(item[config[2]] || "-")}</td><td>${escapeHtml(item.publishDate || item.date || "-")}<br><small>${escapeHtml(item.validFrom || "-")} bis ${escapeHtml(item.validTo || "unendlich")}</small></td><td>${escapeHtml(item[config[3]] || "-")}</td><td>${status(item.status || item.visibility || "active")}</td>${editable || manageable ? `<td><div class="table-actions">${editable ? `<a class="link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}">Bearbeiten</a>` : ""}${manageable ? `<button class="link-button" data-record-status="${module}" data-record-id="${item.id}" data-status="${activeStatus}">Aktiv</button><button class="link-button" data-record-status="${module}" data-record-id="${item.id}" data-status="${inactiveStatus}">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="${module}" data-record-id="${item.id}">Loeschen</button>` : ""}</div></td>` : ""}</tr>`).join("") : `<tr><td colspan="${editable || manageable ? 5 : 4}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
 }
@@ -634,31 +658,39 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
           ${galleryPlayerButton(selectedGallery, "Galerie abspielen")}
         </div>`
       : `<div class="editor-gallery-preview editor-gallery-preview--empty" data-editor-gallery-preview><p class="muted">Keine Galerie ausgewaehlt. Nach dem Speichern erscheint hier der Playbutton fuer die verknuepfte Galerie.</p></div>`;
+    const thumbState = item.imageUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`;
+    const audioState = item.audioUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
+    const galleryState = selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
     return protect(cmsShell(`cms/${backPath}`, `${cmsTitle("Redaktion", sectionKey === "press" ? "Pressemeldung bearbeiten" : "News bearbeiten", `<a class="button button--secondary button--small" href="#/cms/${backPath}">Zurueck</a>`)}
       <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid">
         <input type="hidden" name="page" value="${escapeHtml(sectionKey)}">
         <input type="hidden" name="section" value="${escapeHtml(sectionKey === "press" ? "pressRelease" : "news")}">
         <input type="hidden" name="key" value="${escapeHtml(item.key || `${sectionKey}.${item.id}`)}">
         <input type="hidden" name="validFrom" value="${escapeHtml(item.validFrom || item.publishDate || "")}">
-        <div class="form-grid--two">
-          <div class="field"><label>Datum der Veroeffentlichung</label><input type="date" name="publishDate" value="${escapeHtml(item.publishDate || "")}"></div>
-          <div class="field"><label>Enddatum der Gueltigkeit</label><input type="date" name="validTo" value="${escapeHtml(item.validTo || "")}"><p class="muted">Leer lassen = unendlich.</p></div>
-          <div class="field"><label>Kategorie</label><select name="category">${categoryOptions.map((category) => `<option value="${escapeHtml(category)}" ${category === categoryValue ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}</select></div>
-          <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="published" ${item.status === "published" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div>
-        </div>
-        <div class="editorial-workspace">
+        <div class="editorial-workspace editorial-workspace--text-editor">
           <div class="editorial-workspace__main">
-            <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(item.title || "")}" required>${aiFieldActions([{ action: "improveText", target: "title", label: "Headline erzeugen", entityType: module, entityId: item.id, fieldName: "title" }])}</div>
-            <div class="field"><label>Subtitel</label><input name="subtitle" value="${escapeHtml(item.subtitle || "")}">${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Subline erzeugen", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div>
-            <div class="field"><label>Haupttext</label><textarea name="bodyText" required>${escapeHtml(item.bodyText || "")}</textarea>${aiFieldActions([{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div>
-            <div class="field"><label>Optionaler Short Text</label><textarea name="introText">${escapeHtml(item.introText || "")}</textarea>${aiFieldActions([{ action: "shortenText", target: "introText", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "introText" }])}</div>
+            <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Titel / Headline</label>${aiFieldActions([{ action: "improveText", target: "title", label: "Headline erzeugen", entityType: module, entityId: item.id, fieldName: "title" }])}</div><textarea name="title" rows="2" required>${escapeHtml(item.title || "")}</textarea></div>
+            <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Subline</label>${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Subline erzeugen", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div><textarea name="subtitle" rows="2">${escapeHtml(item.subtitle || "")}</textarea></div>
+            <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Haupttext</label>${aiFieldActions([{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div><textarea name="bodyText" required>${escapeHtml(item.bodyText || "")}</textarea></div>
+            <div class="field editorial-text-field"><div class="editorial-field-head"><label>Shorttext / Intro</label>${aiFieldActions([{ action: "shortenText", target: "introText", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "introText" }])}</div><textarea name="introText">${escapeHtml(item.introText || "")}</textarea></div>
           </div>
           <aside class="editorial-tools">
-            <div class="editorial-tools__head"><p class="eyebrow">Werkzeuge</p><h3>Medien & KI</h3></div>
-            <section class="retrospective-tool">
-              <div class="field"><label>Rückblick-Prompt</label><textarea name="retrospectivePrompt">${escapeHtml(retrospectivePrompt)}</textarea></div>
-              <div class="field"><label>Event-Bezug</label><select name="linkedEventId">${eventOptions}</select></div>
-              <div class="field"><label>Sponsorlogo</label><select name="sponsorId">${sponsorOptions}</select></div>
+            <section class="editorial-meta-panel">
+              <div class="editorial-tools__head"><p class="eyebrow">Meta</p><h3>Veroeffentlichung</h3></div>
+              <div class="field"><label>Kategorie</label><select name="category">${categoryOptions.map((category) => `<option value="${escapeHtml(category)}" ${category === categoryValue ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}</select></div>
+              <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="published" ${item.status === "published" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div>
+              <div class="meta-date-row"><div class="field"><label>Veroeffentlichungsdatum</label><input type="date" name="publishDate" value="${escapeHtml(item.publishDate || "")}"></div><div class="field"><label>Enddatum</label><input type="date" name="validTo" value="${escapeHtml(item.validTo || "")}"></div></div>
+            </section>
+            <details class="editorial-tool-details"${item.imageUrl ? " open" : ""}>
+              <summary><span>Medien</span><strong>Bild / Thumb</strong>${thumbState}</summary>
+              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultSize: "1200x675", aiCollage: true })}</div></div>
+            </details>
+            <details class="editorial-tool-details"${item.audioUrl ? " open" : ""}>
+              <summary><span>Audio</span><strong>Vorlesen</strong>${audioState}</summary>
+              <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("editorialContent", item)}</div>
+            </details>
+            <details class="editorial-tool-details"${selectedGallery ? " open" : ""}>
+              <summary><span>Medien</span><strong>Galerie</strong>${galleryState}</summary>
               <div class="editor-tool-section editor-tool-section--gallery">
                 <div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Eine ausgewaehlte Galerie wird im Artikel als Playbutton mit Slideshow-Layer eingebunden.</p></div>
                 ${selectedGalleryPreview}
@@ -668,14 +700,20 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
                 </div>
                 <div class="gallery-link-result" data-gallery-link-result></div>
               </div>
+            </details>
+            <details class="editorial-tool-details">
+              <summary><span>Werkzeuge</span><strong>Rueckblick & Verknuepfungen</strong></summary>
+            <section class="retrospective-tool">
+              <div class="field"><label>Rückblick-Prompt</label><textarea name="retrospectivePrompt">${escapeHtml(retrospectivePrompt)}</textarea></div>
+              <div class="field"><label>Event-Bezug</label><select name="linkedEventId">${eventOptions}</select></div>
+              <div class="field"><label>Sponsorlogo</label><select name="sponsorId">${sponsorOptions}</select></div>
               <label class="checkbox-line"><input type="checkbox" name="isRetrospective" ${item.isRetrospective ? "checked" : ""}> Unter Rückblicke / Event-Nachlauf anzeigen</label>
               <label class="checkbox-line"><input type="checkbox" name="showGallery" ${item.showGallery ? "checked" : ""}> Bildergalerie aus Event-Medien anzeigen</label>
               <input type="hidden" name="galleryEventId" value="${escapeHtml(item.galleryEventId || item.linkedEventId || "")}">
               <p class="muted">Im Rückblick-Modus formuliert ChatGPT Headline, Subline und Haupttext als nachträgliche Berichterstattung über das vergangene Event.</p>
               ${aiFieldActions([{ action: "generateEventRetrospective", target: "bodyText", label: "Rückblick-Fliesstext erzeugen", entityType: module, entityId: item.id, fieldName: "bodyText" }])}
             </section>
-            <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultSize: "1200x675", aiCollage: true })}</div></div>
-            <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("editorialContent", item)}</div>
+            </details>
           </aside>
         </div>
         <input type="hidden" name="visibility" value="${escapeHtml(item.visibility || "public")}">
@@ -698,34 +736,45 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
           ${galleryPlayerButton(selectedGallery, "Galerie abspielen")}
         </div>`
       : `<div class="editor-gallery-preview editor-gallery-preview--empty" data-editor-gallery-preview><p class="muted">Keine Galerie verknuepft. Galerie auswaehlen, speichern, danach kann sie hier abgespielt werden.</p></div>`;
+    const thumbState = item.imageUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`;
+    const audioState = item.audioUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
+    const galleryState = selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
     return protect(cmsShell("cms/topics", `${cmsTitle("Redaktion", "Thema bearbeiten", `<a class="button button--secondary button--small" href="#/cms/topics">Zurueck</a>`)}
       <section class="panel"><form id="topic-editor-form" data-topic-id="${item.id}" class="form-grid is-save-aware">
-        <div class="form-grid--two">
-          <div class="field"><label>Datum der Veroeffentlichung</label><input type="date" name="publishDate" value="${escapeHtml(item.publishDate || "")}"></div>
-          <div class="field"><label>Enddatum der Gueltigkeit</label><input type="date" name="validTo" value="${escapeHtml(item.validTo || "")}"><p class="muted">Leer lassen = unendlich.</p></div>
-          <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(item.category || "Thema")}"></div>
-          <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="active" ${item.status === "active" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="inactive" ${item.status === "inactive" ? "selected" : ""}>Inaktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div>
-        </div>
-        <div class="editorial-workspace">
+        <div class="editorial-workspace editorial-workspace--text-editor">
           <div class="editorial-workspace__main">
-            <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(item.title || "")}">${aiFieldActions([{ action: "improveText", target: "title", label: "Headline erzeugen", entityType: module, entityId: item.id, fieldName: "title" }])}</div>
-            <div class="field"><label>Subtitel</label><input name="subtitle" value="${escapeHtml(item.subtitle || "")}">${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Subline erzeugen", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div>
-            <div class="field"><label>Haupttext</label><textarea name="longDescription">${escapeHtml(item.longDescription || item.bodyText || "")}</textarea>${aiFieldActions([{ action: "generateTopicDescription", target: "longDescription", label: "Text erzeugen", entityType: module, entityId: item.id, fieldName: "longDescription" }])}</div>
-            <div class="field"><label>Optionaler Short Text</label><textarea name="shortDescription">${escapeHtml(item.shortDescription || item.introText || "")}</textarea>${aiFieldActions([{ action: "shortenText", target: "shortDescription", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "shortDescription" }])}</div>
+            <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Titel / Headline</label>${aiFieldActions([{ action: "improveText", target: "title", label: "Headline erzeugen", entityType: module, entityId: item.id, fieldName: "title" }])}</div><textarea name="title" rows="2" required>${escapeHtml(item.title || "")}</textarea></div>
+            <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Subline</label>${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Subline erzeugen", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div><textarea name="subtitle" rows="2">${escapeHtml(item.subtitle || "")}</textarea></div>
+            <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Haupttext</label>${aiFieldActions([{ action: "generateTopicDescription", target: "longDescription", label: "Text erzeugen", entityType: module, entityId: item.id, fieldName: "longDescription" }])}</div><textarea name="longDescription">${escapeHtml(item.longDescription || item.bodyText || "")}</textarea></div>
+            <div class="field editorial-text-field"><div class="editorial-field-head"><label>Shorttext / Intro</label>${aiFieldActions([{ action: "shortenText", target: "shortDescription", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "shortDescription" }])}</div><textarea name="shortDescription">${escapeHtml(item.shortDescription || item.introText || "")}</textarea></div>
           </div>
           <aside class="editorial-tools">
-            <div class="editorial-tools__head"><p class="eyebrow">Werkzeuge</p><h3>Thumb, Audio & Galerie</h3></div>
-            <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: item.imageUrl || "", label: "Themenbild", defaultSize: "1200x675", aiCollage: true })}</div></div>
-            <div class="editor-tool-section editor-tool-section--gallery">
-              <div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Die Galerie wird mit dem Thema verknuepft und im Frontend als Slideshow-Playbutton angezeigt.</p></div>
-              ${selectedGalleryPreview}
-              <div class="tool-button-row">
-                <button class="button button--secondary button--small" type="button" data-save-gallery-link>Galerie verknuepfen</button>
-                <button class="icon-button icon-button--danger" type="button" data-clear-linked-media="gallery" title="Galerie-Verknuepfung loesen" aria-label="Galerie-Verknuepfung loesen">${iconImage("trash")}</button>
+            <section class="editorial-meta-panel">
+              <div class="editorial-tools__head"><p class="eyebrow">Meta</p><h3>Veroeffentlichung</h3></div>
+              <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(item.category || "Thema")}"></div>
+              <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="active" ${item.status === "active" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="inactive" ${item.status === "inactive" ? "selected" : ""}>Inaktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div>
+              <div class="meta-date-row"><div class="field"><label>Veroeffentlichungsdatum</label><input type="date" name="publishDate" value="${escapeHtml(item.publishDate || "")}"></div><div class="field"><label>Enddatum</label><input type="date" name="validTo" value="${escapeHtml(item.validTo || "")}"></div></div>
+            </section>
+            <details class="editorial-tool-details"${item.imageUrl ? " open" : ""}>
+              <summary><span>Medien</span><strong>Bild / Thumb</strong>${thumbState}</summary>
+              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: item.imageUrl || "", label: "Themenbild", defaultSize: "1200x675", aiCollage: true })}</div></div>
+            </details>
+            <details class="editorial-tool-details"${selectedGallery ? " open" : ""}>
+              <summary><span>Medien</span><strong>Galerie</strong>${galleryState}</summary>
+              <div class="editor-tool-section editor-tool-section--gallery">
+                <div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Die Galerie wird mit dem Thema verknuepft und im Frontend als Slideshow-Playbutton angezeigt.</p></div>
+                ${selectedGalleryPreview}
+                <div class="tool-button-row">
+                  <button class="button button--secondary button--small" type="button" data-save-gallery-link>Galerie verknuepfen</button>
+                  <button class="icon-button icon-button--danger" type="button" data-clear-linked-media="gallery" title="Galerie-Verknuepfung loesen" aria-label="Galerie-Verknuepfung loesen">${iconImage("trash")}</button>
+                </div>
+                <div class="gallery-link-result" data-gallery-link-result></div>
               </div>
-              <div class="gallery-link-result" data-gallery-link-result></div>
-            </div>
-            <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("topics", item)}</div>
+            </details>
+            <details class="editorial-tool-details"${item.audioUrl ? " open" : ""}>
+              <summary><span>Audio</span><strong>Vorlesen</strong>${audioState}</summary>
+              <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("topics", item)}</div>
+            </details>
           </aside>
         </div>
         <div class="actions"><button class="button button--primary">Speichern</button></div><div id="topic-editor-result"></div>
@@ -781,11 +830,14 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
         ? `<div class="field"><label>Logo auswaehlen</label><input type="file" name="assetFile" accept="image/*"><p class="muted">Das Logo ersetzt beim Speichern das zugeordnete Bild.</p></div>`
       : "";
   const speakerManager = module === "topics" ? topicSpeakerManager(item, topicSpeakers) : "";
+  const memberLiveControl = module === "members"
+    ? `<label class="checkbox-line"><input type="checkbox" name="isLive" ${item.isLive !== false ? "checked" : ""}> Live auf Website anzeigen</label><p class="muted">Nur aktive, oeffentliche und live freigegebene Mitglieder erscheinen auf der Website.</p>`
+    : "";
   const activeStatus = ["topics", "members", "boardMembers"].includes(module) ? "active" : "published";
   const editorialBack = query.get("section") && editorialSections[query.get("section")] ? `editorial/${query.get("section")}` : item.page === "press" ? "editorial/press" : item.page === "news" ? "editorial/news" : module === "editorialContent" ? "editorial/interna" : "editorial";
   const backSection = { boardMembers: "board", editorialContent: editorialBack, speakers: "speakers", sponsors: "sponsors" }[module] || module;
   const activeSection = { topics: "cms/topics", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", boardMembers: "cms/board", editorialContent: `cms/${editorialBack}` }[module] || "cms/editorial";
-  return protect(cmsShell(activeSection, `${cmsTitle("Bearbeiten", `${definition.title} pflegen`, `<a class="button button--secondary button--small" href="#/cms/${backSection}">Zurueck</a>`)}<section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid">${fieldHtml}${imageUpload}<div class="form-grid--two"><div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="${activeStatus}" ${item.status === activeStatus ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Sichtbarkeit</label><select name="visibility"><option value="public" ${item.visibility === "public" ? "selected" : ""}>Oeffentlich</option><option value="members" ${item.visibility === "members" ? "selected" : ""}>Mitglieder</option><option value="internal" ${item.visibility === "internal" ? "selected" : ""}>Intern</option></select></div></div><button class="button button--primary">Speichern</button><div id="content-save-result"></div></form></section>${speakerManager}`));
+  return protect(cmsShell(activeSection, `${cmsTitle("Bearbeiten", `${definition.title} pflegen`, `<a class="button button--secondary button--small" href="#/cms/${backSection}">Zurueck</a>`)}<section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid">${fieldHtml}${imageUpload}<div class="form-grid--two"><div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="${activeStatus}" ${item.status === activeStatus ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Sichtbarkeit</label><select name="visibility"><option value="public" ${item.visibility === "public" ? "selected" : ""}>Oeffentlich</option><option value="members" ${item.visibility === "members" ? "selected" : ""}>Mitglieder</option><option value="internal" ${item.visibility === "internal" ? "selected" : ""}>Intern</option></select></div></div>${memberLiveControl}<button class="button button--primary">Speichern</button><div id="content-save-result"></div></form></section>${speakerManager}`));
 }
 
 export async function setupPage() {

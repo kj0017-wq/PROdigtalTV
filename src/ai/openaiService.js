@@ -1,6 +1,6 @@
 import { getFirebaseServices, localPreviewMode } from "../firebase/firebaseClient.js";
-import { currentUser } from "../firebase/authService.js";
-import { upsert } from "../firebase/dataService.js";
+import { currentUser } from "../firebase/authService.js?v=250";
+import { upsert } from "../firebase/dataService.js?v=250";
 
 const ACTION_FUNCTIONS = {
   improveText: "improveText",
@@ -25,6 +25,19 @@ const ACTION_FUNCTIONS = {
 };
 
 const DEFAULT_AI_EDITORIAL_THUMBNAIL_PROMPT = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
+
+const LOCAL_TOPIC_POOL = [
+  { key: "barrierefreiheit-streaming", title: "Barrierefreiheit in Streaming-Angeboten", headline: "Barrierefreiheit wird fuer Streaming-Anbieter wichtiger", subline: "Accessibility wird zum festen Bestandteil digitaler Medienangebote.", category: "Barrierefreiheit", keywords: ["Barrierefreiheit", "Streaming", "Untertitel", "Plattformregulierung", "Medienrecht"], thumbnailIdea: "Streaming-Oberflaeche mit Untertitel-Symbolen und klarer Accessibility-Anmutung.", actuality_score: 86, industry_score: 88, reason: "Regulatorische Anforderungen und Nutzererwartungen machen Accessibility fuer Streaming-Anbieter dauerhaft relevant." },
+  { key: "hbbtv-smart-tv", title: "HbbTV und Smart-TV-Strategien", headline: "HbbTV bleibt wichtig fuer Smart-TV-Strategien", subline: "Offene TV-Standards helfen Sendern bei Reichweite und Nutzerfuehrung.", category: "HbbTV / Smart-TV", keywords: ["HbbTV", "Smart-TV", "Distribution", "TV-Apps", "Streaming-Technologie"], thumbnailIdea: "Moderner Smart-TV mit App-Oberflaeche, HbbTV-Signal und klarer Medienplattform-Aesthetik.", actuality_score: 79, industry_score: 84, reason: "Smart-TV bleibt zentraler Zugangspunkt fuer TV- und Streamingangebote." },
+  { key: "ki-redaktion-produktion", title: "KI in Redaktion und Produktion", headline: "KI veraendert redaktionelle Produktionsprozesse", subline: "Automatisierung braucht klare Kontrolle, Quellen und Verantwortlichkeit.", category: "KI / Produktion", keywords: ["KI", "Redaktion", "Produktion", "Automatisierung", "Quellenpruefung"], thumbnailIdea: "Redaktioneller Arbeitsplatz mit abstrakter KI-Assistenz, Datenlinien und Medienmonitoren.", actuality_score: 94, industry_score: 92, reason: "KI-Workflows werden praktisch eingesetzt, brauchen aber Governance und Pruefprozesse." },
+  { key: "fast-channel-distribution", title: "FAST-Channels und digitale Distribution", headline: "FAST-Channels erweitern die digitale Distribution", subline: "Lineare Streaming-Kanaele schaffen neue Chancen fuer Reichweite und Vermarktung.", category: "Distribution / FAST-Channels", keywords: ["FAST-Channels", "Distribution", "OTT", "Streaming", "Vermarktung"], thumbnailIdea: "Mehrere lineare Streaming-Kanaele auf einem modernen Dashboard, serioeser Business-Look.", actuality_score: 83, industry_score: 87, reason: "FAST bleibt fuer Plattformen, Rechtehalter und Vermarkter ein relevantes Wachstumsfeld." },
+  { key: "musikrechte-streaming", title: "Musikrechte in digitalen Medienangeboten", headline: "Musikrechte bleiben zentral fuer digitale Medienangebote", subline: "Rechteklaerung ist Voraussetzung fuer sichere Auswertung und Distribution.", category: "Musikrechte / Verwertungsrecht", keywords: ["Musikrechte", "GEMA", "Verwertungsrecht", "Rechteklaerung", "Streaming"], thumbnailIdea: "Abstrakte Verbindung von Audiowellen, Medienplayer und rechtlicher Dokumentation.", actuality_score: 77, industry_score: 82, reason: "Rechteklaerung ist ein wiederkehrender Engpass bei digitaler Distribution." },
+  { key: "voice-cloning-synchron", title: "Voice-Cloning in der Synchronbranche", headline: "KI-Stimmen setzen die Synchronbranche unter Druck", subline: "Voice-Cloning veraendert Rechte, Verguetung und Produktion.", category: "KI / Synchron / Verwertungsrecht", keywords: ["Voice-Cloning", "Synchronbranche", "KI-Stimmen", "Sprecherrechte", "Verwertungsrecht"], thumbnailIdea: "Synchronstudio mit Mikrofon, abstrakter KI-Wellenform und dezenter rechtlicher Symbolik.", actuality_score: 91, industry_score: 89, reason: "KI-Stimmen betreffen Produktion, Rechte und Verguetungsmodelle direkt." },
+  { key: "addressable-tv-vermarktung", title: "Addressable TV und Vermarktung", headline: "Addressable TV verlangt klare Daten- und Werbestrategien", subline: "Zielgruppenwerbung im TV braucht Technik, Reichweite und Vertrauen.", category: "Werbung / Addressable TV", keywords: ["Addressable TV", "Werbung", "Vermarktung", "Reichweite", "Smart-TV"], thumbnailIdea: "TV-Werbedashboard mit Zielgruppen-Segmenten und neutraler Datenvisualisierung.", actuality_score: 80, industry_score: 86, reason: "Adressierbare Werbung bleibt ein wichtiges Feld fuer Sender und Vermarkter." },
+  { key: "cdn-distribution-streaming", title: "CDN und Streaming-Distribution", headline: "Streaming-Qualitaet haengt an robuster Distribution", subline: "CDN-Strategien entscheiden ueber Kosten, Stabilitaet und Nutzererlebnis.", category: "CDN / Distribution", keywords: ["CDN", "Streaming", "Distribution", "OTT", "QoE"], thumbnailIdea: "Netzwerkvisualisierung mit Videostreams, Serverknoten und moderner Medieninfrastruktur.", actuality_score: 75, industry_score: 84, reason: "Kosten und Qualitaet digitaler Ausspielung bleiben operative Kernthemen." },
+  { key: "plattformregulierung-medien", title: "Plattformregulierung fuer Medienanbieter", headline: "Plattformregeln praegen digitale Medienstrategien", subline: "Regulierung beeinflusst Sichtbarkeit, Verantwortung und Zugang zu Nutzern.", category: "Plattformregulierung", keywords: ["Plattformregulierung", "Medienrecht", "Streaming", "Plattformen", "Branchenpolitik"], thumbnailIdea: "Medienplattform mit Regelwerk-Overlay, klarer Business-Look, keine Logos.", actuality_score: 88, industry_score: 85, reason: "Regulatorische Vorgaben beeinflussen Plattformen und Anbieter strukturell." },
+  { key: "leichte-sprache-medien", title: "Leichte Sprache in Medienangeboten", headline: "Leichte Sprache wird fuer Medienangebote wichtiger", subline: "Verstaendliche Inhalte erweitern Zugang und Teilhabe.", category: "Barrierefreiheit / leichte Sprache", keywords: ["leichte Sprache", "Barrierefreiheit", "Mediatheken", "Accessibility", "Inklusion"], thumbnailIdea: "Klare Medienoberflaeche mit vereinfachten Textbausteinen und Accessibility-Symbolik.", actuality_score: 74, industry_score: 78, reason: "Verstaendliche Sprache gewinnt bei digitalen Services und oeffentlichen Angeboten an Bedeutung." }
+];
 
 function localSuggestion(action, payload) {
   const text = payload.originalText || payload.context?.description || "";
@@ -93,25 +106,113 @@ export async function runAiEditorialTask(mode = "manual") {
     return result.data;
   } catch (error) {
     if (["functions/not-found", "functions/unavailable", "functions/internal"].includes(error.code)) {
+      const fallback = await runLocalAiEditorialTask(mode);
       return {
-        ok: false,
-        status: "blocked",
-        message: "KI-Redaktion ist im CMS eingebunden, aber die Cloud Function ist noch nicht deployt oder erreichbar. Es wurde kein Beitrag erzeugt.",
-        publicationStatus: "gesperrt wegen Quellenlage"
+        ...fallback,
+        message: fallback.ok
+          ? "Cloud Function ist noch nicht erreichbar. Es wurde ein sicherer interner KI-Entwurf mit CMS-Fallback erzeugt."
+          : fallback.message
       };
     }
     throw error;
   }
 }
 
-async function runLocalAiEditorialTask(mode = "manual") {
-  const { list, upsert } = await import("../firebase/dataService.js");
+export async function generateAiTopicSuggestions(options = {}) {
+  const categoryFilter = String(options.category || "").trim();
+  const keywordFilter = String(options.keywords || "").trim();
+  const keywordParts = keywordFilter.toLowerCase().split(/[,;\s]+/).map((item) => item.trim()).filter(Boolean);
+  const firebase = await getFirebaseServices();
+  if (firebase && !localPreviewMode()) {
+    try {
+      const callable = firebase.functionsLib.httpsCallable(firebase.functions, "generateAiEditorialTopicSuggestions");
+      const result = await callable({ limit: 10, category: categoryFilter, keywords: keywordFilter });
+      return result.data;
+    } catch (error) {
+      if (!["functions/not-found", "functions/unavailable", "functions/internal"].includes(error?.code)) throw error;
+    }
+  }
+  const { list, upsert } = await import("../firebase/dataService.js?v=250");
   const now = new Date().toISOString();
-  const [articles, sources, prompts] = await Promise.all([
+  const articles = await list("editorialContent");
+  const articleText = articles.map((article) => `${article.title || ""} ${article.headline || ""} ${article.category || ""} ${(article.tags || []).join(" ")}`.toLowerCase()).join(" ");
+  const scoredTopics = LOCAL_TOPIC_POOL.map((topic) => {
+    const haystack = `${topic.title} ${topic.headline} ${topic.subline} ${topic.category} ${(topic.keywords || []).join(" ")} ${topic.reason}`.toLowerCase();
+    const categoryHit = categoryFilter ? haystack.includes(categoryFilter.toLowerCase().split("/")[0].trim()) || categoryFilter.toLowerCase().split(/\s+/).some((part) => part.length > 3 && haystack.includes(part)) : true;
+    const keywordHits = keywordParts.filter((part) => haystack.includes(part)).length;
+    return { topic, score: (categoryHit ? 40 : 0) + keywordHits * 18 + Number(topic.actuality_score || 0) / 10 };
+  }).sort((a, b) => b.score - a.score);
+  const orderedTopics = [
+    ...scoredTopics.filter((item) => item.score > Number(item.topic.actuality_score || 0) / 10).map((item) => item.topic),
+    ...scoredTopics.filter((item) => item.score <= Number(item.topic.actuality_score || 0) / 10).map((item) => item.topic)
+  ];
+  const suggestions = orderedTopics.map((topic, index) => {
+    const parts = topic.key.split("-").filter(Boolean);
+    const duplicateRisk = parts.filter((part) => articleText.includes(part)).length >= 2 ? "aehnliches Thema vorhanden" : "neu";
+    const contextBoost = (categoryFilter || keywordParts.length) && index < 5 ? 4 : 0;
+    return {
+      id: `ai-topic-suggestion-${topic.key}`,
+      topic_key: topic.key,
+      title: topic.title,
+      headline: topic.headline,
+      subline: topic.subline,
+      category: topic.category,
+      keywords: topic.keywords,
+      thumbnail_idea: topic.thumbnailIdea,
+      actuality_score: Math.max(0, Math.min(100, Number(topic.actuality_score || 75) + contextBoost - (duplicateRisk === "neu" ? 0 : 9))),
+      industry_score: Number(topic.industry_score || 75),
+      relevance_score: Math.round((Number(topic.actuality_score || 75) + Number(topic.industry_score || 75)) / 2),
+      duplicate_status: duplicateRisk,
+      source_status: "Recherche erforderlich",
+      status: "vorgeschlagen",
+      queue_status: "nicht uebernommen",
+      rank: index + 1,
+      reason: [topic.reason, categoryFilter || keywordFilter ? `Recherche gelenkt durch: ${[categoryFilter, keywordFilter].filter(Boolean).join(" / ")}.` : ""].filter(Boolean).join(" "),
+      research_category: categoryFilter,
+      research_keywords: keywordFilter,
+      created_at: now,
+      updated_at: now,
+      origin: "local_topic_research"
+    };
+  }).sort((a, b) => b.actuality_score - a.actuality_score).slice(0, 10);
+  await Promise.all(suggestions.map((suggestion, index) => upsert("ai_topic_suggestions", { ...suggestion, rank: index + 1 })));
+  await upsert("ai_editorial_logs", {
+    id: `ai-editorial-log-${crypto.randomUUID()}`,
+    article_id: "",
+    task_name: "KI_Redaktion_Themenrecherche",
+    status: "suggested",
+    message: `10 Themenvorschlaege erstellt${categoryFilter || keywordFilter ? ` fuer ${[categoryFilter, keywordFilter].filter(Boolean).join(" / ")}` : ""}. Redaktionelle Auswahl fuer Queue erforderlich.`,
+    found_topics_json: suggestions,
+    rejected_topics_json: [],
+    used_sources_json: [],
+    source_check_json: { source_status: "Recherche nach Queue-Uebernahme erforderlich" },
+    duplicate_check_json: {},
+    keyword_result_json: {},
+    ai_check_json: { status: "Vorschlag", publication_status: "nicht freigegeben" },
+    error_json: {},
+    created_at: now
+  });
+  return { ok: true, suggestions, message: "10 Themenvorschlaege wurden erstellt. Bitte auswaehlen und in die Queue uebernehmen." };
+}
+
+async function runLocalAiEditorialTask(mode = "manual") {
+  const { list, upsert } = await import("../firebase/dataService.js?v=250");
+  const { verified_sources: demoSources, ai_prompts: demoPrompts } = await import("../data/demoData.js");
+  const now = new Date().toISOString();
+  let [articles, sources, prompts, queuedTopics] = await Promise.all([
     list("editorialContent"),
     list("verified_sources"),
-    list("ai_prompts")
+    list("ai_prompts"),
+    list("ai_topic_queue")
   ]);
+  if (!sources.length) {
+    await Promise.all(demoSources.map((source) => upsert("verified_sources", source)));
+    sources = await list("verified_sources");
+  }
+  if (!prompts.length) {
+    await Promise.all(demoPrompts.map((prompt) => upsert("ai_prompts", prompt)));
+    prompts = await list("ai_prompts");
+  }
   const requiredPromptTypes = ["Endpruefung", "Keywords"];
   const missingPrompts = requiredPromptTypes.filter((type) => !prompts.some((prompt) => prompt.is_active && prompt.prompt_type === type));
   if (missingPrompts.length) {
@@ -137,53 +238,14 @@ async function runLocalAiEditorialTask(mode = "manual") {
   const trustedSources = sources
     .filter((source) => ["bevorzugt", "erlaubt"].includes(source.source_status) && Number(source.trust_score || 0) >= 70)
     .slice(0, 3);
-  const topicPool = [
-    {
-      key: "barrierefreiheit-streaming",
-      title: "Barrierefreiheit in Streaming-Angeboten",
-      headline: "Barrierefreiheit wird fuer Streaming-Anbieter wichtiger",
-      subline: "Accessibility wird zum festen Bestandteil digitaler Medienangebote.",
-      category: "Barrierefreiheit",
-      keywords: ["Barrierefreiheit", "Streaming", "Untertitel", "Plattformregulierung", "Medienrecht"],
-      thumbnailIdea: "Streaming-Oberflaeche mit Untertitel-Symbolen und klarer Accessibility-Anmutung."
-    },
-    {
-      key: "hbbtv-smart-tv",
-      title: "HbbTV und Smart-TV-Strategien",
-      headline: "HbbTV bleibt wichtig fuer Smart-TV-Strategien",
-      subline: "Offene TV-Standards helfen Sendern bei Reichweite und Nutzerfuehrung.",
-      category: "HbbTV / Smart-TV",
-      keywords: ["HbbTV", "Smart-TV", "Distribution", "TV-Apps", "Streaming-Technologie"],
-      thumbnailIdea: "Moderner Smart-TV mit App-Oberflaeche, HbbTV-Signal und klarer Medienplattform-Aesthetik."
-    },
-    {
-      key: "ki-redaktion-produktion",
-      title: "KI in Redaktion und Produktion",
-      headline: "KI veraendert redaktionelle Produktionsprozesse",
-      subline: "Automatisierung braucht klare Kontrolle, Quellen und Verantwortlichkeit.",
-      category: "KI / Produktion",
-      keywords: ["KI", "Redaktion", "Produktion", "Automatisierung", "Quellenpruefung"],
-      thumbnailIdea: "Redaktioneller Arbeitsplatz mit abstrakter KI-Assistenz, Datenlinien und Medienmonitoren."
-    },
-    {
-      key: "fast-channel-distribution",
-      title: "FAST-Channels und digitale Distribution",
-      headline: "FAST-Channels erweitern die digitale Distribution",
-      subline: "Lineare Streaming-Kanaele schaffen neue Chancen fuer Reichweite und Vermarktung.",
-      category: "Distribution / FAST-Channels",
-      keywords: ["FAST-Channels", "Distribution", "OTT", "Streaming", "Vermarktung"],
-      thumbnailIdea: "Mehrere lineare Streaming-Kanaele auf einem modernen Dashboard, serioeser Business-Look."
-    },
-    {
-      key: "musikrechte-streaming",
-      title: "Musikrechte in digitalen Medienangeboten",
-      headline: "Musikrechte bleiben zentral fuer digitale Medienangebote",
-      subline: "Rechteklaerung ist Voraussetzung fuer sichere Auswertung und Distribution.",
-      category: "Musikrechte / Verwertungsrecht",
-      keywords: ["Musikrechte", "GEMA", "Verwertungsrecht", "Rechteklaerung", "Streaming"],
-      thumbnailIdea: "Abstrakte Verbindung von Audiowellen, Medienplayer und rechtlicher Dokumentation."
-    }
-  ];
+  const queueTopic = queuedTopics
+    .filter((topic) => !["erledigt", "abgelehnt"].includes(topic.status))
+    .sort((a, b) => Number(b.actuality_score || 0) - Number(a.actuality_score || 0))[0];
+  const topicPool = queueTopic ? [{
+    ...queueTopic,
+    key: queueTopic.topic_key || queueTopic.key || queueTopic.id,
+    thumbnailIdea: queueTopic.thumbnailIdea || queueTopic.thumbnail_idea || "Redaktionelles Medienbranchen-Motiv mit klarer Themenvisualisierung."
+  }] : LOCAL_TOPIC_POOL;
   const isManualEditorialArticle = (article) => article.author_type !== "ai" && article.authorType !== "ai" && article.aiGenerated !== true;
   const articleSearchText = (article) => `${article.title || ""} ${article.headline || ""} ${article.category || ""} ${(article.tags || []).join(" ")}`.toLowerCase();
   const topicParts = (candidate) => candidate.key.split("-").filter(Boolean);
@@ -287,6 +349,14 @@ async function runLocalAiEditorialTask(mode = "manual") {
     createdAt: now,
     updatedAt: now
   });
+  if (queueTopic?.id) {
+    await upsert("ai_topic_queue", {
+      ...queueTopic,
+      status: "erledigt",
+      article_id: articleId,
+      updated_at: now
+    });
+  }
 
   for (const source of sourceSnapshot) {
     await upsert("article_sources", {
@@ -407,9 +477,21 @@ export async function generateCmsThumbCollage(payload = {}) {
       prompt: payload.prompt || "Lokale Vorschau-Collage. Fuer echte KI bitte Firebase Function mit OPENAI_API_KEY nutzen."
     };
   }
-  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "generateCmsThumbCollage");
-  const result = await callable(payload);
-  return result.data;
+  try {
+    const callable = firebase.functionsLib.httpsCallable(firebase.functions, "generateCmsThumbCollage");
+    const result = await callable(payload);
+    return result.data;
+  } catch (error) {
+    if (["functions/not-found", "functions/unavailable", "functions/internal", "functions/deadline-exceeded"].includes(error?.code)) {
+      return {
+        imageDataUrl: localThumbSvg(payload),
+        mimeType: "image/svg+xml",
+        fileName: `${payload.entityId || "cms-thumb"}-ki-collage.svg`,
+        prompt: payload.prompt || "Lokale Vorschau-Collage. Die Firebase Function ist nicht erreichbar."
+      };
+    }
+    throw error;
+  }
 }
 
 export function improveCmsText(payload) {

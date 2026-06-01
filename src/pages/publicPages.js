@@ -1,5 +1,5 @@
-import { listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js";
-import { currentUser, isMember } from "../firebase/authService.js";
+import { listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=250";
+import { currentUser, isMember } from "../firebase/authService.js?v=250";
 import { firebaseEnabled, localPreviewMode } from "../firebase/firebaseClient.js";
 import { publicShell, logo } from "../components/layout.js";
 import { eventCard, topicCard } from "../components/cards.js";
@@ -11,8 +11,9 @@ function subhero(eyebrow, title, text) {
 }
 
 function memberLogo(member) {
+  const logoClass = `member-logo member-logo--${String(member.id || "").replace(/[^a-z0-9-]/gi, "").toLowerCase()}`;
   return member.logoUrl
-    ? `<img class="member-logo" src="${escapeHtml(member.logoUrl)}" alt="Logo ${escapeHtml(member.name)}">`
+    ? `<img class="${logoClass}" src="${escapeHtml(member.logoUrl)}" alt="Logo ${escapeHtml(member.name)}">`
     : escapeHtml(member.name);
 }
 
@@ -425,7 +426,8 @@ export async function joinPage() {
 }
 
 export async function loginPage() {
-  const demoAvailable = !firebaseEnabled() || localPreviewMode();
+  const localHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+  const demoAvailable = !firebaseEnabled() || localPreviewMode() || localHost;
   const demoControls = demoAvailable ? `<div class="field"><label>Demo-Rolle fuer lokale Vorschau</label><select name="role"><option value="admin">Admin</option><option value="editor">Redakteur</option><option value="member">Mitglied</option></select></div>` : "";
   const emailValue = demoAvailable ? "admin@prodigitaltv.de" : "";
   const passwordValue = demoAvailable ? "demo" : "";

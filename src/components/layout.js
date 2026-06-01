@@ -1,4 +1,4 @@
-import { currentUser } from "../firebase/authService.js";
+import { currentUser } from "../firebase/authService.js?v=250";
 
 const nav = [
   ["home", "Start"], ["events", "Events"], ["topics", "Themen"], ["news", "News"], ["about", "Ueber uns"],

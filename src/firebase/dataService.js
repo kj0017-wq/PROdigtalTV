@@ -1,7 +1,12 @@
 import { demoDatabase } from "../data/demoData.js";
-import { getFirebaseServices, firebaseEnabled } from "./firebaseClient.js";
+import { getFirebaseServices, firebaseEnabled, realDataMode } from "./firebaseClient.js";
 
 const STORE_KEY = "prodigitaltv-demo-db-official-assets-v3";
+
+function canFallbackToLocal(error) {
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)
+    && ["permission-denied", "unauthenticated", "failed-precondition"].some((code) => String(error?.code || error?.message || "").includes(code));
+}
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -92,11 +97,25 @@ function saveLocal(db) {
   localStorage.setItem(STORE_KEY, JSON.stringify(db));
 }
 
+function scrubOversizedInlineImages(record = {}) {
+  return Object.fromEntries(Object.entries(record).map(([key, value]) => {
+    if (typeof value === "string" && value.startsWith("data:image/") && value.length > 900000) {
+      return [key, ""];
+    }
+    return [key, value];
+  }));
+}
+
 export async function list(collectionName) {
   const firebase = await getFirebaseServices();
   if (!firebase) return localDb()[collectionName] || [];
-  const result = await firebase.firestore.getDocs(firebase.firestore.collection(firebase.db, collectionName));
-  return result.docs.map((item) => ({ id: item.id, ...item.data() }));
+  try {
+    const result = await firebase.firestore.getDocs(firebase.firestore.collection(firebase.db, collectionName));
+    return result.docs.map((item) => ({ id: item.id, ...item.data() }));
+  } catch (error) {
+    if (canFallbackToLocal(error)) return localDb()[collectionName] || [];
+    throw error;
+  }
 }
 
 async function constrainedList(collectionName, predicates) {
@@ -107,10 +126,20 @@ async function constrainedList(collectionName, predicates) {
       return true;
     }));
   }
-  const constraints = predicates.map(([field, operator, value]) => firebase.firestore.where(field, operator, value));
-  const request = firebase.firestore.query(firebase.firestore.collection(firebase.db, collectionName), ...constraints);
-  const result = await firebase.firestore.getDocs(request);
-  return result.docs.map((item) => ({ id: item.id, ...item.data() }));
+  try {
+    const constraints = predicates.map(([field, operator, value]) => firebase.firestore.where(field, operator, value));
+    const request = firebase.firestore.query(firebase.firestore.collection(firebase.db, collectionName), ...constraints);
+    const result = await firebase.firestore.getDocs(request);
+    return result.docs.map((item) => ({ id: item.id, ...item.data() }));
+  } catch (error) {
+    if (canFallbackToLocal(error)) {
+      return (localDb()[collectionName] || []).filter((record) => predicates.every(([field, operator, value]) => {
+        if (operator === "==") return record[field] === value;
+        return true;
+      }));
+    }
+    throw error;
+  }
 }
 
 export async function listPublicEvents(includeMemberEvents = false) {
@@ -127,6 +156,12 @@ function isEventVisible(event) {
   return true;
 }
 
+function isPublicLiveMember(member) {
+  return member.status === "active"
+    && (member.visibility || "public") === "public"
+    && member.isLive !== false;
+}
+
 export async function listPublicContent(collectionName) {
   const filters = {
     topics: [["status", "==", "active"]],
@@ -138,23 +173,34 @@ export async function listPublicContent(collectionName) {
     galleries: [["status", "==", "published"], ["visibility", "==", "public"]],
     eventMedia: [["status", "==", "approved"], ["visibility", "==", "public"]]
   };
-  return constrainedList(collectionName, filters[collectionName] || []);
+  const records = await constrainedList(collectionName, filters[collectionName] || []);
+  if (collectionName === "members") return records.filter(isPublicLiveMember);
+  return records;
 }
 
 export async function getOne(collectionName, id) {
   const firebase = await getFirebaseServices();
   if (!firebase) return (localDb()[collectionName] || []).find((item) => item.id === id) || null;
-  const snapshot = await firebase.firestore.getDoc(firebase.firestore.doc(firebase.db, collectionName, id));
-  return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
+  try {
+    const snapshot = await firebase.firestore.getDoc(firebase.firestore.doc(firebase.db, collectionName, id));
+    return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
+  } catch (error) {
+    if (canFallbackToLocal(error)) return (localDb()[collectionName] || []).find((item) => item.id === id) || null;
+    throw error;
+  }
 }
 
 export async function upsert(collectionName, entity) {
-  const record = { ...entity, updatedAt: new Date().toISOString() };
+  const record = scrubOversizedInlineImages({ ...entity, updatedAt: new Date().toISOString() });
   const firebase = await getFirebaseServices();
   if (firebase) {
     const id = record.id || crypto.randomUUID();
-    await firebase.firestore.setDoc(firebase.firestore.doc(firebase.db, collectionName, id), record, { merge: true });
-    return { id, ...record };
+    try {
+      await firebase.firestore.setDoc(firebase.firestore.doc(firebase.db, collectionName, id), record, { merge: true });
+      return { id, ...record };
+    } catch (error) {
+      if (!canFallbackToLocal(error)) throw error;
+    }
   }
   const db = localDb();
   const collection = db[collectionName] || (db[collectionName] = []);
@@ -169,7 +215,13 @@ export async function upsert(collectionName, entity) {
 
 export async function remove(collectionName, id) {
   const firebase = await getFirebaseServices();
-  if (firebase) return firebase.firestore.deleteDoc(firebase.firestore.doc(firebase.db, collectionName, id));
+  if (firebase) {
+    try {
+      return await firebase.firestore.deleteDoc(firebase.firestore.doc(firebase.db, collectionName, id));
+    } catch (error) {
+      if (!canFallbackToLocal(error)) throw error;
+    }
+  }
   const db = localDb();
   db[collectionName] = (db[collectionName] || []).filter((item) => item.id !== id);
   saveLocal(db);

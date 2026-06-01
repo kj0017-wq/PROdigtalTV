@@ -5,16 +5,16 @@ import {
 } from "./pages/publicPages.js";
 import {
   dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage, moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage
-} from "./cms/cmsPages.js?v=190";
-import { aiEditorialPage } from "./cms/aiEditorialPages.js?v=190";
+} from "./cms/cmsPages.js?v=250";
+import { aiEditorialPage } from "./cms/aiEditorialPages.js?v=250";
 import { createRegistration } from "./firebase/registrationService.js";
-import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js";
+import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=250";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=250";
 import { deleteStoredAsset, uploadEntityImage, uploadEventMedia, uploadGalleryImages } from "./firebase/storageService.js";
 import { checkFirebaseConnection, checkFirestoreStructure, initializeDatabase, createDemoData, removeDemoData } from "./firebase/setupService.js";
 import { downloadRegistrationsCsv } from "./utils/csv.js";
 import { escapeHtml } from "./utils/format.js";
-import { callChatGptAction, generateCmsThumbCollage, saveAiDraft, runAiEditorialTask, saveAiEditorialSettings, generateAiEditorialThumbnail } from "./ai/openaiService.js?v=190";
+import { callChatGptAction, generateCmsThumbCollage, saveAiDraft, runAiEditorialTask, saveAiEditorialSettings, generateAiEditorialThumbnail, generateAiTopicSuggestions } from "./ai/openaiService.js?v=250";
 import { generateArticleSpeechAsset } from "./ai/ttsService.js";
 
 const root = document.querySelector("#app");
@@ -124,6 +124,14 @@ function formObject(form) {
     data[item.name] = item.checked;
   });
   return data;
+}
+
+function isProtectedInternalEditorialRecord(collection, record = {}) {
+  if (collection !== "editorialContent") return false;
+  if (record.section === "download" || String(record.migratedTo || "").startsWith("downloads/")) return false;
+  if (["press", "news"].includes(record.page) || ["pressRelease", "news"].includes(record.section)) return false;
+  return ["home", "about", "join", "imprint", "privacy", "legal", "contact", "login", "members", "board"].includes(record.page)
+    || ["intro", "hero", "legal", "internal", "footer"].includes(record.section);
 }
 
 function dataUrlToFile(dataUrl, fileName) {
@@ -449,8 +457,37 @@ function safeLocalArticleDraft(article = {}, sources = [], keywords = []) {
   ].join("\n\n");
 }
 
+function draftArticleTextFromTopic(topic = {}) {
+  const title = String(topic.headline || topic.title || "Medienthema").replace(/^Themenvorschlag:\s*/i, "");
+  const keywordList = Array.isArray(topic.keywords) ? topic.keywords : [];
+  const mainKeyword = keywordList[0] || topic.category || "das Thema";
+  const reason = topic.reason || topic.subline || "Das Thema ist fuer die digitale Medienbranche relevant.";
+  return [
+    `${title} ist ein Thema, das fuer TV-, Streaming- und digitale Medienanbieter redaktionell relevant ist. ${reason}`,
+    `Im Mittelpunkt steht ${mainKeyword}. Fuer die weitere Bearbeitung sollte die Redaktion klaeren, welche konkrete Entwicklung belegt ist, welche Akteure betroffen sind und welche Quellen als belastbar gelten. Erst danach kann der Beitrag final freigegeben werden.`,
+    `Fuer die Branche geht es vor allem um Einordnung: Welche Folgen ergeben sich fuer Anbieter, Plattformen, Produktion, Distribution, Vermarktung oder Regulierung? Der Text soll spaeter leicht verstaendlich erklaeren, warum das Thema aktuell ist und was Medienunternehmen daraus ableiten koennen.`,
+    "Dieser Entwurf ist eine redaktionelle Vorbereitung. Vor einer Veroeffentlichung muessen Quellen, Belegstellen, Dublettenstatus, Keywords und Freigabe im CMS geprueft werden."
+  ].join("\n\n");
+}
+
+function shortTextFromTopic(topic = {}, bodyText = "") {
+  return limitText(String(topic.subline || topic.reason || bodyText || "").replace(/\s+/g, " ").trim(), 180);
+}
+
+function domainFromUrl(value = "") {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
 function svgDataUrl(svg) {
   return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+}
+
+function isOversizedInlineImage(value = "") {
+  return String(value || "").startsWith("data:image/") && String(value || "").length > 900000;
 }
 
 function generateLocalEditorialThumbnail(article = {}) {
@@ -561,6 +598,63 @@ function slugify(value = "") {
 function localSeoDescription(article = {}) {
   const text = String(article.subline || article.subtitle || article.bodyText || article.body || "").replace(/\s+/g, " ").trim();
   return limitText(text || "Redaktionelle Einordnung fuer TV-, Streaming- und Medienanbieter.", 158);
+}
+
+function localArticleKeywords(article = {}, fallbackKeywords = []) {
+  const title = String(article.headline || article.title || "");
+  const subline = String(article.subline || article.subtitle || "");
+  const body = String(article.bodyText || article.body || "");
+  const category = String(article.category || "");
+  const sourceKeywords = [
+    ...(Array.isArray(fallbackKeywords) ? fallbackKeywords : []),
+    ...(Array.isArray(article.tags) ? article.tags : []),
+    article.primary_keyword || article.primaryKeyword || "",
+    category,
+    ...(`${title} ${subline}`).match(/[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß-]{3,}/g) || []
+  ];
+  const stopWords = new Set([
+    "eine", "einer", "eines", "einem", "einen", "auch", "oder", "und", "fuer", "mit", "auf", "aus", "das", "der", "die",
+    "den", "dem", "des", "zur", "zum", "von", "als", "ist", "sind", "werden", "wird", "kann", "soll", "thema", "beitrag",
+    "redaktionelle", "redaktioneller", "digitale", "digitalen", "branche", "medienbranche"
+  ]);
+  const frequency = new Map();
+  sourceKeywords.forEach((raw) => {
+    const keyword = String(raw || "").replace(/^Themenvorschlag:\s*/i, "").trim();
+    if (!keyword || keyword.length < 4) return;
+    const normalized = keyword.toLowerCase();
+    if (stopWords.has(normalized)) return;
+    frequency.set(keyword, (frequency.get(keyword) || 0) + 1);
+  });
+  String(body).match(/[A-ZÄÖÜ][A-Za-zÄÖÜäöüß-]{4,}(?:\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöüß-]{3,})?/g)?.slice(0, 18).forEach((keyword) => {
+    const clean = keyword.trim();
+    if (!stopWords.has(clean.toLowerCase())) frequency.set(clean, (frequency.get(clean) || 0) + 1);
+  });
+  return Array.from(frequency.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "de"))
+    .slice(0, 12)
+    .map(([keyword], index) => ({
+      keyword,
+      keyword_type: index === 0 ? "Hauptkeyword" : category.toLowerCase().includes("recht") ? "Rechtskeyword" : "Branchenkeyword",
+      relevance_score: index === 0 ? 95 : Math.max(58, 88 - index * 4),
+      is_primary: index === 0,
+      explanation: index === 0 ? "Zentrales Thema aus Headline, Kategorie und Beitragstext." : "Automatisch aus Artikelinhalt und Themenkontext abgeleitet."
+    }));
+}
+
+function localSeoPayload(article = {}, keywords = []) {
+  const headline = String(article.headline || article.title || "").replace(/^Themenvorschlag:\s*/i, "").trim();
+  const seoTitle = limitText(headline || "PROdigitalTV Branchenbeitrag", 68);
+  const seoDescription = localSeoDescription(article);
+  const seoKeywords = keywords.map((keyword) => keyword.keyword || keyword).filter(Boolean).slice(0, 8).join(", ");
+  return {
+    slug: article.slug || slugify(seoTitle),
+    seoTitle,
+    seo_title: seoTitle,
+    seoDescription,
+    seo_description: seoDescription,
+    seoKeywords,
+    seo_keywords: seoKeywords
+  };
 }
 
 function optimizeLocalEditorialText(value = "") {
@@ -735,6 +829,7 @@ function wireImageDropzones() {
         preview.innerHTML = `<img src="${reader.result}" alt="">`;
         crop.img = preview.querySelector("img");
         preview.classList.add("has-image");
+        if (removeButton) removeButton.hidden = false;
         tools.hidden = false;
         zoom.value = "1";
         removeInput.value = "";
@@ -854,9 +949,8 @@ function wireImageDropzones() {
           updateDropzoneSavedImage(form, savedImageUrl);
           status.textContent = "KI-Collage wurde erzeugt und gespeichert.";
         } catch (saveError) {
-          if (!String(saveError?.message || saveError).includes("storage/unauthorized")) throw saveError;
           await saveGeneratedImageFallback(form, normalized.dataUrl, file.name);
-          status.textContent = "KI-Collage wurde erzeugt und direkt im Datensatz gespeichert.";
+          status.textContent = "KI-Collage wurde erzeugt und ohne Firebase-Storage direkt im Datensatz gespeichert.";
         }
       } catch (error) {
         status.textContent = `KI-Bild konnte nicht erzeugt werden: ${error.message || String(error)}`;
@@ -877,6 +971,7 @@ function wireImageDropzones() {
       tools.hidden = true;
       preview.innerHTML = `<span>${emptyText}</span>`;
       preview.classList.remove("has-image");
+      if (removeButton) removeButton.hidden = true;
       status.textContent = "Bild zum Löschen markiert. Bitte speichern.";
     });
     updateResolution();
@@ -1170,6 +1265,8 @@ function updateDropzoneSavedImage(form, imageUrl) {
     preview.innerHTML = "<span>Bild per Drag-and-drop oder Klick hochladen</span>";
     preview.classList.remove("has-image");
   }
+  const removeButton = form.querySelector("[data-image-remove]");
+  if (removeButton) removeButton.hidden = !imageUrl;
   if (input) input.value = "";
   if (dataInput) dataInput.value = "";
   if (fileNameInput) fileNameInput.value = "";
@@ -1283,7 +1380,7 @@ function wireActions() {
     const form = button.closest("form");
     if (result) result.innerHTML = `<div class="alert">${progressMarkup(form ? "Aktuelle Texte werden zuerst gespeichert ..." : "Gemini erzeugt und speichert die Audiodatei ...", 30)}</div>`;
     try {
-      if (form?.matches("#topic-editor-form, #content-edit-form")) {
+      if (form?.matches("#topic-editor-form, #content-edit-form, #ai-article-edit-form")) {
         await submitFormAndWait(form);
         if (result) result.innerHTML = `<div class="alert">${progressMarkup("Gemini erzeugt und speichert die Audiodatei ...", 72)}</div>`;
       }
@@ -1355,6 +1452,189 @@ function wireActions() {
       }
     } catch (error) {
       if (output) output.innerHTML = `<div class="alert alert--error">KI-Redaktion konnte nicht ausgefuehrt werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
+
+  document.querySelectorAll("[data-ai-topic-research]").forEach((button) => button.addEventListener("click", async () => {
+    const output = document.querySelector("#ai-topic-research-result") || document.querySelector("#ai-editorial-run-result");
+    const panel = button.closest(".ai-topic-research-panel") || document;
+    const category = panel.querySelector("#ai-topic-research-category")?.value || "";
+    const keywords = panel.querySelector("#ai-topic-research-keywords")?.value || "";
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Recherchiere ...";
+    const contextLabel = [category, keywords].filter(Boolean).join(" / ");
+    if (output) output.innerHTML = `<div class="alert">${progressMarkup(`Themenrecherche erstellt 10 Vorschlaege${contextLabel ? ` fuer ${contextLabel}` : ""} ...`, 45)}</div>`;
+    try {
+      const result = await generateAiTopicSuggestions({ category, keywords });
+      if (output) output.innerHTML = `<div class="alert alert--success">${escapeHtml(result.message || "Themenvorschlaege wurden erstellt.")}</div>`;
+      window.setTimeout(render, 700);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Themenrecherche konnte nicht ausgefuehrt werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
+
+  document.querySelector("#ai-topic-suggestions-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const output = document.querySelector("#ai-topic-research-result");
+    const selectedIds = Array.from(form.querySelectorAll('input[name="topicSuggestionIds"]:checked')).map((input) => input.value);
+    if (!selectedIds.length) {
+      if (output) output.innerHTML = `<div class="alert alert--warning">Bitte mindestens ein Thema auswaehlen.</div>`;
+      return;
+    }
+    const now = new Date().toISOString();
+    try {
+      const createdArticleIds = [];
+      for (const id of selectedIds) {
+        const suggestion = await getOne("ai_topic_suggestions", id);
+        if (!suggestion) continue;
+        const articleId = `ai-article-${crypto.randomUUID()}`;
+        const cleanTitle = suggestion.headline || suggestion.title || "KI-Thema";
+        const bodyText = draftArticleTextFromTopic(suggestion);
+        const shortText = shortTextFromTopic(suggestion, bodyText);
+        const generatedKeywords = localArticleKeywords({ ...suggestion, headline: cleanTitle, bodyText }, suggestion.keywords || []);
+        const generatedSeo = localSeoPayload({ ...suggestion, headline: cleanTitle, bodyText, subline: suggestion.subline || "", slug: slugify(cleanTitle) }, generatedKeywords);
+        const thumbnailIdea = suggestion.thumbnail_idea || suggestion.thumbnailIdea || `Redaktionelles Vorschaubild zum Thema ${suggestion.title || cleanTitle}.`;
+        const thumbnailPrompt = [
+          "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV.",
+          thumbnailIdea,
+          "Serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik."
+        ].join(" ");
+        const thumbnailUrl = generateLocalEditorialThumbnail({
+          headline: cleanTitle,
+          title: cleanTitle,
+          category: suggestion.category || "",
+          primary_keyword: Array.isArray(suggestion.keywords) ? suggestion.keywords[0] || "" : ""
+        });
+        await upsert("editorialContent", {
+          id: articleId,
+          title: cleanTitle,
+          headline: cleanTitle,
+          subtitle: suggestion.subline || "",
+          subline: suggestion.subline || "",
+          introText: shortText,
+          shortText,
+          teaserText: shortText,
+          bodyText,
+          page: "news",
+          section: "news",
+          key: `news.${articleId}`,
+          slug: generatedSeo.slug || articleId,
+          seoTitle: generatedSeo.seoTitle,
+          seo_title: generatedSeo.seo_title,
+          seoDescription: generatedSeo.seoDescription,
+          seo_description: generatedSeo.seo_description,
+          seoKeywords: generatedSeo.seoKeywords,
+          seo_keywords: generatedSeo.seo_keywords,
+          category: suggestion.category || "",
+          tags: generatedKeywords.map((item) => item.keyword),
+          primary_keyword: generatedKeywords[0]?.keyword || "",
+          keyword_json: generatedKeywords,
+          thumbnail_idea: thumbnailIdea,
+          thumbnail_prompt: thumbnailPrompt,
+          thumbnail_url: thumbnailUrl,
+          imageUrl: thumbnailUrl,
+          source_status: "Recherche erforderlich",
+          duplicate_status: suggestion.duplicate_status || "neu",
+          ai_check_status: "Warnung",
+          legal_check_status: "offen",
+          publication_status: "Entwurf",
+          status: "draft",
+          visibility: "internal",
+          relevance_score: Number(suggestion.relevance_score || suggestion.actuality_score || 0),
+          author_type: "ai",
+          author_name: "KI-Redaktion",
+          publication_target: "news",
+          topic_suggestion_id: id,
+          ai_log_json: {
+            manual_flow: true,
+            source_note: "Quellen muessen im Editor mit echten URLs erfasst werden. Keine automatische Freigabe ohne mindestens zwei gepruefte Quellen.",
+            note: "Aus redaktionell ausgewaehltem Themenvorschlag angelegt. Text, Quellen, Thumbnail, Audio, Keywords und Rubrik im Editor ausarbeiten."
+          },
+          createdAt: now,
+          updatedAt: now
+        });
+        if (generatedKeywords.length) {
+          await Promise.all(generatedKeywords.slice(0, 10).map((keyword, index) => upsert("article_keywords", {
+            id: `article-keyword-${crypto.randomUUID()}`,
+            article_id: articleId,
+            keyword: keyword.keyword,
+            keyword_type: keyword.keyword_type || (index === 0 ? "Hauptkeyword" : "Branchenkeyword"),
+            relevance_score: keyword.relevance_score || (index === 0 ? 95 : 70),
+            is_primary: Boolean(keyword.is_primary),
+            explanation: keyword.explanation || "Aus redaktionell ausgewaehltem Themenvorschlag uebernommen.",
+            ai_generated: true,
+            manually_confirmed: false,
+            created_at: now,
+            updated_at: now
+          })));
+        }
+        createdArticleIds.push(articleId);
+        await upsert("ai_topic_queue", {
+          ...suggestion,
+          id: `ai-topic-queue-${suggestion.topic_key || id}`,
+          suggestion_id: id,
+          article_id: articleId,
+          status: "Entwurf angelegt",
+          queue_status: "uebernommen",
+          queued_at: now,
+          updated_at: now
+        });
+        await upsert("ai_topic_suggestions", {
+          ...suggestion,
+          queue_status: "uebernommen",
+          status: "uebernommen",
+          updated_at: now
+        });
+      }
+      if (output) output.innerHTML = `<div class="alert alert--success">${createdArticleIds.length} Beitrag/Beitraege wurden als Entwurf angelegt. Die Beitragsliste wird geoeffnet.</div>`;
+      window.setTimeout(() => { window.location.hash = "#/cms/ai-editorial/articles"; }, 700);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Queue konnte nicht aktualisiert werden: ${escapeHtml(error.message || String(error))}</div>`;
+    }
+  });
+
+  document.querySelectorAll("[data-ai-import-local-drafts]").forEach((button) => button.addEventListener("click", async () => {
+    const output = document.querySelector("#ai-editorial-run-result") || button.closest("section")?.querySelector(".alert");
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Importiere ...";
+    try {
+      const raw = localStorage.getItem("prodigitaltv-demo-db-official-assets-v3");
+      const db = raw ? JSON.parse(raw) : {};
+      const localArticles = (db.editorialContent || []).filter((item) => item.author_type === "ai"
+        || item.authorType === "ai"
+        || item.aiGenerated === true
+        || item.source_snapshot_json
+        || item.ai_log_json
+        || item.publication_status);
+      if (!localArticles.length) {
+        if (output) output.innerHTML = `<div class="alert alert--warning">Keine lokalen KI-Entwuerfe im Browser-Speicher gefunden.</div>`;
+        return;
+      }
+      const articleIds = new Set(localArticles.map((item) => item.id));
+      await Promise.all(localArticles.map((article) => upsert("editorialContent", {
+        ...article,
+        migration_origin: article.migration_origin || "local_browser_storage",
+        visibility: article.visibility || "internal",
+        updatedAt: new Date().toISOString()
+      })));
+      const relatedCollections = ["article_sources", "article_keywords", "ai_editorial_logs"];
+      for (const collection of relatedCollections) {
+        const records = (db[collection] || []).filter((record) => articleIds.has(record.article_id || record.articleId));
+        await Promise.all(records.map((record) => upsert(collection, record)));
+      }
+      if (output) output.innerHTML = `<div class="alert alert--success">${localArticles.length} lokale KI-Entwuerfe wurden importiert.</div>`;
+      window.setTimeout(render, 700);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Import fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
     } finally {
       button.disabled = false;
       button.textContent = originalLabel;
@@ -1474,7 +1754,7 @@ function wireActions() {
         output_format: prompt.output_format || "json",
         status: prompt.status || "Entwurf",
         change_note: "",
-        prompt_seed_text: prompt.description || "",
+        prompt_seed_text: prompt.prompt_text || prompt.description || "",
         prompt_seed_mode: "free_text",
         prompt_chat_template: ""
       };
@@ -1484,6 +1764,9 @@ function wireActions() {
         if (field.type === "checkbox") field.checked = Boolean(value);
         else field.value = value;
       });
+      form.querySelector("[data-prompt-meta-name]").textContent = prompt.name || "Neuer Prompt";
+      form.querySelector("[data-prompt-meta-type]").textContent = prompt.prompt_type || "Prompt";
+      form.querySelector("[data-prompt-meta-system]").textContent = `${prompt.model || "gpt-4.1-mini"} · Temp. ${prompt.temperature ?? 0.2} · ${prompt.max_tokens ?? 1200} Tokens`;
       if (form.elements.is_active) form.elements.is_active.checked = Boolean(prompt.is_active);
       form.querySelector(".ai-advanced-prompt-fields")?.setAttribute("open", "");
       form.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1492,6 +1775,57 @@ function wireActions() {
       if (output) output.innerHTML = `<div class="alert alert--error">${escapeHtml(error.message || String(error))}</div>`;
     }
   }));
+
+  document.querySelector("[data-ai-prompt-select]")?.addEventListener("change", async (event) => {
+    const select = event.currentTarget;
+    const selected = select.selectedOptions?.[0];
+    const form = document.querySelector("#ai-prompt-form");
+    const output = form?.querySelector("#ai-prompt-result");
+    if (!select.value || !selected) return;
+    if (!form) return;
+    if (selected.dataset.createType) {
+      document.querySelector(`[data-ai-prompt-create-type="${CSS.escape(selected.dataset.createType)}"]`)?.click();
+      return;
+    }
+    try {
+      const prompt = await getOne("ai_prompts", select.value);
+      if (!prompt) throw new Error("Prompt wurde nicht gefunden.");
+      const values = {
+        prompt_id: prompt.id,
+        name: prompt.name || "",
+        prompt_type: prompt.prompt_type || "",
+        description: prompt.description || "",
+        system_instructions: prompt.system_instructions || "",
+        prompt_text: prompt.prompt_text || "",
+        test_input_json: JSON.stringify(parsePromptTestInput(""), null, 2),
+        model: prompt.model || "gpt-4.1-mini",
+        temperature: prompt.temperature ?? 0.2,
+        max_tokens: prompt.max_tokens ?? 1200,
+        output_format: prompt.output_format || "json",
+        status: prompt.status || "Entwurf",
+        change_note: "",
+        prompt_seed_text: prompt.prompt_text || prompt.description || "",
+        prompt_seed_mode: "free_text",
+        prompt_chat_template: ""
+      };
+      Object.entries(values).forEach(([name, value]) => {
+        const field = form.elements[name];
+        if (!field) return;
+        if (field.type === "checkbox") field.checked = Boolean(value);
+        else field.value = value;
+      });
+      const metaName = form.querySelector("[data-prompt-meta-name]");
+      const metaType = form.querySelector("[data-prompt-meta-type]");
+      const metaSystem = form.querySelector("[data-prompt-meta-system]");
+      if (metaName) metaName.textContent = prompt.name || "Neuer Prompt";
+      if (metaType) metaType.textContent = prompt.prompt_type || "Prompt";
+      if (metaSystem) metaSystem.textContent = `${prompt.model || "gpt-4.1-mini"} - Temp. ${prompt.temperature ?? 0.2} - ${prompt.max_tokens ?? 1200} Tokens`;
+      if (form.elements.is_active) form.elements.is_active.checked = Boolean(prompt.is_active);
+      if (output) output.innerHTML = `<div class="alert">Prompt gewechselt. Die Ansicht wurde aktualisiert.</div>`;
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">${escapeHtml(error.message || String(error))}</div>`;
+    }
+  });
 
   document.querySelectorAll("[data-ai-prompt-create-type]").forEach((button) => button.addEventListener("click", () => {
     const form = document.querySelector("#ai-prompt-form");
@@ -1525,6 +1859,9 @@ function wireActions() {
       if (field.type === "checkbox") field.checked = Boolean(value);
       else field.value = value;
     });
+    form.querySelector("[data-prompt-meta-name]").textContent = name;
+    form.querySelector("[data-prompt-meta-type]").textContent = type;
+    form.querySelector("[data-prompt-meta-system]").textContent = `${values.model || "gpt-4.1-mini"} · Temp. ${values.temperature ?? 0.2} · ${values.max_tokens ?? 1200} Tokens`;
     form.querySelector(".ai-advanced-prompt-fields")?.setAttribute("open", "");
     form.scrollIntoView({ behavior: "smooth", block: "start" });
     if (output) output.innerHTML = `<div class="alert">System-Prompt „${escapeHtml(name)}“ vorbereitet. Bitte testen und speichern.</div>`;
@@ -1681,6 +2018,77 @@ function wireActions() {
         return;
       }
 
+      if (action === "reviewRelease") {
+        const editForm = document.querySelector("#ai-article-edit-form");
+        const formValues = editForm?.dataset.articleId === articleId ? formObject(editForm) : {};
+        const mergedArticle = { ...article, ...formValues };
+        const unresolvedDraft = /sicherer Themenvorschlag|lokale KI-Redaktion|Noch keine finale zentrale Aussage|Arbeitsentwurf|Belegstellen fehlen/i.test(String(mergedArticle.bodyText || ""));
+        const checkedSources = sources.filter((source) => source.check_status === "geprueft" && Number(source.trust_score || 0) >= 70);
+        const blockers = [
+          checkedSources.length >= 2 ? "" : "Mindestens zwei gepruefte Quellen mit Trust-Score ab 70 fehlen.",
+          duplicateBlocked ? "Dublettenstatus blockiert die Freigabe." : "",
+          mergedArticle.headline || mergedArticle.title ? "" : "Headline fehlt.",
+          mergedArticle.subline || mergedArticle.subtitle ? "" : "Subline fehlt.",
+          mergedArticle.bodyText || mergedArticle.body ? "" : "Haupttext fehlt.",
+          mergedArticle.primary_keyword || keywords.length ? "" : "Keywords fehlen.",
+          unresolvedDraft ? "Arbeitsentwurf oder fehlende Belegstellen im Text erkannt." : ""
+        ].filter(Boolean);
+        const publicationTarget = formValues.publication_target || article.publication_target || "news";
+        const targetLabel = publicationTarget === "monthly_topic" ? "Thema des Monats" : publicationTarget === "topic" ? "Langfristiges Thema" : "Daily News / News";
+        document.querySelector(".ai-dialog-backdrop")?.remove();
+        const wrapper = document.createElement("div");
+        wrapper.className = "ai-dialog-backdrop";
+        wrapper.innerHTML = `<div class="ai-dialog ai-release-dialog" role="dialog" aria-modal="true">
+          <div class="actions" style="justify-content:space-between"><div><p class="eyebrow">Freigabepruefung</p><h2>${escapeHtml(mergedArticle.headline || mergedArticle.title || "KI-Beitrag")}</h2></div><button type="button" class="link-button" data-ai-close>Schliessen</button></div>
+          <div class="ai-release-grid">
+            <section class="ai-release-card"><h3>Pflichtstatus</h3><div class="ai-status-stack"><span class="ai-status ${checkedSources.length >= 2 ? "ai-status--success" : "ai-status--danger"}">Quellen ${checkedSources.length}/2</span><span class="ai-status ${duplicateBlocked ? "ai-status--danger" : "ai-status--success"}">${duplicateBlocked ? "Dublette" : "Keine Dublette"}</span><span class="ai-status ${blockers.length ? "ai-status--warning" : "ai-status--success"}">${blockers.length ? "Pruefpflichtig" : "Freigabefaehig"}</span></div></section>
+            <section class="ai-release-card"><h3>Veroeffentlichungsziel</h3><p>${escapeHtml(targetLabel)}</p><small>Veroeffentlicht wird danach im Meta-Bereich oder ueber die redaktionelle News-/Themenverwaltung.</small></section>
+            <section class="ai-release-card"><h3>Quellen</h3>${sources.length ? sources.map((source) => `<p><strong>${escapeHtml(source.publisher || source.title || "Quelle")}</strong><br><small>${escapeHtml(source.domain || source.url || "")} · Trust ${Number(source.trust_score || 0)} · ${escapeHtml(source.check_status || "ungeprueft")}</small></p>`).join("") : `<p class="muted">Keine Quellen gespeichert.</p>`}</section>
+            <section class="ai-release-card"><h3>Keywords</h3>${keywords.length ? `<div class="ai-keyword-cloud">${keywords.slice(0, 8).map((keyword) => `<span>${escapeHtml(keyword.keyword)} <strong>${Number(keyword.relevance_score || 0)}</strong></span>`).join("")}</div>` : `<p class="muted">Keine Keywords gespeichert.</p>`}</section>
+          </div>
+          ${blockers.length ? `<div class="alert alert--warning"><strong>Freigabe noch blockiert:</strong><ul>${blockers.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : `<div class="alert alert--success">Alle zentralen Freigaberegeln sind erfuellt. Der Beitrag kann redaktionell freigegeben werden.</div>`}
+          <div class="actions"><button type="button" class="button button--primary" data-ai-release-confirm ${blockers.length ? "disabled" : ""}>Freigabe setzen</button><button type="button" class="button button--secondary" data-ai-close>Zurueck zum Editor</button></div>
+        </div>`;
+        document.body.appendChild(wrapper);
+        wrapper.querySelectorAll("[data-ai-close]").forEach((item) => item.addEventListener("click", () => wrapper.remove()));
+        wrapper.querySelector("[data-ai-release-confirm]")?.addEventListener("click", async (event) => {
+          const confirmButton = event.currentTarget;
+          confirmButton.disabled = true;
+          confirmButton.textContent = "Speichere ...";
+          const now = new Date().toISOString();
+          await upsert("editorialContent", {
+            ...article,
+            title: formValues.headline || article.title || article.headline || "",
+            headline: formValues.headline || article.headline || article.title || "",
+            subtitle: formValues.subline || article.subline || article.subtitle || "",
+            subline: formValues.subline || article.subline || article.subtitle || "",
+            bodyText: formValues.bodyText || article.bodyText || article.body || "",
+            introText: formValues.introText || article.introText || article.shortText || "",
+            source_status: "geprueft",
+            ai_check_status: "bestanden",
+            publication_status: "freigegeben",
+            final_check_json: { status: "bestanden", blockers: [], checked_at: now },
+            updatedAt: now
+          });
+          await writeAiArticleLog(articleId, "success", "Beitrag wurde ueber Freigabe-Overlay redaktionell freigegeben.", {
+            usedSources: sources,
+            sourceCheck: { source_status: "geprueft", checkedSources: checkedSources.length },
+            keywordResult: keywords,
+            aiCheck: { status: "bestanden" }
+          });
+          const dialog = wrapper.querySelector(".ai-dialog");
+          if (dialog) {
+            dialog.innerHTML = `<div class="alert alert--success"><strong>OK.</strong> Freigabe wurde gesetzt.</div>`;
+          }
+          if (output) output.innerHTML = `<div class="alert alert--success">Beitrag wurde freigegeben. Veroeffentlichen erfolgt im Meta-Bereich oder spaeter in der Redaktion.</div>`;
+          window.setTimeout(() => {
+            wrapper.remove();
+            render();
+          }, 850);
+        });
+        return;
+      }
+
       if (action === "sources") {
         update.source_status = hasEnoughSources ? "geprueft" : "unzureichend";
         message = hasEnoughSources ? "Quellenpruefung bestanden." : "Quellenlage unzureichend - mindestens zwei gepruefte Quellen mit Trust-Score ab 70 erforderlich.";
@@ -1713,24 +2121,36 @@ function wireActions() {
       }
 
       if (action === "keywords") {
-        const fallbackKeywords = ["Barrierefreiheit", "Streaming", "Untertitel", "Medienrecht", "Plattformregulierung"];
+        const editForm = document.querySelector("#ai-article-edit-form");
+        const formValues = editForm?.dataset.articleId === articleId ? formObject(editForm) : {};
+        const generatedKeywords = localArticleKeywords({ ...article, ...formValues }, article.tags || []);
+        const fallbackKeywords = generatedKeywords.length ? generatedKeywords : localArticleKeywords(article, ["TV", "Streaming", "Medienbranche", "Produktion", "Plattformregulierung"]);
         const existing = new Set(keywords.map((keyword) => String(keyword.keyword || "").toLowerCase()));
-        await Promise.all(fallbackKeywords.filter((keyword) => !existing.has(keyword.toLowerCase())).map((keyword, index) => upsert("article_keywords", {
+        const keywordsToSave = fallbackKeywords.filter((keyword) => !existing.has(String(keyword.keyword || keyword).toLowerCase()));
+        await Promise.all(keywordsToSave.map((keyword, index) => upsert("article_keywords", {
           id: `article-keyword-${crypto.randomUUID()}`,
           article_id: articleId,
-          keyword,
-          keyword_type: index === 0 ? "Hauptkeyword" : "Branchenkeyword",
-          relevance_score: index === 0 ? 92 : 72,
-          is_primary: index === 0,
-          explanation: "Manuell aus KI-Redaktion nacherzeugt.",
+          keyword: keyword.keyword || keyword,
+          keyword_type: keyword.keyword_type || (index === 0 ? "Hauptkeyword" : "Branchenkeyword"),
+          relevance_score: keyword.relevance_score || (index === 0 ? 95 : 72),
+          is_primary: Boolean(keyword.is_primary || index === 0),
+          explanation: keyword.explanation || "Automatisch aus Artikelinhalt nacherzeugt.",
           ai_generated: true,
           manually_confirmed: false,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })));
-        update.primary_keyword = article.primary_keyword || fallbackKeywords[0];
-        update.tags = Array.from(new Set([...(Array.isArray(article.tags) ? article.tags : []), ...fallbackKeywords]));
-        message = "Keywords wurden ergaenzt.";
+        update.primary_keyword = article.primary_keyword || fallbackKeywords[0]?.keyword || fallbackKeywords[0] || "";
+        update.tags = Array.from(new Set([...(Array.isArray(article.tags) ? article.tags : []), ...fallbackKeywords.map((keyword) => keyword.keyword || keyword)]));
+        update.keyword_json = fallbackKeywords;
+        const seoPayload = localSeoPayload({ ...article, ...formValues }, fallbackKeywords);
+        update.seoKeywords = seoPayload.seoKeywords;
+        update.seo_keywords = seoPayload.seo_keywords;
+        const keywordCloud = document.querySelector("#ai-editor-section-keywords .ai-keyword-cloud");
+        if (keywordCloud) {
+          keywordCloud.innerHTML = fallbackKeywords.map((keyword) => `<span>${escapeHtml(keyword.keyword || keyword)} <strong>${Number(keyword.relevance_score || 70)}</strong></span>`).join("");
+        }
+        message = `${keywordsToSave.length ? keywordsToSave.length : fallbackKeywords.length} Keywords wurden automatisch erzeugt und gespeichert.`;
         status = "success";
       }
 
@@ -1756,7 +2176,7 @@ function wireActions() {
         } catch (thumbnailError) {
           console.warn("KI-Thumbnail nicht verfuegbar, lokaler Fallback wird genutzt.", thumbnailError);
         }
-        if (!thumbnailUrl) thumbnailUrl = generateLocalEditorialThumbnail(articleForThumbnail);
+        if (!thumbnailUrl || isOversizedInlineImage(thumbnailUrl)) thumbnailUrl = generateLocalEditorialThumbnail(articleForThumbnail);
         update.imageUrl = thumbnailUrl;
         update.thumbnail_url = thumbnailUrl;
         update.thumbnail_idea = articleForThumbnail.thumbnail_idea || "Serioeses redaktionelles Vorschaubild fuer die digitale Medienwirtschaft.";
@@ -1767,14 +2187,12 @@ function wireActions() {
       }
 
       if (action === "seo") {
-        const seoTitle = limitText(String(article.headline || article.title || "").replace(/^Themenvorschlag:\s*/i, ""), 68);
-        update.slug = article.slug || slugify(seoTitle);
-        update.seoTitle = seoTitle;
-        update.seo_title = seoTitle;
-        update.seoDescription = localSeoDescription(article);
-        update.seo_description = update.seoDescription;
+        const editForm = document.querySelector("#ai-article-edit-form");
+        const formValues = editForm?.dataset.articleId === articleId ? formObject(editForm) : {};
+        const generatedKeywords = keywords.length ? keywords : localArticleKeywords({ ...article, ...formValues }, article.tags || []);
+        Object.assign(update, localSeoPayload({ ...article, ...formValues }, generatedKeywords));
         update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "pruefpflichtig";
-        message = "SEO-Daten wurden erzeugt und gespeichert.";
+        message = "SEO-Titel, Meta-Beschreibung, Slug und SEO-Keywords wurden automatisch erzeugt.";
         status = "success";
       }
 
@@ -1789,6 +2207,20 @@ function wireActions() {
         };
         message = "Redaktioneller Arbeitsentwurf wurde vorbereitet. Veroeffentlichung bleibt bis zur Belegstellenpruefung blockiert.";
         status = "warning";
+      }
+
+      if (action === "headline") {
+        const editForm = document.querySelector("#ai-article-edit-form");
+        const formValues = editForm?.dataset.articleId === articleId ? formObject(editForm) : {};
+        const bodyLead = String(formValues.bodyText || article.bodyText || article.body || "").split(/(?<=[.!?])\s+/).find(Boolean) || "";
+        const rawHeadline = String(formValues.headline || article.headline || article.title || bodyLead || article.category || "PROdigitalTV Beitrag").replace(/^Themenvorschlag:\s*/i, "");
+        const cleanHeadline = limitText(rawHeadline, 72);
+        update.title = cleanHeadline;
+        update.headline = cleanHeadline;
+        update.slug = article.slug || slugify(cleanHeadline);
+        update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "pruefpflichtig";
+        message = "Headline wurde vorbereitet.";
+        status = "success";
       }
 
       if (action === "optimizeText") {
@@ -1876,18 +2308,60 @@ function wireActions() {
       }
 
       if (action === "publish") {
+        const editForm = document.querySelector("#ai-article-edit-form");
+        const formValues = editForm?.dataset.articleId === articleId ? formObject(editForm) : {};
+        const publicationTarget = formValues.publication_target || article.publication_target || article.publicationTarget || "news";
         const candidate = { ...article, ...update };
         if (!articleCanPublish(candidate)) {
           update.publication_status = "pruefpflichtig";
           message = "Veroeffentlichung blockiert: Es fehlen noch bestandene Pruefungen oder Pflichtfelder.";
           status = "blocked";
+        } else if (publicationTarget === "topic" || publicationTarget === "monthly_topic") {
+          const cleanTitle = String(formValues.headline || article.headline || article.title || "KI-Thema").replace(/^Themenvorschlag:\s*/i, "").trim();
+          const topicId = article.published_topic_id || article.topic_id || article.slug || slugify(cleanTitle) || `ki-topic-${crypto.randomUUID()}`;
+          await upsert("topics", {
+            id: topicId,
+            title: cleanTitle,
+            subtitle: formValues.subline || article.subline || article.subtitle || "",
+            shortDescription: formValues.introText || article.introText || article.shortText || formValues.subline || article.subline || article.subtitle || "",
+            longDescription: formValues.bodyText || article.bodyText || article.body || "",
+            introText: formValues.introText || article.introText || article.shortText || "",
+            shortText: formValues.introText || article.introText || article.shortText || "",
+            category: formValues.category || article.category || "Thema",
+            imageUrl: article.imageUrl || article.thumbnail_url || article.thumbnailUrl || "",
+            galleryId: article.galleryId || "",
+            status: "active",
+            visibility: "public",
+            publishDate: new Date().toISOString().slice(0, 10),
+            validFrom: new Date().toISOString().slice(0, 10),
+            sourceAiArticleId: articleId,
+            editorialFormat: publicationTarget,
+            isMonthlyTopic: publicationTarget === "monthly_topic",
+            tags: Array.isArray(article.tags) ? article.tags : [],
+            updatedAt: new Date().toISOString()
+          });
+          update.status = "draft";
+          update.visibility = "internal";
+          update.publication_target = publicationTarget;
+          update.published_topic_id = topicId;
+          update.publication_status = "veroeffentlicht";
+          update.published_at = new Date().toISOString();
+          message = publicationTarget === "monthly_topic" ? "Beitrag wurde als Thema des Monats veroeffentlicht." : "Beitrag wurde als langfristiges Thema veroeffentlicht.";
+          status = "success";
         } else {
           update.status = "published";
           update.visibility = "public";
+          update.page = "news";
+          update.section = "news";
+          update.key = article.key || `news.${articleId}`;
+          update.introText = formValues.introText || article.introText || article.shortText || "";
+          update.shortText = formValues.introText || article.introText || article.shortText || "";
+          update.teaserText = formValues.introText || article.introText || article.shortText || "";
+          update.publication_target = "news";
           update.publication_status = "veroeffentlicht";
           update.published_at = new Date().toISOString();
           update.publishDate = new Date().toISOString().slice(0, 10);
-          message = "Beitrag wurde veroeffentlicht.";
+          message = "Beitrag wurde als News veroeffentlicht.";
           status = "success";
         }
       }
@@ -1936,8 +2410,15 @@ function wireActions() {
         subtitle: values.subline || "",
         subline: values.subline || "",
         category: values.category || "",
+        publication_target: values.publication_target || article.publication_target || "news",
+        page: article.page || "news",
+        section: article.section || "news",
+        key: article.key || `news.${articleId}`,
         primary_keyword: values.primary_keyword || "",
         bodyText: values.bodyText || "",
+        introText: values.introText || "",
+        shortText: values.introText || "",
+        teaserText: values.introText || "",
         thumbnail_idea: values.thumbnail_idea || "",
         thumbnail_prompt: values.thumbnail_prompt || "",
         slug: values.slug || slugify(cleanHeadline),
@@ -1945,6 +2426,8 @@ function wireActions() {
         seo_title: values.seoTitle || "",
         seoDescription: values.seoDescription || "",
         seo_description: values.seoDescription || "",
+        seoKeywords: values.seoKeywords || "",
+        seo_keywords: values.seoKeywords || "",
         publication_status: article.publication_status === "veroeffentlicht" ? article.publication_status : "pruefpflichtig",
         ai_check_status: article.publication_status === "veroeffentlicht" ? article.ai_check_status : "Warnung",
         updatedAt: new Date().toISOString()
@@ -1955,9 +2438,69 @@ function wireActions() {
         sourceCheck: { source_status: updated.source_status || "" }
       });
       if (output) output.innerHTML = `<div class="alert alert--success">Aenderungen gespeichert. Bitte Pruefung erneut starten.</div>`;
+      form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: { id: articleId } }));
       window.setTimeout(render, 700);
     } catch (error) {
       if (output) output.innerHTML = `<div class="alert alert--error">${escapeHtml(error.message || String(error))}</div>`;
+      form.dispatchEvent(new CustomEvent("cms-form-save-failed", { detail: { error } }));
+    }
+  });
+
+  document.querySelector("#ai-article-source-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const output = form.querySelector("#ai-source-save-result");
+    const articleId = form.dataset.articleId;
+    const values = formObject(form);
+    const url = String(values.url || "").trim();
+    const domain = domainFromUrl(url);
+    if (!domain) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Bitte eine gueltige URL eintragen. Quellen duerfen nicht erfunden werden.</div>`;
+      return;
+    }
+    try {
+      const now = new Date().toISOString();
+      await upsert("article_sources", {
+        id: `article-source-${crypto.randomUUID()}`,
+        article_id: articleId,
+        title: values.title || "",
+        publisher: values.publisher || "",
+        domain,
+        url,
+        source_type: values.source_type || "Quelle",
+        published_at: "",
+        accessed_at: now,
+        relevance_note: values.relevance_note || "",
+        claim_reference: values.claim_reference || "",
+        trust_score: Number(values.trust_score || 0),
+        check_status: values.check_status || "ungeprueft",
+        created_at: now,
+        updated_at: now
+      });
+
+      const article = await getOne("editorialContent", articleId);
+      const articleSources = (await list("article_sources")).filter((source) => source.article_id === articleId || source.articleId === articleId);
+      const checkedSources = articleSources.filter((source) => source.check_status === "geprueft" && Number(source.trust_score || 0) >= 70);
+      const sourceStatus = checkedSources.length >= 2 ? "geprueft" : articleSources.length ? "teilweise geprueft" : "Recherche erforderlich";
+
+      await upsert("editorialContent", {
+        ...(article || { id: articleId }),
+        source_status: sourceStatus,
+        publication_status: article?.publication_status === "veroeffentlicht" ? article.publication_status : "pruefpflichtig",
+        ai_check_status: article?.ai_check_status === "bestanden" && checkedSources.length >= 2 ? article.ai_check_status : "Warnung",
+        updatedAt: now
+      });
+      await writeAiArticleLog(articleId, "warning", "Quelle wurde manuell erfasst. Quellenstatus aktualisiert.", {
+        usedSources: articleSources,
+        sourceCheck: { source_status: sourceStatus, checkedSources: checkedSources.length }
+      });
+      if (output) {
+        output.innerHTML = `<div class="alert alert--success">Quelle gespeichert. ${checkedSources.length >= 2 ? "Quellenstatus ist geprueft." : "Fuer die Freigabe sind mindestens zwei gepruefte Quellen mit Trust-Score ab 70 noetig."}</div>`;
+      }
+      form.reset();
+      window.setTimeout(render, 700);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Quelle konnte nicht gespeichert werden: ${escapeHtml(error.message || String(error))}</div>`;
     }
   });
 
@@ -2711,9 +3254,17 @@ function wireActions() {
 
   document.querySelectorAll("[data-record-status]").forEach((button) => button.addEventListener("click", async () => {
     const record = await getOne(button.dataset.recordStatus, button.dataset.recordId);
+    if (isProtectedInternalEditorialRecord(button.dataset.recordStatus, record)) {
+      window.alert("CMS-Interna duerfen nicht unsichtbar geschaltet werden.");
+      return;
+    }
     const updates = { ...record, status: button.dataset.status };
     if (button.dataset.recordStatus === "eventMedia") {
       updates.visibility = button.dataset.status === "approved" ? "public" : "internal";
+    }
+    if (button.dataset.recordStatus === "members") {
+      updates.isLive = button.dataset.status === "active";
+      if (updates.isLive) updates.visibility = "public";
     }
     await upsert(button.dataset.recordStatus, updates);
     await render();
@@ -2721,6 +3272,10 @@ function wireActions() {
 
   document.querySelectorAll("[data-record-visibility]").forEach((button) => button.addEventListener("click", async () => {
     const record = await getOne(button.dataset.recordVisibility, button.dataset.recordId);
+    if (isProtectedInternalEditorialRecord(button.dataset.recordVisibility, record)) {
+      window.alert("CMS-Interna duerfen nicht unsichtbar geschaltet werden.");
+      return;
+    }
     await upsert(button.dataset.recordVisibility, {
       ...record,
       visibility: button.dataset.visibility,
@@ -2739,6 +3294,10 @@ function wireActions() {
   document.querySelectorAll("[data-delete-record]").forEach((button) => button.addEventListener("click", async () => {
     const collection = button.dataset.deleteRecord;
     const record = await getOne(collection, button.dataset.recordId);
+    if (isProtectedInternalEditorialRecord(collection, record)) {
+      window.alert("CMS-Interna duerfen nicht geloescht werden.");
+      return;
+    }
     if (!window.confirm(`${record?.name || record?.title || "Eintrag"} wirklich loeschen?`)) return;
     await deleteStoredAsset(record);
     await remove(collection, button.dataset.recordId);
