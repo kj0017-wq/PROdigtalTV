@@ -315,6 +315,19 @@ exports.generateAiEditorialTopicSuggestions = onCall({ region, secrets: [openAiA
   if (!rawSuggestions.length) throw new HttpsError("internal", "OpenAI hat keine Themenvorschlaege geliefert.");
   const suggestions = rawSuggestions.map((item, index) => normalizeTopicSuggestion(item, index, { category, keywords }));
   const batch = db.batch();
+  const existingSuggestions = await db.collection("ai_topic_suggestions").limit(100).get();
+  existingSuggestions.docs.forEach((doc) => {
+    const data = doc.data() || {};
+    if (!["uebernommen", "abgelehnt", "ersetzt", "archiviert"].includes(data.queue_status || data.status)) {
+      batch.set(doc.ref, {
+        queue_status: "ersetzt",
+        status: "archiviert",
+        replaced_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        updatedBy: profile.uid
+      }, { merge: true });
+    }
+  });
   suggestions.forEach((suggestion, index) => {
     const ref = db.collection("ai_topic_suggestions").doc(suggestion.id);
     batch.set(ref, { ...suggestion, rank: index + 1, createdBy: profile.uid, updatedBy: profile.uid }, { merge: true });

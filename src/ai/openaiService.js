@@ -1,6 +1,6 @@
 import { getFirebaseServices, localPreviewMode } from "../firebase/firebaseClient.js";
-import { currentUser } from "../firebase/authService.js?v=250";
-import { upsert } from "../firebase/dataService.js?v=250";
+import { currentUser } from "../firebase/authService.js?v=253";
+import { upsert } from "../firebase/dataService.js?v=253";
 
 const ACTION_FUNCTIONS = {
   improveText: "improveText",
@@ -132,7 +132,7 @@ export async function generateAiTopicSuggestions(options = {}) {
       if (!["functions/not-found", "functions/unavailable", "functions/internal"].includes(error?.code)) throw error;
     }
   }
-  const { list, upsert } = await import("../firebase/dataService.js?v=250");
+  const { list, upsert } = await import("../firebase/dataService.js?v=253");
   const now = new Date().toISOString();
   const articles = await list("editorialContent");
   const articleText = articles.map((article) => `${article.title || ""} ${article.headline || ""} ${article.category || ""} ${(article.tags || []).join(" ")}`.toLowerCase()).join(" ");
@@ -175,6 +175,16 @@ export async function generateAiTopicSuggestions(options = {}) {
       origin: "local_topic_research"
     };
   }).sort((a, b) => b.actuality_score - a.actuality_score).slice(0, 10);
+  const existingSuggestions = await list("ai_topic_suggestions");
+  await Promise.all(existingSuggestions
+    .filter((suggestion) => !["uebernommen", "abgelehnt", "ersetzt", "archiviert"].includes(suggestion.queue_status || suggestion.status))
+    .map((suggestion) => upsert("ai_topic_suggestions", {
+      ...suggestion,
+      queue_status: "ersetzt",
+      status: "archiviert",
+      replaced_at: now,
+      updated_at: now
+    })));
   await Promise.all(suggestions.map((suggestion, index) => upsert("ai_topic_suggestions", { ...suggestion, rank: index + 1 })));
   await upsert("ai_editorial_logs", {
     id: `ai-editorial-log-${crypto.randomUUID()}`,
@@ -196,7 +206,7 @@ export async function generateAiTopicSuggestions(options = {}) {
 }
 
 async function runLocalAiEditorialTask(mode = "manual") {
-  const { list, upsert } = await import("../firebase/dataService.js?v=250");
+  const { list, upsert } = await import("../firebase/dataService.js?v=253");
   const { verified_sources: demoSources, ai_prompts: demoPrompts } = await import("../data/demoData.js");
   const now = new Date().toISOString();
   let [articles, sources, prompts, queuedTopics] = await Promise.all([

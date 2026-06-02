@@ -1,7 +1,7 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js";
-import { list, getOne, upsert } from "../firebase/dataService.js?v=250";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=253";
+import { list, getOne, upsert } from "../firebase/dataService.js?v=253";
 import { localPreviewMode } from "../firebase/firebaseClient.js";
-import { authDebugState, currentUser, canUseCms, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=250";
+import { authDebugState, currentUser, canUseCms, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=253";
 import { escapeHtml, formatDateTime, formatShortDate } from "../utils/format.js";
 
 const sections = [
@@ -310,6 +310,15 @@ function topicSuggestionRows(suggestions = []) {
   </tr>`).join("");
 }
 
+function sortTopicSuggestions(suggestions = []) {
+  return [...suggestions].sort((a, b) => {
+    const dateA = Date.parse(a.created_at || a.createdAt || a.updated_at || a.updatedAt || "") || 0;
+    const dateB = Date.parse(b.created_at || b.createdAt || b.updated_at || b.updatedAt || "") || 0;
+    if (dateA !== dateB) return dateB - dateA;
+    return Number(a.rank || 999) - Number(b.rank || 999);
+  });
+}
+
 function topicQueueRows(queue = []) {
   return queue.map((topic) => `<tr>
     <td><strong>${escapeHtml(topic.title || "-")}</strong><small>${escapeHtml(topic.subline || topic.reason || "")}</small></td>
@@ -596,7 +605,7 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
   };
   const latestArticle = latest(aiArticles);
   const latestLog = latest(logs, "created_at");
-  const openSuggestions = topicSuggestions.filter((topic) => !["uebernommen", "abgelehnt"].includes(topic.queue_status || topic.status));
+  const openSuggestions = sortTopicSuggestions(topicSuggestions.filter((topic) => !["uebernommen", "abgelehnt", "ersetzt", "archiviert"].includes(topic.queue_status || topic.status)));
   const queuedTopics = topicQueue.filter((topic) => !["erledigt", "abgelehnt"].includes(topic.status));
   const editorId = query.get("id");
   const loadedArticle = editorId ? aiArticles.find((item) => item.id === editorId) || await getOne("editorialContent", editorId) : null;
@@ -606,7 +615,7 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
   }
   const createLabel = localPreviewMode() ? "Demo-Beitrag erzeugen" : "KI-Beitrag jetzt erzeugen";
   const headerActions = "";
-  const topicResearchPanel = `<section class="panel ai-topic-research-panel"><h2>Themenrecherche</h2><p class="muted">Die KI erstellt zuerst 10 Themenvorschlaege mit Aktualitaetsbewertung. Quellen- und Dublettenpruefung erfolgen automatisch im Editor nach Auswahl eines Beitrags.</p><div class="form-grid--two ai-topic-research-controls"><div class="field"><label>Kategorie</label><select id="ai-topic-research-category">${topicResearchCategories.map((category) => `<option value="${category === "Alle Themenbereiche" ? "" : escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}</select></div><div class="field"><label>Stichworte</label><input id="ai-topic-research-keywords" placeholder="z. B. FAST, GEMA, Voice-Cloning"></div></div><div class="ai-picto-row">${pictogram("?", "Recherche starten", "data-ai-topic-research")}</div><div id="ai-topic-research-result"></div>${openSuggestions.length ? `<form id="ai-topic-suggestions-form"><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema</th><th>Kategorie</th><th>Aktualitaet</th><th>Status</th></tr></thead><tbody>${topicSuggestionRows(openSuggestions.sort((a, b) => Number(b.actuality_score || 0) - Number(a.actuality_score || 0)).slice(0, 10))}</tbody></table></div><div class="actions"><button class="button button--primary">OK - ausgewaehlte als Beitraege anlegen</button></div></form>` : `<div class="alert">Noch keine offenen Themenvorschlaege. Starte eine Themenrecherche.</div>`}</section><section class="panel"><h2>Themen-Queue</h2><div class="table-wrap"><table class="table"><thead><tr><th>Thema</th><th>Kategorie</th><th>Aktualitaet</th><th>Status</th><th>Datum</th></tr></thead><tbody>${queuedTopics.length ? topicQueueRows(queuedTopics) : `<tr><td colspan="5">Noch keine Themen in der Queue.</td></tr>`}</tbody></table></div></section>`;
+  const topicResearchPanel = `<section class="panel ai-topic-research-panel"><h2>Themenrecherche</h2><p class="muted">Die KI erstellt zuerst 10 Themenvorschlaege mit Aktualitaetsbewertung. Quellen- und Dublettenpruefung erfolgen automatisch im Editor nach Auswahl eines Beitrags.</p><div class="form-grid--two ai-topic-research-controls"><div class="field"><label>Kategorie</label><select id="ai-topic-research-category">${topicResearchCategories.map((category) => `<option value="${category === "Alle Themenbereiche" ? "" : escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}</select></div><div class="field"><label>Stichworte</label><input id="ai-topic-research-keywords" placeholder="z. B. FAST, GEMA, Voice-Cloning"></div></div><div class="ai-picto-row">${pictogram("?", "Recherche starten", "data-ai-topic-research")}</div><div id="ai-topic-research-result"></div>${openSuggestions.length ? `<form id="ai-topic-suggestions-form"><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema</th><th>Kategorie</th><th>Aktualitaet</th><th>Status</th></tr></thead><tbody>${topicSuggestionRows(openSuggestions.slice(0, 10))}</tbody></table></div><div class="actions"><button class="button button--primary">OK - ausgewaehlte als Beitraege anlegen</button></div></form>` : `<div class="alert">Noch keine offenen Themenvorschlaege. Starte eine Themenrecherche.</div>`}</section><section class="panel"><h2>Themen-Queue</h2><div class="table-wrap"><table class="table"><thead><tr><th>Thema</th><th>Kategorie</th><th>Aktualitaet</th><th>Status</th><th>Datum</th></tr></thead><tbody>${queuedTopics.length ? topicQueueRows(queuedTopics) : `<tr><td colspan="5">Noch keine Themen in der Queue.</td></tr>`}</tbody></table></div></section>`;
   const content = {
     dashboard: `${cmsTitle("KI-Redaktion", "Themenliste")}
       ${nav(active)}
