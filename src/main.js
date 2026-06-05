@@ -1,15 +1,15 @@
 import { route, onRouteChange, go } from "./utils/router.js";
 import {
   homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
-  newsPage, newsDetailPage, aboutPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, portalPage, legalPage, notFoundPage
-} from "./pages/publicPages.js?v=451";
+  newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, portalPage, legalPage, notFoundPage
+} from "./pages/publicPages.js?v=460";
 import {
   dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage, moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, mailAdminPage
-} from "./cms/cmsPages.js?v=453";
-import { aiEditorialPage } from "./cms/aiEditorialPages.js?v=451";
+} from "./cms/cmsPages.js?v=460";
+import { aiEditorialPage } from "./cms/aiEditorialPages.js?v=460";
 import { createRegistration } from "./firebase/registrationService.js";
-import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=451";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=451";
+import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=460";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=460";
 import { deleteStoredAsset, uploadEntityImage, uploadEventMedia, uploadGalleryImages } from "./firebase/storageService.js";
 import { checkFirebaseConnection, checkFirestoreStructure, initializeDatabase, createDemoData, removeDemoData } from "./firebase/setupService.js";
 import { downloadRegistrationsCsv } from "./utils/csv.js";
@@ -22,6 +22,10 @@ const root = document.querySelector("#app");
 const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 
+function applyTheme(theme = localStorage.getItem("pdtTheme") || "day") {
+  document.documentElement.dataset.theme = theme === "night" ? "night" : "day";
+}
+
 async function viewForRoute(current) {
   if (current.path === "home") return homePage();
   if (current.path === "events") return eventsPage();
@@ -32,9 +36,15 @@ async function viewForRoute(current) {
   if (current.path === "news" && current.id) return newsDetailPage(current.id);
   if (current.path === "news") return newsPage();
   if (current.path === "retrospective" && current.id) return newsDetailPage(current.id);
+  if (current.path === "about" && current.id) return internalDetailPage("ueber_uns", current.id);
+  if (current.path === "ueber-uns" && current.id) return internalDetailPage("ueber_uns", current.id);
+  if (current.path === "ueber-uns") return aboutPage();
   if (current.path === "about") return aboutPage();
   if (current.path === "board") return boardPage();
   if (current.path === "members") return membersPage();
+  if (current.path === "join" && current.id) return internalDetailPage("mitglied_werden", current.id);
+  if (current.path === "mitglied-werden" && current.id) return internalDetailPage("mitglied_werden", current.id);
+  if (current.path === "mitglied-werden") return joinPage();
   if (current.path === "join") return joinPage();
   if (current.path === "downloads") return downloadsPage();
   if (current.path === "archive") return archivePage();
@@ -67,6 +77,7 @@ async function viewForRoute(current) {
 
 async function render() {
   try {
+    applyTheme();
     closePublicTts();
     if (root && !root.innerHTML) {
       root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS</p><h1>Lade Inhalte ...</h1></div></section>`;
@@ -353,8 +364,32 @@ function isProtectedInternalEditorialRecord(collection, record = {}) {
   if (collection !== "editorialContent") return false;
   if (record.section === "download" || String(record.migratedTo || "").startsWith("downloads/")) return false;
   if (["press", "news"].includes(record.page) || ["pressRelease", "news"].includes(record.section)) return false;
+  if (["ueber_uns", "mitglied_werden"].includes(record.bereich)) return true;
   return ["home", "about", "join", "imprint", "privacy", "legal", "contact", "login", "members", "board"].includes(record.page)
     || ["intro", "hero", "legal", "internal", "footer"].includes(record.section);
+}
+
+function normalizeInternalEditorialValues(values = {}) {
+  if (!["ueber_uns", "mitglied_werden"].includes(values.bereich)) return values;
+  const slug = String(values.slug || values.id || "").trim();
+  const page = values.bereich === "ueber_uns" ? "about" : "join";
+  const publicVisibility = values.sichtbarkeit === "oeffentlich" ? "public" : values.sichtbarkeit === "mitglieder" ? "members" : "internal";
+  return {
+    ...values,
+    slug,
+    id: values.id,
+    page,
+    section: "internal",
+    key: `${values.bereich}.${slug || values.key || ""}`,
+    title: values.titel || values.title || "",
+    introText: values.kurztext || values.introText || "",
+    bodyText: values.langtext || values.bodyText || "",
+    sortOrder: Number(values.sortierung || values.sortOrder || 0),
+    buttonText: values.button_text || values.buttonText || "",
+    buttonUrl: values.button_ziel || values.buttonUrl || "",
+    visibility: publicVisibility,
+    editorialManaged: true
+  };
 }
 
 function dataUrlToFile(dataUrl, fileName) {
@@ -1979,6 +2014,11 @@ function wireCmsMenu() {
 }
 
 function wireActions() {
+  document.querySelector("[data-theme-toggle]")?.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "night" ? "day" : "night";
+    localStorage.setItem("pdtTheme", next);
+    applyTheme(next);
+  });
   wireCmsMenu();
   wireImageDropzones();
   wireGalleryEditor();
@@ -2020,7 +2060,8 @@ function wireActions() {
     if (submitButton) submitButton.disabled = true;
     if (result) result.innerHTML = `<div class="alert">Mailaccount wird gespeichert ...</div>`;
     try {
-      const values = formObject(form);
+      let values = formObject(form);
+      values = normalizeInternalEditorialValues(values);
       values.smtpPort = Number(values.smtpPort || 587);
       if (!values.smtpPass) delete values.smtpPass;
       await mailAdminRequest("/admin/accounts", { method: "POST", body: JSON.stringify(values) });
@@ -2060,7 +2101,8 @@ function wireActions() {
     if (submitButton) submitButton.disabled = true;
     if (result) result.innerHTML = `<div class="alert">Testmail wird gesendet ...</div>`;
     try {
-      const values = formObject(form);
+      let values = formObject(form);
+      values = normalizeInternalEditorialValues(values);
       const variables = values.variablesJson ? JSON.parse(values.variablesJson) : {};
       delete values.variablesJson;
       await mailAdminRequest("/send", { method: "POST", body: JSON.stringify({ ...values, variables }) });
@@ -3979,7 +4021,8 @@ function wireActions() {
     if (result) result.innerHTML = `<div class="alert">Speichere...</div>`;
     try {
       const existing = (await getOne(form.dataset.module, form.dataset.id)) || { id: form.dataset.id, createdAt: new Date().toISOString() };
-      const values = formObject(form);
+      let values = formObject(form);
+      values = normalizeInternalEditorialValues(values);
       const removeAssetRequested = values.removeAssetFile === "1";
       if (form.dataset.module === "editorialContent" && values.publishDate) values.validFrom = values.publishDate;
       if (form.dataset.module === "editorialContent" && Object.prototype.hasOwnProperty.call(values, "linkedEventId")) {

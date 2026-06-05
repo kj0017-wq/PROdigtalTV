@@ -86,7 +86,9 @@ export async function createDemoData() {
   for (const [collection, records] of Object.entries(demoDatabase)) {
     if (!Array.isArray(records)) continue;
     for (const record of records) {
-      if (!(await getOne(collection, record.id))) await upsert(collection, { ...record, demo: true });
+      const existing = await getOne(collection, record.id);
+      if (!existing) await upsert(collection, { ...record, demo: true });
+      else if (collection === "editorialContent" && record.editorialManaged) await upsert(collection, { ...existing, ...record, demo: existing.demo ?? true });
     }
   }
   const setup = (await getOne("system", "setup")) || { id: "setup" };

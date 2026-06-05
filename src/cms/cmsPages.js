@@ -1,6 +1,6 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=453";
-import { list, getOne } from "../firebase/dataService.js?v=451";
-import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=451";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=460";
+import { list, getOne } from "../firebase/dataService.js?v=460";
+import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=460";
 import { accessLabels, lifecycleLabels } from "../data/demoData.js";
 import { escapeHtml, formatDate, formatDateTime, formatShortDate } from "../utils/format.js";
 
@@ -591,6 +591,7 @@ function isAiGeneratedEditorialItem(item = {}) {
 function isInternalEditorialItem(item = {}) {
   if (item.section === "download" || String(item.migratedTo || "").startsWith("downloads/")) return false;
   if (isAiGeneratedEditorialItem(item)) return false;
+  if (["ueber_uns", "mitglied_werden"].includes(item.bereich)) return true;
   return !["press", "news"].includes(item.page)
     && !["pressRelease", "news"].includes(item.section)
     && (["home", "about", "join", "imprint", "privacy", "legal", "contact", "login", "members", "board"].includes(item.page)
@@ -925,6 +926,28 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
       </form></section>`));
   }
   if (module === "editorialContent" && isInternalEditorialItem(item)) {
+    const managed = ["ueber_uns", "mitglied_werden"].includes(item.bereich) || item.editorialManaged;
+    if (managed) {
+      const statusValue = item.status || "aktiv";
+      const visibilityValue = item.sichtbarkeit || item.visibility || "oeffentlich";
+      return protect(cmsShell("cms/editorial/interna", `${cmsTitle("Interna", "Textbaustein bearbeiten", `<a class="button button--secondary button--small" href="#/cms/editorial/interna">Zurueck</a>`)}
+        <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid form-grid--compact">
+          <div class="form-grid--two">
+            <div class="field"><label>Slug</label><input name="slug" value="${escapeHtml(item.slug || item.id || "")}" required><p class="muted">Nach Anlage moeglichst nicht mehr aendern.</p></div>
+            <div class="field"><label>Icon</label><input name="icon" value="${escapeHtml(item.icon || "")}" placeholder="network, compass, law ..."></div>
+            <div class="field"><label>Bereich</label><select name="bereich"><option value="ueber_uns" ${item.bereich === "ueber_uns" ? "selected" : ""}>Ueber uns</option><option value="mitglied_werden" ${item.bereich === "mitglied_werden" ? "selected" : ""}>Mitglied werden</option></select></div>
+            <div class="field"><label>Typ</label><select name="typ">${["hero", "textblock", "vorteil", "eventformat", "kachelgruppe", "cta"].map((type) => `<option value="${type}" ${item.typ === type ? "selected" : ""}>${type}</option>`).join("")}</select></div>
+            <div class="field"><label>Sortierung</label><input name="sortierung" type="number" value="${escapeHtml(item.sortierung ?? item.sortOrder ?? 10)}"></div>
+            <div class="field"><label>Status</label><select name="status"><option value="aktiv" ${statusValue === "aktiv" ? "selected" : ""}>Aktiv</option><option value="inaktiv" ${statusValue === "inaktiv" ? "selected" : ""}>Inaktiv</option></select></div>
+            <div class="field"><label>Sichtbarkeit</label><select name="sichtbarkeit"><option value="oeffentlich" ${visibilityValue === "oeffentlich" || visibilityValue === "public" ? "selected" : ""}>Oeffentlich</option><option value="intern" ${visibilityValue === "intern" || visibilityValue === "internal" ? "selected" : ""}>Intern</option><option value="mitglieder" ${visibilityValue === "mitglieder" || visibilityValue === "members" ? "selected" : ""}>Mitglieder</option></select></div>
+          </div>
+          <div class="field"><label>Titel</label><input name="titel" value="${escapeHtml(item.titel || item.title || "")}" required>${aiFieldActions([{ action: "improveText", target: "titel", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "titel" }])}</div>
+          <div class="field"><label>Kurztext</label><textarea name="kurztext">${escapeHtml(item.kurztext || item.introText || "")}</textarea>${aiFieldActions([{ action: "shortenText", target: "kurztext", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "kurztext" }])}</div>
+          <div class="field"><label>Langtext</label><textarea name="langtext">${escapeHtml(item.langtext || item.bodyText || "")}</textarea>${aiFieldActions([{ action: "improveText", target: "langtext", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "langtext" }])}</div>
+          <div class="form-grid--two"><div class="field"><label>Button-Text optional</label><input name="button_text" value="${escapeHtml(item.button_text || item.buttonText || "")}"></div><div class="field"><label>Button-Ziel optional</label><input name="button_ziel" value="${escapeHtml(item.button_ziel || item.buttonUrl || "")}"></div></div>
+          <button class="button button--primary">Speichern</button><div id="content-save-result"></div>
+        </form></section>`));
+    }
     return protect(cmsShell("cms/editorial/interna", `${cmsTitle("Interna", "Textbaustein bearbeiten", `<a class="button button--secondary button--small" href="#/cms/editorial/interna">Zurueck</a>`)}
       <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid form-grid--compact">
         <input type="hidden" name="page" value="${escapeHtml(item.page || "")}">

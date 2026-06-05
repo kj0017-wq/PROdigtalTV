@@ -1,5 +1,5 @@
-import { listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=451";
-import { currentUser, isMember } from "../firebase/authService.js?v=451";
+import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=460";
+import { currentUser, isMember } from "../firebase/authService.js?v=460";
 import { firebaseEnabled, localPreviewMode } from "../firebase/firebaseClient.js";
 import { publicShell, logo } from "../components/layout.js";
 import { eventCard, topicCard } from "../components/cards.js";
@@ -60,6 +60,107 @@ function archiveEditorialArticle(item, partners = []) {
 
 function articleParagraphs(text = "") {
   return text.split(/\n+/).filter(Boolean).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("");
+}
+
+const internalPageMeta = {
+  ueber_uns: {
+    active: "about",
+    route: "about",
+    detailRoute: "ueber-uns",
+    eyebrow: "Ueber uns",
+    title: "PROdigitalTV - das Netzwerk fuer digitale Medien",
+    intro: "PROdigitalTV verbindet Unternehmen, Entscheider und Akteure der digitalen Medienwirtschaft im deutschsprachigen Raum."
+  },
+  mitglied_werden: {
+    active: "join",
+    route: "join",
+    detailRoute: "mitglied-werden",
+    eyebrow: "Mitglied werden",
+    title: "Teil eines starken Branchennetzwerks werden",
+    intro: "Eine Mitgliedschaft bei PROdigitalTV bietet Zugang zu Austausch, Wissen, Sichtbarkeit und exklusiven Formaten der digitalen Medienwirtschaft."
+  }
+};
+
+function canonicalInternalBlock(item = {}) {
+  return {
+    ...item,
+    slug: item.slug || item.id,
+    bereich: item.bereich || (item.page === "about" ? "ueber_uns" : item.page === "join" ? "mitglied_werden" : ""),
+    typ: item.typ || item.section || "textblock",
+    titel: item.titel || item.title || "",
+    kurztext: item.kurztext || item.introText || item.subtitle || "",
+    langtext: item.langtext || item.bodyText || "",
+    icon: item.icon || "modules",
+    sortierung: Number(item.sortierung ?? item.sortOrder ?? 0),
+    button_text: item.button_text || item.buttonText || "",
+    button_ziel: item.button_ziel || item.buttonUrl || ""
+  };
+}
+
+function isPublicInternalBlock(item = {}, bereich) {
+  const block = canonicalInternalBlock(item);
+  return block.bereich === bereich
+    && ["aktiv", "published"].includes(String(item.status || ""))
+    && ["oeffentlich", "public"].includes(String(item.sichtbarkeit || item.visibility || ""));
+}
+
+async function internalBlocks(bereich) {
+  return (await list("editorialContent"))
+    .filter((item) => isPublicInternalBlock(item, bereich))
+    .map(canonicalInternalBlock)
+    .sort((a, b) => Number(a.sortierung || 0) - Number(b.sortierung || 0));
+}
+
+function internalIcon(name = "") {
+  const labels = {
+    network: "N", compass: "K", modules: "M", dialog: "D", breakfast: "B", interview: "I", transformation: "T", impact: "W",
+    membership: "M", knowledge: "W", visibility: "S", presentation: "P", guest: "G", exclusive: "E", law: "R", gema: "G", cooperation: "K", cta: ">"
+  };
+  return `<span class="internal-card__icon" aria-hidden="true">${escapeHtml(labels[name] || "•")}</span>`;
+}
+
+function internalCard(block, meta) {
+  const href = `#/${meta.detailRoute}/${encodeURIComponent(block.slug)}`;
+  return `<a class="internal-card internal-card--${escapeHtml(block.typ)}" href="${href}">
+    ${internalIcon(block.icon)}
+    <span><strong>${escapeHtml(block.titel)}</strong><small>${escapeHtml(block.kurztext)}</small></span>
+    <b aria-hidden="true">→</b>
+  </a>`;
+}
+
+function internalDesktopSection(block, meta) {
+  const detailHref = `#/${meta.detailRoute}/${encodeURIComponent(block.slug)}`;
+  const cta = block.button_text ? `<a class="button button--primary button--small" href="${escapeHtml(block.button_ziel || detailHref)}">${escapeHtml(block.button_text)}</a>` : `<a class="link" href="${detailHref}">Mehr lesen →</a>`;
+  return `<article class="internal-section internal-section--${escapeHtml(block.typ)}">
+    <div class="internal-section__head">${internalIcon(block.icon)}<div><p class="eyebrow">${escapeHtml(block.typ)}</p><h2>${escapeHtml(block.titel)}</h2><p>${escapeHtml(block.kurztext)}</p></div></div>
+    <div class="editorial-text internal-section__body">${articleParagraphs(block.langtext)}</div>
+    ${cta}
+  </article>`;
+}
+
+function internalOverviewPage(bereich) {
+  return async function renderInternalOverview() {
+    const meta = internalPageMeta[bereich];
+    const blocks = await internalBlocks(bereich);
+    const hero = blocks.find((block) => block.typ === "hero") || blocks[0];
+    const cards = blocks.map((block) => internalCard(block, meta)).join("");
+    const desktopSections = blocks.map((block) => internalDesktopSection(block, meta)).join("");
+    return publicShell(meta.active, `${subhero(meta.eyebrow, hero?.titel || meta.title, hero?.kurztext || meta.intro)}
+      <section class="section internal-overview"><div class="container">
+        <div class="internal-mobile-list">${cards || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
+        <div class="internal-desktop-sections">${desktopSections || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
+      </div></section>`);
+  };
+}
+
+export async function internalDetailPage(bereich, slug) {
+  const meta = internalPageMeta[bereich];
+  const blocks = await internalBlocks(bereich);
+  const block = blocks.find((item) => item.slug === slug);
+  if (!block) return notFoundPage();
+  const cta = block.button_text ? `<div class="actions" style="margin-top:24px"><a class="button button--primary" href="${escapeHtml(block.button_ziel || `#/${meta.route}`)}">${escapeHtml(block.button_text)}</a></div>` : "";
+  return publicShell(meta.active, `${subhero(meta.eyebrow, block.titel, block.kurztext)}
+    <section class="section"><div class="container internal-detail"><a class="link" href="#/${meta.route}">← Zurueck</a><article class="detail-main"><div class="editorial-text">${articleParagraphs(block.langtext)}</div>${cta}</article></div></section>`);
 }
 
 function articleSourcesList(item = {}) {
@@ -355,15 +456,7 @@ export async function topicDetailPage(id) {
     <section class="section"><div class="container"><div class="section-head"><div><p class="eyebrow">Verknuepfte Events</p><h2>Im Dialog</h2></div></div><div class="card-grid card-grid--three">${linked.map((event) => eventCard(event, event.date < "2026-05-26", sponsors)).join("")}</div></div></section>`);
 }
 
-export async function aboutPage() {
-  const content = await getOne("editorialContent", "about-intro") || {
-    title: "Ein Netzwerk fuer relevante Verbindungen.",
-    introText: "PROdigitalTV bringt die digitale Medienwirtschaft zusammen.",
-    bodyText: "Wir schaffen Raum fuer Dialog, Wissenstransfer und Partnerschaften."
-  };
-  return publicShell("about", `${subhero("Ueber uns", content.title, content.introText)}
-    <section class="section"><div class="container detail-grid"><article class="detail-main"><h2>Unser Selbstverstaendnis</h2><div class="editorial-text">${articleParagraphs(content.bodyText)}</div><h2>Was wir leisten</h2><div class="quick-grid"><div class="quick-card"><h3>Dialog</h3><p>Kuratierte Formate fuer Entscheider.</p></div><div class="quick-card"><h3>Wissen</h3><p>Impulse aus Praxis und Strategie.</p></div><div class="quick-card"><h3>Netzwerk</h3><p>Partnerschaften mit Substanz.</p></div></div></article><aside class="detail-aside"><p class="eyebrow">Organisation</p><h2 style="margin-bottom:12px">Vorstand und Mitgliedschaft</h2><p>Lernen Sie die Verantwortlichen kennen oder gestalten Sie die Themen des Netzwerks mit.</p><div class="actions" style="margin-top:20px;flex-wrap:wrap"><a class="button button--dark" href="#/board">Zum Vorstand</a><a class="button button--primary" href="#/join">Mitglied werden</a></div></aside></div></section>`);
-}
+export const aboutPage = internalOverviewPage("ueber_uns");
 
 export async function membersPage() {
   const members = await listPublicContent("members");
@@ -395,8 +488,7 @@ export async function downloadsPage() {
     <section class="section"><div class="container">${downloads.length ? `<div class="card-grid card-grid--three">${downloads.map(downloadCard).join("")}</div>` : `<div class="alert">Oeffentliche Downloads werden aktuell vorbereitet.</div>`}</div></section>`);
 }
 
-export async function joinPage() {
-  const [intro, downloads, editorial] = await Promise.all([getOne("editorialContent", "join-intro"), listPublicContent("downloads"), listPublicContent("editorialContent")]);
+function membershipFormSection(downloads, editorial) {
   const publicDownloads = downloads
     .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   const downloadInfo = (item) => {
@@ -411,8 +503,7 @@ export async function joinPage() {
   const benefitKeys = ["join.benefit.events", "join.benefit.visibility", "join.benefit.impulses"];
   const benefits = benefitKeys.map((key) => editorial.find((content) => content.key === key)).filter(Boolean);
   const benefitFields = benefits.length ? benefits.map((item) => `<details class="download-field"><summary><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.introText || "Mitgliedervorteil")}</span></summary><div class="download-field__body"><p>${escapeHtml(item.bodyText || "")}</p></div></details>`).join("") : `<details class="download-field"><summary><strong>Exklusive Events</strong><span>Mitgliedervorteil</span></summary><div class="download-field__body"><p>Zugang zu Mitgliedsformaten.</p></div></details><details class="download-field"><summary><strong>Sichtbarkeit</strong><span>Mitgliedervorteil</span></summary><div class="download-field__body"><p>Praesenz im Netzwerk.</p></div></details><details class="download-field"><summary><strong>Impulse</strong><span>Mitgliedervorteil</span></summary><div class="download-field__body"><p>Fachlicher Austausch.</p></div></details>`;
-  return publicShell("join", `${subhero("Mitglied werden", intro?.title || "Gemeinsam mehr bewegen.", intro?.introText || "Mitgliedschaft fuer Unternehmen, die sich substantiell im Branchendialog engagieren moechten.")}
-  <section class="section"><div class="container join-layout"><form id="membership-application-form" class="form-card form-grid join-form">
+  return `<section class="section"><div class="container join-layout"><form id="membership-application-form" class="form-card form-grid join-form">
     <p class="eyebrow">Mitgliedsantrag</p><h2 style="margin-bottom:6px">Mitglied werden</h2>
     <div class="form-grid--two"><div class="field"><label>Unternehmen / Organisation *</label><input name="company" required></div><div class="field"><label>Rechtsform</label><input name="legalForm" placeholder="z. B. GmbH, AG, e.V."></div></div>
     <div class="form-grid--two"><div class="field"><label>Strasse und Hausnummer *</label><input name="street" required></div><div class="field"><label>PLZ / Ort *</label><input name="city" required></div></div>
@@ -427,7 +518,18 @@ export async function joinPage() {
     <label class="checkbox"><input type="checkbox" name="privacyAccepted" required> Ich akzeptiere die Datenschutzerklaerung zur Verarbeitung meines Mitgliedsantrags. *</label>
     <label class="checkbox"><input type="checkbox" name="newsletterConsent"> Ich moechte Informationen zu Veranstaltungen und Vereinsaktivitaeten erhalten.</label>
     <button class="button button--primary" type="submit">Mitgliedsantrag absenden</button><div id="membership-application-result"></div>
-  </form><aside class="join-aside"><h2>Downloads</h2>${publicDownloads.length ? `<div class="join-download-fields">${publicDownloads.map(downloadField).join("")}</div>` : `<a class="button button--secondary" href="#/downloads">Zu den oeffentlichen Downloads</a>`}<h2>Ihre Vorteile</h2><div class="join-download-fields">${benefitFields}</div></aside></div></section>`);
+  </form><aside class="join-aside"><h2>Downloads</h2>${publicDownloads.length ? `<div class="join-download-fields">${publicDownloads.map(downloadField).join("")}</div>` : `<a class="button button--secondary" href="#/downloads">Zu den oeffentlichen Downloads</a>`}<h2>Ihre Vorteile</h2><div class="join-download-fields">${benefitFields}</div></aside></div></section>`;
+}
+
+export async function joinPage() {
+  const meta = internalPageMeta.mitglied_werden;
+  const [blocks, downloads, editorial] = await Promise.all([internalBlocks("mitglied_werden"), listPublicContent("downloads"), listPublicContent("editorialContent")]);
+  const hero = blocks.find((block) => block.typ === "hero") || blocks[0];
+  return publicShell("join", `${subhero(meta.eyebrow, hero?.titel || meta.title, hero?.kurztext || meta.intro)}
+    <section class="section internal-overview"><div class="container">
+      <div class="internal-mobile-list">${blocks.map((block) => internalCard(block, meta)).join("") || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
+      <div class="internal-desktop-sections">${blocks.map((block) => internalDesktopSection(block, meta)).join("") || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
+    </div></section>${membershipFormSection(downloads, editorial)}`);
 }
 
 export async function loginPage() {

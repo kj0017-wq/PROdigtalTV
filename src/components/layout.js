@@ -16,6 +16,7 @@ export function header(active) {
     ${logo()}
     <nav class="desktop-nav" aria-label="Hauptnavigation">${nav.map(navLink).join("")}</nav>
     <div class="actions">
+      <button class="button button--secondary button--small theme-toggle" type="button" data-theme-toggle aria-label="Tag- und Nachtansicht umschalten">Tag/Nacht</button>
       <a class="button button--secondary button--small" href="/cms.html#/cms">CMS</a>
       <a class="button button--dark button--small" href="#/${user ? "portal" : "login"}">${user ? "Profil" : "Login"}</a>
     </div>

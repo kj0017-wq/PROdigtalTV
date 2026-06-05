@@ -9,7 +9,8 @@
     "preview": "node scripts/serve.mjs dist",
     "firebase:seed": "node scripts/exportDemoToFirebase.mjs",
     "firebase:events:pipeline": "node scripts/eventsPipeline.mjs",
-    "firebase:website:import": "node scripts/importProdigitaltvWebsite.mjs"
+    "firebase:website:import": "node scripts/importProdigitaltvWebsite.mjs",
+    "firebase:internas:import": "node scripts/importInternalEditorialContent.mjs"
   },
   "description": "PROdigitalTV B2B-Branchenplattform, PWA und webbasiertes CMS mit Firebase-Integration.",
   "dependencies": {
