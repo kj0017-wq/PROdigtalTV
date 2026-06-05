@@ -128,6 +128,114 @@ function internalCard(block, meta) {
   </a>`;
 }
 
+function aboutThumbLabel(icon = "") {
+  const labels = {
+    network: "Netz",
+    compass: "Werte",
+    modules: "Leistung",
+    dialog: "Dialog",
+    breakfast: "Events",
+    interview: "Talk",
+    transformation: "Wandel",
+    impact: "Wirkung"
+  };
+  return labels[icon] || "PDT";
+}
+
+function aboutPicto(icon = "") {
+  const pictos = {
+    network: `<svg viewBox="0 0 24 24"><path d="M7 20v-1.5a4 4 0 0 1 4-4h2a4 4 0 0 1 4 4V20"/><circle cx="12" cy="7" r="4"/><path d="M4 19v-1.2a3.6 3.6 0 0 1 3-3.55"/><path d="M20 19v-1.2a3.6 3.6 0 0 0-3-3.55"/></svg>`,
+    compass: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.6 8.4-2.25 5.25L8.4 15.6l2.25-5.25 4.95-1.95z"/></svg>`,
+    modules: `<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="5" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="m7.2 10.8 9.6-4.6"/><path d="m7.2 13.2 9.6 4.6"/></svg>`,
+    dialog: `<svg viewBox="0 0 24 24"><path d="M5 18 3 21V5a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H5z"/><path d="M7 8h10"/><path d="M7 12h7"/></svg>`,
+    breakfast: `<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M4 10h16"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/></svg>`,
+    interview: `<svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/><path d="M8 22h8"/></svg>`,
+    transformation: `<svg viewBox="0 0 24 24"><rect x="3" y="13" width="4" height="7" rx="1"/><rect x="10" y="8" width="4" height="12" rx="1"/><rect x="17" y="4" width="4" height="16" rx="1"/><path d="M3 20h19"/></svg>`,
+    impact: `<svg viewBox="0 0 24 24"><rect x="3" y="13" width="4" height="7" rx="1"/><rect x="10" y="8" width="4" height="12" rx="1"/><rect x="17" y="4" width="4" height="16" rx="1"/><path d="M3 20h19"/></svg>`
+  };
+  return `<span class="about-picto" aria-hidden="true">${pictos[icon] || pictos.modules}</span>`;
+}
+
+function aboutButtonGallery(blocks, meta) {
+  return `<div class="internal-button-gallery" aria-label="Ueber-uns Bereiche">${blocks.map((block) => {
+    const href = `#/${meta.detailRoute}/${encodeURIComponent(block.slug)}`;
+    return `<a href="${href}">${aboutPicto(block.icon)}<span>${escapeHtml(block.titel)}</span></a>`;
+  }).join("")}</div>`;
+}
+
+function aboutInternalCard(block, meta) {
+  return `<button class="internal-card internal-card--about internal-card--${escapeHtml(block.typ)}" type="button" data-about-jump="${escapeHtml(block.slug)}">
+    <span class="internal-about-thumb internal-about-thumb--${escapeHtml(block.icon || "modules")}" aria-hidden="true">${aboutPicto(block.icon)}<strong>${escapeHtml(aboutThumbLabel(block.icon))}</strong></span>
+    <span class="internal-about-copy"><strong>${escapeHtml(block.titel)}</strong><small>${escapeHtml(block.kurztext)}</small></span>
+  </button>`;
+}
+
+function aboutLongTextSection(block) {
+  return `<article class="internal-about-text" id="about-text-${escapeHtml(block.slug)}">
+    <div class="internal-about-text__head">${aboutPicto(block.icon)}<div><p class="eyebrow">${escapeHtml(block.titel)}</p><h2>${escapeHtml(block.titel)}</h2><p>${escapeHtml(block.kurztext)}</p></div></div>
+    <div class="editorial-text">${articleParagraphs(block.langtext)}</div>
+  </article>`;
+}
+
+function chunkItems(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function rubricRotator(items, renderItem, emptyHtml = "") {
+  const slides = items.length ? items : [null];
+  return `<div class="internal-rubric-rotator" data-rubric-rotator>${slides.map((item, index) => `<div class="internal-rubric-slide${index === 0 ? " is-active" : ""}" data-rubric-slide>${item ? renderItem(item) : emptyHtml}</div>`).join("")}</div>`;
+}
+
+function aboutStickyContent(events = [], board = [], members = [], topics = []) {
+  const upcomingEvents = events.filter((event) => !isPastEvent(event)).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  const eventSlides = upcomingEvents.length ? upcomingEvents.slice(0, 5) : events.slice(0, 5);
+  const topicSlides = topics.slice(0, 6);
+  const boardSlides = chunkItems(board.slice(0, 8), 2);
+  const memberSlides = chunkItems(members.filter((member) => member.featured || member.logoUrl).slice(0, 15), 3);
+  const renderEvent = (event) => `<a class="internal-sticky-event" href="#/event/${event.id}">
+    ${event.imageUrl ? `<img src="${escapeHtml(event.imageUrl)}" alt="Eventbild ${escapeHtml(event.title || "")}">` : `<span class="internal-sticky-event__picto">${aboutPicto("breakfast")}</span>`}
+    <span><strong>${escapeHtml(event.title || "Event")}</strong><small>${formatDate(event.date)}${event.city ? ` · ${escapeHtml(event.city)}` : ""}</small></span>
+  </a>`;
+  const renderTopic = (topic) => `<a class="internal-sticky-topic" href="#/topic/${topic.id}">
+    <span class="internal-sticky-event__picto">${aboutPicto("dialog")}</span>
+    <span><strong>${escapeHtml(topic.title || "Thema")}</strong><small>${escapeHtml(topic.subtitle || topic.shortDescription || "Aktuelle Themen im Netzwerk")}</small></span>
+  </a>`;
+  const renderBoardPair = (pair) => `<div class="internal-about-sticky__grid">${pair.map((person) => `<a class="internal-sticky-person" href="#/board">
+    <span class="internal-sticky-person__photo">${boardPortrait(person)}</span>
+    <span><strong>${escapeHtml(person.name)}</strong><small>${escapeHtml(person.role || person.company || "")}</small></span>
+  </a>`).join("")}</div>`;
+  const renderMemberGroup = (group) => `<div class="internal-about-sticky__members">${group.map((member) => `<a class="internal-sticky-member" href="#/members">
+    <span class="member-tile" aria-label="${escapeHtml(member.name)}">${memberLogo(member)}</span>
+  </a>`).join("")}</div>`;
+  return `<aside class="internal-about-sticky" aria-label="Aktuelle Inhalte">
+    <section class="internal-sticky-section">
+      <p class="eyebrow">Aktuelles Event</p>
+      ${rubricRotator(eventSlides, renderEvent, `<a class="internal-sticky-event" href="#/events"><span class="internal-sticky-event__picto">${aboutPicto("breakfast")}</span><span><strong>Neue Termine in Vorbereitung</strong><small>Zur Eventübersicht</small></span></a>`)}
+    </section>
+    <section class="internal-sticky-section">
+      <p class="eyebrow">Thema</p>
+      ${rubricRotator(topicSlides, renderTopic, `<a class="internal-sticky-topic" href="#/topics"><span class="internal-sticky-event__picto">${aboutPicto("dialog")}</span><span><strong>Themen ansehen</strong><small>Aktuelle Themen im Netzwerk</small></span></a>`)}
+    </section>
+    <section class="internal-sticky-section">
+      <p class="eyebrow">Vorstand</p>
+      ${rubricRotator(boardSlides, renderBoardPair, `<a class="internal-sticky-person" href="#/board">Vorstand ansehen</a>`)}
+    </section>
+    <section class="internal-sticky-section">
+      <p class="eyebrow">Mitglieder</p>
+      ${rubricRotator(memberSlides, renderMemberGroup, `<a class="internal-sticky-member" href="#/members">Mitglieder ansehen</a>`)}
+    </section>
+  </aside>`;
+}
+
+function aboutCardGroups(blocks, meta) {
+  const groups = [blocks.slice(0, 4), blocks.slice(4, 8)].filter((group) => group.length);
+  return groups.map((group) => `<div class="internal-about-button-block">${group.map((block) => aboutInternalCard(block, meta)).join("")}</div>`).join("");
+}
+
 function internalDesktopSection(block, meta) {
   const detailHref = `#/${meta.detailRoute}/${encodeURIComponent(block.slug)}`;
   const cta = block.button_text ? `<a class="button button--primary button--small" href="${escapeHtml(block.button_ziel || detailHref)}">${escapeHtml(block.button_text)}</a>` : `<a class="link" href="${detailHref}">Mehr lesen →</a>`;
@@ -141,10 +249,22 @@ function internalDesktopSection(block, meta) {
 function internalOverviewPage(bereich) {
   return async function renderInternalOverview() {
     const meta = internalPageMeta[bereich];
-    const blocks = await internalBlocks(bereich);
+    const [blocks, events, board, members, topics] = bereich === "ueber_uns"
+      ? await Promise.all([internalBlocks(bereich), listPublicEvents(), listPublicContent("boardMembers"), listPublicContent("members"), listPublicContent("topics")])
+      : [await internalBlocks(bereich), [], [], [], []];
     const hero = blocks.find((block) => block.typ === "hero") || blocks[0];
     const cards = blocks.map((block) => internalCard(block, meta)).join("");
+    const aboutCards = aboutCardGroups(blocks, meta);
+    const aboutTexts = blocks.map((block) => aboutLongTextSection(block)).join("");
     const desktopSections = blocks.map((block) => internalDesktopSection(block, meta)).join("");
+    if (bereich === "ueber_uns") {
+      return publicShell(meta.active, `<section class="section internal-overview internal-overview--about"><div class="container"><div class="internal-about-layout"><div class="internal-about-main">
+        <nav class="internal-breadcrumb" aria-label="Breadcrumb"><a href="#/home" aria-label="Startseite">Start</a><span aria-hidden="true">›</span><span>Ueber uns</span></nav>
+            <div class="internal-mobile-list internal-mobile-list--about">${aboutCards || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
+        <div class="internal-about-texts">${aboutTexts}</div>
+        </div>${aboutStickyContent(events, board, members, topics)}</div>
+      </div></section>`);
+    }
     return publicShell(meta.active, `${subhero(meta.eyebrow, hero?.titel || meta.title, hero?.kurztext || meta.intro)}
       <section class="section internal-overview"><div class="container">
         <div class="internal-mobile-list">${cards || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>

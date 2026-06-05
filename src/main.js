@@ -23,7 +23,14 @@ const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 
 function applyTheme(theme = localStorage.getItem("pdtTheme") || "day") {
-  document.documentElement.dataset.theme = theme === "night" ? "night" : "day";
+  const nextTheme = theme === "night" ? "night" : "day";
+  document.documentElement.dataset.theme = nextTheme;
+  document.querySelectorAll("[data-theme-label]").forEach((label) => {
+    label.textContent = nextTheme === "night" ? "Night" : "Day";
+  });
+  document.querySelectorAll("[data-theme-icon]").forEach((icon) => {
+    icon.textContent = nextTheme === "night" ? "☾" : "☀";
+  });
 }
 
 async function viewForRoute(current) {
@@ -2013,12 +2020,61 @@ function wireCmsMenu() {
   closeTargets.forEach((target) => target.addEventListener("click", () => setOpen(false)));
 }
 
+function wirePublicMenu() {
+  const topbar = document.querySelector(".topbar");
+  const toggle = document.querySelector("[data-public-menu-toggle]");
+  const closeTargets = document.querySelectorAll("[data-public-menu-close]");
+  if (!topbar || !toggle) return;
+  const setOpen = (open) => {
+    topbar.classList.toggle("is-public-menu-open", open);
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    toggle.setAttribute("aria-label", open ? "Menue schliessen" : "Menue oeffnen");
+  };
+  toggle.addEventListener("click", () => setOpen(!topbar.classList.contains("is-public-menu-open")));
+  closeTargets.forEach((target) => target.addEventListener("click", () => setOpen(false)));
+}
+
+function wireAboutJumps() {
+  document.querySelectorAll("[data-about-jump]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      const slug = link.getAttribute("data-about-jump");
+      const target = slug ? document.getElementById(`about-text-${slug}`) : null;
+      if (!target) return;
+      event.preventDefault();
+      const headerOffset = (document.querySelector(".topbar")?.getBoundingClientRect().height || 0) + 18;
+      const top = target.getBoundingClientRect().top + window.scrollY - headerOffset;
+      window.scrollTo({ top, behavior: "smooth" });
+    });
+  });
+}
+
+function wireStickyRotators() {
+  document.querySelectorAll("[data-sticky-rotator], [data-rubric-rotator]").forEach((rotator) => {
+    const slides = Array.from(rotator.querySelectorAll("[data-sticky-slide], [data-rubric-slide]"));
+    const dots = Array.from(rotator.querySelectorAll(".internal-sticky-dots span"));
+    if (slides.length < 2) return;
+    let index = slides.findIndex((slide) => slide.classList.contains("is-active"));
+    if (index < 0) index = 0;
+    const activate = (nextIndex) => {
+      index = nextIndex % slides.length;
+      slides.forEach((slide, slideIndex) => slide.classList.toggle("is-active", slideIndex === index));
+      dots.forEach((dot, dotIndex) => dot.classList.toggle("is-active", dotIndex === index));
+    };
+    activate(index);
+    window.setInterval(() => activate(index + 1), 4200);
+  });
+}
+
 function wireActions() {
   document.querySelector("[data-theme-toggle]")?.addEventListener("click", () => {
     const next = document.documentElement.dataset.theme === "night" ? "day" : "night";
     localStorage.setItem("pdtTheme", next);
     applyTheme(next);
   });
+  applyTheme();
+  wirePublicMenu();
+  wireAboutJumps();
+  wireStickyRotators();
   wireCmsMenu();
   wireImageDropzones();
   wireGalleryEditor();

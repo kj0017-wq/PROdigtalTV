@@ -12,18 +12,24 @@ export function logo() {
 export function header(active) {
   const user = currentUser();
   const navLink = ([route, label]) => `<a class="${active === route ? "active" : ""}" href="#/${route}">${label}</a>`;
+  const menuLink = ([route, label]) => `<a class="${active === route ? "active" : ""}" href="#/${route}" data-public-menu-close>${label}</a>`;
   return `<header class="topbar"><div class="container topbar__inner">
     ${logo()}
     <nav class="desktop-nav" aria-label="Hauptnavigation">${nav.map(navLink).join("")}</nav>
     <div class="actions">
-      <button class="button button--secondary button--small theme-toggle" type="button" data-theme-toggle aria-label="Tag- und Nachtansicht umschalten">Tag/Nacht</button>
-      <a class="button button--secondary button--small" href="/cms.html#/cms">CMS</a>
-      <a class="button button--dark button--small" href="#/${user ? "portal" : "login"}">${user ? "Profil" : "Login"}</a>
+      <button class="button button--secondary button--small theme-toggle" type="button" data-theme-toggle aria-label="Tag- und Nachtansicht umschalten"><span data-theme-label>Night</span><span aria-hidden="true" data-theme-icon>☾</span></button>
+      <a class="button button--secondary button--small header-auth" href="/cms.html#/cms">CMS</a>
+      <a class="button button--dark button--small header-auth" href="#/${user ? "portal" : "login"}">${user ? "Profil" : "Login"}</a>
     </div>
+    <button class="burger-button" type="button" data-public-menu-toggle aria-expanded="false" aria-label="Menue oeffnen"><span></span><span></span><span></span></button>
     <a class="mobile-qr" href="#/home" data-mobile-qr-link target="_blank" rel="noreferrer" aria-label="Diese Seite auf dem Smartphone oeffnen">
       <img data-mobile-qr-code alt="QR-Code fuer die mobile Seite">
     </a>
-  </div></header>`;
+  </div><nav class="public-mobile-menu" data-public-menu aria-label="Mobile Navigation">
+    ${nav.map(menuLink).join("")}
+    <a href="/cms.html#/cms" data-public-menu-close>CMS</a>
+    <a href="#/${user ? "portal" : "login"}" data-public-menu-close>${user ? "Profil" : "Login"}</a>
+  </nav></header>`;
 }
 
 export function bottomNav(active) {

@@ -33,6 +33,24 @@
         ]
       },
       {
+        "source": "/manifest.json",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-store" }
+        ]
+      },
+      {
+        "source": "/src/styles/main.css",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-store" }
+        ]
+      },
+      {
+        "source": "/assets/js/pwa.js",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-store" }
+        ]
+      },
+      {
         "source": "/src/**/*.js",
         "headers": [
           { "key": "Cache-Control", "value": "no-cache" }
