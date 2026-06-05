@@ -1,4 +1,4 @@
-import { currentUser, isAdmin } from "../firebase/authService.js?v=284";
+import { currentUser, isAdmin } from "../firebase/authService.js?v=253";
 import { logo } from "../components/layout.js";
 
 const sections = [
@@ -27,7 +27,7 @@ const sections = [
     ]
   },
   ["cms/galleries", "Bildergalerien"],
-  ["cms/mail", "Mail-Queue"], ["cms/mail-admin", "Mail-Verwaltung"], ["cms/chatgpt", "ChatGPT"], ["cms/ai-settings", "ChatGPT-Einstellungen"], ["cms/setup", "System / Einrichtung"]
+  ["cms/mail", "Mail-Queue"], ["cms/chatgpt", "ChatGPT"], ["cms/ai-settings", "ChatGPT-Einstellungen"], ["cms/setup", "System / Einrichtung"]
 ];
 
 export function cmsShell(active, content) {
@@ -44,9 +44,8 @@ export function cmsShell(active, content) {
       <div class="cms-side-sub">${item.children.map(([route, title]) => `<a href="#/${route}" class="${active === route ? "active" : ""}">${title}</a>`).join("")}</div>
     </div>`;
   };
-  return `<div class="cms-shell"><header class="cms-header"><button type="button" class="cms-menu-toggle" data-cms-menu-toggle aria-label="CMS-Menue oeffnen" aria-controls="cms-side-nav" aria-expanded="false"><span></span><span></span><span></span></button>${logo()}<div class="actions"><span class="tag">${user?.role || "Gast"}</span><a href="#/home" class="button button--secondary button--small">Website</a><a class="mobile-qr mobile-qr--cms" href="#/home" data-mobile-qr-link target="_blank" rel="noreferrer" aria-label="Passende Mobilseite oeffnen"><img data-mobile-qr-code alt="QR-Code fuer die passende Mobilseite"></a></div></header>
-  <div class="cms-menu-backdrop" data-cms-menu-close></div>
-  <div class="cms-layout"><nav class="cms-side" id="cms-side-nav" aria-label="CMS Navigation">${sections.map(navItem).join("")}</nav>
+  return `<div class="cms-shell"><header class="cms-header">${logo()}<div class="actions"><span class="tag">${user?.role || "Gast"}</span><a href="#/home" class="button button--secondary button--small">Website</a><a class="mobile-qr mobile-qr--cms" href="#/home" data-mobile-qr-link target="_blank" rel="noreferrer" aria-label="Passende Mobilseite oeffnen"><img data-mobile-qr-code alt="QR-Code fuer die passende Mobilseite"></a></div></header>
+  <div class="cms-layout"><nav class="cms-side">${sections.map(navItem).join("")}</nav>
   <main class="cms-main">${content}</main></div></div>`;
 }
 

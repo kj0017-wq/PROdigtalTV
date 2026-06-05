@@ -1,5 +1,5 @@
-import { listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=451";
-import { currentUser, isMember } from "../firebase/authService.js?v=451";
+import { listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=253";
+import { currentUser, isMember } from "../firebase/authService.js?v=253";
 import { firebaseEnabled, localPreviewMode } from "../firebase/firebaseClient.js";
 import { publicShell, logo } from "../components/layout.js";
 import { eventCard, topicCard } from "../components/cards.js";
@@ -88,18 +88,11 @@ function editorialPrioritySort(a = {}, b = {}) {
   return String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || ""));
 }
 
-function ttsReader({ title = "", text = "", audioUrl = "", audioAccessibleUrl = "", audioNaturalUrl = "" }) {
-  const accessibleUrl = audioAccessibleUrl || audioUrl || "";
-  const naturalUrl = audioNaturalUrl || "";
-  if (!accessibleUrl && !naturalUrl) return "";
+function ttsReader({ title = "", audioUrl = "" }) {
+  if (!audioUrl) return "";
   return `<div class="tts-reader" data-tts-reader>
     <p class="eyebrow">Audio</p>
-    <template data-tts-source>${escapeHtml(text)}</template>
-    <div class="tts-reader__actions">
-      <button type="button" class="button button--primary button--small" data-tts-play data-tts-mode="natural" data-audio-url="${escapeHtml(naturalUrl)}" ${naturalUrl ? "" : "disabled"}><span aria-hidden="true">▶</span> Natural Voice</button>
-      <button type="button" class="button button--secondary button--small" data-tts-play data-tts-mode="accessible" data-audio-url="${escapeHtml(accessibleUrl)}" ${accessibleUrl ? "" : "disabled"}><span aria-hidden="true">Aa</span> Barrierefrei</button>
-    </div>
-    <p class="muted">${escapeHtml(title || "Vorlesen")}</p>
+    <audio controls preload="none" src="${escapeHtml(audioUrl)}"></audio>
   </div>`;
 }
 
@@ -215,16 +208,13 @@ export async function eventDetailPage(id) {
     return publicShell("events", `${subhero("Geschuetzter Bereich", "Login erforderlich", "Dieses Event ist nur fuer berechtigte Personen sichtbar.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
   }
   if (!event) return notFoundPage();
-  const [speakers, sponsors, topics, galleries] = await Promise.all([listPublicContent("speakers"), listPublicContent("sponsors"), listPublicContent("topics"), listPublicContent("galleries")]);
+  const [speakers, sponsors, topics, media] = await Promise.all([listPublicContent("speakers"), listPublicContent("sponsors"), listPublicContent("topics"), listPublicContent("eventMedia")]);
   const restricted = event.accessType === "members_only" && !isMember();
   if (restricted && !event.showPublicTeaser) return publicShell("events", subhero("Geschuetzter Bereich", "Nur fuer Mitglieder", "Bitte melden Sie sich an, um dieses Event zu sehen."));
   const assignedTopics = topics.filter((topic) => event.topicIds.includes(topic.id));
   const assignedSpeakers = speakers.filter((speaker) => event.speakerIds.includes(speaker.id));
   const eventPartners = sponsors.filter((sponsor) => event.sponsorIds.includes(sponsor.id) || event.hostId === sponsor.id);
-  const assignedGallery = galleries.find((gallery) => gallery.id === event.galleryId) || galleries.find((gallery) => gallery.eventId === event.id && gallery.status === "published" && gallery.visibility === "public");
-  const assignedGalleryImages = Array.isArray(assignedGallery?.images)
-    ? [...assignedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 24)
-    : [];
+  const approvedMedia = media.filter((item) => item.eventId === event.id && item.status === "approved" && item.visibility === "public");
   const registrationAllowed = event.registrationEnabled && (!restricted || isMember());
   return publicShell("events", `${subhero(event.eventType, event.title, event.subtitle)}
     <section class="section"><div class="container detail-grid">
@@ -237,7 +227,7 @@ export async function eventDetailPage(id) {
         ${restricted ? "" : `<section class="venue-stage"><div class="venue-stage__place"><p class="eyebrow">Veranstaltungsort</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Gastgeber und Sponsoren</p>${eventPartners.length ? eventPartners.map((partner) => `<article class="partner-spotlight"><span class="avatar">${initials(partner.name)}</span><div><span class="tag tag--red">${escapeHtml(partner.role)}</span><h3>${escapeHtml(partner.name)}</h3>${partner.description ? `<p>${escapeHtml(partner.description)}</p>` : ""}</div></article>`).join("") : `<p>Partner werden bei Bekanntgabe ergaenzt.</p>`}</div></section>
         ${assignedSpeakers.length ? `<h2>Referentinnen und Referenten</h2><div class="speaker-grid">${assignedSpeakers.map((speaker) => `<article class="speaker-profile"><div class="speaker-profile__portrait">${speakerPortrait(speaker)}</div><div class="speaker-profile__body"><h3>${escapeHtml(speaker.name)}</h3><p class="speaker-profile__position">${escapeHtml(speaker.position)}${speaker.company ? ` · ${escapeHtml(speaker.company)}` : ""}</p>${speaker.shortBio ? `<p class="speaker-profile__intro">${escapeHtml(speaker.shortBio)}</p>` : ""}${speaker.longBio ? `<p>${escapeHtml(speaker.longBio)}</p>` : ""}</div></article>`).join("")}</div>` : ""}`}
         ${event.postEventSummary ? `<h2>Nachbericht</h2><p>${escapeHtml(event.postEventSummary)}</p>` : ""}
-        ${assignedGalleryImages.length ? galleryPlayCta(assignedGallery, assignedGalleryImages) : ""}
+        ${approvedMedia.length ? `<h2>Fotogalerie</h2><div class="gallery">${approvedMedia.map((item) => `<div class="gallery__image">${escapeHtml(item.title)}</div>`).join("")}</div>` : ""}
       </article>
       <aside class="detail-aside">
         <span class="tag ${event.accessType !== "public" ? "tag--red" : ""}">${accessLabels[event.accessType]}</span>
@@ -295,10 +285,14 @@ export async function newsPage() {
 export async function newsDetailPage(id) {
   const item = await getOne("editorialContent", id);
   if (!item || (item.page !== "news" && item.section !== "news" && !item.isRetrospective)) return notFoundPage();
-  const [sponsors, galleries] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries")]);
+  const [sponsors, media, galleries] = await Promise.all([listPublicContent("sponsors"), listPublicContent("eventMedia"), listPublicContent("galleries")]);
   const date = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   const text = item.bodyText || item.mainText || item.text || item.shortText || item.teaserText || "";
   const sponsor = item.sponsorId ? sponsors.find((entry) => entry.id === item.sponsorId) : null;
+  const galleryEventId = item.galleryEventId || item.linkedEventId || "";
+  const galleryItems = item.showGallery && galleryEventId
+    ? media.filter((entry) => entry.eventId === galleryEventId && entry.mediaType === "image" && entry.fileUrl).slice(0, 12)
+    : [];
   const selectedGallery = item.galleryId ? galleries.find((gallery) => gallery.id === item.galleryId) : null;
   const attachedGalleryImages = Array.isArray(selectedGallery?.images)
     ? [...selectedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 12)
@@ -320,9 +314,10 @@ export async function newsDetailPage(id) {
         <p class="eyebrow">${escapeHtml(item.category || "News")}${date ? ` · ${formatDate(date)}` : ""}</p>
         <h2>${escapeHtml(item.title || "")}</h2>
         ${item.subtitle ? `<p class="lead">${escapeHtml(item.subtitle)}</p>` : ""}
-        ${ttsReader({ title: item.title || "", text, audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "" })}
+        ${ttsReader({ title: item.title || "", audioUrl: item.audioUrl || "" })}
         <div class="editorial-text">${leadMedia}${articleParagraphs(text)}</div>
         ${articleSourcesList(item)}
+        ${!attachedGalleryImages.length && galleryItems.length ? `<h2>Bildergalerie</h2><div class="gallery editorial-gallery">${galleryItems.map((entry) => `<figure class="editorial-gallery__item"><img src="${escapeHtml(entry.fileUrl)}" alt="${escapeHtml(entry.altText || entry.title || "Eventbild")}">${entry.title ? `<figcaption>${escapeHtml(entry.title)}</figcaption>` : ""}</figure>`).join("")}</div>` : ""}
       </article>
       <aside class="detail-aside">
         ${sponsor?.logoUrl ? `<div class="sponsor-logo-card"><span>${escapeHtml(sponsor.role || "Sponsor")}</span><img src="${escapeHtml(sponsor.logoUrl)}" alt="Logo ${escapeHtml(sponsor.name || "")}"><strong>${escapeHtml(sponsor.name || "")}</strong></div>` : ""}
@@ -347,7 +342,7 @@ export async function topicDetailPage(id) {
     ? galleryPlayCta(selectedGallery, attachedGalleryImages)
     : topic.imageUrl ? `<figure class="topic-hero-image"><img src="${escapeHtml(topic.imageUrl)}" alt="Themenbild ${escapeHtml(topic.title)}"></figure>` : "";
   const editorialBlock = topicText
-    ? `<section class="section section--white"><div class="container topic-article">${ttsReader({ title: topic.title || "", text: topicText, audioUrl: topic.audioUrl || "", audioAccessibleUrl: topic.audioAccessibleUrl || "", audioNaturalUrl: topic.audioNaturalUrl || "" })}${articleParagraphs(topicText)}</div></section>`
+    ? `<section class="section section--white"><div class="container topic-article">${ttsReader({ title: topic.title || "", audioUrl: topic.audioUrl || "" })}${articleParagraphs(topicText)}</div></section>`
     : "";
   return publicShell("topics", `${subhero("Thema", escapeHtml(topic.title), escapeHtml(topicIntro))}
     ${leadMedia ? `<section class="section section--flush"><div class="container">${leadMedia}</div></section>` : ""}

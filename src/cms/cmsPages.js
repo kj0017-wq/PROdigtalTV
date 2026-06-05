@@ -1,6 +1,6 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=453";
-import { list, getOne } from "../firebase/dataService.js?v=451";
-import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=451";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=253";
+import { list, getOne } from "../firebase/dataService.js?v=253";
+import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=253";
 import { accessLabels, lifecycleLabels } from "../data/demoData.js";
 import { escapeHtml, formatDate, formatDateTime, formatShortDate } from "../utils/format.js";
 
@@ -23,7 +23,7 @@ function denied(adminOnly = false) {
 
 function status(value) {
   const style = ["failed", "expired", "inactive", "archived"].includes(value) ? "status--error" : ["draft", "pending_email_confirmation", "queued", "in_review", "uploaded"].includes(value) ? "status--draft" : "";
-  const label = { active: "Aktiv", inactive: "Inaktiv", published: "Veroeffentlicht", draft: "Entwurf", archived: "Archiviert", approved: "Freigegeben", new: "Neu", queued: "Wartet", sent: "Gesendet", failed: "Fehler", in_review: "In Pruefung" }[value] || value;
+  const label = { active: "Aktiv", inactive: "Inaktiv", published: "Veroeffentlicht", draft: "Entwurf", archived: "Archiviert", approved: "Freigegeben", new: "Neu", in_review: "In Pruefung" }[value] || value;
   return `<span class="status ${style}">${escapeHtml(label)}</span>`;
 }
 
@@ -118,17 +118,6 @@ function listDate(item) {
   return value ? formatShortDate(value) : "-";
 }
 
-function mailQueueDate(value) {
-  return value ? formatDateTime(value) : "-";
-}
-
-function mailReference(item) {
-  if (item.membershipApplicationId) return `Mitgliedsantrag: ${item.membershipApplicationId}`;
-  if (item.registrationId) return `Anmeldung: ${item.registrationId}`;
-  if (item.eventId) return `Event: ${item.eventId}`;
-  return "-";
-}
-
 function aiButton(action, target, label = "Mit ChatGPT bearbeiten", extra = {}) {
   return `<button type="button" class="button button--secondary button--small ai-action" data-ai-action="${action}" data-ai-target="${target}" data-ai-entity-type="${extra.entityType || "event"}" data-ai-entity-id="${extra.entityId || ""}" data-ai-field="${extra.fieldName || target}">${label}</button>`;
 }
@@ -138,28 +127,20 @@ function aiFieldActions(actions) {
 }
 
 function audioGenerationPanel(collection, item) {
-  const accessibleUrl = item.audioAccessibleUrl || item.audioUrl || "";
-  const naturalUrl = item.audioNaturalUrl || "";
-  const hasAudio = accessibleUrl || naturalUrl;
   return `<div class="audio-generation-panel">
-    <div><label>Audio / Vorlesen</label><p class="muted">${hasAudio ? "Audio-Varianten sind gespeichert und werden im Frontend angeboten." : "Noch kein Audio gespeichert. Bitte Text speichern, dann Audio erzeugen."}</p></div>
-    ${accessibleUrl ? `<div class="audio-generation-panel__track"><strong>Barrierefrei</strong><audio controls preload="none" src="${escapeHtml(accessibleUrl)}"></audio></div>` : ""}
-    ${naturalUrl ? `<div class="audio-generation-panel__track"><strong>Natural Voice</strong><audio controls preload="none" src="${escapeHtml(naturalUrl)}"></audio></div>` : ""}
+    <div><label>Audio / Vorlesen</label><p class="muted">${item.audioUrl ? "Audio ist gespeichert und wird im Frontend abgespielt." : "Noch kein Audio gespeichert. Bitte Text speichern, dann Audio erzeugen."}</p></div>
+    ${item.audioUrl ? `<audio controls preload="none" src="${escapeHtml(item.audioUrl)}"></audio>` : ""}
     <div class="tool-button-row">
-      <button type="button" class="button button--secondary button--small" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}" data-tts-variant="all">${hasAudio ? "Audio-Varianten neu erzeugen" : "Audio-Varianten erzeugen"}</button>
-      ${hasAudio ? `<button type="button" class="icon-button icon-button--danger" data-clear-linked-media="audio" title="Audio-Verknuepfung loesen" aria-label="Audio-Verknuepfung loesen">${iconImage("trash")}</button>` : ""}
+      <button type="button" class="button button--secondary button--small" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}">${item.audioUrl ? "Audio neu erzeugen" : "Audio erzeugen und speichern"}</button>
+      ${item.audioUrl ? `<button type="button" class="icon-button icon-button--danger" data-clear-linked-media="audio" title="Audio-Verknuepfung loesen" aria-label="Audio-Verknuepfung loesen">${iconImage("trash")}</button>` : ""}
     </div>
     <div class="audio-generation-panel__result" data-speech-result></div>
   </div>`;
 }
 
 function audioListCell(collection, item) {
-  const accessibleUrl = item.audioAccessibleUrl || item.audioUrl || "";
-  const naturalUrl = item.audioNaturalUrl || "";
-  const hasAudio = accessibleUrl || naturalUrl;
   return `<div class="audio-list-cell">
-    <button type="button" class="audio-play-button ${hasAudio ? "audio-play-button--ready" : "audio-play-button--missing"}" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}" data-tts-variant="all" data-audio-url="${escapeHtml(accessibleUrl)}" title="${hasAudio ? "Audio abspielen" : "Audio-Varianten erzeugen"}" aria-label="${hasAudio ? "Audio abspielen" : "Audio-Varianten erzeugen"}"><span></span></button>
-    <small>${accessibleUrl ? "BF" : "-"} / ${naturalUrl ? "NV" : "-"}</small>
+    <button type="button" class="audio-play-button ${item.audioUrl ? "audio-play-button--ready" : "audio-play-button--missing"}" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}" data-audio-url="${escapeHtml(item.audioUrl || "")}" title="${item.audioUrl ? "Audio abspielen" : "Audio erzeugen"}" aria-label="${item.audioUrl ? "Audio abspielen" : "Audio erzeugen"}"><span></span></button>
     <div class="audio-list-cell__result" data-speech-result></div>
   </div>`;
 }
@@ -450,16 +431,12 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     id: `event-${crypto.randomUUID()}`, title: "", subtitle: "", date: "2026-08-01", startTime: "10:00", endTime: "13:00", locationName: "", city: "", description: "", eventType: "Panel", accessType: "public", status: "draft", lifecyclePhase: "planning", registrationEnabled: false, maxParticipants: 50, expiresAt: "", address: "", phone: "", topicIds: [], speakerIds: [], sponsorIds: []
   } : await getOne("events", id);
   if (!event) return eventsAdminPage();
-  const [topics, speakers, sponsors, registrations, media, settings, allEvents, galleries] = await Promise.all([list("topics"), list("speakers"), list("sponsors"), list("registrations"), list("eventMedia"), list("settings"), list("events"), list("galleries")]);
+  const [topics, speakers, sponsors, registrations, media, settings, allEvents] = await Promise.all([list("topics"), list("speakers"), list("sponsors"), list("registrations"), list("eventMedia"), list("settings"), list("events")]);
   const eventTypes = settingValue(settings, "eventTypes", ["Medienfruehstueck", "Summit", "Roundtable", "Panel", "Webinar", "Konferenz", "Workshop"]);
-  const galleryOptions = [`<option value="">Keine Galerie verknuepfen</option>`, ...galleries
-    .filter((gallery) => gallery.status !== "archived")
-    .sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "de"))
-    .map((gallery) => `<option value="${escapeHtml(gallery.id)}" ${event.galleryId === gallery.id || (!event.galleryId && gallery.eventId === event.id) ? "selected" : ""}>${escapeHtml(gallery.title || gallery.id)} (${(gallery.images || []).length} Bilder)</option>`)].join("");
   if (!["base", "pre", "topics", "partners", "registration", "post", "media", "ai"].includes(tab)) tab = "base";
   let content;
   if (tab === "base") {
-    content = `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid"><div class="form-grid--two"><div class="field"><label>Titel</label><input name="title" value="${escapeHtml(event.title)}" required>${aiFieldActions([{ action: "generateEventDescription", target: "title", label: "Ueberschrift vorschlagen", entityId: event.id, fieldName: "title" }])}</div><div class="field"><label>Untertitel</label><input name="subtitle" value="${escapeHtml(event.subtitle)}"></div></div><div class="field"><label>Beschreibung</label><textarea name="description">${escapeHtml(event.description)}</textarea>${aiFieldActions([{ action: "improveText", target: "description", label: "Mit ChatGPT bearbeiten", entityId: event.id, fieldName: "description" }, { action: "shortenText", target: "description", label: "Fuer Mobile kuerzen", entityId: event.id, fieldName: "description" }, { action: "generateSeoMeta", target: "description", label: "SEO erzeugen", entityId: event.id, fieldName: "description" }])}</div><div class="form-grid--two"><div class="field"><label>Datum</label><input type="date" name="date" value="${event.date}"></div><div class="field"><label>Eventtyp</label><select name="eventType">${eventTypes.map((value) => `<option ${value === event.eventType ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select></div><div class="field"><label>Neuen Eventtyp hinzufuegen</label><input name="newEventType" placeholder="z. B. Fachgespraech"></div><div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Bilder werden im Bereich Bildergalerien freigegeben und dieser Galerie zugeordnet.</p></div><div class="field"><label>Eventbild auswaehlen</label><input type="file" name="eventImage" accept="image/*">${event.imageUrl ? `<p class="muted">Aktuelles Eventbild ist zugeordnet. Neue Auswahl ersetzt es beim Speichern.</p>` : ""}</div><div class="field"><label>Aktiv / Inaktiv</label><select name="status"><option value="published" ${event.status === "published" ? "selected" : ""}>Aktiv</option><option value="inactive" ${event.status === "inactive" ? "selected" : ""}>Inaktiv</option><option value="draft" ${event.status === "draft" ? "selected" : ""}>Entwurf</option><option value="archived" ${event.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Beginn</label><input type="time" name="startTime" value="${event.startTime}"></div><div class="field"><label>Ende</label><input type="time" name="endTime" value="${event.endTime}"></div><div class="field"><label>Location</label><input name="locationName" value="${escapeHtml(event.locationName || "")}"></div><div class="field"><label>Adresse</label><input name="address" value="${escapeHtml(event.address || "")}"></div><div class="field"><label>Stadt</label><input name="city" value="${escapeHtml(event.city || "")}"></div><div class="field"><label>Telefon Location</label><input name="phone" value="${escapeHtml(event.phone || "")}"></div><div class="field"><label>Ablaufdatum / automatisch ausblenden</label><input type="datetime-local" name="expiresAt" value="${event.expiresAt ? event.expiresAt.slice(0, 16) : ""}"></div><div class="field"><label>Zugangsart</label><select name="accessType">${Object.entries(accessLabels).map(([key, value]) => `<option value="${key}" ${key === event.accessType ? "selected" : ""}>${value}</option>`).join("")}</select></div><div class="field"><label>Lifecycle</label><select name="lifecyclePhase">${Object.entries(lifecycleLabels).map(([key, value]) => `<option value="${key}" ${key === event.lifecyclePhase ? "selected" : ""}>${value}</option>`).join("")}</select></div></div><div class="actions"><button class="button button--primary">Event speichern</button>${id !== "new" ? `<button type="button" class="button button--secondary" data-delete-event="${event.id}">Event loeschen</button>` : ""}</div><div id="event-save-result"></div></form>`;
+    content = `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid"><div class="form-grid--two"><div class="field"><label>Titel</label><input name="title" value="${escapeHtml(event.title)}" required>${aiFieldActions([{ action: "generateEventDescription", target: "title", label: "Ueberschrift vorschlagen", entityId: event.id, fieldName: "title" }])}</div><div class="field"><label>Untertitel</label><input name="subtitle" value="${escapeHtml(event.subtitle)}"></div></div><div class="field"><label>Beschreibung</label><textarea name="description">${escapeHtml(event.description)}</textarea>${aiFieldActions([{ action: "improveText", target: "description", label: "Mit ChatGPT bearbeiten", entityId: event.id, fieldName: "description" }, { action: "shortenText", target: "description", label: "Fuer Mobile kuerzen", entityId: event.id, fieldName: "description" }, { action: "generateSeoMeta", target: "description", label: "SEO erzeugen", entityId: event.id, fieldName: "description" }])}</div><div class="form-grid--two"><div class="field"><label>Datum</label><input type="date" name="date" value="${event.date}"></div><div class="field"><label>Eventtyp</label><select name="eventType">${eventTypes.map((value) => `<option ${value === event.eventType ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select></div><div class="field"><label>Neuen Eventtyp hinzufuegen</label><input name="newEventType" placeholder="z. B. Fachgespraech"></div><div class="field"><label>Eventbild auswaehlen</label><input type="file" name="eventImage" accept="image/*">${event.imageUrl ? `<p class="muted">Aktuelles Eventbild ist zugeordnet. Neue Auswahl ersetzt es beim Speichern.</p>` : ""}</div><div class="field"><label>Aktiv / Inaktiv</label><select name="status"><option value="published" ${event.status === "published" ? "selected" : ""}>Aktiv</option><option value="inactive" ${event.status === "inactive" ? "selected" : ""}>Inaktiv</option><option value="draft" ${event.status === "draft" ? "selected" : ""}>Entwurf</option><option value="archived" ${event.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Beginn</label><input type="time" name="startTime" value="${event.startTime}"></div><div class="field"><label>Ende</label><input type="time" name="endTime" value="${event.endTime}"></div><div class="field"><label>Location</label><input name="locationName" value="${escapeHtml(event.locationName || "")}"></div><div class="field"><label>Adresse</label><input name="address" value="${escapeHtml(event.address || "")}"></div><div class="field"><label>Stadt</label><input name="city" value="${escapeHtml(event.city || "")}"></div><div class="field"><label>Telefon Location</label><input name="phone" value="${escapeHtml(event.phone || "")}"></div><div class="field"><label>Ablaufdatum / automatisch ausblenden</label><input type="datetime-local" name="expiresAt" value="${event.expiresAt ? event.expiresAt.slice(0, 16) : ""}"></div><div class="field"><label>Zugangsart</label><select name="accessType">${Object.entries(accessLabels).map(([key, value]) => `<option value="${key}" ${key === event.accessType ? "selected" : ""}>${value}</option>`).join("")}</select></div><div class="field"><label>Lifecycle</label><select name="lifecyclePhase">${Object.entries(lifecycleLabels).map(([key, value]) => `<option value="${key}" ${key === event.lifecyclePhase ? "selected" : ""}>${value}</option>`).join("")}</select></div></div><div class="actions"><button class="button button--primary">Event speichern</button>${id !== "new" ? `<button type="button" class="button button--secondary" data-delete-event="${event.id}">Event loeschen</button>` : ""}</div><div id="event-save-result"></div></form>`;
   } else if (tab === "topics") {
     content = eventTopicsEditor(event, topics, speakers, allEvents, query);
   } else if (tab === "__old_topics") {
@@ -489,52 +466,6 @@ export async function registrationsPage() {
   if (!hasCmsAccess()) return denied();
   const [registrations, events] = await Promise.all([list("registrations"), list("events")]);
   return protect(cmsShell("cms/registrations", `${cmsTitle("Teilnehmermanagement", "Anmeldungen")}<section class="panel"><div class="field" style="max-width:390px;margin-bottom:18px"><label>Event auswaehlen</label><select>${events.map((event) => `<option>${escapeHtml(event.title)}</option>`).join("")}</select></div><div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Event</th><th>Bestaetigung</th><th>Mailstatus</th></tr></thead><tbody>${registrations.map((record) => `<tr><td>${record.firstName} ${record.lastName}</td><td>${record.eventTitle}</td><td>${status(record.status)}</td><td>${status(record.mailStatus)}</td></tr>`).join("")}</tbody></table></div></section>`));
-}
-
-export async function mailAdminPage() {
-  if (!hasCmsAccess(true)) return denied(true);
-  return protect(cmsShell("cms/mail-admin", `${cmsTitle("Mail", "Mail-Verwaltung")}
-    <section class="panel">
-      <h2>Verbindung zum Mailservice</h2>
-      <div class="form-grid form-grid--two">
-        <div class="field"><label>API-Basis</label><input id="mail-admin-base-url" value="/mail-api" placeholder="/mail-api"></div>
-        <div class="field"><label>Admin Token</label><input id="mail-admin-token" type="password" autocomplete="off" placeholder="ADMIN_API_TOKEN"></div>
-      </div>
-      <div class="actions" style="margin-top:16px"><button class="button button--secondary button--small" type="button" data-mail-admin-load>Accounts und Templates laden</button><span id="mail-admin-connection-result"></span></div>
-      <p class="muted" style="margin-top:12px">Der Token wird nur in dieser Browser-Sitzung gespeichert. Produktiv kommt der PHP-Mailservice ueber Firebase Hosting unter <code>/mail-api</code>.</p>
-    </section>
-    <section class="panel">
-      <h2>Mailaccount anlegen</h2>
-      <form id="mail-account-form" class="form-grid">
-        <div class="form-grid--two"><div class="field"><label>Kunden-ID *</label><input name="id" placeholder="kunde-a" required></div><div class="field"><label>Anzeigename *</label><input name="label" placeholder="Kunde A" required></div></div>
-        <div class="form-grid--two"><div class="field"><label>SMTP Host *</label><input name="smtpHost" placeholder="smtp.example.com" required></div><div class="field"><label>SMTP Port *</label><input name="smtpPort" type="number" value="587" required></div></div>
-        <div class="form-grid--two"><div class="field"><label>SMTP Benutzer *</label><input name="smtpUser" placeholder="mail@example.com" required></div><div class="field"><label>SMTP Passwort</label><input name="smtpPass" type="password" placeholder="neu setzen oder leer lassen"></div></div>
-        <div class="form-grid--two"><div class="field"><label>Absender E-Mail *</label><input name="fromEmail" type="email" required></div><div class="field"><label>Absender Name</label><input name="fromName" placeholder="Kunde A"></div></div>
-        <button class="button button--primary">Mailaccount speichern</button><div id="mail-account-result"></div>
-      </form>
-      <div id="mail-accounts-list" class="setup-steps" style="margin-top:18px"></div>
-    </section>
-    <section class="panel">
-      <h2>Mailtemplate anlegen</h2>
-      <form id="mail-template-form" class="form-grid">
-        <div class="form-grid--two"><div class="field"><label>Template-ID *</label><input name="id" placeholder="kunde-a-kontakt" required></div><div class="field"><label>Mailaccount *</label><select name="accountId" required><option value="">Bitte zuerst Accounts laden</option></select></div></div>
-        <div class="field"><label>Template-Name *</label><input name="label" placeholder="Kontaktformular" required></div>
-        <div class="field"><label>Betreff *</label><input name="subject" placeholder="Neue Anfrage von {{name}}" required></div>
-        <div class="field"><label>Text-Mail</label><textarea name="textBody" placeholder="Name: {{name}}\nFirma: {{company}}\n\n{{message}}"></textarea></div>
-        <div class="field"><label>HTML-Mail</label><textarea name="htmlBody" placeholder="<p>Name: {{name}}</p><p>{{message}}</p>"></textarea></div>
-        <button class="button button--primary">Template speichern</button><div id="mail-template-result"></div>
-      </form>
-      <div id="mail-templates-list" class="setup-steps" style="margin-top:18px"></div>
-    </section>
-    <section class="panel">
-      <h2>Testversand</h2>
-      <form id="mail-test-form" class="form-grid">
-        <div class="form-grid--two"><div class="field"><label>Account</label><select name="accountId" required><option value="">Bitte zuerst Accounts laden</option></select></div><div class="field"><label>Template</label><select name="templateId" required><option value="">Bitte zuerst Templates laden</option></select></div></div>
-        <div class="form-grid--two"><div class="field"><label>Empfaenger *</label><input name="to" type="email" required></div><div class="field"><label>Reply-To</label><input name="replyTo" type="email"></div></div>
-        <div class="field"><label>Variablen als JSON</label><textarea name="variablesJson">{ "name": "Test", "company": "PROdigitalTV", "message": "Testnachricht" }</textarea></div>
-        <button class="button button--secondary">Testmail senden</button><div id="mail-test-result"></div>
-      </form>
-    </section>`), true);
 }
 
 const editorialSections = {
@@ -644,34 +575,6 @@ export async function moduleListPage(module, section = "all") {
   if (module === "members") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a><small>${escapeHtml(shortText(item.description || "-", 90))}</small></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml([item.category, item.city].filter(Boolean).join(" / ") || "-")}</td><td>${memberListStatus(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="5">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
-  if (module === "mailQueue") {
-    const counters = {
-      queued: records.filter((item) => item.status === "queued").length,
-      sent: records.filter((item) => item.status === "sent").length,
-      failed: records.filter((item) => item.status === "failed").length
-    };
-    return protect(cmsShell(active, `${cmsTitle("Mail", title)}
-      <section class="panel">
-        <div class="setup-steps" style="margin-bottom:20px">
-          <div class="setup-step"><span>Wartet</span><strong>${counters.queued}</strong></div>
-          <div class="setup-step"><span>Gesendet</span><strong>${counters.sent}</strong></div>
-          <div class="setup-step"><span>Fehler</span><strong>${counters.failed}</strong></div>
-        </div>
-        <div class="table-wrap"><table class="table">
-          <thead><tr><th>Status</th><th>Typ</th><th>Empfaenger</th><th>Betreff</th><th>Bezug</th><th>Zeit</th><th>Fehler</th></tr></thead>
-          <tbody>${records.length ? records.map((item) => `<tr>
-            <td>${status(item.status || "queued")}</td>
-            <td>${escapeHtml(item.type || item.template || "-")}</td>
-            <td>${escapeHtml(item.to || item.replyTo || "-")}</td>
-            <td>${escapeHtml(shortText(item.subject || "-", 70))}</td>
-            <td>${escapeHtml(mailReference(item))}</td>
-            <td><small>Queue: ${escapeHtml(mailQueueDate(item.queuedAt || item.createdAt))}</small><br><small>Gesendet: ${escapeHtml(mailQueueDate(item.sentAt))}</small><br><small>Fehler: ${escapeHtml(mailQueueDate(item.failedAt))}</small></td>
-            <td>${item.error ? `<span class="alert alert--error" style="display:block;margin:0">${escapeHtml(shortText(item.error, 130))}</span>` : "-"}</td>
-          </tr>`).join("") : `<tr><td colspan="7">${emptyText}</td></tr>`}</tbody>
-        </table></div>
-        <p class="muted" style="margin-top:14px">Neue Mitgliedsantraege und Event-Anmeldungen erzeugen automatisch Eintraege in dieser Queue. Der Firebase-Function-Trigger versendet queued Mails per SMTP und schreibt danach den Status.</p>
-      </section>`));
-  }
   return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, editable ? `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>` : "")}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>${itemLabel}</th><th>Datum / Gueltigkeit</th><th>Beschreibung / Zuordnung</th><th>Status</th>${editable || manageable ? "<th>Aktionen</th>" : ""}</tr></thead><tbody>${records.length ? records.map((item) => `<tr><td>${escapeHtml(item[config[2]] || "-")}</td><td>${escapeHtml(item.publishDate || item.date || "-")}<br><small>${escapeHtml(item.validFrom || "-")} bis ${escapeHtml(item.validTo || "unendlich")}</small></td><td>${escapeHtml(item[config[3]] || "-")}</td><td>${status(item.status || item.visibility || "active")}</td>${editable || manageable ? `<td><div class="table-actions">${editable ? `<a class="link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}">Bearbeiten</a>` : ""}${manageable ? `<button class="link-button" data-record-status="${module}" data-record-id="${item.id}" data-status="${activeStatus}">Aktiv</button><button class="link-button" data-record-status="${module}" data-record-id="${item.id}" data-status="${inactiveStatus}">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="${module}" data-record-id="${item.id}">Loeschen</button>` : ""}</div></td>` : ""}</tr>`).join("") : `<tr><td colspan="${editable || manageable ? 5 : 4}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
 }
 
@@ -702,38 +605,13 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
   const item = id === "new" ? { ...fallbackItem, id: `${module}-${crypto.randomUUID()}` } : (await getOne(module, id)) || fallbackItem;
   const topicSpeakers = module === "topics" ? await list("speakers") : [];
   if (module === "galleries") {
-    const [events, media] = await Promise.all([list("events"), list("eventMedia")]);
     const images = Array.isArray(item.images) ? item.images.slice().sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)) : [];
-    const linkedEventId = item.eventId || item.linkedEventId || "";
-    const eventOptions = [`<option value="">Kein Event zugeordnet</option>`, ...events
-      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
-      .map((event) => `<option value="${escapeHtml(event.id)}" ${linkedEventId === event.id ? "selected" : ""}>${escapeHtml([event.date, event.title].filter(Boolean).join(" · "))}</option>`)].join("");
-    const imageKeys = new Set(images.flatMap((image) => [image.id, image.url, image.storagePath].filter(Boolean)));
-    const candidateMedia = media
-      .filter((entry) => entry.mediaType === "image" && entry.fileUrl)
-      .filter((entry) => !imageKeys.has(entry.id) && !imageKeys.has(entry.fileUrl) && !imageKeys.has(entry.storagePath))
-      .sort((a, b) => String(b.uploadedAt || b.createdAt || "").localeCompare(String(a.uploadedAt || a.createdAt || "")));
-    const uploadCandidates = candidateMedia.length
-      ? `<div class="gallery-editor__grid">${candidateMedia.map((medium, index) => `<article class="gallery-editor__item gallery-editor__item--candidate">
-          <img src="${escapeHtml(medium.fileUrl)}" alt="">
-          <input type="hidden" name="media-${index}-id" value="${escapeHtml(medium.id || "")}">
-          <input type="hidden" name="media-${index}-url" value="${escapeHtml(medium.fileUrl || "")}">
-          <input type="hidden" name="media-${index}-storagePath" value="${escapeHtml(medium.storagePath || "")}">
-          <input type="hidden" name="media-${index}-fileName" value="${escapeHtml(medium.fileName || "")}">
-          <div class="field"><label>Caption</label><input name="media-${index}-caption" value="${escapeHtml(medium.title || medium.caption || medium.fileName || "")}"></div>
-          <div class="field"><label>Alt-Text</label><input name="media-${index}-altText" value="${escapeHtml(medium.altText || medium.title || medium.fileName || "")}"></div>
-          <label class="checkbox-line"><input type="checkbox" name="media-${index}-attach"> In Galerie aufnehmen</label>
-          <label class="checkbox-line"><input type="checkbox" name="media-${index}-approve" checked> Freigeben</label>
-          <small>${escapeHtml([medium.eventId, medium.status, medium.visibility].filter(Boolean).join(" · "))}</small>
-        </article>`).join("")}</div>`
-      : `<div class="alert">Der Uploadfolder enthaelt aktuell keine weiteren Bilder.</div>`;
     return protect(cmsShell("cms/galleries", `${cmsTitle("Bildergalerien", "Galerie bearbeiten", `<a class="button button--secondary button--small" href="#/cms/galleries">Zurueck</a>`)}
       <section class="panel"><form id="gallery-edit-form" data-gallery-id="${escapeHtml(item.id)}" class="form-grid">
         <div class="form-grid--two">
           <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(item.title || "")}" required></div>
           <div class="field"><label>Status</label><select name="status"><option value="published" ${item.status === "published" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div>
         </div>
-        <div class="field"><label>Event-Zuordnung</label><select name="eventId">${eventOptions}</select><p class="muted">Diese Galerie erscheint beim verknuepften Event. Beitraege koennen die Galerie separat im Beitragseditor auswaehlen.</p></div>
         <div class="field"><label>Beschreibung</label><textarea name="description">${escapeHtml(item.description || "")}</textarea></div>
         <input type="hidden" name="visibility" value="${escapeHtml(item.visibility || "public")}">
         <section class="gallery-editor">
@@ -745,11 +623,6 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
           </label>
           <p class="muted">Reihenfolge: Bildkarten ziehen und vor dem Speichern neu anordnen.</p>
           <div class="gallery-editor__grid" data-gallery-sortable>${images.length ? images.map((image, index) => `<article class="gallery-editor__item" draggable="true" data-gallery-image-item><button class="gallery-editor__drag" type="button" aria-label="Bild verschieben">↕</button><img src="${escapeHtml(image.url)}" alt=""><input type="hidden" name="image-${index}-id" value="${escapeHtml(image.id || "")}"><input type="hidden" name="image-${index}-url" value="${escapeHtml(image.url || "")}"><input type="hidden" name="image-${index}-storagePath" value="${escapeHtml(image.storagePath || "")}"><input type="hidden" name="image-${index}-fileName" value="${escapeHtml(image.fileName || "")}"><div class="field"><label>Bildtitel / Caption</label><input name="image-${index}-caption" value="${escapeHtml(image.caption || image.title || "")}"></div><div class="field"><label>Alt-Text</label><input name="image-${index}-altText" value="${escapeHtml(image.altText || image.fileName || "")}"></div><label class="checkbox-line"><input type="checkbox" name="image-${index}-remove"> Bild aus Galerie entfernen</label></article>`).join("") : `<div class="alert">Noch keine Bilder. Bitte Bilder hochladen und speichern.</div>`}</div>
-        </section>
-        <section class="gallery-editor">
-          <div class="gallery-editor__head"><div><p class="eyebrow">Uploadfolder</p><h3>Bilder freigeben und zuordnen</h3></div></div>
-          <p class="muted">Alle hochgeladenen Bilder laufen hier zusammen. Ausgewaehlte Bilder werden beim Speichern freigegeben und dieser Galerie hinzugefuegt.</p>
-          ${uploadCandidates}
         </section>
         <button class="button button--primary">Galerie speichern</button><div id="gallery-save-result"></div>
       </form></section>`));
