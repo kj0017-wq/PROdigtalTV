@@ -2,14 +2,14 @@ import { route, onRouteChange, go } from "./utils/router.js";
 import {
   homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
   newsPage, newsDetailPage, aboutPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, portalPage, legalPage, notFoundPage
-} from "./pages/publicPages.js?v=456";
+} from "./pages/publicPages.js?v=457";
 import {
   dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage, moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, mailAdminPage
-} from "./cms/cmsPages.js?v=456";
-import { aiEditorialPage } from "./cms/aiEditorialPages.js?v=456";
+} from "./cms/cmsPages.js?v=457";
+import { aiEditorialPage } from "./cms/aiEditorialPages.js?v=457";
 import { createRegistration } from "./firebase/registrationService.js";
-import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=456";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=456";
+import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=457";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=457";
 import { deleteStoredAsset, uploadEntityImage, uploadEventMedia, uploadGalleryImages } from "./firebase/storageService.js";
 import { checkFirebaseConnection, checkFirestoreStructure, initializeDatabase, createDemoData, removeDemoData } from "./firebase/setupService.js";
 import { downloadRegistrationsCsv } from "./utils/csv.js";

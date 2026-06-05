@@ -1,6 +1,6 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=456";
-import { list, getOne } from "../firebase/dataService.js?v=456";
-import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=456";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=457";
+import { list, getOne } from "../firebase/dataService.js?v=457";
+import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=457";
 import { accessLabels, lifecycleLabels } from "../data/demoData.js";
 import { escapeHtml, formatDate, formatDateTime, formatShortDate } from "../utils/format.js";
 
