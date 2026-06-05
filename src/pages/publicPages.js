@@ -1,5 +1,5 @@
-import { listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=451";
-import { currentUser, isMember } from "../firebase/authService.js?v=451";
+import { listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=456";
+import { currentUser, isMember } from "../firebase/authService.js?v=456";
 import { firebaseEnabled, localPreviewMode } from "../firebase/firebaseClient.js";
 import { publicShell, logo } from "../components/layout.js";
 import { eventCard, topicCard } from "../components/cards.js";
