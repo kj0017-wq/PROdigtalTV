@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mail Service Admin</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #f5f7fb; color: #172033; }
+    main { max-width: 1120px; margin: 0 auto; padding: 28px; }
+    h1, h2 { margin: 0 0 14px; }
+    section { background: white; border: 1px solid #dbe2ef; border-radius: 8px; padding: 20px; margin: 0 0 18px; }
+    label { display: grid; gap: 6px; font-weight: 650; font-size: 14px; }
+    input, textarea, select { font: inherit; padding: 10px; border: 1px solid #c8d2e3; border-radius: 6px; }
+    textarea { min-height: 110px; }
+    button { border: 0; border-radius: 6px; padding: 10px 14px; background: #173b6d; color: white; font-weight: 700; cursor: pointer; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .wide { grid-column: 1 / -1; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .list { display: grid; gap: 8px; margin-top: 12px; }
+    .item { border: 1px solid #edf1f7; border-radius: 6px; padding: 10px; background: #fbfcff; }
+    .muted { color: #64748b; font-size: 13px; }
+    .ok { color: #0f7a3b; }
+    .error { color: #b42318; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } main { padding: 16px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Mail Service Admin</h1>
+  <section>
+    <h2>Zugang</h2>
+    <div class="grid">
+      <label class="wide">Admin Token
+        <input id="token" type="password" autocomplete="off" placeholder="Bearer Token">
+      </label>
+    </div>
+    <p class="muted">Der Token wird nur in dieser Browser-Sitzung gespeichert.</p>
+  </section>
+
+  <section>
+    <h2>Mail Account</h2>
+    <form id="accountForm" class="grid">
+      <label>ID <input name="id" placeholder="kunde-a" required></label>
+      <label>Name <input name="label" placeholder="Kunde A" required></label>
+      <label>SMTP Host <input name="smtpHost" placeholder="smtp.example.com" required></label>
+      <label>SMTP Port <input name="smtpPort" type="number" value="587" required></label>
+      <label>SMTP User <input name="smtpUser" placeholder="mail@example.com" required></label>
+      <label>SMTP Passwort <input name="smtpPass" type="password" placeholder="neu setzen"></label>
+      <label>Absender E-Mail <input name="fromEmail" type="email" required></label>
+      <label>Absender Name <input name="fromName"></label>
+      <div class="wide row"><button>Account speichern</button><span id="accountResult"></span></div>
+    </form>
+    <div id="accounts" class="list"></div>
+  </section>
+
+  <section>
+    <h2>Template</h2>
+    <form id="templateForm" class="grid">
+      <label>ID <input name="id" placeholder="kunde-a-kontakt" required></label>
+      <label>Account <select name="accountId" required></select></label>
+      <label class="wide">Name <input name="label" placeholder="Kontaktformular" required></label>
+      <label class="wide">Betreff <input name="subject" placeholder="Neue Anfrage von {{name}}" required></label>
+      <label class="wide">Text Template <textarea name="textBody" placeholder="Name: {{name}}&#10;Nachricht: {{message}}"></textarea></label>
+      <label class="wide">HTML Template <textarea name="htmlBody" placeholder="<p>{{message}}</p>"></textarea></label>
+      <div class="wide row"><button>Template speichern</button><span id="templateResult"></span></div>
+    </form>
+    <div id="templates" class="list"></div>
+  </section>
+</main>
+<script>
+const base = location.pathname.replace(/\/admin-ui\/?$/, "");
+const tokenInput = document.querySelector("#token");
+tokenInput.value = sessionStorage.mailAdminToken || "";
+tokenInput.addEventListener("input", () => sessionStorage.mailAdminToken = tokenInput.value);
+
+function headers() {
+  return { "Content-Type": "application/json", "Authorization": `Bearer ${tokenInput.value}` };
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(`${base}${path}`, { ...options, headers: { ...headers(), ...(options.headers || {}) } });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
+function formData(form) {
+  return Object.fromEntries(new FormData(form).entries());
+}
+
+async function load() {
+  if (!tokenInput.value) return;
+  const [{ accounts }, { templates }] = await Promise.all([api("/admin/accounts"), api("/admin/templates")]);
+  document.querySelector("[name=accountId]").innerHTML = accounts.map(a => `<option value="${a.id}">${a.label || a.id}</option>`).join("");
+  document.querySelector("#accounts").innerHTML = accounts.map(a => `<div class="item"><strong>${a.label || a.id}</strong><br><span class="muted">${a.smtpHost || ""} · ${a.fromEmail || ""} · Passwort: ${a.hasPassword ? "gesetzt" : "fehlt"}</span></div>`).join("") || "<p class='muted'>Noch keine Accounts.</p>";
+  document.querySelector("#templates").innerHTML = templates.map(t => `<div class="item"><strong>${t.label || t.id}</strong><br><span class="muted">${t.accountId || ""} · ${t.subject || ""}</span></div>`).join("") || "<p class='muted'>Noch keine Templates.</p>";
+}
+
+document.querySelector("#accountForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const result = document.querySelector("#accountResult");
+  try {
+    await api("/admin/accounts", { method: "POST", body: JSON.stringify(formData(event.currentTarget)) });
+    result.textContent = "Gespeichert";
+    result.className = "ok";
+    event.currentTarget.reset();
+    await load();
+  } catch (error) {
+    result.textContent = error.message;
+    result.className = "error";
+  }
+});
+
+document.querySelector("#templateForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const result = document.querySelector("#templateResult");
+  try {
+    await api("/admin/templates", { method: "POST", body: JSON.stringify(formData(event.currentTarget)) });
+    result.textContent = "Gespeichert";
+    result.className = "ok";
+    event.currentTarget.reset();
+    await load();
+  } catch (error) {
+    result.textContent = error.message;
+    result.className = "error";
+  }
+});
+
+tokenInput.addEventListener("change", load);
+load().catch(error => console.warn(error));
+</script>
+</body>
+</html>

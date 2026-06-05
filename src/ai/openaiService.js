@@ -1,6 +1,7 @@
 import { getFirebaseServices, localPreviewMode } from "../firebase/firebaseClient.js";
-import { currentUser } from "../firebase/authService.js?v=253";
-import { upsert } from "../firebase/dataService.js?v=253";
+import { currentUser } from "../firebase/authService.js?v=284";
+import { upsert } from "../firebase/dataService.js?v=284";
+import { aiSourceCatalog } from "../data/aiSourceCatalog.js";
 
 const ACTION_FUNCTIONS = {
   improveText: "improveText",
@@ -25,6 +26,10 @@ const ACTION_FUNCTIONS = {
 };
 
 const DEFAULT_AI_EDITORIAL_THUMBNAIL_PROMPT = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
+
+function isLocalHost() {
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+}
 
 const LOCAL_TOPIC_POOL = [
   { key: "barrierefreiheit-streaming", title: "Barrierefreiheit in Streaming-Angeboten", headline: "Barrierefreiheit wird fuer Streaming-Anbieter wichtiger", subline: "Accessibility wird zum festen Bestandteil digitaler Medienangebote.", category: "Barrierefreiheit", keywords: ["Barrierefreiheit", "Streaming", "Untertitel", "Plattformregulierung", "Medienrecht"], thumbnailIdea: "Streaming-Oberflaeche mit Untertitel-Symbolen und klarer Accessibility-Anmutung.", actuality_score: 86, industry_score: 88, reason: "Regulatorische Anforderungen und Nutzererwartungen machen Accessibility fuer Streaming-Anbieter dauerhaft relevant." },
@@ -121,20 +126,33 @@ export async function runAiEditorialTask(mode = "manual") {
 export async function generateAiTopicSuggestions(options = {}) {
   const categoryFilter = String(options.category || "").trim();
   const keywordFilter = String(options.keywords || "").trim();
+  const sourceFilter = String(options.sourceId || options.source_id || "").trim();
+  const requestedLimit = Math.max(1, Math.min(10, Number(options.limit || 6)));
   const keywordParts = keywordFilter.toLowerCase().split(/[,;\s]+/).map((item) => item.trim()).filter(Boolean);
   const firebase = await getFirebaseServices();
   if (firebase && !localPreviewMode()) {
     try {
-      const callable = firebase.functionsLib.httpsCallable(firebase.functions, "generateAiEditorialTopicSuggestions");
-      const result = await callable({ limit: 10, category: categoryFilter, keywords: keywordFilter });
+      const callable = firebase.functionsLib.httpsCallable(firebase.functions, "generateAiEditorialTopicSuggestions", { timeout: 600000 });
+      const result = await callable({ limit: requestedLimit, category: categoryFilter, keywords: keywordFilter, sourceId: sourceFilter });
+      if (isLocalHost() && Array.isArray(result.data?.suggestions)) {
+        await Promise.all(result.data.suggestions.map((suggestion) => upsert("ai_topic_suggestions", suggestion)));
+      }
       return result.data;
     } catch (error) {
-      if (!["functions/not-found", "functions/unavailable", "functions/internal"].includes(error?.code)) throw error;
+      if (!["functions/not-found", "functions/unavailable", "functions/internal", "functions/unauthenticated", "functions/permission-denied"].includes(error?.code)) throw error;
     }
   }
-  const { list, upsert } = await import("../firebase/dataService.js?v=253");
+  const { list, upsert } = await import("../firebase/dataService.js?v=284");
   const now = new Date().toISOString();
-  const articles = await list("editorialContent");
+  const [articles, existingSuggestions, verifiedSources] = await Promise.all([
+    list("editorialContent"),
+    list("ai_topic_suggestions"),
+    list("verified_sources")
+  ]);
+  const localSources = sourceFilter
+    ? [...verifiedSources, ...aiSourceCatalog].filter((source) => [source.id, source.domain, source.url, source.name, source.title].some((value) => String(value || "").trim() === sourceFilter))
+    : [...verifiedSources, ...aiSourceCatalog];
+  const sourcePool = rotateLocalSources(localSources, existingSuggestions, categoryFilter, keywordFilter);
   const articleText = articles.map((article) => `${article.title || ""} ${article.headline || ""} ${article.category || ""} ${(article.tags || []).join(" ")}`.toLowerCase()).join(" ");
   const scoredTopics = LOCAL_TOPIC_POOL.map((topic) => {
     const haystack = `${topic.title} ${topic.headline} ${topic.subline} ${topic.category} ${(topic.keywords || []).join(" ")} ${topic.reason}`.toLowerCase();
@@ -146,7 +164,7 @@ export async function generateAiTopicSuggestions(options = {}) {
     ...scoredTopics.filter((item) => item.score > Number(item.topic.actuality_score || 0) / 10).map((item) => item.topic),
     ...scoredTopics.filter((item) => item.score <= Number(item.topic.actuality_score || 0) / 10).map((item) => item.topic)
   ];
-  const suggestions = orderedTopics.map((topic, index) => {
+  const selectedTopics = orderedTopics.map((topic, index) => {
     const parts = topic.key.split("-").filter(Boolean);
     const duplicateRisk = parts.filter((part) => articleText.includes(part)).length >= 2 ? "aehnliches Thema vorhanden" : "neu";
     const contextBoost = (categoryFilter || keywordParts.length) && index < 5 ? 4 : 0;
@@ -174,24 +192,43 @@ export async function generateAiTopicSuggestions(options = {}) {
       updated_at: now,
       origin: "local_topic_research"
     };
-  }).sort((a, b) => b.actuality_score - a.actuality_score).slice(0, 10);
-  const existingSuggestions = await list("ai_topic_suggestions");
-  await Promise.all(existingSuggestions
-    .filter((suggestion) => !["uebernommen", "abgelehnt", "ersetzt", "archiviert"].includes(suggestion.queue_status || suggestion.status))
-    .map((suggestion) => upsert("ai_topic_suggestions", {
+  }).filter((topic) => {
+    if (topic.duplicate_status !== "neu") return false;
+    if (Number(topic.industry_score || 0) < 78 || Number(topic.relevance_score || 0) < 76) return false;
+    if (!categoryFilter) return true;
+    const haystack = `${topic.title} ${topic.headline} ${topic.subline} ${topic.category} ${(topic.keywords || []).join(" ")}`.toLowerCase();
+    const categoryTerms = categoryFilter.toLowerCase().split(/[^a-z0-9]+/i).filter((part) => part.length > 3);
+    return !categoryTerms.length || categoryTerms.some((part) => haystack.includes(part));
+  }).sort((a, b) => b.relevance_score - a.relevance_score || b.actuality_score - a.actuality_score).slice(0, requestedLimit);
+  const suggestions = selectedTopics.map((suggestion, index) => {
+    const source = sourcePool[index] || {};
+    return {
       ...suggestion,
-      queue_status: "ersetzt",
-      status: "archiviert",
-      replaced_at: now,
-      updated_at: now
-    })));
+      primary_source_id: source.id || "",
+      source_ids: [source.id || source.domain || source.name].filter(Boolean),
+      source_names: [source.name || source.domain].filter(Boolean),
+      source_publication_date: "",
+      source_date_status: "Datum nicht ermittelt",
+      quality_status: "lokaler Kandidat",
+      quality_score: Math.round((Number(suggestion.actuality_score || 0) + Number(suggestion.industry_score || 0) + Number(suggestion.relevance_score || 0)) / 3),
+      source_candidates: source.name ? [{
+        id: source.id || "",
+        name: source.name,
+        publisher: source.name,
+        url: source.url || "",
+        note: "Aus der Quellenrotation fuer diese Themenrecherche zugeordnet. Veroeffentlichungsdatum muss aus der konkreten Quellenmeldung ermittelt werden."
+      }] : []
+    };
+  });
   await Promise.all(suggestions.map((suggestion, index) => upsert("ai_topic_suggestions", { ...suggestion, rank: index + 1 })));
   await upsert("ai_editorial_logs", {
     id: `ai-editorial-log-${crypto.randomUUID()}`,
     article_id: "",
     task_name: "KI_Redaktion_Themenrecherche",
-    status: "suggested",
-    message: `10 Themenvorschlaege erstellt${categoryFilter || keywordFilter ? ` fuer ${[categoryFilter, keywordFilter].filter(Boolean).join(" / ")}` : ""}. Redaktionelle Auswahl fuer Queue erforderlich.`,
+    status: suggestions.length ? "suggested" : "blocked",
+    message: suggestions.length
+      ? `${suggestions.length} qualitaetsgepruefte Themenvorschlaege erstellt${categoryFilter || keywordFilter ? ` fuer ${[categoryFilter, keywordFilter].filter(Boolean).join(" / ")}` : ""}. Redaktionelle Auswahl fuer Queue erforderlich.`
+      : `Keine belastbaren Themenvorschlaege gefunden${categoryFilter || keywordFilter ? ` fuer ${[categoryFilter, keywordFilter].filter(Boolean).join(" / ")}` : ""}.`,
     found_topics_json: suggestions,
     rejected_topics_json: [],
     used_sources_json: [],
@@ -202,11 +239,149 @@ export async function generateAiTopicSuggestions(options = {}) {
     error_json: {},
     created_at: now
   });
-  return { ok: true, suggestions, message: "10 Themenvorschlaege wurden erstellt. Bitte auswaehlen und in die Queue uebernehmen." };
+  return {
+    ok: suggestions.length > 0,
+    suggestions,
+    message: suggestions.length
+      ? `${suggestions.length} Themenvorschlag${suggestions.length === 1 ? "" : "e"} wurden qualitaetsgeprueft erstellt. Bitte auswaehlen und in die Queue uebernehmen.`
+      : "Keine belastbaren Themenvorschlaege gefunden. Rawdaten oder Quellenfilter pruefen."
+  };
+}
+
+function normalizeSourceText(value = "") {
+  return String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function localSourceCategories(source = {}) {
+  return [
+    ...(Array.isArray(source.default_for_categories) ? source.default_for_categories : []),
+    ...(Array.isArray(source.defaultForCategories) ? source.defaultForCategories : []),
+    source.category || ""
+  ].map(normalizeSourceText).filter(Boolean);
+}
+
+function localCategoryTokens(value = "") {
+  return normalizeSourceText(value)
+    .split(/[^a-z0-9]+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 2 && !["in", "und", "oder", "der", "die", "das", "fuer", "fur"].includes(item));
+}
+
+function localCategoryPartsMatch(sourceCategory = "", requestedCategory = "") {
+  const sourceTokens = localCategoryTokens(sourceCategory);
+  const requestedTokens = localCategoryTokens(requestedCategory);
+  if (!sourceTokens.length || !requestedTokens.length) return false;
+  return requestedTokens.every((token) => sourceTokens.includes(token))
+    || sourceTokens.every((token) => requestedTokens.includes(token));
+}
+
+function localSourceMatchesCategory(source = {}, category = "") {
+  const categoryKey = normalizeSourceText(category);
+  if (!categoryKey) return true;
+  return localSourceCategories(source).some((item) => (
+    item.includes(categoryKey)
+    || categoryKey.includes(item)
+    || localCategoryPartsMatch(item, categoryKey)
+  ));
+}
+
+function localSourceMatches(source = {}, category = "", keywords = "") {
+  const categoryKey = normalizeSourceText(category);
+  const keywordParts = normalizeSourceText(keywords).split(/[,;\s/]+/).filter((part) => part.length > 3);
+  const text = [
+    source.name,
+    source.domain,
+    source.source_type,
+    source.category,
+    source.notes,
+    ...localSourceCategories(source)
+  ].map(normalizeSourceText).join(" ");
+  if (categoryKey && (text.includes(categoryKey) || localSourceMatchesCategory(source, categoryKey))) return true;
+  if (keywordParts.length && keywordParts.some((part) => text.includes(part))) return true;
+  return !categoryKey && !keywordParts.length;
+}
+
+function localSuggestionSourceKeys(suggestion = {}) {
+  return [
+    suggestion.primary_source_id,
+    ...(Array.isArray(suggestion.source_ids) ? suggestion.source_ids : []),
+    ...(Array.isArray(suggestion.source_candidates) ? suggestion.source_candidates.map((source) => source.id || source.name || source.domain) : [])
+  ].map((item) => String(item || "").trim()).filter(Boolean);
+}
+
+function localSourceIsExcluded(source = {}) {
+  const text = normalizeSourceText([source.id, source.name, source.domain, source.url].join(" "));
+  return /\brtl\b|rtl deutschland|rtl\.com|rtl\.de/.test(text);
+}
+
+export async function importGermanPressReleases(options = {}) {
+  const firebase = await getFirebaseServices();
+  if (!firebase || localPreviewMode()) {
+    return {
+      ok: false,
+      imported: 0,
+      articles: 0,
+      message: "Presseimport laeuft nur ueber die deployte Cloud Function mit echten Quellen."
+    };
+  }
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "importGermanPressReleases", { timeout: 600000 });
+  const result = await callable({
+    runId: options.runId || "",
+    months: Math.max(1, Math.min(12, Number(options.months || 2))),
+    perSourceLimit: Math.max(1, Math.min(10, Number(options.perSourceLimit || 4)))
+  });
+  return result.data;
+}
+
+function rotateLocalSources(sources = [], existingSuggestions = [], category = "", keywords = "") {
+  const seen = new Set();
+  const usage = new Map();
+  existingSuggestions.forEach((suggestion) => {
+    localSuggestionSourceKeys(suggestion).forEach((key) => usage.set(key, (usage.get(key) || 0) + 1));
+  });
+  return sources
+    .filter((source) => source && !seen.has(source.id || source.domain || source.name) && seen.add(source.id || source.domain || source.name))
+    .filter((source) => !localSourceIsExcluded(source))
+    .filter((source) => !normalizeSourceText(source.source_status || "").includes("gesperrt") && Number(source.trust_score || 0) >= 70)
+    .map((source) => {
+      const key = source.id || source.domain || source.name;
+      const used = usage.get(key) || usage.get(source.name) || usage.get(source.domain) || 0;
+      return {
+        source,
+        score: (localSourceMatches(source, category, keywords) ? 80 : 0) + Number(source.trust_score || 0) - used * 60 - Number(source.priority || 3)
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .map(({ source }) => source);
+}
+
+function cleanAiEditorialSentence(value = "") {
+  return String(value || "")
+    .replace(/\b(redaktioneller Themenkandidat|Themenkandidat|Vorschlag|Quellenfund|redaktionell pruefen|redaktionell prüfen)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([.,;:!?])/g, "$1")
+    .trim();
+}
+
+function localEditorialArticleBody(topic = {}, sources = []) {
+  const headline = String(topic.headline || topic.title || "Medienthema").replace(/^Themenvorschlag:\s*/i, "");
+  const category = topic.category || "Medienbranche";
+  const keyword = Array.isArray(topic.keywords) && topic.keywords.length ? topic.keywords[0] : category;
+  const teaser = cleanAiEditorialSentence(topic.teaser || topic.reason || topic.subline || "");
+  const sourceNames = sources.slice(0, 3).map((source) => source.publisher || source.title || source.name || source.domain).filter(Boolean);
+  const sourceSentence = sourceNames.length
+    ? `Als Quellenbasis dienen unter anderem Veroeffentlichungen von ${sourceNames.join(", ")}.`
+    : "Die belastbare Quellenbasis wird im Editor ergaenzt.";
+  return [
+    teaser || `${headline} rueckt eine aktuelle Entwicklung der digitalen Medienbranche in den Fokus.`,
+    `Fuer Sender, Produzenten, Plattformbetreiber und digitale Medienangebote ist das Thema im Bereich ${category} relevant. Im Mittelpunkt steht ${keyword}. Entscheidend ist, welche Folgen sich fuer Reichweite, Technik, Rechte, Vermarktung, Produktion oder Nutzerfuehrung ergeben.`,
+    `${sourceSentence} Der Beitrag soll knapp erklaeren, was passiert ist, warum die Entwicklung fuer die Branche wichtig ist und welche Konsequenz Medienanbieter daraus ableiten koennen.`,
+    "Die fertige Fassung bleibt sachlich, leicht verstaendlich und frei von Spekulationen. Aussagen werden nur verwendet, wenn sie durch die hinterlegten Quellen belegbar sind."
+  ].join("\n\n");
 }
 
 async function runLocalAiEditorialTask(mode = "manual") {
-  const { list, upsert } = await import("../firebase/dataService.js?v=253");
+  const { list, upsert } = await import("../firebase/dataService.js?v=284");
   const { verified_sources: demoSources, ai_prompts: demoPrompts } = await import("../data/demoData.js");
   const now = new Date().toISOString();
   let [articles, sources, prompts, queuedTopics] = await Promise.all([
@@ -325,7 +500,7 @@ async function runLocalAiEditorialTask(mode = "manual") {
     headline: topic.headline,
     subtitle: topic.subline,
     subline: topic.subline,
-    bodyText: `${topic.headline}. Dieser Entwurf markiert, welche Punkte die Redaktion anhand der hinterlegten Quellen pruefen sollte. Zentrale Aussagen muessen vor der Veroeffentlichung mit konkreten Belegstellen abgeglichen werden.`,
+    bodyText: localEditorialArticleBody(topic, sourceSnapshot),
     page: "news",
     section: "news",
     category: topic.category,

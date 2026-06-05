@@ -2,20 +2,21 @@ import { route, onRouteChange, go } from "./utils/router.js";
 import {
   homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
   newsPage, newsDetailPage, aboutPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, portalPage, legalPage, notFoundPage
-} from "./pages/publicPages.js";
+} from "./pages/publicPages.js?v=451";
 import {
-  dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage, moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage
-} from "./cms/cmsPages.js?v=253";
-import { aiEditorialPage } from "./cms/aiEditorialPages.js?v=253";
+  dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage, moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, mailAdminPage
+} from "./cms/cmsPages.js?v=453";
+import { aiEditorialPage } from "./cms/aiEditorialPages.js?v=451";
 import { createRegistration } from "./firebase/registrationService.js";
-import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=253";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=253";
+import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=451";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=451";
 import { deleteStoredAsset, uploadEntityImage, uploadEventMedia, uploadGalleryImages } from "./firebase/storageService.js";
 import { checkFirebaseConnection, checkFirestoreStructure, initializeDatabase, createDemoData, removeDemoData } from "./firebase/setupService.js";
 import { downloadRegistrationsCsv } from "./utils/csv.js";
 import { escapeHtml } from "./utils/format.js";
-import { callChatGptAction, generateCmsThumbCollage, saveAiDraft, runAiEditorialTask, saveAiEditorialSettings, generateAiEditorialThumbnail, generateAiTopicSuggestions } from "./ai/openaiService.js?v=253";
+import { callChatGptAction, generateCmsThumbCollage, saveAiDraft, runAiEditorialTask, saveAiEditorialSettings, generateAiEditorialThumbnail, generateAiTopicSuggestions, importGermanPressReleases } from "./ai/openaiService.js?v=314";
 import { generateArticleSpeechAsset } from "./ai/ttsService.js";
+import { aiSourceCatalog } from "./data/aiSourceCatalog.js";
 
 const root = document.querySelector("#app");
 const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
@@ -56,6 +57,7 @@ async function viewForRoute(current) {
   if (current.path === "cms" && current.id === "editorial") return moduleListPage("editorialContent", current.section || "press");
   if (current.path === "cms" && current.id === "ai-editorial") return aiEditorialPage(current.section || "dashboard", current.query);
   if (current.path === "cms" && current.id === "mail") return moduleListPage("mailQueue");
+  if (current.path === "cms" && current.id === "mail-admin") return mailAdminPage();
   if (current.path === "cms" && current.id === "chatgpt") return chatGptPage();
   if (current.path === "cms" && current.id === "ai-settings") return aiSettingsPage();
   if (current.path === "cms" && current.id === "edit") return contentEditPage(current.query.get("module"), current.query.get("id"), current.query);
@@ -65,6 +67,7 @@ async function viewForRoute(current) {
 
 async function render() {
   try {
+    closePublicTts();
     if (root && !root.innerHTML) {
       root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS</p><h1>Lade Inhalte ...</h1></div></section>`;
     }
@@ -112,9 +115,123 @@ function updateMobileQrCode() {
   image.src = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&margin=1&data=${encodeURIComponent(mobileUrl)}`;
 }
 
+function clickedAnchor(event) {
+  return event.target?.closest?.("a[href]") || null;
+}
+
+function isExternalPortalLink(link) {
+  const href = link?.getAttribute("href") || "";
+  if (!href || href.startsWith("#/") || href.startsWith("#")) return false;
+  if (/^(mailto|tel):/i.test(href)) return false;
+  try {
+    const url = new URL(href, window.location.href);
+    return ["http:", "https:"].includes(url.protocol) && url.href !== window.location.href;
+  } catch {
+    return false;
+  }
+}
+
+let activePublicTts = null;
+
+function closePublicTts() {
+  if (!activePublicTts) return;
+  activePublicTts.audio?.pause();
+  activePublicTts.timer && clearInterval(activePublicTts.timer);
+  activePublicTts.node?.remove();
+  activePublicTts = null;
+}
+
+function ttsWords(text = "") {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+}
+
+function ttsSourceText(reader) {
+  const template = reader?.querySelector("[data-tts-source]");
+  return template?.content?.textContent || template?.textContent || "";
+}
+
+function updateAccessibleTtsWord(state) {
+  if (!state?.wordNode || !state.words.length) return;
+  const duration = Number.isFinite(state.audio.duration) && state.audio.duration > 0
+    ? state.audio.duration
+    : Math.max(1, state.words.length * 0.55);
+  const index = Math.min(state.words.length - 1, Math.floor((state.audio.currentTime / duration) * state.words.length));
+  state.wordNode.textContent = state.words[index] || state.words[0] || "";
+}
+
+async function startPublicTts(button) {
+  const reader = button.closest("[data-tts-reader]");
+  const audioUrl = button.dataset.audioUrl || "";
+  const mode = button.dataset.ttsMode || "natural";
+  if (!reader || !audioUrl) return;
+  closePublicTts();
+  const audio = new Audio(audioUrl);
+  audio.preload = "metadata";
+  const isAccessible = mode === "accessible";
+  const words = isAccessible ? ttsWords(ttsSourceText(reader)) : [];
+  const node = document.createElement("div");
+  node.className = isAccessible ? "tts-reading-layer" : "tts-natural-player";
+  node.setAttribute("role", isAccessible ? "dialog" : "status");
+  node.innerHTML = isAccessible
+    ? `<div class="tts-reading-layer__box" aria-modal="false">
+        <div><p class="eyebrow">Barrierefrei</p><strong>Wortanzeige</strong></div>
+        <div class="tts-reading-layer__word" data-tts-current-word>${escapeHtml(words[0] || "Bereit")}</div>
+        <div class="tts-reading-layer__controls">
+          <button type="button" class="button button--secondary button--small" data-tts-pause>Pause</button>
+          <button type="button" class="button button--secondary button--small" data-tts-close>Stop</button>
+        </div>
+      </div>`
+    : `<div class="tts-natural-player__box">
+        <strong>Natural Voice</strong>
+        <button type="button" class="button button--secondary button--small" data-tts-pause>Pause</button>
+        <button type="button" class="button button--secondary button--small" data-tts-close>Stop</button>
+      </div>`;
+  reader.after(node);
+  activePublicTts = {
+    audio,
+    node,
+    words,
+    wordNode: node.querySelector("[data-tts-current-word]"),
+    timer: null
+  };
+  const pauseButton = node.querySelector("[data-tts-pause]");
+  node.querySelector("[data-tts-close]")?.addEventListener("click", closePublicTts);
+  pauseButton?.addEventListener("click", async () => {
+    if (audio.paused) {
+      await audio.play();
+      pauseButton.textContent = "Pause";
+      return;
+    }
+    audio.pause();
+    pauseButton.textContent = "Fortsetzen";
+  });
+  audio.addEventListener("ended", closePublicTts, { once: true });
+  audio.addEventListener("error", () => {
+    node.innerHTML = `<div class="alert alert--error">Audio konnte nicht geladen werden.</div>`;
+  }, { once: true });
+  if (isAccessible) {
+    activePublicTts.timer = setInterval(() => updateAccessibleTtsWord(activePublicTts), 140);
+    audio.addEventListener("timeupdate", () => updateAccessibleTtsWord(activePublicTts));
+  }
+  await audio.play();
+}
+
 document.addEventListener("click", (event) => {
-  const link = event.target.closest('a[href^="#/"]');
-  if (!link) return;
+  const link = clickedAnchor(event);
+  if (!link || !isExternalPortalLink(link)) return;
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  event.stopPropagation();
+  window.open(link.href, link.target || "_blank", "noopener,noreferrer");
+}, true);
+
+document.addEventListener("click", (event) => {
+  const link = clickedAnchor(event);
+  if (!link || !link.matches('a[href^="#/"]')) return;
   window.setTimeout(render, 0);
 });
 
@@ -124,6 +241,112 @@ function formObject(form) {
     data[item.name] = item.checked;
   });
   return data;
+}
+
+function mailAdminConfig() {
+  const baseInput = document.querySelector("#mail-admin-base-url");
+  const tokenInput = document.querySelector("#mail-admin-token");
+  const isLocalMailAdmin = ["localhost", "127.0.0.1", ""].includes(location.hostname);
+  const defaultBaseUrl = isLocalMailAdmin
+    ? `${mobilePublicOrigin}/mail-api`
+    : "/mail-api";
+  const storedBaseUrl = isLocalMailAdmin && sessionStorage.mailAdminBaseUrl === "/mail-api"
+    ? defaultBaseUrl
+    : sessionStorage.mailAdminBaseUrl;
+  if (baseInput && (!baseInput.value || (isLocalMailAdmin && baseInput.value === "/mail-api"))) baseInput.value = storedBaseUrl || defaultBaseUrl;
+  if (tokenInput && !tokenInput.value) tokenInput.value = sessionStorage.mailAdminToken || "";
+  const baseUrl = (baseInput?.value || storedBaseUrl || defaultBaseUrl).replace(/\/$/, "");
+  const token = tokenInput?.value || sessionStorage.mailAdminToken || "";
+  if (baseInput) sessionStorage.mailAdminBaseUrl = baseUrl;
+  if (tokenInput) sessionStorage.mailAdminToken = token;
+  return { baseUrl, token };
+}
+
+async function mailAdminRequest(path, options = {}) {
+  const { baseUrl, token } = mailAdminConfig();
+  if (!token) throw new Error("Bitte Admin Token eintragen.");
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {})
+    }
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `Mailservice Fehler ${response.status}`);
+  return data;
+}
+
+function renderMailAdminLists(accounts = [], templates = []) {
+  const accountList = document.querySelector("#mail-accounts-list");
+  const templateList = document.querySelector("#mail-templates-list");
+  window.mailAdminAccounts = accounts;
+  const accountOptions = accounts.map((account) => `<option value="${escapeHtml(account.id)}">${escapeHtml(account.label || account.id)}</option>`).join("");
+  document.querySelectorAll('select[name="accountId"]').forEach((select) => {
+    select.innerHTML = accountOptions || `<option value="">Noch keine Accounts</option>`;
+  });
+  const templateOptions = templates.map((template) => `<option value="${escapeHtml(template.id)}">${escapeHtml(template.label || template.id)}</option>`).join("");
+  document.querySelectorAll('select[name="templateId"]').forEach((select) => {
+    select.innerHTML = templateOptions || `<option value="">Noch keine Templates</option>`;
+  });
+  if (accountList) {
+    accountList.innerHTML = accounts.length
+      ? accounts.map((account) => `<div class="setup-step"><span><strong>${escapeHtml(account.label || account.id)}</strong><br><small>SMTP: ${escapeHtml(account.smtpHost || "-")}:${escapeHtml(account.smtpPort || "-")}<br>Benutzer: ${escapeHtml(account.smtpUser || "-")}<br>Absender: ${escapeHtml([account.fromName, account.fromEmail].filter(Boolean).join(" / ") || "-")}</small></span><span class="actions"><strong>${account.hasPassword ? "Passwort gespeichert" : "Passwort fehlt"}</strong><button type="button" class="button button--secondary button--small" data-mail-account-edit="${escapeHtml(account.id)}">In Maske laden</button></span></div>`).join("")
+      : `<div class="alert">Noch keine Mailaccounts vorhanden.</div>`;
+  }
+  if (templateList) {
+    templateList.innerHTML = templates.length
+      ? templates.map((template) => `<div class="setup-step"><span><strong>${escapeHtml(template.label || template.id)}</strong><br><small>${escapeHtml([template.accountId, template.subject].filter(Boolean).join(" - "))}</small></span><strong>${template.active === false ? "Inaktiv" : "Aktiv"}</strong></div>`).join("")
+      : `<div class="alert">Noch keine Mailtemplates vorhanden.</div>`;
+  }
+}
+
+async function loadMailAdminData() {
+  const result = document.querySelector("#mail-admin-connection-result");
+  if (result) result.innerHTML = `<span class="muted">Lade Mailservice ...</span>`;
+  const [{ accounts = [] }, { templates = [] }] = await Promise.all([
+    mailAdminRequest("/admin/accounts"),
+    mailAdminRequest("/admin/templates")
+  ]);
+  renderMailAdminLists(accounts, templates);
+  if (result) result.innerHTML = `<span class="tag">Verbunden</span>`;
+  return { accounts, templates };
+}
+
+function speechSourceText(collection, item = {}) {
+  return collection === "topics"
+    ? [item.subtitle, item.longDescription, item.bodyText, item.shortDescription].filter(Boolean).join("\n\n")
+    : [item.subtitle, item.bodyText, item.introText, item.shortText, item.teaserText].filter(Boolean).join("\n\n");
+}
+
+function speechTextSignature(collection, item = {}) {
+  const text = speechSourceText(collection, item).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 6000);
+  let hash = 5381;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ text.charCodeAt(index);
+  }
+  return `${text.length}:${(hash >>> 0).toString(16)}`;
+}
+
+function shouldAutoGenerateSpeech(collection, previous = {}, next = {}) {
+  if (!["editorialContent", "topics"].includes(collection)) return false;
+  const text = speechSourceText(collection, next);
+  if (text.replace(/\s+/g, "").length < 80) return false;
+  const signature = speechTextSignature(collection, next);
+  return !next.audioNaturalUrl
+    || !next.audioAccessibleUrl
+    || next.audioNaturalTextSignature !== signature
+    || next.audioAccessibleTextSignature !== signature
+    || speechTextSignature(collection, previous) !== signature;
+}
+
+async function autoGenerateSpeechIfNeeded(collection, previous, next, result) {
+  if (!shouldAutoGenerateSpeech(collection, previous, next)) return false;
+  if (result) result.innerHTML = `<div class="alert">${progressMarkup("Texte gespeichert. Natural Voice und barrierefreie TTS werden aktualisiert ...", 70)}</div>`;
+  await generateArticleSpeechAsset({ collection, id: next.id, variant: "all" });
+  if (result) result.innerHTML = `<div class="alert alert--success">Gespeichert. Audio-Varianten wurden aktualisiert.</div>`;
+  return true;
 }
 
 function isProtectedInternalEditorialRecord(collection, record = {}) {
@@ -449,24 +672,51 @@ function safeLocalArticleDraft(article = {}, sources = [], keywords = []) {
   const sourceLabels = sources.slice(0, 3).map((source) => source.publisher || source.title || source.domain).filter(Boolean);
   const mainKeyword = article.primary_keyword || keywords.find((keyword) => keyword.is_primary)?.keyword || article.category || "das Thema";
   const headline = String(article.headline || article.title || "Der Beitrag").replace(/^Themenvorschlag:\s*/i, "");
+  const subline = cleanEditorialSentence(article.subline || article.subtitle || article.introText || "");
+  const category = article.category || "Medienbranche";
+  const sourceSentence = sourceLabels.length
+    ? `Grundlage fuer die weitere redaktionelle Bearbeitung sind unter anderem Veroeffentlichungen von ${sourceLabels.join(", ")}.`
+    : "Die konkrete Quellenbasis muss im Editor ergaenzt und belegt werden.";
   return [
-    `${headline} betrifft ein Feld, das fuer TV-, Streaming- und Medienanbieter redaktionell relevant sein kann. Dieser Arbeitsentwurf fasst noch keine externen Fakten als gesichert zusammen. Er markiert, welche Punkte die Redaktion anhand der hinterlegten Quellen pruefen sollte.`,
-    `Im Mittelpunkt steht ${mainKeyword}. Fuer eine veroeffentlichbare Fassung muessen die Aussagen einzeln mit belastbaren Quellen abgeglichen werden. Hinterlegt sind aktuell ${sources.length} Quellen${sourceLabels.length ? `, darunter ${sourceLabels.join(", ")}` : ""}.`,
-    "Wichtig ist die Einordnung fuer Anbieter, Plattformen, Produktion und Regulierung. Erst wenn klar ist, welche konkrete Entwicklung belegt ist, kann daraus ein leicht verstaendlicher Branchenbeitrag entstehen. Fachbegriffe sollten kurz erklaert und rechtliche oder technische Aussagen besonders sorgfaeltig geprueft werden.",
-    "Dieser Text ist deshalb nur ein redaktioneller Arbeitsentwurf. Belegstellen fehlen noch auf Aussage-Ebene. Eine automatische Veroeffentlichung bleibt blockiert, bis Quellen, Dubletten, Keywords, KI-Pruefung und redaktionelle Freigabe vollstaendig bestanden sind."
+    subline || `${headline} rueckt ein aktuelles Thema der digitalen Medienbranche in den Fokus.`,
+    `Fuer ProDigitalTV ist das Thema vor allem im Bereich ${category} relevant. Im Mittelpunkt steht ${mainKeyword}: Medienanbieter, Produzenten, Plattformbetreiber und Vermarkter muessen einordnen, welche Folgen sich fuer Angebote, Technik, Rechte, Nutzung oder Refinanzierung ergeben.`,
+    `${sourceSentence} Entscheidend ist, dass aus dem Fund ein klarer Branchenbezug entsteht: Was hat sich konkret veraendert, welche Akteure sind betroffen und welche Konsequenz ergibt sich fuer TV, Streaming, Produktion oder digitale Distribution?`,
+    "Der Beitrag sollte diese Entwicklung knapp, sachlich und leicht verstaendlich erklaeren. Fachbegriffe werden nur verwendet, wenn sie notwendig sind, und dann kurz eingeordnet."
   ].join("\n\n");
+}
+
+function cleanEditorialSentence(value = "") {
+  return String(value || "")
+    .replace(/\b(redaktioneller Themenkandidat|Themenkandidat|Vorschlag|Quellenfund|redaktionell pruefen|redaktionell prüfen)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([.,;:!?])/g, "$1")
+    .trim();
 }
 
 function draftArticleTextFromTopic(topic = {}) {
   const title = String(topic.headline || topic.title || "Medienthema").replace(/^Themenvorschlag:\s*/i, "");
   const keywordList = Array.isArray(topic.keywords) ? topic.keywords : [];
   const mainKeyword = keywordList[0] || topic.category || "das Thema";
-  const reason = topic.reason || topic.subline || "Das Thema ist fuer die digitale Medienbranche relevant.";
+  const category = topic.category || "Medienbranche";
+  const teaser = cleanEditorialSentence(topic.teaser || topic.summary || topic.reason || topic.subline || "");
+  const subline = cleanEditorialSentence(topic.subline || "");
+  const sources = [
+    ...(Array.isArray(topic.source_candidates) ? topic.source_candidates : []),
+    ...(Array.isArray(topic.sources) ? topic.sources : [])
+  ];
+  const sourceNames = [
+    ...(Array.isArray(topic.source_names) ? topic.source_names : []),
+    ...sources.map((source) => source.publisher || source.name || source.title || source.domain)
+  ].map((item) => String(item || "").trim()).filter(Boolean);
+  const uniqueSourceNames = [...new Set(sourceNames)].slice(0, 3);
+  const sourceSentence = uniqueSourceNames.length
+    ? `Als Quellenbasis dienen aktuelle Fundstellen von ${uniqueSourceNames.join(", ")}.`
+    : "Die belastbare Quellenbasis wird im Quellenbereich des Editors ergaenzt.";
   return [
-    `${title} ist ein Thema, das fuer TV-, Streaming- und digitale Medienanbieter redaktionell relevant ist. ${reason}`,
-    `Im Mittelpunkt steht ${mainKeyword}. Fuer die weitere Bearbeitung sollte die Redaktion klaeren, welche konkrete Entwicklung belegt ist, welche Akteure betroffen sind und welche Quellen als belastbar gelten. Erst danach kann der Beitrag final freigegeben werden.`,
-    `Fuer die Branche geht es vor allem um Einordnung: Welche Folgen ergeben sich fuer Anbieter, Plattformen, Produktion, Distribution, Vermarktung oder Regulierung? Der Text soll spaeter leicht verstaendlich erklaeren, warum das Thema aktuell ist und was Medienunternehmen daraus ableiten koennen.`,
-    "Dieser Entwurf ist eine redaktionelle Vorbereitung. Vor einer Veroeffentlichung muessen Quellen, Belegstellen, Dublettenstatus, Keywords und Freigabe im CMS geprueft werden."
+    teaser || subline || `${title} beschreibt eine aktuelle Entwicklung mit Relevanz fuer die Medienbranche.`,
+    `Fuer Sender, Produzenten, Plattformbetreiber und digitale Medienangebote ist das Thema im Bereich ${category} relevant. Im Mittelpunkt steht ${mainKeyword}. Entscheidend ist, wie sich die Entwicklung auf Reichweite, Technik, Rechte, Vermarktung, Produktion oder Nutzerfuehrung auswirkt.`,
+    `${sourceSentence} Der redaktionelle Beitrag sollte daraus eine klare Einordnung ableiten: Was ist passiert, warum ist es aktuell und welche Bedeutung hat es fuer TV, Streaming, Plattformen, regionale Medien oder die digitale Distribution?`,
+    "Die fertige Fassung bleibt sachlich, kurz und gut verstaendlich. Sie verzichtet auf Spekulationen und beschreibt nur Aussagen, die durch die hinterlegten Quellen belegbar sind."
   ].join("\n\n");
 }
 
@@ -641,6 +891,86 @@ function localArticleKeywords(article = {}, fallbackKeywords = []) {
     }));
 }
 
+function localEditorialKeywords(article = {}, fallbackKeywords = []) {
+  const title = String(article.headline || article.title || "");
+  const subline = String(article.subline || article.subtitle || "");
+  const body = String(article.bodyText || article.body || "");
+  const category = String(article.category || "");
+  const rules = [
+    ["KI", [" ki ", "kuenstliche intelligenz", "kunstliche intelligenz", "artificial intelligence"]],
+    ["KI in Redaktion", ["ki in redaktion", "redaktionelle ki", "ki redaktion"]],
+    ["Voice-Cloning", ["voice cloning", "voice-cloning", "ki stimmen", "ki-stimmen"]],
+    ["Streaming", ["streaming", "streamingdienst", "streaming angebot"]],
+    ["OTT", [" ott ", "over the top", "over-the-top"]],
+    ["FAST-Channels", ["fast channel", "fast-channel", "fast channels", "fast-channels"]],
+    ["HbbTV", ["hbbtv"]],
+    ["Smart-TV", ["smart tv", "smart-tv", "connected tv", "ctv"]],
+    ["Addressable TV", ["addressable tv", "adressierbare werbung"]],
+    ["Mediathek", ["mediathek", "mediatheken"]],
+    ["Distribution", ["distribution", "ausspielung", "verbreitung"]],
+    ["CDN", [" cdn ", "content delivery network"]],
+    ["Produktion", ["produktion", "produktionsprozess", "produktionsprozesse"]],
+    ["Postproduktion", ["postproduktion", "post-production"]],
+    ["Synchronbranche", ["synchron", "synchronbranche", "synchronisation"]],
+    ["Vermarktung", ["vermarktung", "vermarkter"]],
+    ["Werbung", ["werbung", "werbemarkt", "werbestrategie"]],
+    ["Reichweite", ["reichweite", "reichweiten"]],
+    ["Plattformregulierung", ["plattformregulierung", "plattformregeln", "digital services act", " dsa "]],
+    ["Medienrecht", ["medienrecht", "rundfunkrecht"]],
+    ["Urheberrecht", ["urheberrecht", "copyright"]],
+    ["Verwertungsrecht", ["verwertungsrecht", "rechteklaerung", "rechteklarung"]],
+    ["Musikrechte", ["musikrechte", "gema", "vg wort"]],
+    ["Barrierefreiheit", ["barrierefreiheit", "accessibility"]],
+    ["Untertitel", ["untertitel", "subtitles", "captioning"]],
+    ["Leichte Sprache", ["leichte sprache"]],
+    ["Medienpolitik", ["medienpolitik", "medienaufsicht"]],
+    ["Digitalmedien", ["digitalmedien", "digitale medien"]]
+  ];
+  const stopWords = new Set([
+    "quelle", "quellen", "quellenlage", "quellenfund", "redaktionell", "redaktionelle", "redaktioneller",
+    "pruefen", "prufen", "veroeffentlichung", "veroeffentlichungen", "gefunden", "aktuell", "aktuelle",
+    "thema", "themen", "vorschlag", "themenvorschlag", "presse", "meldung", "meldungen", "news",
+    "artikel", "beitrag", "branche", "medienbranche", "digital", "digitale", "digitalen"
+  ]);
+  const normalizeKeyword = (value = "") => String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const haystack = (...parts) => ` ${normalizeKeyword(parts.filter(Boolean).join(" ")).replace(/[^a-z0-9+.-]+/g, " ")} `;
+  const cleanKeyword = (value = "") => String(value || "").replace(/^Themenvorschlag:\s*/i, "").replace(/\s+/g, " ").trim().replace(/^[-:]+|[-:]+$/g, "");
+  const keywordKey = (value = "") => normalizeKeyword(cleanKeyword(value)).replace(/[^a-z0-9+]+/g, " ").trim();
+  const candidates = new Map();
+  const addKeyword = (raw, score = 60) => {
+    const keyword = cleanKeyword(raw);
+    const key = keywordKey(keyword);
+    if (!keyword || keyword.length < 2 || keyword.length > 44 || stopWords.has(key)) return;
+    if (/^(bei|von|mit|fuer|fur|und|oder|aus|zur|zum|der|die|das)\b/i.test(keyword)) return;
+    const existing = candidates.get(key);
+    if (!existing || existing.score < score) candidates.set(key, { keyword, score });
+  };
+  [
+    ...(Array.isArray(fallbackKeywords) ? fallbackKeywords : []),
+    ...(Array.isArray(article.tags) ? article.tags : []),
+    article.primary_keyword || article.primaryKeyword || "",
+    ...String(category || "").split(/\s*\/\s*/)
+  ].forEach((keyword) => addKeyword(keyword, 82));
+  const text = haystack(title, subline, body, category);
+  rules.forEach(([label, terms]) => {
+    if (terms.some((term) => text.includes(haystack(term)))) {
+      addKeyword(label, haystack(title, category).includes(haystack(label)) ? 100 : 90);
+    }
+  });
+  String(title || "").match(/\b[A-Z][A-Za-z0-9+]*(?:-[A-Z0-9][A-Za-z0-9+]*)+\b/g)?.forEach((keyword) => addKeyword(keyword, 74));
+  if (!candidates.size) ["TV", "Streaming", "Digitalmedien"].forEach((keyword, index) => addKeyword(keyword, 70 - index * 4));
+  return [...candidates.values()]
+    .sort((a, b) => b.score - a.score || a.keyword.localeCompare(b.keyword, "de"))
+    .slice(0, 12)
+    .map(({ keyword }, index) => ({
+      keyword,
+      keyword_type: index === 0 ? "Hauptkeyword" : category.toLowerCase().includes("recht") ? "Rechtskeyword" : "Branchenkeyword",
+      relevance_score: index === 0 ? 95 : Math.max(58, 88 - index * 4),
+      is_primary: index === 0,
+      explanation: index === 0 ? "Zentrales Fachkeyword aus Headline, Kategorie und Beitragstext." : "Aus kuratiertem Branchenvokabular und Themenkontext abgeleitet."
+    }));
+}
+
 function localSeoPayload(article = {}, keywords = []) {
   const headline = String(article.headline || article.title || "").replace(/^Themenvorschlag:\s*/i, "").trim();
   const seoTitle = limitText(headline || "PROdigitalTV Branchenbeitrag", 68);
@@ -654,6 +984,119 @@ function localSeoPayload(article = {}, keywords = []) {
     seo_description: seoDescription,
     seoKeywords,
     seo_keywords: seoKeywords
+  };
+}
+
+function cleanPressArticleText(value = "") {
+  return String(value || "")
+    .normalize("NFC")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]+/g, " ")
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function cleanPressArticleIntro(release = {}) {
+  const text = cleanPressArticleText(release.summary || release.full_text || release.fullText || "");
+  const sentence = text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).filter(Boolean).slice(0, 2).join(" ");
+  return limitText(sentence || "Aktuelle Pressemitteilung zur redaktionellen Weiterverarbeitung.", 260);
+}
+
+function pressArticleSlug(release = {}) {
+  const sourcePart = release.source_domain || release.sourceDomain || release.source_name || release.sourceName || "";
+  return slugify([release.published_at || release.publishedAt || "", sourcePart, release.title || ""].filter(Boolean).join("-"))
+    || `pressemitteilung-${Date.now().toString(36)}`;
+}
+
+function pressArticleId(release = {}) {
+  const rawId = String(release.id || "").replace(/^press-/i, "");
+  const safeId = slugify(rawId) || pressArticleSlug(release) || crypto.randomUUID();
+  return `ai-press-article-${safeId}`;
+}
+
+function editorialDraftFromPressRelease(release = {}, profile = {}) {
+  const now = new Date().toISOString();
+  const title = cleanPressArticleText(release.title || "Pressemitteilung");
+  const intro = cleanPressArticleIntro(release);
+  const bodyText = cleanPressArticleText(release.full_text || release.fullText || release.summary || "");
+  const slug = pressArticleSlug({ ...release, title });
+  const sourceName = cleanPressArticleText(release.source_name || release.sourceName || release.source_domain || release.sourceDomain || "");
+  const sourceDomain = cleanPressArticleText(release.source_domain || release.sourceDomain || "");
+  const sourceUrl = cleanPressArticleText(release.url || "");
+  const importedBy = profile.email || profile.uid || "system";
+  return {
+    id: pressArticleId(release),
+    title,
+    headline: title,
+    subtitle: intro,
+    subline: intro,
+    introText: intro,
+    shortText: intro,
+    teaserText: intro,
+    bodyText,
+    body: bodyText,
+    page: "news",
+    section: "news",
+    key: `news.${slug}`,
+    slug,
+    seoTitle: title.slice(0, 70),
+    seo_title: title.slice(0, 70),
+    seoDescription: intro.slice(0, 155),
+    seo_description: intro.slice(0, 155),
+    category: "Presseimport",
+    tags: ["Pressemitteilung", sourceName, sourceDomain].filter(Boolean),
+    primary_keyword: "Pressemitteilung",
+    source_status: "Originalquelle importiert",
+    duplicate_status: "noch nicht geprueft",
+    ai_check_status: "offen",
+    legal_check_status: "offen",
+    publication_status: "Entwurf",
+    status: "draft",
+    visibility: "internal",
+    author_type: "ai",
+    author_name: "KI-Redaktion",
+    publication_target: "news",
+    imported_press_release_id: release.id,
+    original_source_url: sourceUrl,
+    original_source_name: sourceName,
+    original_published_at: release.published_at || release.publishedAt || "",
+    publishDate: release.published_at || release.publishedAt || "",
+    validFrom: release.published_at || release.publishedAt || "",
+    ai_log_json: {
+      import_flow: "german_press_release_import",
+      imported_by: importedBy,
+      source_url: sourceUrl,
+      source_name: sourceName,
+      note: "Volltext aus aktueller Pressemitteilung importiert. Redaktionell pruefen, einordnen und erst dann veroeffentlichen."
+    },
+    createdAt: release.imported_at || release.importedAt || now,
+    created_at: release.imported_at || release.importedAt || now,
+    updatedAt: now,
+    updated_at: now
+  };
+}
+
+function articleSourceFromPressRelease(articleId, release = {}) {
+  const now = new Date().toISOString();
+  const sourceName = cleanPressArticleText(release.source_name || release.sourceName || release.source_domain || release.sourceDomain || "Originalquelle");
+  return {
+    id: `${articleId}-original-press-source`,
+    article_id: articleId,
+    articleId,
+    title: cleanPressArticleText(release.title || "Pressemitteilung"),
+    publisher: sourceName,
+    domain: cleanPressArticleText(release.source_domain || release.sourceDomain || ""),
+    url: cleanPressArticleText(release.url || ""),
+    source_type: "Pressemitteilung",
+    trust_score: 70,
+    check_status: "ungeprueft",
+    relevance_note: "Originalquelle der importierten Pressemitteilung.",
+    claim_reference: "Volltext muss redaktionell eingeordnet werden.",
+    accessed_at: now,
+    created_at: now,
+    updated_at: now
   };
 }
 
@@ -702,6 +1145,178 @@ function normalizeAiSuggestion(value, button, sourceField) {
 
 function progressMarkup(label, width = 45) {
   return `<span class="cms-progress"><span>${escapeHtml(label)}</span><span class="progress progress--indeterminate"><i style="width:${width}%"></i></span></span>`;
+}
+
+const TOPIC_RESEARCH_STEPS = [
+  "CMS-Kontext und Eingaben vorbereiten",
+  "Quellenliste laden und nach Kategorie priorisieren",
+  "Quellenveroeffentlichungen abrufen",
+  "Aktuelle Themen aus den Quellen ableiten",
+  "Themen nach Aktualitaet und Branchenrelevanz sortieren",
+  "Belastbare Vorschlaege speichern und Liste aktualisieren"
+];
+
+const PRESS_IMPORT_STEPS = [
+  "Presseimport vorbereiten",
+  "Portale und Quellenstatus laden",
+  "Pressebereiche abrufen",
+  "Aktuelle Pressemitteilungen pruefen",
+  "Dubletten und Altlasten abgleichen",
+  "Presseliste speichern und aktualisieren"
+];
+
+function sourceSearchText(source = {}) {
+  return [
+    source.name,
+    source.title,
+    source.publisher,
+    source.domain,
+    source.category,
+    source.default_for_categories,
+    source.source_type,
+    source.notes
+  ].flatMap((item) => Array.isArray(item) ? item : [item]).filter(Boolean).join(" ").toLowerCase();
+}
+
+function normalizeResearchTerm(value = "") {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function sourceMatchesUiCategory(source = {}, category = "") {
+  const categoryKey = normalizeResearchTerm(category);
+  if (!categoryKey) return true;
+  const categoryTokens = (value = "") => normalizeResearchTerm(value)
+    .split(/[^a-z0-9]+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 2 && !["in", "und", "oder", "der", "die", "das", "fuer", "fur"].includes(item));
+  const sourceText = normalizeResearchTerm([
+    source.category,
+    source.default_for_categories,
+    source.defaultForCategories,
+    source.source_type,
+    source.sourceType,
+    source.notes
+  ].flatMap((item) => Array.isArray(item) ? item : [item]).filter(Boolean).join(" "));
+  const requestedTokens = categoryTokens(categoryKey);
+  const sourceTokens = categoryTokens(sourceText);
+  return sourceText.includes(categoryKey)
+    || requestedTokens.every((token) => sourceTokens.includes(token))
+    || requestedTokens.some((token) => token.length > 3 && sourceText.includes(token));
+}
+
+function uniqueResearchSources(sources = []) {
+  const seen = new Set();
+  return sources.filter((source) => {
+    const key = String(source.domain || source.url || source.name || source.id || "").trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function researchSourceIsExcluded(source = {}) {
+  const text = normalizeResearchTerm([source.id, source.name, source.domain, source.url].join(" "));
+  return /\brtl\b|rtl deutschland|rtl\.com|rtl\.de/.test(text);
+}
+
+function researchSourceHasKnownHub(source = {}) {
+  const text = normalizeResearchTerm([source.id, source.name, source.domain, source.url].join(" "));
+  return /(vaunet|die-medienanstalten|bitkom|anga|agf|gema|bsi|hbbtv|fraunhofer|ard|zdf|meedia|dwdl)/.test(text);
+}
+
+async function topicResearchSourcePool(category = "", keywords = "", sourceId = "") {
+  let verifiedSources = [];
+  try {
+    verifiedSources = await list("verified_sources");
+  } catch {
+    verifiedSources = [];
+  }
+  const categoryParts = normalizeResearchTerm(category).split(/[^a-z0-9]+/i).filter((part) => part.length > 3);
+  const keywordParts = normalizeResearchTerm(keywords).split(/[,;\s]+/).filter((part) => part.length > 3);
+  const terms = [...categoryParts, ...keywordParts];
+  const allowedSources = uniqueResearchSources([...verifiedSources, ...aiSourceCatalog])
+    .filter((source) => !researchSourceIsExcluded(source))
+    .filter((source) => !String(source.source_status || source.review_status || "").toLowerCase().includes("gesperrt"))
+    .filter((source) => Number(source.trust_score || source.suggested_trust_score || 0) >= 70);
+  const sourceFilter = String(sourceId || "").trim().toLowerCase();
+  const filteredSources = sourceFilter
+    ? allowedSources.filter((source) => [source.id, source.domain, source.url, source.name, source.title].some((value) => String(value || "").trim().toLowerCase() === sourceFilter))
+    : allowedSources;
+  const matchingSources = category ? filteredSources.filter((source) => sourceMatchesUiCategory(source, category)) : filteredSources;
+  const minimumPoolSize = sourceFilter ? 1 : category ? Math.min(30, filteredSources.length) : 0;
+  const displayPool = category && matchingSources.length < minimumPoolSize
+    ? uniqueResearchSources([...matchingSources, ...filteredSources]).slice(0, minimumPoolSize)
+    : matchingSources;
+  return displayPool.sort((a, b) => {
+      const aText = normalizeResearchTerm(sourceSearchText(a));
+      const bText = normalizeResearchTerm(sourceSearchText(b));
+      const aHits = terms.filter((term) => aText.includes(term)).length;
+      const bHits = terms.filter((term) => bText.includes(term)).length;
+      const aHubBoost = researchSourceHasKnownHub(a) ? 120 : 0;
+      const bHubBoost = researchSourceHasKnownHub(b) ? 120 : 0;
+      return (bHubBoost + bHits * 20) - (aHubBoost + aHits * 20)
+        || Number(a.priority || 99) - Number(b.priority || 99)
+        || Number(b.trust_score || b.suggested_trust_score || 0) - Number(a.trust_score || a.suggested_trust_score || 0);
+    });
+}
+
+function researchSourceLabel(source = {}) {
+  return source.name || source.title || source.publisher || source.domain || "Quelle";
+}
+
+function topicResearchStatusMarkup({ contextLabel = "", startedAt = Date.now(), stepIndex = 0, done = false, sourcePool = [], sourceIndex = 0 }) {
+  const elapsedSeconds = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+  const boundedStep = Math.max(0, Math.min(TOPIC_RESEARCH_STEPS.length - 1, stepIndex));
+  const percent = done
+    ? 100
+    : Math.max(12, Math.min(92, Math.round(((boundedStep + 1) / TOPIC_RESEARCH_STEPS.length) * 86)));
+  const headline = done
+    ? "Themenrecherche abgeschlossen"
+    : `Themenrecherche laeuft${contextLabel ? ` fuer ${contextLabel}` : ""}`;
+  const activeSourcePosition = sourcePool.length ? Math.min(sourceIndex + 1, sourcePool.length) : 0;
+  const activeSource = !done && sourcePool.length ? sourcePool[activeSourcePosition - 1] : null;
+  const upcomingSources = sourcePool.length
+    ? sourcePool.slice(activeSourcePosition, activeSourcePosition + 3)
+    : [];
+  const sourceNote = sourcePool.length && sourceIndex + 1 > sourcePool.length
+    ? `<small>Alle angezeigten Quellen wurden durchlaufen. Warte auf Speicherung und Auswertung.</small>`
+    : "";
+  return `<div class="ai-research-status ${done ? "ai-research-status--done" : ""}">
+    ${progressMarkup(headline, percent)}
+    <div class="ai-research-status__meta"><strong>Status:</strong> ${escapeHtml(TOPIC_RESEARCH_STEPS[boundedStep])}<span>${elapsedSeconds}s</span></div>
+    ${activeSource ? `<div class="ai-research-current-source"><span>Aktuelle Quelle ${activeSourcePosition} von ${sourcePool.length}</span><strong>${escapeHtml(researchSourceLabel(activeSource))}</strong><small>${escapeHtml(activeSource.domain || activeSource.url || "")}</small>${sourceNote}</div>` : ""}
+    ${!done && upcomingSources.length ? `<div class="ai-research-source-strip">${upcomingSources.map((source) => `<span>${escapeHtml(researchSourceLabel(source))}</span>`).join("")}</div>` : ""}
+    <ol class="ai-research-steps">${TOPIC_RESEARCH_STEPS.map((step, index) => `<li class="${done || index < boundedStep ? "is-done" : index === boundedStep ? "is-active" : ""}"><span>${index + 1}</span>${escapeHtml(step)}</li>`).join("")}</ol>
+    <p class="muted">Hinweis: Das ist eine laufende Themenrecherche, noch keine Quellen- oder Faktenfreigabe.</p>
+  </div>`;
+}
+
+function pressImportStatusMarkup({ startedAt = Date.now(), run = null, stepIndex = 0, done = false }) {
+  const elapsedSeconds = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+  const boundedStep = Math.max(0, Math.min(PRESS_IMPORT_STEPS.length - 1, stepIndex));
+  const scanned = Number(run?.scanned_sources || 0);
+  const planned = Number(run?.planned_sources || 0);
+  const percent = done
+    ? 100
+    : planned
+      ? Math.max(12, Math.min(94, Math.round((scanned / Math.max(1, planned)) * 92)))
+      : Math.max(12, Math.min(92, Math.round(((boundedStep + 1) / PRESS_IMPORT_STEPS.length) * 86)));
+  const scans = Array.isArray(run?.scans) ? run.scans : [];
+  const currentScan = !done ? scans[scans.length - 1] : null;
+  const recentScans = scans.slice(-4).reverse();
+  const headline = done ? "Presseimport abgeschlossen" : (run?.message || "Presseimport laeuft");
+  return `<div class="ai-research-status ${done ? "ai-research-status--done" : ""}">
+    ${progressMarkup(headline, percent)}
+    <div class="ai-research-status__meta"><strong>Status:</strong> ${escapeHtml(PRESS_IMPORT_STEPS[boundedStep])}<span>${elapsedSeconds}s</span></div>
+    ${currentScan ? `<div class="ai-research-current-source"><span>Aktuelles Portal ${scanned || recentScans.length} von ${planned || "?"}</span><strong>${escapeHtml(currentScan.source_name || currentScan.source_domain || "Portal")}</strong><small>${escapeHtml(currentScan.reason || currentScan.status || "")}</small></div>` : ""}
+    ${recentScans.length ? `<div class="ai-research-source-strip">${recentScans.map((scan) => `<span>${escapeHtml(scan.source_name || scan.source_domain || "Portal")} · ${Number(scan.count || 0)}</span>`).join("")}</div>` : ""}
+    <ol class="ai-research-steps">${PRESS_IMPORT_STEPS.map((step, index) => `<li class="${done || index < boundedStep ? "is-done" : index === boundedStep ? "is-active" : ""}"><span>${index + 1}</span>${escapeHtml(step)}</li>`).join("")}</ol>
+    <div class="ai-press-progress__stats"><span>Importiert: ${Number(run?.imported || 0)}</span><span>Dubletten: ${Number(run?.duplicates || 0)}</span><span>Ausgespart: ${Number(run?.skipped_sources || 0)}</span></div>
+    <p class="muted">Hinweis: Importierte Pressemitteilungen werden nicht automatisch geloescht oder als Beitrag angelegt.</p>
+  </div>`;
 }
 
 function submitFormAndWait(form) {
@@ -1216,7 +1831,23 @@ function wireLinkedMediaClears() {
       try {
         const existing = (await getOne(module, id)) || { id, createdAt: new Date().toISOString() };
         const update = kind === "audio"
-          ? { audioUrl: "", audioStoragePath: "", audioMimeType: "", audioTextLength: 0, audioTextTruncated: false }
+          ? {
+              audioUrl: "",
+              audioStoragePath: "",
+              audioMimeType: "",
+              audioTextLength: 0,
+              audioTextTruncated: false,
+              audioAccessibleUrl: "",
+              audioAccessibleStoragePath: "",
+              audioAccessibleMimeType: "",
+              audioAccessibleTextLength: 0,
+              audioAccessibleTextTruncated: false,
+              audioNaturalUrl: "",
+              audioNaturalStoragePath: "",
+              audioNaturalMimeType: "",
+              audioNaturalTextLength: 0,
+              audioNaturalTextTruncated: false
+            }
           : { galleryId: "" };
         await upsert(module, { ...existing, ...update, updatedAt: new Date().toISOString() });
         if (kind === "gallery") {
@@ -1333,13 +1964,124 @@ async function saveEventTopicSpeakerForm(form) {
   }
 }
 
+function wireCmsMenu() {
+  const shell = document.querySelector(".cms-shell");
+  const toggle = document.querySelector("[data-cms-menu-toggle]");
+  const closeTargets = document.querySelectorAll("[data-cms-menu-close], .cms-side a");
+  if (!shell || !toggle) return;
+  const setOpen = (open) => {
+    shell.classList.toggle("is-menu-open", open);
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    toggle.setAttribute("aria-label", open ? "CMS-Menue schliessen" : "CMS-Menue oeffnen");
+  };
+  toggle.addEventListener("click", () => setOpen(!shell.classList.contains("is-menu-open")));
+  closeTargets.forEach((target) => target.addEventListener("click", () => setOpen(false)));
+}
+
 function wireActions() {
+  wireCmsMenu();
   wireImageDropzones();
   wireGalleryEditor();
   wireGalleryPlayers();
   wireEditorGallerySelects();
   wireGalleryLinkSaves();
   wireLinkedMediaClears();
+  if (document.querySelector("#mail-admin-base-url")) {
+    mailAdminConfig();
+  }
+  document.querySelector("[data-mail-admin-load]")?.addEventListener("click", async () => {
+    const result = document.querySelector("#mail-admin-connection-result");
+    try {
+      await loadMailAdminData();
+    } catch (error) {
+      if (result) result.innerHTML = `<span class="alert alert--error" style="display:inline-block;margin:0">${escapeHtml(error.message || String(error))}</span>`;
+    }
+  });
+  document.querySelector("#mail-accounts-list")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-mail-account-edit]");
+    if (!button) return;
+    const account = (window.mailAdminAccounts || []).find((item) => item.id === button.dataset.mailAccountEdit);
+    const form = document.querySelector("#mail-account-form");
+    if (!account || !form) return;
+    ["id", "label", "smtpHost", "smtpPort", "smtpUser", "fromEmail", "fromName"].forEach((field) => {
+      if (form.elements[field]) form.elements[field].value = account[field] ?? "";
+    });
+    if (form.elements.smtpPass) {
+      form.elements.smtpPass.value = "";
+      form.elements.smtpPass.placeholder = account.hasPassword ? "Passwort bleibt gespeichert; nur bei Aenderung eintragen" : "Passwort eintragen";
+    }
+    form.querySelector("#mail-account-result").innerHTML = `<div class="alert">Account geladen. Das SMTP-Passwort wird aus Sicherheitsgruenden nicht angezeigt.</div>`;
+  });
+  document.querySelector("#mail-account-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = form.querySelector("#mail-account-result");
+    const submitButton = form.querySelector('button[type="submit"], button');
+    if (submitButton) submitButton.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Mailaccount wird gespeichert ...</div>`;
+    try {
+      const values = formObject(form);
+      values.smtpPort = Number(values.smtpPort || 587);
+      if (!values.smtpPass) delete values.smtpPass;
+      await mailAdminRequest("/admin/accounts", { method: "POST", body: JSON.stringify(values) });
+      form.reset();
+      form.elements.smtpPort.value = "587";
+      if (result) result.innerHTML = `<div class="alert alert--success">Mailaccount wurde gespeichert.</div>`;
+      await loadMailAdminData();
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Speichern fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+  document.querySelector("#mail-template-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = form.querySelector("#mail-template-result");
+    const submitButton = form.querySelector('button[type="submit"], button');
+    if (submitButton) submitButton.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Template wird gespeichert ...</div>`;
+    try {
+      await mailAdminRequest("/admin/templates", { method: "POST", body: JSON.stringify(formObject(form)) });
+      form.reset();
+      if (result) result.innerHTML = `<div class="alert alert--success">Template wurde gespeichert.</div>`;
+      await loadMailAdminData();
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Speichern fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+  document.querySelector("#mail-test-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = form.querySelector("#mail-test-result");
+    const submitButton = form.querySelector('button[type="submit"], button');
+    if (submitButton) submitButton.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Testmail wird gesendet ...</div>`;
+    try {
+      const values = formObject(form);
+      const variables = values.variablesJson ? JSON.parse(values.variablesJson) : {};
+      delete values.variablesJson;
+      await mailAdminRequest("/send", { method: "POST", body: JSON.stringify({ ...values, variables }) });
+      if (result) result.innerHTML = `<div class="alert alert--success">Testmail wurde gesendet.</div>`;
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Testversand fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+  document.querySelectorAll("[data-tts-play]").forEach((button) => {
+    if (button.dataset.ttsWired === "1") return;
+    button.dataset.ttsWired = "1";
+    button.addEventListener("click", async () => {
+      try {
+        await startPublicTts(button);
+      } catch (error) {
+        alert(error.message || "Audio konnte nicht gestartet werden.");
+      }
+    });
+  });
   document.querySelectorAll("[data-generate-article-speech]").forEach((button) => button.addEventListener("click", async () => {
     const result = button.closest(".audio-list-cell, .audio-generation-panel")?.querySelector("[data-speech-result]");
     const audioUrl = button.dataset.audioUrl || "";
@@ -1384,8 +2126,9 @@ function wireActions() {
         await submitFormAndWait(form);
         if (result) result.innerHTML = `<div class="alert">${progressMarkup("Gemini erzeugt und speichert die Audiodatei ...", 72)}</div>`;
       }
-      const speech = await generateArticleSpeechAsset({ collection: button.dataset.collection, id: button.dataset.recordId });
-      if (result) result.innerHTML = `<div class="alert alert--success">Audio gespeichert.${speech.truncated ? " Der Text wurde fuer die Sprachausgabe gekuerzt." : ""}</div>`;
+      const speech = await generateArticleSpeechAsset({ collection: button.dataset.collection, id: button.dataset.recordId, variant: button.dataset.ttsVariant || "all" });
+      const truncated = speech.truncated || Object.values(speech.variants || {}).some((item) => item.truncated);
+      if (result) result.innerHTML = `<div class="alert alert--success">Audio-Varianten gespeichert.${truncated ? " Der Text wurde fuer die Sprachausgabe gekuerzt." : ""}</div>`;
       await render();
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--error">Audio konnte nicht erzeugt werden: ${escapeHtml(error.message || String(error))}</div>`;
@@ -1462,22 +2205,164 @@ function wireActions() {
     const output = document.querySelector("#ai-topic-research-result") || document.querySelector("#ai-editorial-run-result");
     const panel = button.closest(".ai-topic-research-panel") || document;
     const category = panel.querySelector("#ai-topic-research-category")?.value || "";
+    const sourceId = panel.querySelector("#ai-topic-research-source")?.value || "";
+    const sourceLabel = panel.querySelector("#ai-topic-research-source")?.selectedOptions?.[0]?.textContent || "";
     const keywords = panel.querySelector("#ai-topic-research-keywords")?.value || "";
     const originalLabel = button.textContent;
     button.disabled = true;
     button.textContent = "Recherchiere ...";
-    const contextLabel = [category, keywords].filter(Boolean).join(" / ");
-    if (output) output.innerHTML = `<div class="alert">${progressMarkup(`Themenrecherche erstellt 10 Vorschlaege${contextLabel ? ` fuer ${contextLabel}` : ""} ...`, 45)}</div>`;
+    const contextLabel = [category, sourceId ? sourceLabel : "", keywords].filter(Boolean).join(" / ");
+    const startedAt = Date.now();
+    const sourcePool = await topicResearchSourcePool(category, keywords, sourceId);
+    let progressTimer = null;
+    const renderResearchStatus = () => {
+      if (!output) return;
+      const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+      const stepIndex = elapsedSeconds < 2
+        ? 0
+        : elapsedSeconds < 6
+          ? 1
+          : elapsedSeconds < 18
+            ? 2
+            : elapsedSeconds < 45
+              ? 3
+              : elapsedSeconds < 90
+                ? 4
+                : 5;
+      const sourceIndex = Math.max(0, Math.floor(elapsedSeconds / 3));
+      output.innerHTML = `<div class="alert">${topicResearchStatusMarkup({ contextLabel, startedAt, stepIndex, sourcePool, sourceIndex })}</div>`;
+    };
+    renderResearchStatus();
+    progressTimer = window.setInterval(renderResearchStatus, 2500);
     try {
-      const result = await generateAiTopicSuggestions({ category, keywords });
-      if (output) output.innerHTML = `<div class="alert alert--success">${escapeHtml(result.message || "Themenvorschlaege wurden erstellt.")}</div>`;
+      const result = await generateAiTopicSuggestions({ category, keywords, sourceId });
+      if (progressTimer) window.clearInterval(progressTimer);
+      const alertTone = result?.ok === false ? "alert--warning" : "alert--success";
+      if (output) output.innerHTML = `<div class="alert ${alertTone}">${topicResearchStatusMarkup({ contextLabel, startedAt, stepIndex: TOPIC_RESEARCH_STEPS.length - 1, done: true, sourcePool, sourceIndex: Math.max(0, sourcePool.length - 1) })}<strong>${escapeHtml(result.message || "Themenvorschlaege wurden erstellt.")}</strong></div>`;
       window.setTimeout(render, 700);
     } catch (error) {
+      if (progressTimer) window.clearInterval(progressTimer);
       if (output) output.innerHTML = `<div class="alert alert--error">Themenrecherche konnte nicht ausgefuehrt werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      if (progressTimer) window.clearInterval(progressTimer);
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
+
+  document.querySelectorAll("[data-ai-press-import]").forEach((button) => button.addEventListener("click", async () => {
+    const output = document.querySelector("#ai-press-import-result") || document.querySelector("#ai-editorial-run-result");
+    const originalLabel = button.textContent;
+    const runId = `press-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const startedAt = Date.now();
+    let pollTimer = 0;
+    let pollStopped = false;
+    const renderPressRun = async () => {
+      if (!output || pollStopped) return;
+      const run = await getOne("ai_press_import_runs", runId).catch(() => null);
+      if (!output || pollStopped) return;
+      const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+      const stepIndex = run
+        ? Number(run.scanned_sources || 0) <= 0
+          ? 1
+          : Number(run.scanned_sources || 0) < Number(run.planned_sources || 1)
+            ? elapsedSeconds < 12 ? 2 : elapsedSeconds < 45 ? 3 : 4
+            : 5
+        : 0;
+      output.innerHTML = `<div class="alert">${pressImportStatusMarkup({ startedAt, run, stepIndex })}</div>`;
+    };
+    button.disabled = true;
+    button.textContent = "Importiere ...";
+    if (output) output.innerHTML = `<div class="alert">${pressImportStatusMarkup({ startedAt, stepIndex: 0 })}</div>`;
+    pollTimer = window.setInterval(renderPressRun, 1800);
+    try {
+      const result = await importGermanPressReleases({ runId, months: 2, perSourceLimit: 4 });
+      pollStopped = true;
+      if (pollTimer) window.clearInterval(pollTimer);
+      const finalRun = await getOne("ai_press_import_runs", runId).catch(() => null);
+      if (output) output.innerHTML = `<div class="alert ${result.ok ? "alert--success" : "alert--warning"}">${pressImportStatusMarkup({ startedAt, run: finalRun || result, stepIndex: PRESS_IMPORT_STEPS.length - 1, done: true })}<strong>${escapeHtml(result.message || "Presseimport abgeschlossen.")}</strong><br><small>${Number(result.duplicates || 0)} Dubletten ausgelassen, ${Number(result.skippedSources || 0)} Quellen ausgespart.</small></div>`;
+      window.setTimeout(() => {
+        if (output) output.innerHTML = "";
+        render();
+      }, 1200);
+    } catch (error) {
+      pollStopped = true;
+      if (pollTimer) window.clearInterval(pollTimer);
+      if (output) output.innerHTML = `<div class="alert alert--error">Pressemitteilungen konnten nicht importiert werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      pollStopped = true;
+      if (pollTimer) window.clearInterval(pollTimer);
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
+
+  document.querySelectorAll("[data-ai-press-create-article]").forEach((button) => button.addEventListener("click", async () => {
+    const output = document.querySelector("#ai-press-delete-result") || document.querySelector("#ai-press-import-result");
+    const releaseId = button.dataset.aiPressCreateArticle;
+    if (!releaseId) return;
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Oeffne ...";
+    if (output) output.innerHTML = `<div class="alert">${progressMarkup("Beitragsentwurf wird vorbereitet ...", 45)}</div>`;
+    try {
+      const release = await getOne("ai_press_releases", releaseId);
+      if (!release) throw new Error("Pressemitteilung nicht gefunden.");
+      const draft = editorialDraftFromPressRelease(release, currentUser() || {});
+      const existingArticle = await getOne("editorialContent", draft.id).catch(() => null);
+      if (!existingArticle) {
+        await upsert("editorialContent", draft);
+        await upsert("article_sources", articleSourceFromPressRelease(draft.id, release));
+      } else {
+        await upsert("article_sources", {
+          ...articleSourceFromPressRelease(draft.id, release),
+          created_at: existingArticle.created_at || existingArticle.createdAt || new Date().toISOString()
+        });
+      }
+      await upsert("ai_press_releases", {
+        ...release,
+        editorial_status: "Beitrag erstellt",
+        article_id: draft.id,
+        article_created_at: existingArticle?.article_created_at || release.article_created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      if (output) output.innerHTML = `<div class="alert alert--success">Beitragsentwurf ist bereit und wird im Editor geoeffnet.</div>`;
+      window.location.hash = `#/cms/ai-editorial/editor?id=${encodeURIComponent(draft.id)}`;
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Beitrag konnte nicht erstellt werden: ${escapeHtml(error.message || String(error))}</div>`;
     } finally {
       button.disabled = false;
       button.textContent = originalLabel;
     }
+  }));
+
+  document.querySelectorAll("[data-ai-topic-raw-clear]").forEach((button) => button.addEventListener("click", async () => {
+    const output = document.querySelector("#ai-topic-research-result") || document.querySelector("#ai-editorial-run-result");
+    if (!window.confirm("Alle Rawdaten der Themenrecherche loeschen? Themenvorschlaege, Queue und Artikel bleiben erhalten.")) return;
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Loesche ...";
+    try {
+      const rows = await list("ai_topic_raw_data");
+      await Promise.all(rows.map((row) => remove("ai_topic_raw_data", row.id)));
+      if (output) output.innerHTML = `<div class="alert alert--success">${rows.length} Rawdaten-Zeilen wurden geloescht.</div>`;
+      window.setTimeout(render, 500);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Rawdaten konnten nicht geloescht werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
+
+  document.querySelectorAll("[data-ai-topic-create-article]").forEach((button) => button.addEventListener("click", () => {
+    const form = button.closest("form");
+    if (!form) return;
+    form.querySelectorAll('input[name="topicSuggestionIds"]').forEach((input) => { input.checked = false; });
+    const checkbox = form.querySelector(`input[name="topicSuggestionIds"][value="${CSS.escape(button.dataset.aiTopicCreateArticle || "")}"]`);
+    if (!checkbox) return;
+    checkbox.checked = true;
+    form.requestSubmit();
   }));
 
   document.querySelector("#ai-topic-suggestions-form")?.addEventListener("submit", async (event) => {
@@ -1499,7 +2384,7 @@ function wireActions() {
         const cleanTitle = suggestion.headline || suggestion.title || "KI-Thema";
         const bodyText = draftArticleTextFromTopic(suggestion);
         const shortText = shortTextFromTopic(suggestion, bodyText);
-        const generatedKeywords = localArticleKeywords({ ...suggestion, headline: cleanTitle, bodyText }, suggestion.keywords || []);
+        const generatedKeywords = localEditorialKeywords({ ...suggestion, headline: cleanTitle, bodyText }, suggestion.keywords || []);
         const generatedSeo = localSeoPayload({ ...suggestion, headline: cleanTitle, bodyText, subline: suggestion.subline || "", slug: slugify(cleanTitle) }, generatedKeywords);
         const thumbnailIdea = suggestion.thumbnail_idea || suggestion.thumbnailIdea || `Redaktionelles Vorschaubild zum Thema ${suggestion.title || cleanTitle}.`;
         const thumbnailPrompt = [
@@ -1985,6 +2870,88 @@ function wireActions() {
     }
   }));
 
+  document.querySelector("#ai-verified-source-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const output = form.querySelector("#ai-source-management-result");
+    const values = formObject(form);
+    const now = new Date().toISOString();
+    try {
+      const url = new URL(values.url);
+      const name = values.name || url.hostname;
+      await upsert("verified_sources", {
+        id: `verified-source-${slugify(name || url.hostname)}`,
+        name,
+        domain: url.hostname.replace(/^www\./, ""),
+        url: values.url,
+        source_type: values.source_type || "Fachquelle",
+        source_status: values.source_status || "erlaubt",
+        category: values.category || "",
+        default_for_categories: values.category ? [values.category] : [],
+        trust_score: Number(values.trust_score || 70),
+        notes: values.notes || "",
+        language: "de/en",
+        country: "international",
+        priority: Number(values.trust_score || 70) >= 90 ? 1 : 2,
+        created_at: now,
+        updated_at: now,
+        checked_at: now,
+        checked_by: currentUser()?.email || currentUser()?.displayName || "local"
+      });
+      form.reset();
+      if (output) output.innerHTML = `<div class="alert alert--success">Quelle wurde hinzugefuegt.</div>`;
+      window.setTimeout(render, 700);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Quelle konnte nicht gespeichert werden: ${escapeHtml(error.message || String(error))}</div>`;
+    }
+  });
+
+  document.querySelectorAll("[data-ai-source-auto-expand]").forEach((button) => button.addEventListener("click", async () => {
+    const output = document.querySelector("#ai-source-management-result");
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Erweitere ...";
+    try {
+      const now = new Date().toISOString();
+      await Promise.all(aiSourceCatalog.map((source) => upsert("verified_sources", {
+        ...source,
+        source_status: source.source_status || "erlaubt",
+        review_status: "freigegeben",
+        checked_at: source.checked_at || now,
+        checked_by: source.checked_by || "System",
+        updated_at: now
+      })));
+      if (output) output.innerHTML = `<div class="alert alert--success">${aiSourceCatalog.length} Quellen aus dem Systemkatalog wurden uebernommen oder aktualisiert.</div>`;
+      window.setTimeout(render, 700);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Automatische Erweiterung fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
+
+  document.querySelectorAll("[data-ai-source-delete]").forEach((button) => button.addEventListener("click", async () => {
+    const id = button.dataset.aiSourceDelete;
+    const output = document.querySelector("#ai-source-management-result");
+    if (!window.confirm("Diese Quelle aus der aktiven Quellenliste entfernen?")) return;
+    try {
+      const source = await getOne("verified_sources", id);
+      await upsert("verified_sources", {
+        ...(source || { id }),
+        id,
+        source_status: "gesperrt",
+        review_status: "geloescht",
+        deleted_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      if (output) output.innerHTML = `<div class="alert alert--success">Quelle wurde aus der aktiven Liste entfernt.</div>`;
+      window.setTimeout(render, 500);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Quelle konnte nicht geloescht werden: ${escapeHtml(error.message || String(error))}</div>`;
+    }
+  }));
+
   document.querySelectorAll("[data-ai-article-action]").forEach((button) => button.addEventListener("click", async () => {
     const output = document.querySelector("#ai-article-action-result");
     const articleId = button.dataset.articleId;
@@ -2123,8 +3090,8 @@ function wireActions() {
       if (action === "keywords") {
         const editForm = document.querySelector("#ai-article-edit-form");
         const formValues = editForm?.dataset.articleId === articleId ? formObject(editForm) : {};
-        const generatedKeywords = localArticleKeywords({ ...article, ...formValues }, article.tags || []);
-        const fallbackKeywords = generatedKeywords.length ? generatedKeywords : localArticleKeywords(article, ["TV", "Streaming", "Medienbranche", "Produktion", "Plattformregulierung"]);
+        const generatedKeywords = localEditorialKeywords({ ...article, ...formValues }, article.tags || []);
+        const fallbackKeywords = generatedKeywords.length ? generatedKeywords : localEditorialKeywords(article, ["TV", "Streaming", "Medienbranche", "Produktion", "Plattformregulierung"]);
         const existing = new Set(keywords.map((keyword) => String(keyword.keyword || "").toLowerCase()));
         const keywordsToSave = fallbackKeywords.filter((keyword) => !existing.has(String(keyword.keyword || keyword).toLowerCase()));
         await Promise.all(keywordsToSave.map((keyword, index) => upsert("article_keywords", {
@@ -2189,7 +3156,7 @@ function wireActions() {
       if (action === "seo") {
         const editForm = document.querySelector("#ai-article-edit-form");
         const formValues = editForm?.dataset.articleId === articleId ? formObject(editForm) : {};
-        const generatedKeywords = keywords.length ? keywords : localArticleKeywords({ ...article, ...formValues }, article.tags || []);
+        const generatedKeywords = keywords.length ? keywords : localEditorialKeywords({ ...article, ...formValues }, article.tags || []);
         Object.assign(update, localSeoPayload({ ...article, ...formValues }, generatedKeywords));
         update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "pruefpflichtig";
         message = "SEO-Titel, Meta-Beschreibung, Slug und SEO-Keywords wurden automatisch erzeugt.";
@@ -2920,17 +3887,69 @@ function wireActions() {
             if (result) result.innerHTML = `<div class="alert">${progressMarkup(`Bilder werden hochgeladen (${progress}%) ...`, Math.max(30, progress))}</div>`;
           })
         : [];
-      const images = [...keptImages, ...uploadedImages.map((image, index) => ({ ...image, sortOrder: keptImages.length + index + 1 }))];
+      const selectedMediaImages = [];
+      const selectedMediaUpdates = [];
+      form.querySelectorAll(".gallery-editor__item--candidate").forEach((item) => {
+        const attach = item.querySelector('input[name$="-attach"]')?.checked;
+        if (!attach) return;
+        const mediaId = item.querySelector('input[name$="-id"]')?.value || "";
+        selectedMediaImages.push({
+          id: mediaId || `gallery-image-${crypto.randomUUID()}`,
+          url: item.querySelector('input[name$="-url"]')?.value || "",
+          storagePath: item.querySelector('input[name$="-storagePath"]')?.value || "",
+          fileName: item.querySelector('input[name$="-fileName"]')?.value || "",
+          caption: item.querySelector('input[name$="-caption"]')?.value || "",
+          altText: item.querySelector('input[name$="-altText"]')?.value || "",
+          sortOrder: keptImages.length + uploadedImages.length + selectedMediaImages.length + 1
+        });
+        if (mediaId) {
+          selectedMediaUpdates.push({
+            mediaId,
+            approve: item.querySelector('input[name$="-approve"]')?.checked
+          });
+        }
+      });
+      const linkedEventId = form.elements.eventId?.value || "";
+      const images = [
+        ...keptImages,
+        ...uploadedImages.map((image, index) => ({ ...image, sortOrder: keptImages.length + index + 1 })),
+        ...selectedMediaImages
+      ];
       await upsert("galleries", {
         ...existing,
         id: galleryId,
         title: form.elements.title.value.trim(),
         description: form.elements.description.value.trim(),
+        eventId: linkedEventId,
         status: form.elements.status.value,
         visibility: form.elements.visibility.value || "public",
         images,
         updatedAt: new Date().toISOString()
       });
+      for (const update of selectedMediaUpdates) {
+        if (!update.approve) continue;
+        const medium = await getOne("eventMedia", update.mediaId);
+        if (!medium) continue;
+        await upsert("eventMedia", {
+          ...medium,
+          galleryId,
+          eventId: linkedEventId || medium.eventId || "",
+          status: "approved",
+          visibility: "public",
+          updatedAt: new Date().toISOString()
+        });
+      }
+      const previousEventId = existing.eventId || "";
+      if (previousEventId && previousEventId !== linkedEventId) {
+        const previousEvent = await getOne("events", previousEventId);
+        if (previousEvent?.galleryId === galleryId) {
+          await upsert("events", { ...previousEvent, galleryId: "", updatedAt: new Date().toISOString() });
+        }
+      }
+      if (linkedEventId) {
+        const linkedEvent = await getOne("events", linkedEventId);
+        if (linkedEvent) await upsert("events", { ...linkedEvent, galleryId, updatedAt: new Date().toISOString() });
+      }
       if (result) {
         result.innerHTML = `<div class="alert alert--success">Galerie gespeichert. ${images.length} Bild${images.length === 1 ? "" : "er"} sind zugeordnet.</div>`;
         result.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -3005,10 +4024,11 @@ function wireActions() {
       delete values.removeAssetFile;
       const savedValues = { ...existing, ...values };
       await upsert(form.dataset.module, savedValues);
+      const audioUpdated = await autoGenerateSpeechIfNeeded(form.dataset.module, existing, savedValues, result);
       if (image || removeAssetRequested) {
         updateDropzoneSavedImage(form, savedValues.imageUrl || savedValues.logoUrl || savedValues.photoUrl || "");
       }
-      if (result) {
+      if (result && !audioUpdated) {
         result.innerHTML = `<div class="alert alert--success">Gespeichert.</div>`;
         result.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
@@ -3038,11 +4058,12 @@ function wireActions() {
         id,
         ...values,
         status: "new",
+        mailStatus: "queued",
         source: "website",
         submittedAt: new Date().toISOString()
       });
       form.reset();
-      if (result) result.innerHTML = `<div class="alert alert--success">Vielen Dank. Der Mitgliedsantrag wurde gespeichert.</div>`;
+      if (result) result.innerHTML = `<div class="alert alert--success">Vielen Dank. Der Mitgliedsantrag wurde uebermittelt.</div>`;
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--error">Absenden fehlgeschlagen: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
     } finally {
@@ -3091,6 +4112,7 @@ function wireActions() {
       updatedAt: new Date().toISOString()
     };
     await upsert("topics", savedTopic);
+    const audioUpdated = await autoGenerateSpeechIfNeeded("topics", topic, savedTopic, result);
 
     const selected = new Set(Array.from(form.querySelectorAll('input[name="assignedSpeakerIds"]:checked')).map((input) => input.value));
     const speakers = await list("speakers");
@@ -3130,7 +4152,7 @@ function wireActions() {
     const imageStatus = form.querySelector("[data-image-status]");
     if (imageStatus) imageStatus.textContent = imageUpdate.imageUrl ? "Bild wurde gespeichert." : imageUpdate.imageUrl === "" ? "Bild wurde geloescht." : imageStatus.textContent;
     if (Object.prototype.hasOwnProperty.call(imageUpdate, "imageUrl")) updateDropzoneSavedImage(form, imageUpdate.imageUrl);
-    if (result) {
+    if (result && !audioUpdated) {
       result.innerHTML = `<div class="alert alert--success">Thema wurde gespeichert.${imageUpdate.imageUrl ? " Bild wurde hochgeladen." : ""}</div>`;
       result.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }

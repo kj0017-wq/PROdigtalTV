@@ -234,3 +234,15 @@ export function isDemoMode() {
 export function resetDemoDatabase() {
   localStorage.setItem(STORE_KEY, JSON.stringify(clone(demoDatabase)));
 }
+
+export function resetLocalCollection(collectionName) {
+  const db = localDb();
+  db[collectionName] = [];
+  saveLocal(db);
+}
+
+export function replaceLocalCollection(collectionName, records = []) {
+  const db = localDb();
+  db[collectionName] = records.map((record) => ({ ...record }));
+  saveLocal(db);
+}
