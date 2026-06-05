@@ -1,5 +1,5 @@
-import { listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=459";
-import { currentUser, isMember } from "../firebase/authService.js?v=459";
+import { listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=457";
+import { currentUser, isMember } from "../firebase/authService.js?v=457";
 import { firebaseEnabled, localPreviewMode } from "../firebase/firebaseClient.js";
 import { publicShell, logo } from "../components/layout.js";
 import { eventCard, topicCard } from "../components/cards.js";
@@ -356,14 +356,13 @@ export async function topicDetailPage(id) {
 }
 
 export async function aboutPage() {
-  const content = await getOne("editorialContent", "about-intro");
-  const intro = content || {
+  const content = await getOne("editorialContent", "about-intro") || {
     title: "Ein Netzwerk fuer relevante Verbindungen.",
     introText: "PROdigitalTV bringt die digitale Medienwirtschaft zusammen.",
     bodyText: "Wir schaffen Raum fuer Dialog, Wissenstransfer und Partnerschaften."
   };
-  return publicShell("about", `${subhero("Ueber uns", intro.title, intro.introText)}
-    <section class="section"><div class="container detail-grid"><article class="detail-main"><div class="editorial-text">${articleParagraphs(intro.bodyText)}</div></article><aside class="detail-aside"><p class="eyebrow">PROdigitalTV</p><h2 style="margin-bottom:12px">Verein und Netzwerk</h2><p>Vorstand, Mitglieder und Mitgliedschaft sind direkt mit den gepflegten CMS-Inhalten verbunden.</p><div class="actions" style="margin-top:20px;flex-wrap:wrap"><a class="button button--dark" href="#/board">Zum Vorstand</a><a class="button button--primary" href="#/join">Mitglied werden</a></div></aside></div></section>`);
+  return publicShell("about", `${subhero("Ueber uns", content.title, content.introText)}
+    <section class="section"><div class="container detail-grid"><article class="detail-main"><h2>Unser Selbstverstaendnis</h2><div class="editorial-text">${articleParagraphs(content.bodyText)}</div><h2>Was wir leisten</h2><div class="quick-grid"><div class="quick-card"><h3>Dialog</h3><p>Kuratierte Formate fuer Entscheider.</p></div><div class="quick-card"><h3>Wissen</h3><p>Impulse aus Praxis und Strategie.</p></div><div class="quick-card"><h3>Netzwerk</h3><p>Partnerschaften mit Substanz.</p></div></div></article><aside class="detail-aside"><p class="eyebrow">Organisation</p><h2 style="margin-bottom:12px">Vorstand und Mitgliedschaft</h2><p>Lernen Sie die Verantwortlichen kennen oder gestalten Sie die Themen des Netzwerks mit.</p><div class="actions" style="margin-top:20px;flex-wrap:wrap"><a class="button button--dark" href="#/board">Zum Vorstand</a><a class="button button--primary" href="#/join">Mitglied werden</a></div></aside></div></section>`);
 }
 
 export async function membersPage() {
