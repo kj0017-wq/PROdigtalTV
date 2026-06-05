@@ -3,6 +3,7 @@ const { defineSecret } = require("firebase-functions/params");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getStorage } = require("firebase-admin/storage");
 const { randomUUID } = require("node:crypto");
+const lamejs = require("lamejs");
 
 const region = "europe-west3";
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
@@ -21,6 +22,15 @@ function cleanText(value = "") {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxCharacters);
+}
+
+function textSignature(value = "") {
+  const text = cleanText(value);
+  let hash = 5381;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ text.charCodeAt(index);
+  }
+  return `${text.length}:${(hash >>> 0).toString(16)}`;
 }
 
 function splitIntoChunks(text) {
@@ -65,6 +75,24 @@ function wavBufferFromPcm(pcmBase64) {
   return wavBufferFromPcmBuffer(Buffer.from(pcmBase64, "base64"));
 }
 
+function mp3BufferFromPcmBuffer(pcm) {
+  const samples = new Int16Array(pcm.length / 2);
+  for (let index = 0; index < samples.length; index += 1) {
+    samples[index] = pcm.readInt16LE(index * 2);
+  }
+  const encoder = new lamejs.Mp3Encoder(channels, sampleRate, 96);
+  const buffers = [];
+  const blockSize = 1152;
+  for (let index = 0; index < samples.length; index += blockSize) {
+    const chunk = samples.subarray(index, index + blockSize);
+    const encoded = encoder.encodeBuffer(chunk);
+    if (encoded.length) buffers.push(Buffer.from(encoded));
+  }
+  const flush = encoder.flush();
+  if (flush.length) buffers.push(Buffer.from(flush));
+  return Buffer.concat(buffers);
+}
+
 async function requireEditor(request) {
   if (!request.auth) throw new HttpsError("unauthenticated", "Login erforderlich.");
   const profile = (await db.collection("users").doc(request.auth.uid).get()).data();
@@ -72,20 +100,64 @@ async function requireEditor(request) {
   return profile;
 }
 
-async function createSpeechBuffer({ title, text }) {
+function ttsVariantConfig(variant = "accessible") {
+  if (variant === "natural") {
+    return {
+      key: "natural",
+      voiceName: "Puck",
+      promptLines: [
+        "Read this German editorial article with a natural, fluent voice.",
+        "Use a calm, professional tone for a media industry audience.",
+        "Keep the rhythm conversational, but do not add commentary or interpretation."
+      ]
+    };
+  }
+  return {
+    key: "accessible",
+    voiceName: "Kore",
+    promptLines: [
+      "Read this German editorial article clearly, calmly and accessibly.",
+      "Use a precise B2B newsreader voice with slightly slower pacing.",
+      "Speak German naturally and leave small pauses between sentences."
+    ]
+  };
+}
+
+function variantFields(variant = "accessible") {
+  if (variant === "natural") {
+    return {
+      url: "audioNaturalUrl",
+      path: "audioNaturalStoragePath",
+      mimeType: "audioNaturalMimeType",
+      generatedAt: "audioNaturalGeneratedAt",
+      textLength: "audioNaturalTextLength",
+      truncated: "audioNaturalTextTruncated"
+    };
+  }
+  return {
+    url: "audioAccessibleUrl",
+    path: "audioAccessibleStoragePath",
+    mimeType: "audioAccessibleMimeType",
+    generatedAt: "audioAccessibleGeneratedAt",
+    textLength: "audioAccessibleTextLength",
+    truncated: "audioAccessibleTextTruncated"
+  };
+}
+
+async function createSpeechBuffer({ title, text, variant = "accessible" }) {
   const key = geminiApiKey.value() || process.env.GEMINI_API_KEY;
   if (!key) throw new HttpsError("failed-precondition", "GEMINI_API_KEY ist nicht als Firebase Secret/Environment gesetzt.");
 
   const cleanTitle = cleanText(title || "");
   const cleanBody = cleanText(text || "");
   if (!cleanBody) throw new HttpsError("invalid-argument", "Kein Text zum Vorlesen uebergeben.");
+  const config = ttsVariantConfig(variant);
   const chunks = splitIntoChunks(cleanBody);
   const pcmBuffers = [];
 
   for (let index = 0; index < chunks.length; index += 1) {
     const prompt = [
-      "Read this German editorial article clearly, calmly and professionally.",
-      "Use a warm, informative B2B newsreader voice. Speak German naturally.",
+      ...config.promptLines,
       cleanTitle && index === 0 ? `Title: ${cleanTitle}` : "",
       chunks.length > 1 ? `Part ${index + 1} of ${chunks.length}:` : "",
       chunks[index]
@@ -100,7 +172,7 @@ async function createSpeechBuffer({ title, text }) {
           responseModalities: ["AUDIO"],
           speechConfig: {
             voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: "Kore" }
+              prebuiltVoiceConfig: { voiceName: config.voiceName }
             }
           }
         },
@@ -117,11 +189,12 @@ async function createSpeechBuffer({ title, text }) {
     if (!pcmBase64) throw new HttpsError("internal", "Gemini TTS hat keine Audiodaten geliefert.");
     pcmBuffers.push(Buffer.from(pcmBase64, "base64"));
   }
-  return { buffer: wavBufferFromPcmBuffer(Buffer.concat(pcmBuffers)), truncated: String(text || "").length > maxCharacters };
+  const pcmBuffer = Buffer.concat(pcmBuffers);
+  return { buffer: wavBufferFromPcmBuffer(pcmBuffer), pcmBuffer, truncated: String(text || "").length > maxCharacters, textLength: cleanBody.length };
 }
 
 exports.generateArticleSpeech = onCall({ region, secrets: [geminiApiKey], timeoutSeconds: 120, memory: "512MiB" }, async (request) => {
-  const speech = await createSpeechBuffer({ title: request.data?.title || "", text: request.data?.text || "" });
+  const speech = await createSpeechBuffer({ title: request.data?.title || "", text: request.data?.text || "", variant: request.data?.variant || "accessible" });
   return {
     audioBase64: speech.buffer.toString("base64"),
     mimeType: "audio/wav",
@@ -143,30 +216,55 @@ exports.generateArticleSpeechAsset = onCall({ region, secrets: [geminiApiKey], t
     const text = collection === "topics"
       ? [item.subtitle, item.longDescription, item.bodyText, item.shortDescription].filter(Boolean).join("\n\n")
       : [item.subtitle, item.bodyText, item.introText, item.shortText, item.teaserText].filter(Boolean).join("\n\n");
-    const speech = await createSpeechBuffer({ title: item.title || "", text });
+    const signature = textSignature(text);
     const bucket = getStorage().bucket(storageBucket);
-    const token = randomUUID();
-    const storagePath = `article-audio/${collection}/${id}/${Date.now()}-${id}.wav`;
-    const file = bucket.file(storagePath);
-    await file.save(speech.buffer, {
-      resumable: false,
-      contentType: "audio/wav",
-      metadata: {
-        cacheControl: "public,max-age=31536000",
-        metadata: { firebaseStorageDownloadTokens: token }
-      }
-    });
-    const audioUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
-    await ref.set({
-      audioUrl,
-      audioStoragePath: storagePath,
-      audioMimeType: "audio/wav",
-      audioGeneratedAt: FieldValue.serverTimestamp(),
+    const requestedVariant = request.data?.variant || "accessible";
+    const variants = requestedVariant === "all" ? ["accessible", "natural"] : [requestedVariant === "natural" ? "natural" : "accessible"];
+    const update = {
       audioGeneratedBy: request.auth.uid,
-      audioTextTruncated: speech.truncated,
       updatedAt: FieldValue.serverTimestamp()
-    }, { merge: true });
-    return { audioUrl, audioStoragePath: storagePath, mimeType: "audio/wav", truncated: speech.truncated };
+    };
+    const resultVariants = {};
+    for (const variant of variants) {
+      const speech = await createSpeechBuffer({ title: item.title || "", text, variant });
+      const isNatural = variant === "natural";
+      const audioBuffer = isNatural ? mp3BufferFromPcmBuffer(speech.pcmBuffer) : speech.buffer;
+      const mimeType = isNatural ? "audio/mpeg" : "audio/wav";
+      const extension = isNatural ? "mp3" : "wav";
+      const token = randomUUID();
+      const storagePath = `article-audio/${collection}/${id}/${variant}-${Date.now()}-${id}.${extension}`;
+      const file = bucket.file(storagePath);
+      await file.save(audioBuffer, {
+        resumable: false,
+        contentType: mimeType,
+        metadata: {
+          cacheControl: "public,max-age=31536000",
+          metadata: { firebaseStorageDownloadTokens: token }
+        }
+      });
+      const audioUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
+      const fields = variantFields(variant);
+      update[fields.url] = audioUrl;
+      update[fields.path] = storagePath;
+      update[fields.mimeType] = mimeType;
+      update[fields.generatedAt] = FieldValue.serverTimestamp();
+      update[fields.textLength] = speech.textLength;
+      update[fields.truncated] = speech.truncated;
+      update[`${fields.url.replace(/Url$/, "")}TextSignature`] = signature;
+      if (variant === "accessible") {
+        update.audioUrl = audioUrl;
+        update.audioStoragePath = storagePath;
+        update.audioMimeType = mimeType;
+        update.audioGeneratedAt = FieldValue.serverTimestamp();
+        update.audioTextLength = speech.textLength;
+        update.audioTextTruncated = speech.truncated;
+        update.audioTextSignature = signature;
+      }
+      resultVariants[variant] = { audioUrl, audioStoragePath: storagePath, mimeType, truncated: speech.truncated };
+    }
+    await ref.set(update, { merge: true });
+    const primary = resultVariants.accessible || resultVariants.natural;
+    return { ...primary, variants: resultVariants };
   } catch (error) {
     console.error("generateArticleSpeechAsset failed", error);
     if (error instanceof HttpsError) throw error;

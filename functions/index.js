@@ -3,11 +3,20 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const nodemailer = require("nodemailer");
 
 initializeApp();
 const db = getFirestore();
 const region = "europe-west3";
+const SMTP_HOST = defineSecret("SMTP_HOST");
+const SMTP_PORT = defineSecret("SMTP_PORT");
+const SMTP_USER = defineSecret("SMTP_USER");
+const SMTP_PASS = defineSecret("SMTP_PASS");
+const MAIL_FROM = defineSecret("MAIL_FROM");
+const MAIL_TO = defineSecret("MAIL_TO");
+const smtpSecrets = [SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM, MAIL_TO];
 
 const openaiFunctions = require("./openaiFunctions");
 Object.assign(exports, openaiFunctions);
@@ -25,6 +34,169 @@ async function queueMail(payload) {
     queuedAt: FieldValue.serverTimestamp(),
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp()
+  });
+}
+
+function clean(value = "") {
+  return String(value || "").trim();
+}
+
+function stripTags(value = "") {
+  return clean(value).replace(/[<>]/g, "");
+}
+
+function mailAddress(value = "") {
+  return clean(value).replace(/[\r\n]/g, "");
+}
+
+function formatLines(lines) {
+  return lines
+    .filter(([, value]) => clean(value))
+    .map(([label, value]) => `${label}: ${clean(value)}`)
+    .join("\n");
+}
+
+function createTransporter() {
+  const port = Number(SMTP_PORT.value() || 587);
+  const host = SMTP_HOST.value();
+  const user = SMTP_USER.value();
+  const pass = SMTP_PASS.value();
+  if (!host || !user || !pass) throw new Error("SMTP secrets fehlen.");
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    auth: { user, pass }
+  });
+}
+
+async function mailContext(mail) {
+  const [registration, membershipApplication, eventRecord] = await Promise.all([
+    mail.registrationId ? db.collection("registrations").doc(mail.registrationId).get() : null,
+    mail.membershipApplicationId ? db.collection("membershipApplications").doc(mail.membershipApplicationId).get() : null,
+    mail.eventId ? db.collection("events").doc(mail.eventId).get() : null
+  ]);
+  return {
+    registration: registration?.exists ? { id: registration.id, ...registration.data() } : null,
+    membershipApplication: membershipApplication?.exists ? { id: membershipApplication.id, ...membershipApplication.data() } : null,
+    eventRecord: eventRecord?.exists ? { id: eventRecord.id, ...eventRecord.data() } : null
+  };
+}
+
+function renderMail(mail, context = {}) {
+  const registration = context.registration || {};
+  const application = context.membershipApplication || {};
+  const eventRecord = context.eventRecord || {};
+
+  if (mail.template === "membership_application_admin") {
+    const body = [
+      "Neuer Mitgliedsantrag ueber die Website.",
+      "",
+      formatLines([
+        ["Unternehmen / Organisation", application.company],
+        ["Rechtsform", application.legalForm],
+        ["Strasse", application.street],
+        ["PLZ / Ort", application.city],
+        ["Land", application.country],
+        ["Website", application.website],
+        ["Ansprechpartner", `${clean(application.firstName)} ${clean(application.lastName)}`],
+        ["Position", application.position],
+        ["E-Mail", application.email],
+        ["Telefon", application.phone],
+        ["Mitgliedschaft", application.membershipType],
+        ["Newsletter-Einwilligung", application.newsletterConsent ? "ja" : "nein"]
+      ]),
+      "",
+      application.companyDescription ? `Kurzbeschreibung:\n${clean(application.companyDescription)}` : "",
+      application.message ? `Nachricht:\n${clean(application.message)}` : "",
+      "",
+      `Firestore-ID: ${application.id || mail.membershipApplicationId || ""}`
+    ].filter(Boolean).join("\n");
+    return { subject: mail.subject || "Neuer Mitgliedsantrag", text: body };
+  }
+
+  if (mail.template === "membership_application_received") {
+    const name = clean(`${application.firstName || ""} ${application.lastName || ""}`) || "Guten Tag";
+    return {
+      subject: mail.subject || "Ihr Mitgliedsantrag bei PROdigitalTV",
+      text: [
+        `${name},`,
+        "",
+        "vielen Dank fuer Ihren Mitgliedsantrag bei PROdigitalTV.",
+        "Wir haben Ihre Angaben erhalten und melden uns zeitnah zur weiteren Bearbeitung.",
+        "",
+        "Viele Gruesse",
+        "PROdigitalTV"
+      ].join("\n")
+    };
+  }
+
+  if (mail.template === "registration_confirmation") {
+    return {
+      subject: mail.subject || `Bitte bestaetigen Sie Ihre Anmeldung: ${eventRecord.title || registration.eventTitle || ""}`,
+      text: [
+        `Guten Tag ${clean(registration.firstName)} ${clean(registration.lastName)},`,
+        "",
+        `bitte bestaetigen Sie Ihre Anmeldung${eventRecord.title ? ` fuer "${eventRecord.title}"` : ""}.`,
+        "",
+        mail.confirmationUrl ? `Bestaetigungslink: ${mail.confirmationUrl}` : "",
+        "",
+        "Der Link ist 48 Stunden gueltig."
+      ].filter(Boolean).join("\n")
+    };
+  }
+
+  if (mail.template === "registration_confirmed") {
+    return {
+      subject: mail.subject || `Anmeldung bestaetigt: ${registration.eventTitle || eventRecord.title || ""}`,
+      text: [
+        `Guten Tag ${clean(registration.firstName)} ${clean(registration.lastName)},`,
+        "",
+        `Ihre Anmeldung${registration.eventTitle ? ` fuer "${registration.eventTitle}"` : ""} wurde bestaetigt.`,
+        "",
+        "Viele Gruesse",
+        "PROdigitalTV"
+      ].join("\n")
+    };
+  }
+
+  if (mail.template === "admin_notification") {
+    return {
+      subject: mail.subject || "Neue Anmeldung",
+      text: [
+        "Neue Event-Anmeldung.",
+        "",
+        formatLines([
+          ["Event", registration.eventTitle || eventRecord.title],
+          ["Teilnehmer", `${clean(registration.firstName)} ${clean(registration.lastName)}`],
+          ["Unternehmen", registration.company],
+          ["E-Mail", registration.email],
+          ["Status", registration.status]
+        ])
+      ].join("\n")
+    };
+  }
+
+  return {
+    subject: mail.subject || "Nachricht von PROdigitalTV",
+    text: clean(mail.text || mail.body || "Neue Nachricht aus der Website.")
+  };
+}
+
+async function sendQueuedMail(mail) {
+  const context = await mailContext(mail);
+  const rendered = renderMail(mail, context);
+  const transporter = createTransporter();
+  const from = mailAddress(MAIL_FROM.value());
+  const to = mailAddress(mail.to || MAIL_TO.value());
+  if (!from || !to) throw new Error("Absender oder Empfaenger fehlt.");
+  const replyTo = mail.replyTo || context.membershipApplication?.email || context.registration?.email;
+  return transporter.sendMail({
+    from,
+    to,
+    replyTo: replyTo ? mailAddress(replyTo) : undefined,
+    subject: stripTags(rendered.subject),
+    text: rendered.text
   });
 }
 
@@ -102,6 +274,76 @@ exports.onRegistrationCreated = onDocumentCreated({ document: "registrations/{re
     eventId: registration.eventId,
     registrationId: event.params.registrationId
   });
+});
+
+exports.onMembershipApplicationCreated = onDocumentCreated({ document: "membershipApplications/{applicationId}", region }, async (event) => {
+  const application = event.data.data();
+  if (application.status !== "new" || application.source !== "website") return;
+  const applicationId = event.params.applicationId;
+  await event.data.ref.update({
+    mailStatus: "queued",
+    updatedAt: FieldValue.serverTimestamp()
+  });
+  await queueMail({
+    type: "membership_application_admin",
+    to: "",
+    replyTo: application.email,
+    subject: `Neuer Mitgliedsantrag: ${application.company || application.email || applicationId}`,
+    template: "membership_application_admin",
+    membershipApplicationId: applicationId
+  });
+  await queueMail({
+    type: "membership_application_received",
+    to: application.email,
+    subject: "Ihr Mitgliedsantrag bei PROdigitalTV",
+    template: "membership_application_received",
+    membershipApplicationId: applicationId
+  });
+});
+
+exports.sendQueuedMail = onDocumentCreated({ document: "mailQueue/{mailId}", region, secrets: smtpSecrets }, async (event) => {
+  const mail = event.data.data();
+  if (mail.status !== "queued") return;
+  try {
+    const result = await sendQueuedMail({ id: event.params.mailId, ...mail });
+    await event.data.ref.update({
+      status: "sent",
+      sentAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      providerMessageId: result.messageId || ""
+    });
+    const updateTarget = mail.registrationId
+      ? db.collection("registrations").doc(mail.registrationId)
+      : mail.membershipApplicationId
+        ? db.collection("membershipApplications").doc(mail.membershipApplicationId)
+        : null;
+    if (updateTarget) {
+      await updateTarget.set({
+        mailStatus: "sent",
+        lastMailSentAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+  } catch (error) {
+    await event.data.ref.update({
+      status: "failed",
+      error: error.message || "Mailversand fehlgeschlagen.",
+      failedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    const updateTarget = mail.registrationId
+      ? db.collection("registrations").doc(mail.registrationId)
+      : mail.membershipApplicationId
+        ? db.collection("membershipApplications").doc(mail.membershipApplicationId)
+        : null;
+    if (updateTarget) {
+      await updateTarget.set({
+        mailStatus: "failed",
+        mailError: error.message || "Mailversand fehlgeschlagen.",
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+  }
 });
 
 exports.sendRegistrationConfirmationMail = onCall({ region }, async (request) => {

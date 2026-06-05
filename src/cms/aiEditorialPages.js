@@ -1,11 +1,14 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=253";
-import { list, getOne, upsert } from "../firebase/dataService.js?v=253";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=284";
+import { list, getOne, upsert, resetLocalCollection } from "../firebase/dataService.js?v=284";
 import { localPreviewMode } from "../firebase/firebaseClient.js";
-import { authDebugState, currentUser, canUseCms, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=253";
+import { authDebugState, currentUser, canUseCms, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=284";
+import { verified_sources as defaultVerifiedSources } from "../data/demoData.js";
+import { aiSourceCatalog } from "../data/aiSourceCatalog.js";
 import { escapeHtml, formatDateTime, formatShortDate } from "../utils/format.js";
 
 const sections = [
   ["dashboard", "Themenliste"],
+  ["press", "Presse"],
   ["articles", "Beitraege"],
   ["sources", "Quellen"],
   ["prompts", "Prompts"],
@@ -77,15 +80,32 @@ function defaultSystemPrompt(type, label) {
   const id = `ai-prompt-system-${type.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
   const promptText = type === "Themenrecherche"
     ? [
-      "Aufgabe: Erzeuge fuer die PROdigitalTV KI-Redaktion genau 10 redaktionelle Themenvorschlaege.",
-      "Jeder Vorschlag muss ein konkretes Thema aus TV, Streaming, Digitalmedien, Medienrecht, Produktion, KI, Distribution oder Vermarktung sein.",
-      "Bewerte jeden Vorschlag mit Aktualitaetsbewertung 0-100, Branchenrelevanz 0-100 und kurzer Begruendung.",
-      "Gib zusaetzlich Kategorie, moegliche Headline, kurze Subline, 5-8 Keywords, moegliche Quellenarten und Dublettenhinweis aus.",
-      "Wichtig: Aus der Themenrecherche entsteht noch kein Artikel. Die Ausgabe ist eine Vorschlagsliste fuer die Redaktion.",
-      "Nur Themen, die ein Redakteur auswaehlt, duerfen in die Themen-Queue uebernommen werden.",
+      "Aufgabe: Erzeuge fuer die PROdigitalTV KI-Redaktion nur belastbare redaktionelle Nachrichtenthemen fuer die Themenliste.",
+      "Strategie: Dies ist Stufe 1. Es entstehen keine fertigen Artikel. Die Ausgabe ist eine redaktionelle Auswahl echter aktueller Nachrichtenfunde. Der vollstaendige Beitrag wird erst in Stufe 2 nach manueller Auswahl im Editor erzeugt.",
+      "Wenn aus den Quellen nur wenige ausreichend belegbare aktuelle Nachrichtenthemen ableitbar sind, liefere wenige. Keine Luecken mit schwachen, generischen oder technischen Crawler-Funden auffuellen.",
+      "Jeder Eintrag braucht eine journalistische Headline, eine kurze Subline und einen Teaser mit 1 bis 2 Saetzen zum Nachrichteninhalt selbst: Was ist passiert und warum ist es fuer die Medienbranche relevant?",
+      "Keine Meta-Sprache in sichtbaren Feldern: nicht Themenkandidat, nicht Vorschlag, nicht redaktionell pruefen, nicht Quellenfund, nicht erklaeren wie der Fund entstanden ist.",
+      "Jeder Vorschlag muss ein konkretes Thema aus TV, Streaming, Digitalmedien, Medienrecht, Produktion, KI, Distribution, Vermarktung, HbbTV, OTT, FAST-Channels, Barrierefreiheit oder Plattformregulierung sein.",
+      "Keine Boulevardmeldungen, keine reinen Personenmeldungen, keine Programmhinweise, keine Navigationstexte, keine Sitemaps, keine Presseportal-Startseiten, keine generischen Quellenbeschreibungen.",
+      "Bewerte Aktualitaet, Branchenrelevanz und Gesamt-Relevanz jeweils 0-100.",
+      "Gib zusaetzlich Kategorie, 5-8 Keywords, Quellenkandidaten, Quellenstatus, Veroeffentlichungsdatum der Quelle falls bekannt und Dublettenhinweis aus.",
+      "Nur Themen, die ein Redakteur auswaehlt, duerfen in die Themen-Queue uebernommen und danach als Beitrag erzeugt werden.",
       "Keine Quellen, Zahlen, Studien, URLs oder Fakten erfinden. Wenn Live-Quellen fehlen, Quellenstatus als Recherche erforderlich kennzeichnen.",
-      "Ausgabeformat: JSON-Array mit 10 Objekten: title, headline, subline, category, keywords, actuality_score, industry_score, relevance_score, source_status, duplicate_hint, reason."
+      "Ausgabeformat: JSON-Array mit maximal 10 Objekten, aber nur wenn sie Qualitaet haben: title, headline, subline, teaser, category, keywords, actuality_score, industry_score, relevance_score, source_status, duplicate_status, reason, source_candidates, source_publication_date."
     ].join("\n")
+    : type === "Beitragstext"
+      ? [
+        "Aufgabe: Erstelle einen redaktionellen Kurzbeitrag fuer PROdigitalTV aus einem ausgewaehlten Thema.",
+        "Ziel: Der Beitrag soll wie ein CMS-fertiger Branchenbeitrag klingen: aktuell, serioes, leicht verstaendlich, fachlich belastbar und klar fuer TV-, Streaming-, Digital- und Medienbranche eingeordnet.",
+        "Nutze nur die gelieferten Daten aus {{THEMA}}, {{KATEGORIE}}, {{QUELLEN}}, {{HEADLINE}}, {{SUBLINE}}, {{KEYWORDS}}, {{SPRACHSTIL}}, {{TEXTLAENGE}} und {{HEUTIGES_DATUM}}.",
+        "Keine Fakten, Zahlen, Zitate, Namen, Studien, Quellen oder URLs erfinden. Wenn eine Information nicht belegbar ist, weglassen.",
+        "Der Beitragstext darf je nach Thema bis ca. 500 Woerter haben. Er beantwortet: Was ist passiert? Warum ist das fuer die Medienbranche relevant? Welche Bedeutung hat es fuer Sender, Produzenten, Plattformen, Verlage, Streaminganbieter oder regionale Medien?",
+        "Sprache: sachlich, journalistisch, klar, nicht werblich, nicht reisserisch, keine langen Schachtelsaetze. Fachbegriffe nur verwenden, wenn sie noetig sind, und kurz erklaeren.",
+        "Keine Meta-Sprache im Beitrag: nicht Arbeitsentwurf, nicht Themenkandidat, nicht Vorschlag, nicht Quellenfund, nicht redaktionell pruefen.",
+        "Ausgabeformat: Headline, Subline, Redaktioneller Beitrag, Quellen, Tags / Keywords, Relevanzbewertung, Thumbnail-Idee, CMS-Status.",
+        "CMS-Status: Veroeffentlichungsfaehig nur, wenn Quellen und Faktenlage belastbar sind. Sonst Pruefung erforderlich.",
+        "Wenn keine ausreichenden Quellen vorhanden sind, keinen scheinbar fertigen Artikel schreiben, sondern einen kurzen pruefpflichtigen Textkern mit klarer Quellenwarnung ausgeben."
+      ].join("\n")
     : [
       `Aufgabe: ${label} fuer die PROdigitalTV KI-Redaktion.`,
       "Arbeite nur mit den gelieferten Platzhaltern und CMS-Daten.",
@@ -117,6 +137,74 @@ function defaultSystemPrompt(type, label) {
 async function ensureSystemPrompts(prompts = []) {
   const existingTypes = new Set(prompts.filter((prompt) => !isArchivedPrompt(prompt)).map((prompt) => prompt.prompt_type || prompt.promptType));
   const missing = systemPromptCatalog.filter(([type]) => !existingTypes.has(type));
+  const topicSystemPrompt = prompts.find((prompt) => (prompt.prompt_type || prompt.promptType) === "Themenrecherche" && prompt.id === "ai-prompt-system-themenrecherche" && !isArchivedPrompt(prompt));
+  const topicDefault = defaultSystemPrompt("Themenrecherche", "Themenrecherche");
+  const shouldUpdateTopicPrompt = topicSystemPrompt
+    && String(topicSystemPrompt.created_by || topicSystemPrompt.createdBy || "").toLowerCase() === "system"
+    && String(topicSystemPrompt.updated_by || topicSystemPrompt.updatedBy || "System").toLowerCase() === "system"
+    && !String(topicSystemPrompt.prompt_text || topicSystemPrompt.promptText || "").includes("redaktionelle Nachrichtenthemen");
+  if (shouldUpdateTopicPrompt) {
+    const updated = {
+      ...topicSystemPrompt,
+      prompt_text: topicDefault.prompt_text,
+      system_instructions: topicDefault.system_instructions,
+      output_format: topicDefault.output_format,
+      version: Number(topicSystemPrompt.version || 1) + 1,
+      updated_at: new Date().toISOString(),
+      updated_by: "System"
+    };
+    await upsert("ai_prompts", updated);
+    await upsert("ai_prompt_versions", {
+      id: `${updated.id}-v${updated.version}`,
+      prompt_id: updated.id,
+      version: updated.version,
+      prompt_text: updated.prompt_text,
+      system_instructions: updated.system_instructions,
+      output_format: updated.output_format,
+      model: updated.model || topicDefault.model,
+      temperature: Number(updated.temperature ?? topicDefault.temperature),
+      max_tokens: Number(updated.max_tokens || topicDefault.max_tokens),
+      change_note: "Systemprompt auf zweistufige Nachrichtenthemen-Strategie aktualisiert.",
+      status: updated.status || "aktiv",
+      created_at: updated.updated_at,
+      created_by: "System"
+    });
+    prompts = prompts.map((prompt) => prompt.id === updated.id ? updated : prompt);
+  }
+  const articleSystemPrompt = prompts.find((prompt) => (prompt.prompt_type || prompt.promptType) === "Beitragstext" && prompt.id === "ai-prompt-system-beitragstext" && !isArchivedPrompt(prompt));
+  const articleDefault = defaultSystemPrompt("Beitragstext", "Texterstellung");
+  const shouldUpdateArticlePrompt = articleSystemPrompt
+    && String(articleSystemPrompt.created_by || articleSystemPrompt.createdBy || "").toLowerCase() === "system"
+    && String(articleSystemPrompt.updated_by || articleSystemPrompt.updatedBy || "System").toLowerCase() === "system"
+    && !String(articleSystemPrompt.prompt_text || articleSystemPrompt.promptText || "").includes("bis ca. 500");
+  if (shouldUpdateArticlePrompt) {
+    const updated = {
+      ...articleSystemPrompt,
+      prompt_text: articleDefault.prompt_text,
+      system_instructions: articleDefault.system_instructions,
+      output_format: "text",
+      version: Number(articleSystemPrompt.version || 1) + 1,
+      updated_at: new Date().toISOString(),
+      updated_by: "System"
+    };
+    await upsert("ai_prompts", updated);
+    await upsert("ai_prompt_versions", {
+      id: `${updated.id}-v${updated.version}`,
+      prompt_id: updated.id,
+      version: updated.version,
+      prompt_text: updated.prompt_text,
+      system_instructions: updated.system_instructions,
+      output_format: updated.output_format,
+      model: updated.model || articleDefault.model,
+      temperature: Number(updated.temperature ?? articleDefault.temperature),
+      max_tokens: Number(updated.max_tokens || articleDefault.max_tokens),
+      change_note: "Systemprompt auf CMS-fertige redaktionelle Kurzbeitraege aktualisiert.",
+      status: updated.status || "aktiv",
+      created_at: updated.updated_at,
+      created_by: "System"
+    });
+    prompts = prompts.map((prompt) => prompt.id === updated.id ? updated : prompt);
+  }
   if (!missing.length) return prompts;
   const created = missing.map(([type, label]) => defaultSystemPrompt(type, label));
   await Promise.all(created.map((prompt) => upsert("ai_prompts", prompt)));
@@ -156,7 +244,7 @@ function badge(value = "") {
     ? "danger"
     : normalized.includes("pruef") || normalized.includes("warn") || normalized.includes("teilweise") || normalized.includes("neu")
       ? "warning"
-      : normalized.includes("geprueft") || normalized.includes("freigegeben") || normalized.includes("veroeffentlicht") || normalized.includes("aktiv") || normalized.includes("bestanden")
+      : normalized.includes("geprueft") || normalized.includes("freigegeben") || normalized.includes("veroeffentlicht") || normalized.includes("aktiv") || normalized.includes("bestanden") || normalized.includes("beitrag vorhanden") || normalized.includes("beitrag erstellt")
         ? "success"
         : "neutral";
   return `<span class="ai-status ai-status--${tone}">${escapeHtml(value || "Entwurf")}</span>`;
@@ -196,14 +284,76 @@ function promptForType(prompts = [], type) {
   return latest(prompts.filter((prompt) => (prompt.prompt_type || prompt.promptType) === type && !isArchivedPrompt(prompt)), "updated_at");
 }
 
-function sourceRows(sources) {
-  return sources.map((source) => `<tr>
+function sourceRows(sources, options = {}) {
+  return sources.map((source, index) => `<tr>
+    ${options.numbered ? `<td>${index + 1}</td>` : ""}
     <td><strong>${escapeHtml(source.name || source.title || "-")}</strong><small>${escapeHtml(source.domain || "")}</small></td>
     <td>${escapeHtml(source.source_type || source.sourceType || "-")}</td>
     <td>${badge(source.source_status || source.check_status || source.review_status || "neu")}</td>
     <td>${Number(source.trust_score ?? source.suggested_trust_score ?? 0)}</td>
     <td><a class="link" href="${escapeHtml(source.url || "#")}" target="_blank" rel="noreferrer">oeffnen</a></td>
+    ${options.manageable ? `<td><button class="button button--danger button--small" type="button" data-ai-source-delete="${escapeHtml(source.id)}">Loeschen</button></td>` : ""}
   </tr>`).join("");
+}
+
+function uniqueSources(sources = []) {
+  const seen = new Set();
+  return sources.filter((source) => !source.deleted_at && !source.deletedAt && !["geloescht", "gesperrt"].includes(normalizeText(source.review_status || source.source_status || ""))).filter((source) => {
+    const key = normalizeText(source.domain || source.url || source.name || source.id || "");
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function sourcesForCategory(category = "", sources = []) {
+  const categoryKey = normalizeText(category);
+  const matching = sources
+    .filter((source) => sourceMatchesTopic(source, { category, title: category, keywords: [category] }))
+    .sort((a, b) => Number(b.trust_score || 0) - Number(a.trust_score || 0));
+  const fallback = sources
+    .filter((source) => !matching.some((match) => match.id === source.id))
+    .filter((source) => !normalizeText(source.source_status || "").includes("gesperrt") && Number(source.trust_score || 0) >= 70)
+    .sort((a, b) => {
+      const aCategoryHit = sourceCategories(a).some((item) => item.includes(categoryKey) || categoryKey.includes(item));
+      const bCategoryHit = sourceCategories(b).some((item) => item.includes(categoryKey) || categoryKey.includes(item));
+      return Number(bCategoryHit) - Number(aCategoryHit)
+        || Number(a.priority || 99) - Number(b.priority || 99)
+        || Number(b.trust_score || 0) - Number(a.trust_score || 0);
+    });
+  return uniqueSources([...matching, ...fallback]).slice(0, 20);
+}
+
+function sourceCategoryBlocks(sources = []) {
+  return topicResearchCategories
+    .filter((category) => category !== "Alle Themenbereiche")
+    .map((category) => {
+      const categorySources = sourcesForCategory(category, sources);
+      return `<details class="source-category-block" open>
+        <summary><strong>${escapeHtml(category)}</strong><span>${categorySources.length} Quellen</span></summary>
+        <div class="source-category-grid">${categorySources.map((source) => `<a class="source-category-card" href="${escapeHtml(source.url || "#")}" target="_blank" rel="noreferrer">
+          <strong>${escapeHtml(source.name || source.title || source.domain || "Quelle")}</strong>
+          <span>${escapeHtml(source.domain || "")}</span>
+          <small>${escapeHtml(source.source_type || "-")} · Trust ${Number(source.trust_score || 0)}</small>
+        </a>`).join("")}</div>
+      </details>`;
+    }).join("");
+}
+
+function verifiedSourceForm() {
+  return `<form id="ai-verified-source-form" class="form-grid source-management-form">
+    <div class="form-grid--two">
+      <div class="field"><label>Name</label><input name="name" required placeholder="z. B. HbbTV Association"></div>
+      <div class="field"><label>URL</label><input name="url" type="url" required placeholder="https://..."></div>
+      <div class="field"><label>Typ</label><input name="source_type" placeholder="Behoerde, Standard, Verband, Fachmedium"></div>
+      <div class="field"><label>Kategorie</label><select name="category">${topicResearchCategories.filter((category) => category !== "Alle Themenbereiche").map((category) => `<option>${escapeHtml(category)}</option>`).join("")}</select></div>
+      <div class="field"><label>Trust-Score</label><input name="trust_score" type="number" min="0" max="100" value="75"></div>
+      <div class="field"><label>Status</label><select name="source_status"><option>erlaubt</option><option>bevorzugt</option><option>pruefpflichtig</option><option>gesperrt</option></select></div>
+    </div>
+    <div class="field"><label>Notiz</label><textarea name="notes" placeholder="Warum ist diese Quelle fuer die Redaktion relevant?"></textarea></div>
+    <div class="actions"><button class="button button--primary">Quelle hinzufuegen</button><button class="button button--secondary" type="button" data-ai-source-auto-expand>Quellenliste automatisch erweitern</button></div>
+    <div id="ai-source-management-result"></div>
+  </form>`;
 }
 
 function sourceCards(sources) {
@@ -225,15 +375,95 @@ function sourceCards(sources) {
 
 function articleRows(articles) {
   return articles.map((article) => `<tr>
-    <td><a class="link editorial-title-link" href="#/cms/ai-editorial/editor?id=${encodeURIComponent(article.id)}">${escapeHtml(article.headline || article.title || "-")}</a><small>${escapeHtml(article.subline || article.subtitle || "")}</small></td>
+    <td><a class="link editorial-title-link" href="#/cms/ai-editorial/editor?id=${encodeURIComponent(article.id)}">${escapeHtml(article.headline || article.title || "-")}</a><small>${escapeHtml(cleanPressDisplayText(article.subline || article.subtitle || ""))}</small></td>
     <td>${badge(articleOrigin(article).label)}<small>${escapeHtml(articleOrigin(article).shortNote)}</small></td>
     <td>${escapeHtml(article.category || "-")}</td>
     <td>${badge(article.source_status || article.sourceStatus || "-")}</td>
     <td>${badge(article.duplicate_status || article.duplicateStatus || "-")}</td>
     <td>${badge(article.ai_check_status || article.aiCheckStatus || "-")}</td>
     <td>${badge(article.publication_status || article.status || "-")}</td>
-    <td>${escapeHtml(formatShortDate(article.published_at || article.publishDate || article.createdAt || ""))}</td>
+    <td>${escapeHtml(formatShortDate(articleDisplayDate(article)))}</td>
   </tr>`).join("");
+}
+
+function dateSortTime(value) {
+  if (!value) return 0;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? 0 : value.getTime();
+  if (typeof value.toDate === "function") {
+    const date = value.toDate();
+    return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+  }
+  if (typeof value === "object" && typeof value.seconds === "number") return value.seconds * 1000;
+  const raw = String(value || "").trim();
+  const german = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (german) return Date.UTC(Number(german[3]), Number(german[2]) - 1, Number(german[1]));
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function articleDisplayDate(article = {}) {
+  return article.published_at
+    || article.publishedAt
+    || article.publishDate
+    || article.original_published_at
+    || article.originalPublishedAt
+    || article.scheduled_at
+    || article.scheduledAt
+    || article.created_at
+    || article.createdAt
+    || article.updated_at
+    || article.updatedAt
+    || "";
+}
+
+function articleSortTime(article = {}) {
+  return dateSortTime(articleDisplayDate(article));
+}
+
+function sortArticlesNewestFirst(articles = []) {
+  return [...articles].sort((a, b) => articleSortTime(b) - articleSortTime(a) || String(b.id || "").localeCompare(String(a.id || "")));
+}
+
+function pressReleaseRows(releases = [], options = {}) {
+  return releases.map((release) => `<tr>
+    <td><a class="link editorial-title-link" href="${escapeHtml(release.url || "#")}" target="_blank" rel="noreferrer">${escapeHtml(release.title || "-")}</a>${pressSummaryMarkup(release.summary || release.full_text || "")}</td>
+    <td><strong>${escapeHtml(release.source_name || release.source_domain || "-")}</strong><small>${escapeHtml(release.source_domain || "")}</small></td>
+    <td>${escapeHtml(formatShortDate(release.published_at || ""))}</td>
+    <td>${Number(release.text_length || String(release.full_text || "").length || 0).toLocaleString("de-DE")}</td>
+    <td>${options.readonly ? `<span class="muted">${escapeHtml(options.readonlyLabel || "Nicht in Arbeitsliste")}</span>` : `<button class="button button--primary button--small" type="button" data-ai-press-create-article="${escapeHtml(release.id)}">Beitrag erstellen</button>`}</td>
+  </tr>`).join("");
+}
+
+function pressSummaryMarkup(value = "") {
+  const text = cleanPressDisplayText(value);
+  if (!text) return "";
+  const sentences = text
+    .split(/(?<=[.!?])\s+(?=[A-ZÄÖÜ0-9])/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const summary = sentences.length ? sentences : [text.slice(0, 420)];
+  return `<div class="press-summary">${summary.map((sentence) => `<p>${escapeHtml(sentence)}</p>`).join("")}</div>`;
+}
+
+function pressSourceStatusRows(items = []) {
+  return items.map((item) => `<tr>
+    <td><strong>${escapeHtml(item.source_name || item.source_domain || "-")}</strong><small>${escapeHtml(item.source_domain || item.source_url || "")}</small></td>
+    <td>${badge(item.status || "-")}</td>
+    <td>${Number(item.last_result_count || 0)}</td>
+    <td>${Number(item.consecutive_empty_scans || 0)}</td>
+    <td>${escapeHtml(formatShortDate(item.skip_until || "")) || "-"}</td>
+    <td>${escapeHtml(item.reason || "")}</td>
+  </tr>`).join("");
+}
+
+function cleanPressDisplayText(value = "") {
+  return String(value || "")
+    .replace(/\bpressrelease\b/gi, "")
+    .replace(/-->/g, " ")
+    .replace(/&[a-z0-9#]+;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function promptRows(prompts) {
@@ -301,13 +531,201 @@ function promptTestRows(tests) {
   </tr>`).join("");
 }
 
-function topicSuggestionRows(suggestions = []) {
-  return suggestions.map((topic) => `<tr>
-    <td><label class="checkbox"><input type="checkbox" name="topicSuggestionIds" value="${escapeHtml(topic.id)}"><span><strong>${escapeHtml(topic.title || "-")}</strong><small>${escapeHtml(topic.reason || topic.subline || "")}</small></span></label></td>
-    <td>${escapeHtml(topic.category || "-")}</td>
-    <td><strong>${Number(topic.actuality_score || 0)}</strong><small>Relevanz ${Number(topic.relevance_score || 0)}</small></td>
-    <td>${badge(topic.queue_status || topic.status || "vorgeschlagen")}</td>
-  </tr>`).join("");
+function toList(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map((item) => {
+    if (typeof item === "object" && item) return item.name || item.title || item.domain || item.url || "";
+    return String(item || "").trim();
+  }).filter((item) => item && item !== "[object Object]");
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return toList(parsed);
+    } catch {
+      return value.split(/[,;\n]/).map((item) => item.trim()).filter((item) => item && item !== "[object Object]");
+    }
+  }
+  return [];
+}
+
+function normalizeText(value = "") {
+  return String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function sourceCategories(source = {}) {
+  return toList(source.default_for_categories || source.defaultForCategories)
+    .concat(toList(source.category))
+    .map(normalizeText);
+}
+
+function sourceMatchesTopic(source = {}, topic = {}) {
+  const sourceStatus = normalizeText(source.source_status || source.sourceStatus || "");
+  if (sourceStatus.includes("gesperrt")) return false;
+  if (Number(source.trust_score || source.suggested_trust_score || 0) < 70) return false;
+  const topicCategory = normalizeText(topic.category || "");
+  const topicWords = [
+    topic.title,
+    topic.headline,
+    topic.subline,
+    topic.reason,
+    ...toList(topic.keywords || topic.tags)
+  ].map(normalizeText).join(" ");
+  const sourceText = [
+    source.name,
+    source.title,
+    source.domain,
+    source.source_type,
+    source.category,
+    source.notes,
+    ...sourceCategories(source)
+  ].map(normalizeText).join(" ");
+  if (topicCategory && (sourceText.includes(topicCategory) || sourceCategories(source).some((category) => topicCategory.includes(category) || category.includes(topicCategory)))) return true;
+  return topicWords.split(/\s+/).filter((word) => word.length > 3).some((word) => sourceText.includes(word));
+}
+
+function sourceLooksGerman(source = {}) {
+  const text = normalizeText([source.id, source.name, source.title, source.domain, source.url, source.country, source.language, source.notes].join(" "));
+  const domain = normalizeText(source.domain || source.url || "");
+  if (/(c2pa\.org|w3\.org|smpte\.org|etsi\.org|iabtechlab\.com|tech\.ebu\.ch|access-board\.gov)/.test(domain)) return false;
+  const country = normalizeText(source.country || "");
+  const language = normalizeText(source.language || "");
+  const germanNamed = /(ard|zdf|deutschlandradio|vaunet|bitkom|anga|agf|agma|gema|bsi|fraunhofer|medienanstalten|dwdl|meedia|prosieben|seven one|kress|funke|horizont|wuv|telekom|vodafone deutschland|medienboard|ffa|produzentenallianz|golem|heise|digital fernsehen|infosat|netzpolitik|medienpolitik)/.test(text);
+  const germanDomain = domain.endsWith(".de") || domain.includes(".de/") || /(bund\.de|bundes|deutschland|gema\.de|zdf\.de|ard\.de)/.test(domain);
+  const germanCountry = /^(de|deutschland|germany|at|oesterreich|osterreich|austria|ch|schweiz|switzerland)$/.test(country);
+  if (/\b(france|franzoesisch|franzosisch|french|usa|u s |uk |british|global|international|world)\b/.test(text) && !germanNamed && !germanDomain && !germanCountry) return false;
+  return germanNamed || germanDomain || germanCountry || (language.includes("deutsch") && (germanNamed || germanDomain || germanCountry));
+}
+
+function verifiedSourceLinks(topic = {}, verifiedSources = []) {
+  const sources = verifiedSources
+    .filter((source) => sourceMatchesTopic(source, topic))
+    .sort((a, b) => Number(b.trust_score || 0) - Number(a.trust_score || 0))
+    .slice(0, 3);
+  if (sources.length) return sources;
+  return verifiedSources
+    .filter((source) => !normalizeText(source.source_status || "").includes("gesperrt") && Number(source.trust_score || 0) >= 70)
+    .sort((a, b) => Number(a.priority || 99) - Number(b.priority || 99) || Number(b.trust_score || 0) - Number(a.trust_score || 0))
+    .slice(0, 3);
+}
+
+function topicSourceCandidates(topic = {}) {
+  const raw = topic.source_candidates || topic.sourceCandidates || topic.quellen || topic.sources;
+  if (!Array.isArray(raw)) return [];
+  return raw.map((source) => {
+    if (typeof source === "string") return { name: source.trim(), url: "" };
+    return {
+      name: String(source?.name || source?.title || source?.publisher || source?.domain || "").trim(),
+      url: String(source?.url || "").trim(),
+      trust_score: source?.trust_score || source?.trustScore || "",
+      note: String(source?.note || source?.relevance_note || source?.relevanceNote || "").trim()
+    };
+  }).filter((source) => source.name).slice(0, 4);
+}
+
+function topicSourceDate(topic = {}) {
+  const date = topic.source_publication_date || topic.sourcePublicationDate || topic.source_published_at || topic.sourcePublishedAt || "";
+  if (!date) return `<small class="topic-source-date topic-source-date--missing">Veroeffentlichungsdatum: nicht ermittelt</small>`;
+  return `<small class="topic-source-date">Veroeffentlicht: ${escapeHtml(formatShortDate(date) || date)}</small>`;
+}
+
+function topicSourceSummary(topic = {}, verifiedSources = []) {
+  const sourceHints = toList(topic.possible_sources || topic.possibleSources || topic.sources || topic.sources_json);
+  const candidates = topicSourceCandidates(topic);
+  const verified = candidates.length ? candidates : verifiedSourceLinks(topic, verifiedSources);
+  const status = topic.source_status || topic.sourceStatus || "Quellenrecherche erforderlich";
+  if (verified.length) {
+    return `<div class="topic-source-list topic-source-list--verified">${verified.map((source) => {
+      const label = escapeHtml(source.name || source.title || source.domain || "Quelle");
+      const trust = source.trust_score ? `<small>Trust ${Number(source.trust_score || 0)}</small>` : "";
+      return source.url
+        ? `<a href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${label}${trust}</a>`
+        : `<span>${label}${trust}</span>`;
+    }).join("")}</div>${topicSourceDate(topic)}${sourceHints.length ? `<small>Hinweis: ${escapeHtml(sourceHints.slice(0, 3).join(", "))}</small>` : ""}<small>${escapeHtml(status)}</small>`;
+  }
+  if (!sourceHints.length) return `<span class="topic-source-status">${escapeHtml(status)}</span>`;
+  return `<div class="topic-source-list">${sourceHints.slice(0, 4).map((source) => `<span>${escapeHtml(source)}</span>`).join("")}</div>${topicSourceDate(topic)}<small>${escapeHtml(status)}</small>`;
+}
+
+function topicKeywordChips(topic = {}) {
+  const keywords = toList(topic.keywords || topic.tags || topic.keyword_json);
+  if (!keywords.length) return "";
+  return `<div class="topic-keyword-chips">${keywords.slice(0, 6).map((keyword) => `<span>${escapeHtml(keyword)}</span>`).join("")}</div>`;
+}
+
+function topicPrimarySourceUrl(topic = {}) {
+  const candidate = topicSourceCandidates(topic).find((source) => /^https?:\/\//i.test(source.url || ""));
+  if (candidate?.url) return candidate.url;
+  const rawUrl = topic.source_url || topic.sourceUrl || topic.url || "";
+  return /^https?:\/\//i.test(rawUrl) ? rawUrl : "";
+}
+
+function topicHeadlineLink(topic = {}) {
+  const label = escapeHtml(topic.title || topic.headline || "-");
+  const url = topicPrimarySourceUrl(topic);
+  if (!url) return `<strong>${label}</strong>`;
+  return `<a class="topic-headline-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" title="Quelle oeffnen" onclick="event.stopPropagation()"><strong>${label}</strong></a>`;
+}
+
+function fallbackNewsTeaser(topic = {}) {
+  const title = String(topic.title || topic.headline || "").trim();
+  const key = normalizeText(title);
+  const sources = topicSourceCandidates(topic).map((source) => source.name).filter(Boolean);
+  const source = sources[0] || "";
+  if (key.includes("kompass") && key.includes("qualitaet") && key.includes("zdf")) return "Das ZDF stellt Orientierung fuer Qualitaet in seinen Angeboten in den Mittelpunkt.";
+  if (key.includes("medien fuer vielfalt") || key.includes("diversitaet")) return "Medienanbieter diskutieren, wie Vielfalt, Teilhabe und Verantwortung in Redaktion und Programm sichtbarer werden.";
+  if (key.includes("re publica") || key.includes("gerechte ki")) return "ARD und ZDF greifen die Debatte ueber gerechte KI und Vielfalt in digitalen Medien auf.";
+  if (key.includes("fakten impulse") || key.includes("forschungsportal")) return "Die Medienanstalten buendeln Forschung und Einordnung zu aktuellen Fragen der Medienaufsicht.";
+  if (source) return `${source} meldet eine Entwicklung mit Relevanz fuer die Medienbranche.`;
+  return title ? (title.endsWith(".") ? title : `${title}.`) : "";
+}
+
+function topicTeaserText(topic = {}) {
+  const explicit = topic.teaser || topic.teaser_text || topic.teaserText || topic.short_text || topic.shortText || topic.summary;
+  const text = String(explicit || "").trim();
+  if (text && !/themenkandidat|themenvorschlag|redaktionell pruefen|quellenfund|vorschlag basiert/i.test(text)) return text;
+  return fallbackNewsTeaser(topic);
+}
+
+function topicDecision(topic = {}) {
+  const stored = String(topic.editorial_decision || topic.review_status || topic.queue_status || "").toLowerCase();
+  if (stored.includes("nicht") || stored.includes("abgelehnt")) return "not_recommended";
+  if (stored.includes("pruef") || stored.includes("prüf") || stored.includes("ergaenz") || stored.includes("ergänz")) return "review";
+  if (stored.includes("ok") || stored.includes("freigegeben")) return "ok";
+  const actuality = Number(topic.actuality_score || 0);
+  const relevance = Number(topic.relevance_score || topic.industry_score || 0);
+  const sourceStatus = String(topic.source_status || "").toLowerCase();
+  const duplicateStatus = String(topic.duplicate_status || topic.duplicateStatus || "").toLowerCase();
+  if (duplicateStatus.includes("dublette") || sourceStatus.includes("gesperrt") || sourceStatus.includes("unzureichend") || actuality < 45 || relevance < 45) return "not_recommended";
+  if (sourceStatus.includes("ungeprueft") || sourceStatus.includes("ungeprüft") || sourceStatus.includes("pruefpflichtig") || sourceStatus.includes("prüfpflichtig") || actuality < 70 || relevance < 70) return "review";
+  return "ok";
+}
+
+function topicSuggestionRows(suggestions = [], verifiedSources = [], options = {}) {
+  const articles = options.articles || [];
+  return suggestions.map((topic) => {
+    const publicationState = topicPublicationState(topic, articles);
+    const rowClasses = [
+      "topic-suggestion-row",
+      `topic-suggestion-row--${topicDecision(topic)}`,
+      publicationState.hasArticle ? "topic-suggestion-row--article" : ""
+    ].filter(Boolean).join(" ");
+    const actionCell = options.readonly
+      ? `<span class="muted">${publicationState.hasArticle ? "Beitrag vorhanden" : "Nicht in Arbeitsliste"}</span>`
+      : publicationState.hasArticle
+        ? `<span class="ai-status ai-status--success">Beitrag erstellt</span>`
+        : `<button class="button button--primary button--small" type="button" data-ai-topic-create-article="${escapeHtml(topic.id)}">Beitrag erstellen</button>`;
+    return `<tr class="${rowClasses}">
+    <td>
+      ${options.readonly ? `${topicHeadlineLink(topic)}<small>${escapeHtml(topic.subline || topic.headline || "")}</small>` : `<label class="checkbox topic-checkbox"><input type="checkbox" name="topicSuggestionIds" value="${escapeHtml(topic.id)}"><span>${topicHeadlineLink(topic)}<small>${escapeHtml(topic.subline || topic.headline || "")}</small></span></label>`}
+      <p class="topic-suggestion-reason">${escapeHtml(topicTeaserText(topic))}</p>
+      ${topicKeywordChips(topic)}
+    </td>
+    <td><strong>${escapeHtml(topic.category || "-")}</strong>${topicSourceSummary(topic, verifiedSources)}</td>
+    <td><strong>${Number(topic.actuality_score || 0)}</strong><small>Relevanz ${Number(topic.relevance_score || 0)}</small><small>Branche ${Number(topic.industry_score || 0)}</small></td>
+    <td>${badge(publicationState.label)}${badge(topic.queue_status || topic.review_status || topic.status || (options.readonly ? "gespeichert" : "vorgeschlagen"))}</td>
+    <td>${actionCell}</td>
+  </tr>`;
+  }).join("");
 }
 
 function sortTopicSuggestions(suggestions = []) {
@@ -338,6 +756,106 @@ function logRows(logs) {
   </tr>`).join("");
 }
 
+function rawTopicRows(items = []) {
+  return items.map((item) => `<tr>
+    <td><strong>${escapeHtml(item.source_name || item.sourceName || "-")}</strong><small>${escapeHtml(item.source_domain || item.sourceDomain || "")}</small></td>
+    <td><strong>${escapeHtml(item.title || "-")}</strong><small>${badge(item.raw_type === "source_scan" || item.rawType === "source_scan" ? "Quelle geparst" : "Veroeffentlichung")}</small><small>${escapeHtml(String(item.summary || "").replace(/Feed-\/News-\/Presse-Fund/g, "Feed-/News-Fund").replace(/Feed-\/News-\/Presse-Fund erkannt/g, "Feed-/News-Fund erkannt"))}</small></td>
+    <td>${escapeHtml(formatShortDate(item.published_at || item.publishedAt || "") || "nicht ermittelt")}</td>
+    <td>${item.url ? `<a class="link" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">oeffnen</a>` : "-"}</td>
+    <td>${(item.suggested_topic_titles || item.suggestedTopicTitles || []).length ? (item.suggested_topic_titles || item.suggestedTopicTitles).map((title) => `<span class="ai-status ai-status--success">${escapeHtml(title)}</span>`).join(" ") : badge(item.assignment_status || item.assignmentStatus || "Rawfund")}</td>
+  </tr>`).join("");
+}
+
+function isPressTopicRawItem(item = {}) {
+  const title = normalizeText(item.title || "");
+  const url = normalizeText(item.url || "");
+  const source = normalizeText(`${item.source_name || item.sourceName || ""} ${item.source_domain || item.sourceDomain || ""}`);
+  const explicit = `${title} ${url}`;
+  if (/(pressemitteilung|pressemeldung|pressekontakt|pressebereich|presseportal|press release|pressmeldung)/.test(explicit)) return true;
+  if (/(^|\s)presse(\s|$)/.test(title) && !title.includes("pressefreiheit")) return true;
+  if (/(\/|-|_)presse(\/|-|_|$)|press-releases?|pressroom|newsroom\/press/.test(url)) return true;
+  return /presseportal|press release/.test(source);
+}
+
+function topicKeywordStats(topics = []) {
+  const stats = new Map();
+  topics.forEach((topic) => {
+    const topicKeywords = toList(topic.keywords || topic.tags || topic.keyword_json);
+    topicKeywords.forEach((keyword) => {
+      const label = String(keyword || "").trim();
+      const key = normalizeText(label);
+      if (!key || key.length < 2) return;
+      const existing = stats.get(key) || {
+        keyword: label,
+        key,
+        count: 0,
+        maxRelevance: 0,
+        categories: new Set(),
+        topics: []
+      };
+      existing.count += 1;
+      existing.maxRelevance = Math.max(existing.maxRelevance, Number(topic.relevance_score || topic.actuality_score || topic.industry_score || 0));
+      if (topic.category) existing.categories.add(topic.category);
+      if (topic.title || topic.headline) existing.topics.push(topic.title || topic.headline);
+      stats.set(key, existing);
+    });
+  });
+  return [...stats.values()].sort((a, b) => b.count - a.count || b.maxRelevance - a.maxRelevance || a.keyword.localeCompare(b.keyword));
+}
+
+function topicKeywordRows(items = []) {
+  return items.map((item) => `<tr>
+    <td><a class="editorial-title-link" href="#/cms/ai-editorial/keywords?keyword=${encodeURIComponent(item.key || normalizeText(item.keyword))}"><strong>${escapeHtml(item.keyword)}</strong></a><small>${escapeHtml([...item.categories].slice(0, 4).join(", ") || "ohne Kategorie")}</small></td>
+    <td>${item.count}</td>
+    <td>${Math.round(item.maxRelevance)}</td>
+    <td>${item.topics.slice(0, 3).map((topic) => `<span class="ai-status ai-status--neutral">${escapeHtml(topic)}</span>`).join(" ")}</td>
+  </tr>`).join("");
+}
+
+function topicPublicationState(topic = {}) {
+  const queueStatus = normalizeText(`${topic.queue_status || ""} ${topic.status || ""}`);
+  const isNotTaken = queueStatus.includes("nicht uebernommen") || queueStatus.includes("nicht ubernommen");
+  if (!isNotTaken && queueStatus.includes("uebernommen")) return { label: "Beitrag erstellt", tone: "success", hasArticle: true };
+  if (queueStatus.includes("kandidat")) return { label: "in Beitragsliste", tone: "warning", hasArticle: false };
+  if (queueStatus.includes("abgelehnt") || queueStatus.includes("zurueck")) return { label: "nicht empfohlen", tone: "danger", hasArticle: false };
+  return { label: "nicht veroeffentlicht", tone: "neutral", hasArticle: false };
+}
+
+function isUsableTopicSuggestion(topic = {}) {
+  const title = normalizeText(`${topic.title || ""} ${topic.headline || ""}`);
+  const text = normalizeText([
+    topic.title,
+    topic.headline,
+    topic.subline,
+    topic.teaser,
+    topic.reason,
+    topic.category,
+    topic.source_status,
+    topic.source_url,
+    topic.sourceUrl,
+    ...(Array.isArray(topic.source_names) ? topic.source_names : []),
+    ...(Array.isArray(topic.sourceNames) ? topic.sourceNames : [])
+  ].filter(Boolean).join(" "));
+  if (!title) return false;
+  if (/skip to .*content|main content|zum inhalt springen|direkt zum seiteninhalt|ansprechpartner|redaktionelle fragen|presseportal|untermenue|hauptmenue|einstellungen ausblenden|winter olympics|olympics|software based environment|strengthening sovereignty|resilience/.test(title)) return false;
+  if (/(presseimport|importierte presse|pressemitteilung|pressemeldung|pressekontakt|presseinformationen|pressebereich|presseportal|presse abonnieren|interner link|newsletter|anmeldung|registrierung|ticket|veranstaltung|veranstaltungen|termin|event|webinar|messe|konferenz|save the date|presseeinladung)/.test(text)) return false;
+  if (/(passwort vergessen|hilfe bekommen|formel 1|rtl deutschland|rtl|mallorca|bachelor|dschungel|gzsz|alles was zaehlt|unter uns|lets dance|sport|olympics|winter olympics)/.test(text)) return false;
+  if (/(^|\s)(presse|aktuelles|newsroom|pressemitteilungen|presseinformationen|anmeldung|inhalt)(\s|$)/.test(title)) return false;
+  return true;
+}
+
+function keywordTopicRows(topics = [], articles = []) {
+  return topics.map((topic) => {
+    const state = topicPublicationState(topic, articles);
+    return `<tr>
+      <td><strong>${escapeHtml(topic.title || topic.headline || "-")}</strong><small>${escapeHtml(topic.subline || topic.reason || "")}</small></td>
+      <td>${escapeHtml(topic.category || "-")}</td>
+      <td>${Math.round(Number(topic.relevance_score || topic.actuality_score || 0))}</td>
+      <td>${badge(state.label)}</td>
+    </tr>`;
+  }).join("");
+}
+
 function isAiEditorialArticle(item = {}) {
   return item.author_type === "ai"
     || item.authorType === "ai"
@@ -352,6 +870,37 @@ function isAiEditorialArticle(item = {}) {
     || Boolean(item.duplicate_status)
     || Boolean(item.ai_check_status)
     || Boolean(item.publication_status);
+}
+
+function isLowQualityPressImportArticle(item = {}) {
+  if (!(item.imported_press_release_id || item.ai_log_json?.import_flow === "german_press_release_import" || item.category === "Presseimport")) return false;
+  const title = normalizeText(item.title || item.headline || "");
+  const text = normalizeText([item.title, item.headline, item.subline, item.introText, item.bodyText].join(" ")).slice(0, 1800);
+  if (/^(aktuelles|kurzmeldung|pressemitteilungen?|pressemittelungen?|pressemiteilungen?|presseinformationen?|pressekontakt|anmeldung)\b/.test(title)) return true;
+  if (/(^der .+verlagsgruppe$|pressekontakt|presseinformationen|pressemitteilungen und publikationen|pressemeldungen.*positionen.*publikationen|newsroom|unser newsroom|veranstaltung|filme und animationen|infomaterialien|broschueren|anmeldung|newsletter|pressetexte 20\d{2}|presse \| bpb|positionspapiere|unsere kopfe|unsere koepfe|aktuelles hier finden sie aktuelle veroffentlichungen|aktuelles hier finden sie aktuelle veroeffentlichungen)/.test(title)) return true;
+  return /(cookie|newsletter abonnieren|zum inhalt springen|pressekontakt|ihre anmeldung|datenschutz|impressum|hauptnavigation|servicenavigation|suchfeld|presse fotos logos banner|filter themen alle anzeigen)/.test(text)
+    && !/(pressemitteilung|pressemeldung).{20,}(medien|sender|streaming|produktion|digital|tv|plattform|ki|vermarktung)/.test(text);
+}
+
+function isLowQualityPressRelease(item = {}) {
+  const title = normalizeText(item.title || "").replace(/[^a-z0-9]+/g, " ").trim();
+  const text = normalizeText([item.title, item.summary, item.full_text, item.url].join(" ")).replace(/[^a-z0-9]+/g, " ").slice(0, 2600);
+  const words = title.split(/\s+/).filter((word) => word.length > 2);
+  if (words.length < 4) return true;
+  if (/^pressemitteilung( vom| am| zu)?\b|^pressemittelung( vom| am| zu)?\b|^pressemiteilung( vom| am| zu)?\b|^pressemeldung( vom| am| zu)?\b|^presseinformation( vom| am| zu)?\b/.test(title)) return true;
+  if (/^(aktuelles|kurzmeldung|presse|pressekontakt|pressemitteilungen?|pressemittelungen?|pressemiteilungen?|presseinformationen?|presse informationen|presseinformation|newsroom|veranstaltung|anmeldung)\b/.test(title)) return true;
+  if (/^der .+verlagsgruppe$/.test(title)) return true;
+  if (/(pressekontakt|presseinformationen|presse informationen|pressemitteilungen und publikationen|pressemeldungen.*positionen.*publikationen|newsroom|unser newsroom|veranstaltung|termin|event|messe|webinar|konferenz|fachtagung|kongress|presseeinladung|einladung|save the date|filme und animationen|infomaterialien|broschueren|anmeldung|newsletter|pressetexte 20\d{2}|presse bpb de|positionspapiere|unsere kopfe|unsere koepfe|aktuelles hier finden sie aktuelle veroffentlichungen|aktuelles hier finden sie aktuelle veroeffentlichungen)/.test(title)) return true;
+  if (/\b(veranstaltung|veranstaltungen|termin|termine|event|messe|webinar|konferenz|fachtagung|kongress|presseeinladung|einladung|save the date|livestream|besuchen sie uns|findet am|findet vom|diskutieren auf der|auf der re publica|re publica 20\d{2})\b/.test(text)) return true;
+  return /(cookie|newsletter abonnieren|zum inhalt springen|pressekontakt|ihre anmeldung|datenschutz|impressum|hauptnavigation|servicenavigation|suchfeld|presse fotos logos banner|filter themen alle anzeigen|download pdf)/.test(text)
+    && !/(pressemitteilung|pressemeldung).{20,}(medien|sender|streaming|produktion|digital|tv|plattform|ki|vermarktung|audio|video|standard)/.test(text);
+}
+
+function isDuplicatePressRelease(item = {}) {
+  const status = normalizeText([item.duplicate_status, item.duplicateStatus].join(" "));
+  if (!status) return false;
+  if (/(keine dublette|kein duplikat|no duplicate|not duplicate|unique)/.test(status)) return false;
+  return /\b(dublette|duplikat|duplicate)\b/.test(status);
 }
 
 function articleOrigin(article = {}) {
@@ -577,11 +1126,16 @@ function demoModeNotice() {
 
 export async function aiEditorialPage(section = "dashboard", query = new URLSearchParams()) {
   const active = section || "dashboard";
+  const resetLocalTopics = query.get("resetTopics") === "1";
+  if (resetLocalTopics) {
+    resetLocalCollection("ai_topic_suggestions");
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#/cms/ai-editorial/dashboard`);
+  }
   let user = currentUser();
   if (!canUseCms(user)) user = await waitForAuthReady();
   if (!canUseCms(user)) user = await refreshAuthToken(true);
   if (!canUseCms(user)) return protect("");
-  let [articles, sources, prompts, promptTests, keywords, logs, settingsRecord, topicSuggestions, topicQueue] = await Promise.all([
+  let [articles, sources, prompts, promptTests, keywords, logs, settingsRecord, topicSuggestions, topicQueue, topicRawData, pressReleases, pressSourceStatus, pressImportRuns] = await Promise.all([
     list("editorialContent"),
     list("verified_sources"),
     list("ai_prompts"),
@@ -590,10 +1144,15 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
     list("ai_editorial_logs"),
     getOne("settings", "aiEditorial"),
     list("ai_topic_suggestions"),
-    list("ai_topic_queue")
+    list("ai_topic_queue"),
+    list("ai_topic_raw_data"),
+    list("ai_press_releases"),
+    list("ai_press_source_status"),
+    list("ai_press_import_runs")
   ]);
+  sources = uniqueSources([...sources, ...defaultVerifiedSources, ...aiSourceCatalog]);
   prompts = await ensureSystemPrompts(prompts);
-  const aiArticles = articles.filter(isAiEditorialArticle);
+  const aiArticles = sortArticlesNewestFirst(articles.filter(isAiEditorialArticle).filter((article) => !isLowQualityPressImportArticle(article)));
   const sourceSuggestions = sources.filter((source) => source.suggested_by_ai || ["vorgeschlagen", "in Pruefung", "neu", "ungeprueft"].includes(source.review_status));
   const settings = {
     automationEnabled: false,
@@ -605,8 +1164,28 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
   };
   const latestArticle = latest(aiArticles);
   const latestLog = latest(logs, "created_at");
-  const openSuggestions = sortTopicSuggestions(topicSuggestions.filter((topic) => !["uebernommen", "abgelehnt", "ersetzt", "archiviert"].includes(topic.queue_status || topic.status)));
+  const latestPressRun = latest(pressImportRuns, "updated_at");
+  const visiblePressReleases = pressReleases.filter((release) => !isLowQualityPressRelease(release) && !isDuplicatePressRelease(release));
+  const duplicatePressReleases = pressReleases.filter(isDuplicatePressRelease);
+  const filteredPressReleases = pressReleases.filter((release) => isLowQualityPressRelease(release) && !isDuplicatePressRelease(release));
+  const secondaryPressReleases = [...duplicatePressReleases, ...filteredPressReleases];
+  const sortedPressReleases = [...visiblePressReleases].sort((a, b) => String(b.published_at || b.imported_at || "").localeCompare(String(a.published_at || a.imported_at || "")));
+  const sortedSecondaryPressReleases = [...secondaryPressReleases].sort((a, b) => String(b.published_at || b.imported_at || "").localeCompare(String(a.published_at || a.imported_at || "")));
+  const sortedPressSourceStatus = [...pressSourceStatus].sort((a, b) => {
+    const aPaused = String(a.status || "").includes("pausiert") ? 0 : 1;
+    const bPaused = String(b.status || "").includes("pausiert") ? 0 : 1;
+    return aPaused - bPaused || Number(b.consecutive_empty_scans || 0) - Number(a.consecutive_empty_scans || 0) || String(a.source_name || "").localeCompare(String(b.source_name || ""), "de");
+  });
+  const openSuggestions = sortTopicSuggestions(topicSuggestions.filter((topic) => isUsableTopicSuggestion(topic) && !["abgelehnt", "archiviert"].includes(topic.queue_status || topic.status)));
+  const openSuggestionIds = new Set(openSuggestions.map((topic) => topic.id));
+  const secondaryTopicSuggestions = sortTopicSuggestions(topicSuggestions.filter((topic) => !openSuggestionIds.has(topic.id) && isUsableTopicSuggestion(topic)));
   const queuedTopics = topicQueue.filter((topic) => !["erledigt", "abgelehnt"].includes(topic.status));
+  const topicKeywords = topicKeywordStats([...topicSuggestions, ...topicQueue]);
+  const selectedKeyword = normalizeText(query.get("keyword") || "");
+  const selectedKeywordLabel = topicKeywords.find((keyword) => keyword.key === selectedKeyword)?.keyword || query.get("keyword") || "";
+  const selectedKeywordTopics = selectedKeyword
+    ? [...topicSuggestions, ...topicQueue].filter((topic) => toList(topic.keywords || topic.tags || topic.keyword_json).some((keyword) => normalizeText(keyword) === selectedKeyword))
+    : [];
   const editorId = query.get("id");
   const loadedArticle = editorId ? aiArticles.find((item) => item.id === editorId) || await getOne("editorialContent", editorId) : null;
   const articleForEditor = loadedArticle && isAiEditorialArticle(loadedArticle) ? loadedArticle : null;
@@ -615,20 +1194,42 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
   }
   const createLabel = localPreviewMode() ? "Demo-Beitrag erzeugen" : "KI-Beitrag jetzt erzeugen";
   const headerActions = "";
-  const topicResearchPanel = `<section class="panel ai-topic-research-panel"><h2>Themenrecherche</h2><p class="muted">Die KI erstellt zuerst 10 Themenvorschlaege mit Aktualitaetsbewertung. Quellen- und Dublettenpruefung erfolgen automatisch im Editor nach Auswahl eines Beitrags.</p><div class="form-grid--two ai-topic-research-controls"><div class="field"><label>Kategorie</label><select id="ai-topic-research-category">${topicResearchCategories.map((category) => `<option value="${category === "Alle Themenbereiche" ? "" : escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}</select></div><div class="field"><label>Stichworte</label><input id="ai-topic-research-keywords" placeholder="z. B. FAST, GEMA, Voice-Cloning"></div></div><div class="ai-picto-row">${pictogram("?", "Recherche starten", "data-ai-topic-research")}</div><div id="ai-topic-research-result"></div>${openSuggestions.length ? `<form id="ai-topic-suggestions-form"><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema</th><th>Kategorie</th><th>Aktualitaet</th><th>Status</th></tr></thead><tbody>${topicSuggestionRows(openSuggestions.slice(0, 10))}</tbody></table></div><div class="actions"><button class="button button--primary">OK - ausgewaehlte als Beitraege anlegen</button></div></form>` : `<div class="alert">Noch keine offenen Themenvorschlaege. Starte eine Themenrecherche.</div>`}</section><section class="panel"><h2>Themen-Queue</h2><div class="table-wrap"><table class="table"><thead><tr><th>Thema</th><th>Kategorie</th><th>Aktualitaet</th><th>Status</th><th>Datum</th></tr></thead><tbody>${queuedTopics.length ? topicQueueRows(queuedTopics) : `<tr><td colspan="5">Noch keine Themen in der Queue.</td></tr>`}</tbody></table></div></section>`;
+  const topicRawDataForTopics = topicRawData.filter((item) => !isPressTopicRawItem(item));
+  const rawTopicDataTable = `<details class="topic-raw-data-details"><summary><strong><span class="raw-toggle-label raw-toggle-label--show">Rawdaten anzeigen</span><span class="raw-toggle-label raw-toggle-label--hide">Rawdaten verbergen</span></strong><span>${topicRawDataForTopics.length} Rows aus Quellenrecherche</span></summary><div class="editorial-field-head"><p class="muted">Gespeicherte Rohdaten der Themenrecherche: geparste Quellen, gefundene Veroeffentlichungen und spaetere Zuordnung zu Themenvorschlaegen.</p>${topicRawData.length ? `<button class="button button--danger button--small" type="button" data-ai-topic-raw-clear>Rawdaten loeschen</button>` : ""}</div><div class="table-wrap"><table class="table table--topic-raw-data"><thead><tr><th>Quelle</th><th>Fund / Thema</th><th>Datum</th><th>Link</th><th>Zuordnung</th></tr></thead><tbody>${topicRawDataForTopics.length ? rawTopicRows([...topicRawDataForTopics].sort((a, b) => String(b.created_at || b.createdAt || "").localeCompare(String(a.created_at || a.createdAt || ""))).slice(0, 120)) : `<tr><td colspan="5">Noch keine Rawdaten gespeichert. Starte eine Themenrecherche.</td></tr>`}</tbody></table></div></details>`;
+  const sourceOptions = sources
+    .filter((source) => !String(source.source_status || source.review_status || "").toLowerCase().includes("gesperrt"))
+    .filter(sourceLooksGerman)
+    .sort((a, b) => String(a.name || a.title || a.domain || "").localeCompare(String(b.name || b.title || b.domain || ""), "de"))
+    .map((source) => {
+      const value = source.id || source.domain || source.url || source.name || "";
+      const label = [source.name || source.title || source.domain || "Quelle", source.domain].filter(Boolean).join(" - ");
+      return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+    }).join("");
+  const secondaryTopicSection = secondaryTopicSuggestions.length ? `<details class="press-hidden-details topic-secondary-details"><summary><strong>Gespeicherte Themen ausserhalb der Arbeitsliste</strong><span>${secondaryTopicSuggestions.length} uebernommen, zurueckgestellt oder ausgefiltert</span></summary><p class="muted">Diese Themen bleiben gespeichert, werden aber nicht fuer die direkte Beitragserstellung angeboten.</p><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema / Einordnung</th><th>Kategorie / Quellenhinweis</th><th>Einschaetzung</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${topicSuggestionRows(secondaryTopicSuggestions.slice(0, 120), sources, { readonly: true, articles: aiArticles })}</tbody></table></div></details>` : "";
+  const topicResearchPanel = `<section class="panel ai-topic-research-panel"><div class="ai-topic-research-hero"><div class="ai-topic-research-copy"><p class="eyebrow">KI-Redaktion</p><h2>Themenrecherche</h2><p>Erstellt nur belastbare Themenvorschlaege aus den hinterlegten Quellen. Wenige gute Kandidaten sind besser als viele schwache Treffer.</p><div class="ai-topic-research-facts"><span>Quellenrotation</span><span>Aktualitaet</span><span>Branchenrelevanz</span></div></div><div class="ai-topic-research-card"><div class="ai-topic-research-controls ai-topic-research-controls--compact"><div class="field"><label>Themenbereich</label><select id="ai-topic-research-category">${topicResearchCategories.map((category) => `<option value="${category === "Alle Themenbereiche" ? "" : escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}</select></div><div class="field"><label>Quelle</label><select id="ai-topic-research-source"><option value="">Alle passenden Quellen</option>${sourceOptions}</select></div><div class="field"><label>Stichworte</label><input id="ai-topic-research-keywords" placeholder="z. B. FAST, GEMA, Voice-Cloning"></div><div class="ai-picto-row ai-topic-research-actions">${pictogram(">", "Recherche starten", "data-ai-topic-research")}</div></div></div></div><div id="ai-topic-research-result"></div><div class="ai-topic-subtools">${rawTopicDataTable}</div>${openSuggestions.length ? `<form id="ai-topic-suggestions-form"><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema / Einordnung</th><th>Kategorie / Quellenhinweis</th><th>Einschaetzung</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${topicSuggestionRows(openSuggestions.slice(0, 120), sources, { articles: aiArticles })}</tbody></table></div><div class="actions"><button class="button button--primary">Ausgewaehlte in Beitragsliste uebernehmen</button></div></form>` : `<div class="alert">Noch keine offenen Themenvorschlaege. Starte eine Themenrecherche.</div>`}${secondaryTopicSection}</section><section class="panel"><h2>Themen-Queue</h2><div class="table-wrap"><table class="table"><thead><tr><th>Thema</th><th>Kategorie</th><th>Aktualitaet</th><th>Status</th><th>Datum</th></tr></thead><tbody>${queuedTopics.length ? topicQueueRows(queuedTopics) : `<tr><td colspan="5">Noch keine Themen in der Queue.</td></tr>`}</tbody></table></div></section>`;
+  const pressListNotice = sortedPressReleases.length
+    ? duplicatePressReleases.length ? `<p class="muted">${duplicatePressReleases.length} Dubletten sind gespeichert, werden aber nicht in der verwertbaren Presseliste angezeigt.</p>` : ""
+    : duplicatePressReleases.length ? `<p class="muted">Keine verwertbaren Pressemitteilungen in der Liste. ${duplicatePressReleases.length} gespeicherte Dubletten werden nicht angezeigt.</p>` : "";
+  const secondaryPressSection = sortedSecondaryPressReleases.length ? `<details class="press-hidden-details" open><summary><strong>Gespeicherte Eintraege ausserhalb der Arbeitsliste</strong><span>${sortedSecondaryPressReleases.length} Dubletten oder ausgefilterte Treffer</span></summary><p class="muted">Diese Pressemitteilungen bleiben gespeichert, werden aber nicht fuer die redaktionelle Weiterverarbeitung angeboten.</p><div class="table-wrap"><table class="table table--press-releases"><thead><tr><th>Pressemitteilung</th><th>Quelle</th><th>Datum</th><th>Zeichen</th><th>Status</th></tr></thead><tbody>${pressReleaseRows(sortedSecondaryPressReleases.slice(0, 160), { readonly: true, readonlyLabel: "Dubletten/Filter" })}</tbody></table></div></details>` : "";
+  const pressView = query.get("view") === "sources" ? "sources" : "releases";
+  const pressTabs = `<div class="ai-subnav ai-press-subnav"><a class="button ${pressView === "releases" ? "button--primary" : "button--secondary"}" href="#/cms/ai-editorial/press?view=releases">Pressemitteilungen</a><a class="button ${pressView === "sources" ? "button--primary" : "button--secondary"}" href="#/cms/ai-editorial/press?view=sources">Quellenstatus</a></div>`;
+  const pressReleasePanel = `<section class="panel ai-press-import-panel"><div><h2>Presseimport</h2><p>Eigene Tabelle fuer importierte Pressemitteilungen. Dubletten werden vor dem Speichern geprueft. Alte Pressemitteilungen bleiben erhalten; ungeeignete neue Treffer werden nur nicht importiert.</p>${latestPressRun ? `<small>Letzter Lauf: ${escapeHtml(latestPressRun.message || latestPressRun.status || "")}</small>` : ""}</div><div class="ai-picto-row">${pictogram("PR", "Presseimport starten", "data-ai-press-import")}</div></section><div id="ai-press-import-result"></div><section class="panel"><h2>Importierte Pressemitteilungen</h2>${pressListNotice}<div id="ai-press-delete-result"></div><div class="table-wrap"><table class="table table--press-releases"><thead><tr><th>Pressemitteilung</th><th>Quelle</th><th>Datum</th><th>Zeichen</th><th>Aktion</th></tr></thead><tbody>${sortedPressReleases.length ? pressReleaseRows(sortedPressReleases.slice(0, 120)) : `<tr><td colspan="5">Noch keine verwertbaren Pressemitteilungen importiert.</td></tr>`}</tbody></table></div>${secondaryPressSection}</section>`;
+  const pressSourcesPanel = `<section class="panel"><h2>Quellenstatus Presse</h2><p class="muted">Quellen werden erst nach drei erfolglosen Scans fuer 14 Tage ausgespart. Ein Treffer aktiviert die Quelle wieder.</p><div class="table-wrap"><table class="table table--press-sources"><thead><tr><th>Portal</th><th>Status</th><th>Letzte Treffer</th><th>Leerscans</th><th>Skip bis</th><th>Grund</th></tr></thead><tbody>${sortedPressSourceStatus.length ? pressSourceStatusRows(sortedPressSourceStatus.slice(0, 120)) : `<tr><td colspan="6">Noch kein Presse-Quellenstatus gespeichert.</td></tr>`}</tbody></table></div></section>`;
+  const pressPanel = `${cmsTitle("KI-Redaktion", "Presse")}${nav(active)}${pressTabs}${pressView === "sources" ? pressSourcesPanel : pressReleasePanel}`;
   const content = {
     dashboard: `${cmsTitle("KI-Redaktion", "Themenliste")}
       ${nav(active)}
       ${demoModeNotice()}
       ${topicResearchPanel}
       <div id="ai-editorial-run-result"></div>`,
-    articles: `${cmsTitle("KI-Redaktion", "Beitraege")}${nav(active)}${demoModeNotice()}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Beitrag</th><th>Herkunft</th><th>Kategorie</th><th>Quellen</th><th>Dubletten</th><th>KI-Pruefung</th><th>Status</th><th>Datum</th></tr></thead><tbody>${aiArticles.length ? articleRows(aiArticles) : `<tr><td colspan="8">Noch keine KI-Beitraege.</td></tr>`}</tbody></table></div></section><div id="ai-editorial-run-result"></div>`,
-    sources: `${cmsTitle("KI-Redaktion", "Verifizierte Quellen")}${nav(active)}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Quelle</th><th>Typ</th><th>Status</th><th>Trust</th><th>Link</th></tr></thead><tbody>${sources.length ? sourceRows(sources) : `<tr><td colspan="5">Noch keine Quellen erfasst.</td></tr>`}</tbody></table></div></section>`,
+    articles: `${cmsTitle("KI-Redaktion", "Beitraege")}${nav(active)}${demoModeNotice()}<section class="panel"><p class="muted">Neueste Beitraege zuerst.</p><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Beitrag</th><th>Herkunft</th><th>Kategorie</th><th>Quellen</th><th>Dubletten</th><th>KI-Pruefung</th><th>Status</th><th>Datum</th></tr></thead><tbody>${aiArticles.length ? articleRows(aiArticles) : `<tr><td colspan="8">Noch keine KI-Beitraege.</td></tr>`}</tbody></table></div></section><div id="ai-editorial-run-result"></div>`,
+    press: pressPanel,
+    sources: `${cmsTitle("KI-Redaktion", "Quellen")}${nav(active)}<section class="panel"><details class="source-management-details"><summary><strong>Quellen verwalten</strong><span>manuell hinzufuegen, automatisch erweitern, loeschen</span></summary><p class="muted">Quellen koennen manuell ergaenzt oder aus dem Systemkatalog automatisch in die verifizierte Quellenliste uebernommen werden.</p>${verifiedSourceForm()}</details></section><section class="panel"><h2>Quellen nach Themenbereich</h2><p class="muted">Orientierungsliste fuer die Themenrecherche. Die Quellen sind noch keine Belege fuer einen Artikel; die konkrete Belegpruefung erfolgt im Editor.</p>${sourceCategoryBlocks(sources)}</section><section class="panel"><h2>Alle verifizierten Quellen</h2><div class="table-wrap"><table class="table"><thead><tr><th>Nr.</th><th>Quelle</th><th>Typ</th><th>Status</th><th>Trust</th><th>Link</th><th>Aktion</th></tr></thead><tbody>${sources.length ? sourceRows(sources, { numbered: true, manageable: true }) : `<tr><td colspan="7">Noch keine Quellen erfasst.</td></tr>`}</tbody></table></div></section>`,
     suggestions: `${cmsTitle("KI-Redaktion", "Quellenvorschlaege")}${nav(active)}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Quelle</th><th>Typ</th><th>Status</th><th>Trust</th><th>Aktion</th></tr></thead><tbody>${sourceSuggestions.length ? sourceSuggestions.map((source) => `<tr><td><strong>${escapeHtml(source.name || source.title || "-")}</strong><small>${escapeHtml(source.suggestion_reason || source.domain || "")}</small></td><td>${escapeHtml(source.source_type || "-")}</td><td>${badge(source.review_status || "vorgeschlagen")}</td><td>${Number(source.suggested_trust_score || source.trust_score || 0)}</td><td><button class="button button--secondary button--small" data-ai-source-review="${escapeHtml(source.id)}" data-review-status="in Pruefung">in Pruefung</button></td></tr>`).join("") : `<tr><td colspan="5">Keine neuen Quellenvorschlaege.</td></tr>`}</tbody></table></div></section><div id="ai-source-review-result"></div>`,
     prompts: `${cmsTitle("KI-Redaktion", "Prompt-Verwaltung")}${nav(active)}<section class="panel prompt-navigation-panel"><h2>Prompt-Navigation</h2>${promptNameNavigation(prompts)}</section><section class="panel prompt-edit-panel"><h2>Prompt anlegen / bearbeiten</h2>${promptForm(prompts.find((prompt) => !isArchivedPrompt(prompt)) || null)}</section><section class="panel"><h2>System-Prompts</h2><div class="table-wrap"><table class="table table--prompts"><thead><tr><th>Name</th><th>Typ</th><th>Aktueller Prompt</th><th>Status</th><th>Aktiv</th><th>Version</th><th>Geaendert</th><th>Aktion</th></tr></thead><tbody>${promptCatalogRows(prompts)}</tbody></table></div></section><section class="panel"><h2>Letzte Prompt-Tests</h2><div class="table-wrap"><table class="table"><thead><tr><th>Zeit</th><th>Prompt</th><th>Status</th><th>Warnungen</th></tr></thead><tbody>${promptTests.length ? promptTestRows([...promptTests].reverse().slice(0, 8)) : `<tr><td colspan="4">Noch keine Prompt-Tests.</td></tr>`}</tbody></table></div></section>`,
-    keywords: `${cmsTitle("KI-Redaktion", "Keywords")}${nav(active)}<section class="panel"><div class="ai-keyword-cloud">${keywords.length ? keywords.map((keyword) => `<span>${escapeHtml(keyword.keyword)} <strong>${Number(keyword.relevance_score || 0)}</strong></span>`).join("") : `<p class="muted">Noch keine KI-Keywords gespeichert.</p>`}</div></section>`,
+    keywords: `${cmsTitle("KI-Redaktion", "Keywords")}${nav(active)}<section class="panel"><h2>Themen-Keywords</h2><p class="muted">Keywords aus der Themenliste und Themen-Queue. Klick auf ein Keyword zeigt die zugehoerigen Themen und ob daraus bereits ein Beitrag veroeffentlicht wurde.</p><div class="ai-keyword-cloud ai-keyword-cloud--clickable">${topicKeywords.length ? topicKeywords.slice(0, 60).map((keyword) => `<a class="${keyword.key === selectedKeyword ? "is-active" : ""}" href="#/cms/ai-editorial/keywords?keyword=${encodeURIComponent(keyword.key)}">${escapeHtml(keyword.keyword)} <strong>${keyword.count}</strong></a>`).join("") : `<p class="muted">Noch keine Themen-Keywords vorhanden. Starte eine Themenrecherche.</p>`}</div>${selectedKeyword ? `<section class="keyword-topic-detail"><div class="editorial-field-head"><h3>Themen zu "${escapeHtml(selectedKeywordLabel)}"</h3><a class="button button--secondary button--small" href="#/cms/ai-editorial/keywords">Filter loeschen</a></div><div class="table-wrap"><table class="table table--keyword-topics"><thead><tr><th>Thema</th><th>Kategorie</th><th>Relevanz</th><th>Status</th></tr></thead><tbody>${selectedKeywordTopics.length ? keywordTopicRows(selectedKeywordTopics, aiArticles) : `<tr><td colspan="4">Keine Themen fuer dieses Keyword gefunden.</td></tr>`}</tbody></table></div></section>` : `<div class="alert">Waehle ein Keyword aus, um die zugehoerigen Themen zu sehen.</div>`}<div class="table-wrap"><table class="table table--topic-keywords"><thead><tr><th>Keyword</th><th>Treffer</th><th>Max. Relevanz</th><th>Themen</th></tr></thead><tbody>${topicKeywords.length ? topicKeywordRows(topicKeywords.slice(0, 80)) : `<tr><td colspan="4">Noch keine Themen-Keywords vorhanden.</td></tr>`}</tbody></table></div></section><section class="panel"><h2>Artikel-Keywords</h2><div class="ai-keyword-cloud">${keywords.length ? keywords.map((keyword) => `<span>${escapeHtml(keyword.keyword)} <strong>${Number(keyword.relevance_score || 0)}</strong></span>`).join("") : `<p class="muted">Noch keine KI-Artikel-Keywords gespeichert.</p>`}</div></section>`,
     automation: `${cmsTitle("KI-Redaktion", "Automatisierung")}${nav(active)}${demoModeNotice()}<div class="cms-columns"><section class="panel"><h2>Status</h2><div class="setup-steps"><div class="setup-step"><span>Automatisierung</span>${badge(settings.automationEnabled ? "Automatik aktiv" : "inaktiv")}</div><div class="setup-step"><span>Letzter Lauf</span><strong>${escapeHtml(formatDateTime(latestLog?.created_at || latestLog?.createdAt || "")) || "-"}</strong></div><div class="setup-step"><span>Letzte Warnung</span><strong>${escapeHtml(logs.find((log) => String(log.status || "").toLowerCase().includes("warn"))?.message || "-")}</strong></div></div><div class="ai-picto-row">${pictogram(">", "Automatik aktivieren", 'data-ai-editorial-automation="start"')}${pictogram("||", "Automatik pausieren", 'data-ai-editorial-automation="pause"')}</div><div id="ai-editorial-run-result"></div></section><section class="panel"><h2>Einstellungen</h2>${settingsForm(settings)}</section></div>`,
-    logs: `${cmsTitle("KI-Redaktion", "Logs / Pruefberichte")}${nav(active)}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Zeit</th><th>Aufgabe</th><th>Status</th><th>Meldung</th></tr></thead><tbody>${logs.length ? logRows([...logs].reverse()) : `<tr><td colspan="4">Noch keine KI-Redaktionslogs.</td></tr>`}</tbody></table></div></section>`,
+    logs: `${cmsTitle("KI-Redaktion", "Logs / Pruefberichte")}${nav(active)}<section class="panel"><h2>Pruefberichte</h2><div class="table-wrap"><table class="table"><thead><tr><th>Zeit</th><th>Aufgabe</th><th>Status</th><th>Meldung</th></tr></thead><tbody>${logs.length ? logRows([...logs].reverse()) : `<tr><td colspan="4">Noch keine KI-Redaktionslogs.</td></tr>`}</tbody></table></div></section><section class="panel"><div class="editorial-field-head"><div><h2>Rawdaten Themenfunde</h2><p class="muted">Alle gespeicherten Quellenfunde der Themenrecherche. Diese Rohdaten sind noch keine freigegebenen Artikel, sondern die Grundlage fuer Themenvorschlaege und spaetere Quellenzuordnung.</p></div>${topicRawData.length ? `<button class="button button--danger button--small" type="button" data-ai-topic-raw-clear>Rawdaten loeschen</button>` : ""}</div><div class="table-wrap"><table class="table table--topic-raw-data"><thead><tr><th>Quelle</th><th>Fund / Thema</th><th>Datum</th><th>Link</th><th>Zuordnung</th></tr></thead><tbody>${topicRawDataForTopics.length ? rawTopicRows([...topicRawDataForTopics].sort((a, b) => String(b.created_at || b.createdAt || "").localeCompare(String(a.created_at || a.createdAt || ""))).slice(0, 120)) : `<tr><td colspan="5">Noch keine Rawdaten gespeichert. Starte eine Themenrecherche.</td></tr>`}</tbody></table></div></section>`,
     settings: `${cmsTitle("KI-Redaktion", "Einstellungen")}${nav(active)}<section class="panel">${settingsForm(settings)}</section>`
   }[active] || "";
   return protect(cmsShell(`cms/ai-editorial/${active}`, content));
