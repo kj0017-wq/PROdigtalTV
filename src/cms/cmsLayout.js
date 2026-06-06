@@ -14,6 +14,7 @@ const sections = [
       ["cms/editorial/interna", "Interna"]
     ]
   },
+  ["cms/audio", "Audio & Barrierefreiheit"],
   {
     route: "cms/ai-editorial/dashboard",
     title: "KI-Redaktion",

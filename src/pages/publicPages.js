@@ -68,8 +68,8 @@ const internalPageMeta = {
     route: "about",
     detailRoute: "ueber-uns",
     eyebrow: "Ueber uns",
-    title: "PROdigitalTV - das Netzwerk fuer digitale Medien",
-    intro: "PROdigitalTV verbindet Unternehmen, Entscheider und Akteure der digitalen Medienwirtschaft im deutschsprachigen Raum."
+    title: "Das Branchennetzwerk der digitalen Medienwirtschaft.",
+    intro: "PROdigitalTV vernetzt Unternehmen und Akteure der digitalen Medienwirtschaft im deutschsprachigen Raum."
   },
   mitglied_werden: {
     active: "join",
@@ -99,7 +99,9 @@ function canonicalInternalBlock(item = {}) {
 
 function isPublicInternalBlock(item = {}, bereich) {
   const block = canonicalInternalBlock(item);
-  return block.bereich === bereich
+  const managedInternal = item.editorialManaged || item.bereich === "ueber_uns" || item.bereich === "mitglied_werden";
+  return managedInternal
+    && block.bereich === bereich
     && ["aktiv", "published"].includes(String(item.status || ""))
     && ["oeffentlich", "public"].includes(String(item.sichtbarkeit || item.visibility || ""));
 }
@@ -114,7 +116,7 @@ async function internalBlocks(bereich) {
 function internalIcon(name = "") {
   const labels = {
     network: "N", compass: "K", modules: "M", dialog: "D", breakfast: "B", interview: "I", transformation: "T", impact: "W",
-    membership: "M", knowledge: "W", visibility: "S", presentation: "P", guest: "G", exclusive: "E", law: "R", gema: "G", cooperation: "K", cta: ">"
+    membership: "M", knowledge: "W", visibility: "S", presentation: "P", guest: "G", exclusive: "E", law: "R", gema: "G", cooperation: "K", discount: "%", cta: ">"
   };
   return `<span class="internal-card__icon" aria-hidden="true">${escapeHtml(labels[name] || "•")}</span>`;
 }
@@ -131,6 +133,17 @@ function internalCard(block, meta) {
 function aboutThumbLabel(icon = "") {
   const labels = {
     network: "Netz",
+    membership: "Mitglied",
+    knowledge: "Wissen",
+    visibility: "Sichtbar",
+    presentation: "Events",
+    guest: "Gaeste",
+    exclusive: "Exklusiv",
+    law: "Recht",
+    gema: "GEMA",
+    cooperation: "Kontakt",
+    discount: "Rabatt",
+    cta: "Anfrage",
     compass: "Werte",
     modules: "Leistung",
     dialog: "Dialog",
@@ -147,6 +160,17 @@ function aboutPicto(icon = "") {
     network: `<svg viewBox="0 0 24 24"><path d="M7 20v-1.5a4 4 0 0 1 4-4h2a4 4 0 0 1 4 4V20"/><circle cx="12" cy="7" r="4"/><path d="M4 19v-1.2a3.6 3.6 0 0 1 3-3.55"/><path d="M20 19v-1.2a3.6 3.6 0 0 0-3-3.55"/></svg>`,
     compass: `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.6 8.4-2.25 5.25L8.4 15.6l2.25-5.25 4.95-1.95z"/></svg>`,
     modules: `<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="5" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="m7.2 10.8 9.6-4.6"/><path d="m7.2 13.2 9.6 4.6"/></svg>`,
+    membership: `<svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg>`,
+    knowledge: `<svg viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M8.6 15.1A6 6 0 1 1 15.4 15c-.8.6-1.4 1.5-1.4 2.5h-4c0-1-.6-1.8-1.4-2.4z"/></svg>`,
+    visibility: `<svg viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="3"/></svg>`,
+    presentation: `<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M4 10h16"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/></svg>`,
+    guest: `<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M3 21v-2a6 6 0 0 1 12 0v2"/><path d="M16 11h5"/><path d="M18.5 8.5v5"/></svg>`,
+    exclusive: `<svg viewBox="0 0 24 24"><path d="m12 3 2.6 5.3 5.9.9-4.3 4.2 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.2 5.9-.9L12 3z"/></svg>`,
+    law: `<svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M6 7l-4 7h8L6 7z"/><path d="M18 7l-4 7h8l-4-7z"/><path d="M8 21h8"/></svg>`,
+    gema: `<svg viewBox="0 0 24 24"><path d="M19 5 5 19"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/></svg>`,
+    cooperation: `<svg viewBox="0 0 24 24"><circle cx="7" cy="12" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="17" cy="17" r="3"/><path d="m9.6 10.5 4.8-2.1"/><path d="m9.6 13.5 4.8 2.1"/></svg>`,
+    discount: `<svg viewBox="0 0 24 24"><path d="M19 5 5 19"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="17" r="3"/><path d="M7 7h.01"/><path d="M17 17h.01"/></svg>`,
+    cta: `<svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/><rect x="3" y="4" width="18" height="16" rx="3"/></svg>`,
     dialog: `<svg viewBox="0 0 24 24"><path d="M5 18 3 21V5a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H5z"/><path d="M7 8h10"/><path d="M7 12h7"/></svg>`,
     breakfast: `<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M4 10h16"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/></svg>`,
     interview: `<svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/><path d="M8 22h8"/></svg>`,
@@ -163,17 +187,22 @@ function aboutButtonGallery(blocks, meta) {
   }).join("")}</div>`;
 }
 
-function aboutInternalCard(block, meta) {
+function aboutInternalCard(block, meta, options = {}) {
+  const summary = options.summary === "long"
+    ? teaserText(block.langtext || block.kurztext, 190)
+    : block.kurztext;
   return `<button class="internal-card internal-card--about internal-card--${escapeHtml(block.typ)}" type="button" data-about-jump="${escapeHtml(block.slug)}">
     <span class="internal-about-thumb internal-about-thumb--${escapeHtml(block.icon || "modules")}" aria-hidden="true">${aboutPicto(block.icon)}<strong>${escapeHtml(aboutThumbLabel(block.icon))}</strong></span>
-    <span class="internal-about-copy"><strong>${escapeHtml(block.titel)}</strong><small>${escapeHtml(block.kurztext)}</small></span>
+    <span class="internal-about-copy"><strong>${escapeHtml(block.titel)}</strong><small>${escapeHtml(summary)}</small></span>
   </button>`;
 }
 
 function aboutLongTextSection(block) {
   return `<article class="internal-about-text" id="about-text-${escapeHtml(block.slug)}">
     <div class="internal-about-text__head">${aboutPicto(block.icon)}<div><p class="eyebrow">${escapeHtml(block.titel)}</p><h2>${escapeHtml(block.titel)}</h2><p>${escapeHtml(block.kurztext)}</p></div></div>
+    ${ttsReader({ title: block.titel || "", text: block.langtext || "", audioUrl: block.audioUrl || "", audioAccessibleUrl: block.audioAccessibleUrl || "", audioNaturalUrl: block.audioNaturalUrl || "", audioStatus: block.audioStatus || "", audioAccessibleStatus: block.audioAccessibleStatus || "", audioNaturalStatus: block.audioNaturalStatus || "" })}
     <div class="editorial-text">${articleParagraphs(block.langtext)}</div>
+    <button class="internal-about-top-button" type="button" data-internal-scroll-top aria-label="Nach oben">↑</button>
   </article>`;
 }
 
@@ -213,27 +242,28 @@ function aboutStickyContent(events = [], board = [], members = [], topics = []) 
   </a>`).join("")}</div>`;
   return `<aside class="internal-about-sticky" aria-label="Aktuelle Inhalte">
     <section class="internal-sticky-section">
-      <p class="eyebrow">Aktuelles Event</p>
+      <a class="internal-sticky-section-title" href="#/events">Aktuelles Event <span aria-hidden="true">→</span></a>
       ${rubricRotator(eventSlides, renderEvent, `<a class="internal-sticky-event" href="#/events"><span class="internal-sticky-event__picto">${aboutPicto("breakfast")}</span><span><strong>Neue Termine in Vorbereitung</strong><small>Zur Eventübersicht</small></span></a>`)}
     </section>
     <section class="internal-sticky-section">
-      <p class="eyebrow">Thema</p>
+      <a class="internal-sticky-section-title" href="#/topics">Themen <span aria-hidden="true">→</span></a>
       ${rubricRotator(topicSlides, renderTopic, `<a class="internal-sticky-topic" href="#/topics"><span class="internal-sticky-event__picto">${aboutPicto("dialog")}</span><span><strong>Themen ansehen</strong><small>Aktuelle Themen im Netzwerk</small></span></a>`)}
     </section>
     <section class="internal-sticky-section">
-      <p class="eyebrow">Vorstand</p>
+      <a class="internal-sticky-section-title" href="#/board">Vorstand <span aria-hidden="true">→</span></a>
       ${rubricRotator(boardSlides, renderBoardPair, `<a class="internal-sticky-person" href="#/board">Vorstand ansehen</a>`)}
     </section>
     <section class="internal-sticky-section">
-      <p class="eyebrow">Mitglieder</p>
+      <a class="internal-sticky-section-title" href="#/members">Mitglieder <span aria-hidden="true">→</span></a>
       ${rubricRotator(memberSlides, renderMemberGroup, `<a class="internal-sticky-member" href="#/members">Mitglieder ansehen</a>`)}
     </section>
   </aside>`;
 }
 
-function aboutCardGroups(blocks, meta) {
-  const groups = [blocks.slice(0, 4), blocks.slice(4, 8)].filter((group) => group.length);
-  return groups.map((group) => `<div class="internal-about-button-block">${group.map((block) => aboutInternalCard(block, meta)).join("")}</div>`).join("");
+function aboutCardGroups(blocks, meta, options = {}) {
+  const visibleBlocks = options.all ? blocks : blocks.slice(0, 8);
+  const groups = chunkItems(visibleBlocks, 4).filter((group) => group.length);
+  return groups.map((group) => `<div class="internal-about-button-block">${group.map((block) => aboutInternalCard(block, meta, options)).join("")}</div>`).join("");
 }
 
 function internalDesktopSection(block, meta) {
@@ -259,8 +289,8 @@ function internalOverviewPage(bereich) {
     const desktopSections = blocks.map((block) => internalDesktopSection(block, meta)).join("");
     if (bereich === "ueber_uns") {
       return publicShell(meta.active, `<section class="section internal-overview internal-overview--about"><div class="container"><div class="internal-about-layout"><div class="internal-about-main">
-        <nav class="internal-breadcrumb" aria-label="Breadcrumb"><a href="#/home" aria-label="Startseite">Start</a><span aria-hidden="true">›</span><span>Ueber uns</span></nav>
-            <div class="internal-mobile-list internal-mobile-list--about">${aboutCards || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
+        <div class="internal-page-heading"><p class="eyebrow">${escapeHtml(meta.eyebrow)}</p><h1>${escapeHtml(meta.title)}</h1><p>${escapeHtml(meta.intro)}</p></div>
+        <div class="internal-mobile-list internal-mobile-list--about">${aboutCards || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
         <div class="internal-about-texts">${aboutTexts}</div>
         </div>${aboutStickyContent(events, board, members, topics)}</div>
       </div></section>`);
@@ -309,18 +339,29 @@ function editorialPrioritySort(a = {}, b = {}) {
   return String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || ""));
 }
 
-function ttsReader({ title = "", text = "", audioUrl = "", audioAccessibleUrl = "", audioNaturalUrl = "" }) {
-  const accessibleUrl = audioAccessibleUrl || audioUrl || "";
-  const naturalUrl = audioNaturalUrl || "";
+function isAudioAvailableStatus(status = "") {
+  return ["aktuell", "ready", "available", "fertig"].includes(String(status || "").toLowerCase());
+}
+
+function availableAudioUrl(url = "", status = "", fallbackStatus = "") {
+  if (!url) return "";
+  const effectiveStatus = status || fallbackStatus;
+  return isAudioAvailableStatus(effectiveStatus) ? url : "";
+}
+
+function ttsReader({ title = "", text = "", audioUrl = "", audioAccessibleUrl = "", audioNaturalUrl = "", audioStatus = "", audioAccessibleStatus = "", audioNaturalStatus = "" }) {
+  const fallbackUrl = availableAudioUrl(audioUrl, audioStatus);
+  const accessibleUrl = availableAudioUrl(audioAccessibleUrl, audioAccessibleStatus, audioStatus) || fallbackUrl;
+  const naturalUrl = availableAudioUrl(audioNaturalUrl, audioNaturalStatus, audioStatus) || accessibleUrl;
   if (!accessibleUrl && !naturalUrl) return "";
   return `<div class="tts-reader" data-tts-reader>
-    <p class="eyebrow">Audio</p>
+    <button type="button" class="tts-reader__toggle" data-tts-toggle aria-expanded="false" aria-label="Audio öffnen"><span aria-hidden="true">▶</span></button>
+    <div class="tts-reader__meta"><p class="eyebrow">Audio</p><strong>${escapeHtml(title || "Vorlesen")}</strong></div>
     <template data-tts-source>${escapeHtml(text)}</template>
-    <div class="tts-reader__actions">
-      <button type="button" class="button button--primary button--small" data-tts-play data-tts-mode="natural" data-audio-url="${escapeHtml(naturalUrl)}" ${naturalUrl ? "" : "disabled"}><span aria-hidden="true">▶</span> Natural Voice</button>
-      <button type="button" class="button button--secondary button--small" data-tts-play data-tts-mode="accessible" data-audio-url="${escapeHtml(accessibleUrl)}" ${accessibleUrl ? "" : "disabled"}><span aria-hidden="true">Aa</span> Barrierefrei</button>
+    <div class="tts-reader__actions" data-tts-actions hidden>
+      <button type="button" class="button button--primary button--small" data-tts-play data-tts-mode="natural" data-audio-url="${escapeHtml(naturalUrl)}" ${naturalUrl ? "" : "disabled"}><span aria-hidden="true">Audio</span> Anhören</button>
+      <button type="button" class="button button--secondary button--small" data-tts-play data-tts-mode="accessible" data-audio-url="${escapeHtml(accessibleUrl)}" ${accessibleUrl ? "" : "disabled"}><span aria-hidden="true">Aa</span> Barrierefrei vorlesen</button>
     </div>
-    <p class="muted">${escapeHtml(title || "Vorlesen")}</p>
   </div>`;
 }
 
@@ -423,6 +464,8 @@ export async function eventsPage() {
   const user = currentUser();
   const visible = events.filter((event) => event.accessType !== "invitation_only" && (event.visibility === "public" || isMember(user) || event.showPublicTeaser));
   const upcoming = visible.filter((event) => !isPastEvent(event));
+  if (upcoming.length === 1) return eventDetailPage(upcoming[0].id);
+  if (upcoming.length === 0) return archivePage();
   return publicShell("events", `${subhero("Veranstaltungen", "Events", "Kuratierte Formate fuer Wissenstransfer, Partnerschaften und relevante Branchenkontakte.")}
     <section class="section"><div class="container"><div class="filters"><button class="filter active">Kommende Events</button><button class="filter">Oeffentlich</button><button class="filter">Mitglieder</button><a class="filter" href="#/archive">Rueckblicke</a></div>
     ${upcoming.length ? `<div class="card-grid card-grid--three">${upcoming.map((event) => eventCard(event, false, sponsors)).join("")}</div>` : `<div class="alert">Aktuell sind keine neuen Termine veroeffentlicht. Im Eventarchiv finden Sie die letzten PROdigitalTV-Veranstaltungen.</div>`}</div></section>`);
@@ -465,7 +508,6 @@ export async function eventDetailPage(id) {
         <div class="fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>
         ${event.startTime ? `<div class="fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}
         <div class="fact"><label>Ort</label><strong>${escapeHtml(event.locationName)}<br>${escapeHtml(event.city)}</strong></div>
-        ${event.expiresAt ? `<div class="fact"><label>Sichtbar bis</label><strong>${formatDate(event.expiresAt.slice(0, 10))}</strong></div>` : ""}
         <div class="fact"><label>Status</label><strong>${lifecycleLabels[event.lifecyclePhase]}</strong></div>
         ${registrationAllowed ? `<a class="button button--primary" style="width:100%;margin-top:20px" href="#/register/${event.id}">Zum Event anmelden</a>` : `<div class="alert" style="margin-top:20px">${event.accessType === "invitation_only" ? "Teilnahme nur auf Einladung." : "Anmeldung derzeit nicht verfuegbar."}</div>`}
       </aside>
@@ -541,7 +583,7 @@ export async function newsDetailPage(id) {
         <p class="eyebrow">${escapeHtml(item.category || "News")}${date ? ` · ${formatDate(date)}` : ""}</p>
         <h2>${escapeHtml(item.title || "")}</h2>
         ${item.subtitle ? `<p class="lead">${escapeHtml(item.subtitle)}</p>` : ""}
-        ${ttsReader({ title: item.title || "", text, audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "" })}
+        ${ttsReader({ title: item.title || "", text, audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
         <div class="editorial-text">${leadMedia}${articleParagraphs(text)}</div>
         ${articleSourcesList(item)}
       </article>
@@ -568,7 +610,7 @@ export async function topicDetailPage(id) {
     ? galleryPlayCta(selectedGallery, attachedGalleryImages)
     : topic.imageUrl ? `<figure class="topic-hero-image"><img src="${escapeHtml(topic.imageUrl)}" alt="Themenbild ${escapeHtml(topic.title)}"></figure>` : "";
   const editorialBlock = topicText
-    ? `<section class="section section--white"><div class="container topic-article">${ttsReader({ title: topic.title || "", text: topicText, audioUrl: topic.audioUrl || "", audioAccessibleUrl: topic.audioAccessibleUrl || "", audioNaturalUrl: topic.audioNaturalUrl || "" })}${articleParagraphs(topicText)}</div></section>`
+    ? `<section class="section section--white"><div class="container topic-article">${ttsReader({ title: topic.title || "", text: topicText, audioUrl: topic.audioUrl || "", audioAccessibleUrl: topic.audioAccessibleUrl || "", audioNaturalUrl: topic.audioNaturalUrl || "", audioStatus: topic.audioStatus || "", audioAccessibleStatus: topic.audioAccessibleStatus || "", audioNaturalStatus: topic.audioNaturalStatus || "" })}${articleParagraphs(topicText)}</div></section>`
     : "";
   return publicShell("topics", `${subhero("Thema", escapeHtml(topic.title), escapeHtml(topicIntro))}
     ${leadMedia ? `<section class="section section--flush"><div class="container">${leadMedia}</div></section>` : ""}
@@ -608,7 +650,7 @@ export async function downloadsPage() {
     <section class="section"><div class="container">${downloads.length ? `<div class="card-grid card-grid--three">${downloads.map(downloadCard).join("")}</div>` : `<div class="alert">Oeffentliche Downloads werden aktuell vorbereitet.</div>`}</div></section>`);
 }
 
-function membershipFormSection(downloads, editorial) {
+function joinAside(downloads, editorial) {
   const publicDownloads = downloads
     .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   const downloadInfo = (item) => {
@@ -620,10 +662,15 @@ function membershipFormSection(downloads, editorial) {
     const info = downloadInfo(item);
     return `<details class="download-field"><summary><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.fileName || item.description || "Download")}</span></summary><div class="download-field__body"><p>${escapeHtml(info?.bodyText || item.description || "Weitere Informationen zu diesem Dokument.")}</p><a class="link" href="${escapeHtml(url)}" ${url !== "#/downloads" ? `target="_blank" rel="noreferrer"` : ""}>PDF oeffnen</a></div></details>`;
   };
-  const benefitKeys = ["join.benefit.events", "join.benefit.visibility", "join.benefit.impulses"];
-  const benefits = benefitKeys.map((key) => editorial.find((content) => content.key === key)).filter(Boolean);
-  const benefitFields = benefits.length ? benefits.map((item) => `<details class="download-field"><summary><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.introText || "Mitgliedervorteil")}</span></summary><div class="download-field__body"><p>${escapeHtml(item.bodyText || "")}</p></div></details>`).join("") : `<details class="download-field"><summary><strong>Exklusive Events</strong><span>Mitgliedervorteil</span></summary><div class="download-field__body"><p>Zugang zu Mitgliedsformaten.</p></div></details><details class="download-field"><summary><strong>Sichtbarkeit</strong><span>Mitgliedervorteil</span></summary><div class="download-field__body"><p>Praesenz im Netzwerk.</p></div></details><details class="download-field"><summary><strong>Impulse</strong><span>Mitgliedervorteil</span></summary><div class="download-field__body"><p>Fachlicher Austausch.</p></div></details>`;
-  return `<section class="section"><div class="container join-layout"><form id="membership-application-form" class="form-card form-grid join-form">
+  const joinCta = `<a class="join-aside-cta" href="#membership-application-form" data-join-scroll>
+    ${aboutPicto("membership")}
+    <span><strong>Mitglied werden</strong><small>Direkt zum Antrag springen</small></span>
+  </a>`;
+  return `<aside class="join-aside join-aside--overview">${joinCta}<h2>Downloads</h2>${publicDownloads.length ? `<div class="join-download-fields">${publicDownloads.map(downloadField).join("")}</div>` : `<a class="button button--secondary" href="#/downloads">Zu den oeffentlichen Downloads</a>`}</aside>`;
+}
+
+function membershipFormSection() {
+  return `<section class="section"><div class="container join-form-wrap"><form id="membership-application-form" class="form-card form-grid join-form">
     <p class="eyebrow">Mitgliedsantrag</p><h2 style="margin-bottom:6px">Mitglied werden</h2>
     <div class="form-grid--two"><div class="field"><label>Unternehmen / Organisation *</label><input name="company" required></div><div class="field"><label>Rechtsform</label><input name="legalForm" placeholder="z. B. GmbH, AG, e.V."></div></div>
     <div class="form-grid--two"><div class="field"><label>Strasse und Hausnummer *</label><input name="street" required></div><div class="field"><label>PLZ / Ort *</label><input name="city" required></div></div>
@@ -638,18 +685,21 @@ function membershipFormSection(downloads, editorial) {
     <label class="checkbox"><input type="checkbox" name="privacyAccepted" required> Ich akzeptiere die Datenschutzerklaerung zur Verarbeitung meines Mitgliedsantrags. *</label>
     <label class="checkbox"><input type="checkbox" name="newsletterConsent"> Ich moechte Informationen zu Veranstaltungen und Vereinsaktivitaeten erhalten.</label>
     <button class="button button--primary" type="submit">Mitgliedsantrag absenden</button><div id="membership-application-result"></div>
-  </form><aside class="join-aside"><h2>Downloads</h2>${publicDownloads.length ? `<div class="join-download-fields">${publicDownloads.map(downloadField).join("")}</div>` : `<a class="button button--secondary" href="#/downloads">Zu den oeffentlichen Downloads</a>`}<h2>Ihre Vorteile</h2><div class="join-download-fields">${benefitFields}</div></aside></div></section>`;
+  </form></div></section>`;
 }
 
 export async function joinPage() {
   const meta = internalPageMeta.mitglied_werden;
   const [blocks, downloads, editorial] = await Promise.all([internalBlocks("mitglied_werden"), listPublicContent("downloads"), listPublicContent("editorialContent")]);
   const hero = blocks.find((block) => block.typ === "hero") || blocks[0];
-  return publicShell("join", `${subhero(meta.eyebrow, hero?.titel || meta.title, hero?.kurztext || meta.intro)}
-    <section class="section internal-overview"><div class="container">
-      <div class="internal-mobile-list">${blocks.map((block) => internalCard(block, meta)).join("") || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
-      <div class="internal-desktop-sections">${blocks.map((block) => internalDesktopSection(block, meta)).join("") || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
-    </div></section>${membershipFormSection(downloads, editorial)}`);
+  const cardBlocks = blocks.filter((block) => block.typ !== "hero");
+  const joinCards = aboutCardGroups(cardBlocks, meta, { summary: "long", all: true });
+  const joinTexts = blocks.map((block) => aboutLongTextSection(block)).join("");
+  return publicShell("join", `<section class="section internal-overview internal-overview--join"><div class="container"><div class="internal-about-layout"><div class="internal-about-main">
+    <div class="internal-page-heading"><p class="eyebrow">${escapeHtml(meta.eyebrow)}</p><h1>${escapeHtml(hero?.titel || meta.title)}</h1><p>${escapeHtml(hero?.kurztext || meta.intro)}</p></div>
+    <div class="internal-mobile-list internal-mobile-list--about">${joinCards || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
+    <div class="internal-about-texts">${joinTexts}</div>
+  </div>${joinAside(downloads, editorial)}</div></div></section>${membershipFormSection()}`);
 }
 
 export async function loginPage() {

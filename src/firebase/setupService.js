@@ -91,6 +91,15 @@ export async function createDemoData() {
       else if (collection === "editorialContent" && record.editorialManaged) await upsert(collection, { ...existing, ...record, demo: existing.demo ?? true });
     }
   }
+  const managedJoinIds = new Set((demoDatabase.editorialContent || [])
+    .filter((record) => record.editorialManaged && record.bereich === "mitglied_werden")
+    .map((record) => record.id));
+  const editorialRecords = await list("editorialContent");
+  for (const record of editorialRecords) {
+    if (record.editorialManaged && record.bereich === "mitglied_werden" && !managedJoinIds.has(record.id)) {
+      await remove("editorialContent", record.id);
+    }
+  }
   const setup = (await getOne("system", "setup")) || { id: "setup" };
   await upsert("system", { ...setup, demoDataInstalled: true });
   await writeSetupLog("Beispieldaten wurden idempotent hinzugefuegt.");

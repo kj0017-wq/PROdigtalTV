@@ -137,14 +137,62 @@ function aiFieldActions(actions) {
   return `<div class="ai-field-actions">${actions.map((item) => aiButton(item.action, item.target, item.label, item)).join("")}</div>`;
 }
 
+function audioSourceText(collection, item = {}) {
+  return collection === "topics"
+    ? [item.subtitle, item.longDescription, item.bodyText, item.shortDescription].filter(Boolean).join("\n\n")
+    : [item.subtitle, item.bodyText, item.introText, item.shortText, item.teaserText].filter(Boolean).join("\n\n");
+}
+
+function audioTextSignature(collection, item = {}) {
+  const text = audioSourceText(collection, item).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 6000);
+  let hash = 5381;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ text.charCodeAt(index);
+  }
+  return `${text.length}:${(hash >>> 0).toString(16)}`;
+}
+
+function audioVariantState(collection, item = {}, variant = "natural") {
+  const currentSignature = audioTextSignature(collection, item);
+  const prefix = variant === "natural" ? "audioNatural" : "audioAccessible";
+  const url = item[`${prefix}Url`] || (variant === "accessible" ? item.audioUrl : "");
+  const savedSignature = item[`${prefix}TextSignature`] || (variant === "accessible" ? item.audioTextSignature : "");
+  if (item[`${prefix}Status`] === "in_erstellung") return "in Erstellung";
+  if (item[`${prefix}Status`] === "fehler") return "Fehler";
+  if (!url) return "fehlt";
+  if (savedSignature && savedSignature !== currentSignature) return "veraltet";
+  return "aktuell";
+}
+
+function audioStatusBadge(state) {
+  const className = state === "aktuell" ? "" : state === "veraltet" || state === "fehlt" ? "status--draft" : "status--error";
+  return `<span class="status ${className}">${escapeHtml(state)}</span>`;
+}
+
+function audioMetaLine(collection, item, variant) {
+  const prefix = variant === "natural" ? "audioNatural" : "audioAccessible";
+  const generatedAt = item[`${prefix}GeneratedAt`] || item.audioGeneratedAt || "";
+  const voice = item[`${prefix}Voice`] || (variant === "natural" ? "Puck" : "Kore");
+  const mime = item[`${prefix}MimeType`] || (variant === "natural" ? "audio/mpeg" : item.audioMimeType || "audio/wav");
+  const textLength = item[`${prefix}TextLength`] || item.audioTextLength || 0;
+  return `<small>Version ${Number(item.contentVersion || item.audioContentVersion || 1)} · ${escapeHtml(voice)} · ${escapeHtml(mime)}${textLength ? ` · ${Number(textLength).toLocaleString("de-DE")} Zeichen` : ""}${generatedAt ? ` · ${formatDateTime(generatedAt)}` : ""}</small>`;
+}
+
 function audioGenerationPanel(collection, item) {
   const accessibleUrl = item.audioAccessibleUrl || item.audioUrl || "";
   const naturalUrl = item.audioNaturalUrl || "";
   const hasAudio = accessibleUrl || naturalUrl;
+  const naturalState = audioVariantState(collection, item, "natural");
+  const accessibleState = audioVariantState(collection, item, "accessible");
   return `<div class="audio-generation-panel">
-    <div><label>Audio / Vorlesen</label><p class="muted">${hasAudio ? "Audio-Varianten sind gespeichert und werden im Frontend angeboten." : "Noch kein Audio gespeichert. Bitte Text speichern, dann Audio erzeugen."}</p></div>
-    ${accessibleUrl ? `<div class="audio-generation-panel__track"><strong>Barrierefrei</strong><audio controls preload="none" src="${escapeHtml(accessibleUrl)}"></audio></div>` : ""}
-    ${naturalUrl ? `<div class="audio-generation-panel__track"><strong>Natural Voice</strong><audio controls preload="none" src="${escapeHtml(naturalUrl)}"></audio></div>` : ""}
+    <div><label>Audio & Barrierefreiheit</label><p class="muted">${hasAudio ? "Audio-Varianten sind gespeichert. Bei Textaenderungen werden sie automatisch als veraltet erkannt." : "Noch kein Audio gespeichert. Bitte Text speichern, dann Audio erzeugen."}</p></div>
+    <div class="audio-generation-panel__track"><div class="audio-generation-panel__head"><strong>Natural Voice</strong>${audioStatusBadge(naturalState)}</div>${audioMetaLine(collection, item, "natural")}${naturalUrl ? `<audio controls preload="none" src="${escapeHtml(naturalUrl)}"></audio>` : `<p class="muted">Keine Natural-Voice-Datei vorhanden.</p>`}</div>
+    <div class="audio-generation-panel__track"><div class="audio-generation-panel__head"><strong>Barrierefrei vorlesen</strong>${audioStatusBadge(accessibleState)}</div>${audioMetaLine(collection, item, "accessible")}${accessibleUrl ? `<audio controls preload="none" src="${escapeHtml(accessibleUrl)}"></audio>` : `<p class="muted">Keine barrierefreie Audiodatei vorhanden.</p>`}</div>
+    <div class="audio-generation-panel__meta">
+      <span>Content-ID: ${escapeHtml(`${collection}/${item.id || ""}`)}</span>
+      <span>Textversion: v${Number(item.contentVersion || 1)}</span>
+      <span>Pruefsumme: ${escapeHtml(audioTextSignature(collection, item))}</span>
+    </div>
     <div class="tool-button-row">
       <button type="button" class="button button--secondary button--small" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}" data-tts-variant="all">${hasAudio ? "Audio-Varianten neu erzeugen" : "Audio-Varianten erzeugen"}</button>
       ${hasAudio ? `<button type="button" class="icon-button icon-button--danger" data-clear-linked-media="audio" title="Audio-Verknuepfung loesen" aria-label="Audio-Verknuepfung loesen">${iconImage("trash")}</button>` : ""}
@@ -944,6 +992,10 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
           <div class="field"><label>Titel</label><input name="titel" value="${escapeHtml(item.titel || item.title || "")}" required>${aiFieldActions([{ action: "improveText", target: "titel", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "titel" }])}</div>
           <div class="field"><label>Kurztext</label><textarea name="kurztext">${escapeHtml(item.kurztext || item.introText || "")}</textarea>${aiFieldActions([{ action: "shortenText", target: "kurztext", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "kurztext" }])}</div>
           <div class="field"><label>Langtext</label><textarea name="langtext">${escapeHtml(item.langtext || item.bodyText || "")}</textarea>${aiFieldActions([{ action: "improveText", target: "langtext", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "langtext" }])}</div>
+          <details class="editorial-tool-details" open>
+            <summary><span>Audio</span><strong>Audio & Barrierefreiheit</strong>${audioStatusBadge(audioVariantState("editorialContent", item, "accessible"))}</summary>
+            <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("editorialContent", item)}</div>
+          </details>
           <div class="form-grid--two"><div class="field"><label>Button-Text optional</label><input name="button_text" value="${escapeHtml(item.button_text || item.buttonText || "")}"></div><div class="field"><label>Button-Ziel optional</label><input name="button_ziel" value="${escapeHtml(item.button_ziel || item.buttonUrl || "")}"></div></div>
           <button class="button button--primary">Speichern</button><div id="content-save-result"></div>
         </form></section>`));
@@ -988,6 +1040,35 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
   const backSection = { boardMembers: "board", editorialContent: editorialBack, speakers: "speakers", sponsors: "sponsors" }[module] || module;
   const activeSection = { topics: "cms/topics", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", boardMembers: "cms/board", editorialContent: `cms/${editorialBack}` }[module] || "cms/editorial";
   return protect(cmsShell(activeSection, `${cmsTitle("Bearbeiten", `${definition.title} pflegen`, `<a class="button button--secondary button--small" href="#/cms/${backSection}">Zurueck</a>`)}<section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid">${fieldHtml}${imageUpload}<div class="form-grid--two"><div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="${activeStatus}" ${item.status === activeStatus ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Sichtbarkeit</label><select name="visibility"><option value="public" ${item.visibility === "public" ? "selected" : ""}>Oeffentlich</option><option value="members" ${item.visibility === "members" ? "selected" : ""}>Mitglieder</option><option value="internal" ${item.visibility === "internal" ? "selected" : ""}>Intern</option></select></div></div>${memberLiveControl}<button class="button button--primary">Speichern</button><div id="content-save-result"></div></form></section>${speakerManager}`));
+}
+
+export async function audioAdminPage() {
+  if (!hasCmsAccess()) return denied();
+  const [editorial, topics] = await Promise.all([list("editorialContent"), list("topics")]);
+  const internalAbout = editorial
+    .filter((item) => item.bereich === "ueber_uns" || item.page === "about" || String(item.key || "").startsWith("ueber_uns."))
+    .map((item) => ({ ...item, audioCollection: "editorialContent", audioArea: "Ueber uns", editHref: `#/cms/edit?module=editorialContent&id=${item.id}` }));
+  const topicRows = topics
+    .map((item) => ({ ...item, audioCollection: "topics", audioArea: "Thema", editHref: `#/cms/edit?module=topics&id=${item.id}` }));
+  const rows = [...internalAbout, ...topicRows].sort((a, b) => String(a.audioArea).localeCompare(String(b.audioArea)) || String(a.title || a.titel || "").localeCompare(String(b.title || b.titel || "")));
+  const rowHtml = rows.map((item) => {
+    const collection = item.audioCollection;
+    const title = item.title || item.titel || item.slug || item.id;
+    return `<tr>
+      <td><a class="link editorial-title-link" href="${escapeHtml(item.editHref)}">${escapeHtml(title)}</a><br><small>${escapeHtml(`${collection}/${item.id}`)}</small></td>
+      <td>${escapeHtml(item.audioArea)}</td>
+      <td>v${Number(item.contentVersion || 1)}<br><small>${escapeHtml(audioTextSignature(collection, item))}</small></td>
+      <td>${audioStatusBadge(audioVariantState(collection, item, "natural"))}<br>${audioMetaLine(collection, item, "natural")}</td>
+      <td>${audioStatusBadge(audioVariantState(collection, item, "accessible"))}<br>${audioMetaLine(collection, item, "accessible")}</td>
+      <td>${audioListCell(collection, item)}</td>
+    </tr>`;
+  }).join("");
+  return protect(cmsShell("cms/audio", `${cmsTitle("Audio & Barrierefreiheit", "Vorlese- und Audioverwaltung")}
+    <section class="panel audio-admin-intro">
+      <h2>Phase 1: Ueber uns</h2>
+      <p>Dieses Modul nutzt eine generische Content-ID, Textsignatur und Versionsnummer. Textaenderungen markieren vorhandene Audiofassungen als veraltet; Natural Voice und barrierefreie Vorlesefassung bleiben getrennt.</p>
+    </section>
+    <section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Inhalt</th><th>Bereich</th><th>Version</th><th>Natural Voice</th><th>Barrierefrei</th><th>Aktion</th></tr></thead><tbody>${rowHtml || `<tr><td colspan="6">Noch keine audiofaehigen Inhalte vorhanden.</td></tr>`}</tbody></table></div></section>`));
 }
 
 export async function setupPage() {

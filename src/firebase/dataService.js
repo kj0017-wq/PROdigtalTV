@@ -19,6 +19,20 @@ function mergeMissingDemoRecords(db, collectionName) {
   return missing.length;
 }
 
+function syncManagedInternalEditorial(db, bereich) {
+  const seedRecords = (demoDatabase.editorialContent || [])
+    .filter((record) => record.editorialManaged && record.bereich === bereich);
+  if (!seedRecords.length) return;
+  const seedIds = new Set(seedRecords.map((record) => record.id));
+  const existing = db.editorialContent || (db.editorialContent = []);
+  db.editorialContent = existing.filter((record) => !(record.editorialManaged && record.bereich === bereich && !seedIds.has(record.id)));
+  seedRecords.forEach((seedRecord) => {
+    const index = db.editorialContent.findIndex((record) => record.id === seedRecord.id);
+    if (index >= 0) db.editorialContent[index] = { ...db.editorialContent[index], ...clone(seedRecord) };
+    else db.editorialContent.push(clone(seedRecord));
+  });
+}
+
 function localDb() {
   const stored = localStorage.getItem(STORE_KEY);
   if (stored) {
@@ -33,6 +47,7 @@ function localDb() {
     mergeMissingDemoRecords(db, "ai_prompts");
     mergeMissingDemoRecords(db, "ai_prompt_versions");
     mergeMissingDemoRecords(db, "ai_editorial_logs");
+    syncManagedInternalEditorial(db, "mitglied_werden");
     ["event-salzburg-red-bull-hangar7-2026", "event-berlinale-2026", "event-leica-welt-2026", "event-salzburg-2025"].forEach((eventId) => {
       const demoEvent = demoDatabase.events.find((event) => event.id === eventId);
       const localEvent = (db.events || []).find((event) => event.id === eventId);

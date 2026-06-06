@@ -4,7 +4,7 @@ import {
   newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, portalPage, legalPage, notFoundPage
 } from "./pages/publicPages.js?v=460";
 import {
-  dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage, moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, mailAdminPage
+  dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage, moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, mailAdminPage, audioAdminPage
 } from "./cms/cmsPages.js?v=460";
 import { aiEditorialPage } from "./cms/aiEditorialPages.js?v=460";
 import { createRegistration } from "./firebase/registrationService.js";
@@ -74,6 +74,7 @@ async function viewForRoute(current) {
   if (current.path === "cms" && current.id === "editorial") return moduleListPage("editorialContent", current.section || "press");
   if (current.path === "cms" && current.id === "ai-editorial") return aiEditorialPage(current.section || "dashboard", current.query);
   if (current.path === "cms" && current.id === "mail") return moduleListPage("mailQueue");
+  if (current.path === "cms" && current.id === "audio") return audioAdminPage();
   if (current.path === "cms" && current.id === "mail-admin") return mailAdminPage();
   if (current.path === "cms" && current.id === "chatgpt") return chatGptPage();
   if (current.path === "cms" && current.id === "ai-settings") return aiSettingsPage();
@@ -167,37 +168,73 @@ function ttsWords(text = "") {
     .filter(Boolean);
 }
 
+function ttsWordWeights(words = []) {
+  return words.map((word) => {
+    const cleanLength = Math.max(1, String(word).replace(/[^\p{L}\p{N}]/gu, "").length);
+    const punctuationPause = /[.!?;:]$/.test(word) ? 3.2 : /[,)]$/.test(word) ? 1.8 : 0;
+    return Math.max(1.2, cleanLength * 0.42) + punctuationPause;
+  });
+}
+
+function ttsWordIndexForTime(state) {
+  const duration = Number.isFinite(state.audio.duration) && state.audio.duration > 0
+    ? state.audio.duration
+    : Math.max(1, state.words.length * 0.62);
+  if (!state.wordWeights?.length || state.weightedDuration !== duration) {
+    const weights = ttsWordWeights(state.words);
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0) || 1;
+    let cursor = 0;
+    state.wordWeights = weights.map((weight) => {
+      const start = cursor;
+      const seconds = (weight / totalWeight) * duration;
+      cursor += seconds;
+      return { start, end: cursor };
+    });
+    state.weightedDuration = duration;
+  }
+  const current = state.audio.currentTime || 0;
+  const index = state.wordWeights.findIndex((slot) => current >= slot.start && current < slot.end);
+  return index >= 0 ? index : Math.max(0, Math.min(state.words.length - 1, state.words.length - 1));
+}
+
 function ttsSourceText(reader) {
   const template = reader?.querySelector("[data-tts-source]");
   return template?.content?.textContent || template?.textContent || "";
 }
 
 function updateAccessibleTtsWord(state) {
-  if (!state?.wordNode || !state.words.length) return;
-  const duration = Number.isFinite(state.audio.duration) && state.audio.duration > 0
-    ? state.audio.duration
-    : Math.max(1, state.words.length * 0.55);
-  const index = Math.min(state.words.length - 1, Math.floor((state.audio.currentTime / duration) * state.words.length));
-  state.wordNode.textContent = state.words[index] || state.words[0] || "";
+  if (!state?.words.length) return;
+  const index = ttsWordIndexForTime(state);
+  if (state.wordNode) state.wordNode.textContent = state.words[index] || state.words[0] || "";
+  if (state.wordNodes?.length) {
+    const wordNode = state.wordNodes[index];
+    state.wordNodes.forEach((node, nodeIndex) => node.classList.toggle("is-active", nodeIndex === index));
+    wordNode?.scrollIntoView({ block: "center", inline: "nearest" });
+  }
 }
 
 async function startPublicTts(button) {
   const reader = button.closest("[data-tts-reader]");
-  const audioUrl = button.dataset.audioUrl || "";
   const mode = button.dataset.ttsMode || "natural";
-  if (!reader || !audioUrl) return;
+  let audioUrl = button.dataset.audioUrl || "";
+  if (mode === "natural" && !audioUrl) {
+    audioUrl = reader?.querySelector('[data-tts-mode="accessible"]')?.dataset.audioUrl || "";
+  }
+  if (!reader || !audioUrl) throw new Error("Keine Audiodatei fuer diesen Inhalt vorhanden.");
   closePublicTts();
   const audio = new Audio(audioUrl);
   audio.preload = "metadata";
   const isAccessible = mode === "accessible";
   const words = isAccessible ? ttsWords(ttsSourceText(reader)) : [];
+  const readingText = words.map((word, index) => `<span class="tts-reading-layer__token" data-tts-word-index="${index}">${escapeHtml(word)}</span>`).join(" ");
   const node = document.createElement("div");
   node.className = isAccessible ? "tts-reading-layer" : "tts-natural-player";
   node.setAttribute("role", isAccessible ? "dialog" : "status");
   node.innerHTML = isAccessible
     ? `<div class="tts-reading-layer__box" aria-modal="false">
-        <div><p class="eyebrow">Barrierefrei</p><strong>Wortanzeige</strong></div>
+        <div class="tts-reading-layer__head"><div><p class="eyebrow">Barrierefrei vorlesen</p><strong>Lesedisplay</strong></div><button type="button" class="button button--secondary button--small" data-tts-close>Schliessen</button></div>
         <div class="tts-reading-layer__word" data-tts-current-word>${escapeHtml(words[0] || "Bereit")}</div>
+        <div class="tts-reading-layer__text" data-tts-text>${readingText}</div>
         <div class="tts-reading-layer__controls">
           <button type="button" class="button button--secondary button--small" data-tts-pause>Pause</button>
           <button type="button" class="button button--secondary button--small" data-tts-close>Stop</button>
@@ -214,6 +251,7 @@ async function startPublicTts(button) {
     node,
     words,
     wordNode: node.querySelector("[data-tts-current-word]"),
+    wordNodes: Array.from(node.querySelectorAll("[data-tts-word-index]")),
     timer: null
   };
   const pauseButton = node.querySelector("[data-tts-pause]");
@@ -229,7 +267,7 @@ async function startPublicTts(button) {
   });
   audio.addEventListener("ended", closePublicTts, { once: true });
   audio.addEventListener("error", () => {
-    node.innerHTML = `<div class="alert alert--error">Audio konnte nicht geladen werden.</div>`;
+    node.innerHTML = `<div class="alert alert--warning">Audio ist fuer diesen Text noch nicht verfuegbar. Bitte im CMS neu erzeugen.</div>`;
   }, { once: true });
   if (isAccessible) {
     activePublicTts.timer = setInterval(() => updateAccessibleTtsWord(activePublicTts), 140);
@@ -359,10 +397,52 @@ function shouldAutoGenerateSpeech(collection, previous = {}, next = {}) {
     || speechTextSignature(collection, previous) !== signature;
 }
 
+function audioStatusUpdate(collection, item = {}, status = "aktuell") {
+  const signature = speechTextSignature(collection, item);
+  return {
+    contentId: `${collection}/${item.id || ""}`,
+    contentVersion: Number(item.contentVersion || item.audioContentVersion || 1),
+    contentTextSignature: signature,
+    audioStatus: status,
+    audioNaturalStatus: status,
+    audioAccessibleStatus: status,
+    audioNaturalTextSignature: status === "aktuell" ? signature : item.audioNaturalTextSignature || "",
+    audioAccessibleTextSignature: status === "aktuell" ? signature : item.audioAccessibleTextSignature || "",
+    audioTextSignature: status === "aktuell" ? signature : item.audioTextSignature || ""
+  };
+}
+
+function withContentVersionMetadata(collection, previous = {}, next = {}) {
+  if (!["editorialContent", "topics"].includes(collection)) return next;
+  const currentSignature = speechTextSignature(collection, next);
+  const previousSignature = previous.contentTextSignature || speechTextSignature(collection, previous);
+  const textChanged = Boolean(previous.id) && previousSignature !== currentSignature;
+  const hasAudio = Boolean(previous.audioUrl || previous.audioNaturalUrl || previous.audioAccessibleUrl);
+  const version = textChanged ? Number(previous.contentVersion || 1) + 1 : Number(previous.contentVersion || next.contentVersion || 1);
+  const stale = textChanged && hasAudio;
+  return {
+    ...next,
+    contentId: `${collection}/${next.id || previous.id || ""}`,
+    contentVersion: version,
+    contentTextSignature: currentSignature,
+    contentChangedAt: textChanged ? new Date().toISOString() : previous.contentChangedAt || next.contentChangedAt || new Date().toISOString(),
+    audioStatus: stale ? "veraltet" : next.audioStatus || previous.audioStatus || "deaktiviert",
+    audioNaturalStatus: stale ? "veraltet" : next.audioNaturalStatus || previous.audioNaturalStatus || "deaktiviert",
+    audioAccessibleStatus: stale ? "veraltet" : next.audioAccessibleStatus || previous.audioAccessibleStatus || "deaktiviert"
+  };
+}
+
 async function autoGenerateSpeechIfNeeded(collection, previous, next, result) {
   if (!shouldAutoGenerateSpeech(collection, previous, next)) return false;
   if (result) result.innerHTML = `<div class="alert">${progressMarkup("Texte gespeichert. Natural Voice und barrierefreie TTS werden aktualisiert ...", 70)}</div>`;
-  await generateArticleSpeechAsset({ collection, id: next.id, variant: "all" });
+  await upsert(collection, { id: next.id, ...audioStatusUpdate(collection, next, "in_erstellung") });
+  try {
+    await generateArticleSpeechAsset({ collection, id: next.id, variant: "all" });
+  } catch (error) {
+    await upsert(collection, { id: next.id, ...audioStatusUpdate(collection, next, "fehler"), audioErrorMessage: error.message || String(error), audioErrorAt: new Date().toISOString() });
+    throw error;
+  }
+  await upsert(collection, { id: next.id, ...audioStatusUpdate(collection, next, "aktuell"), audioGeneratedAt: new Date().toISOString(), audioErrorMessage: "" });
   if (result) result.innerHTML = `<div class="alert alert--success">Gespeichert. Audio-Varianten wurden aktualisiert.</div>`;
   return true;
 }
@@ -2048,6 +2128,37 @@ function wireAboutJumps() {
   });
 }
 
+function scrollToInternalOverviewTop() {
+  const target = document.querySelector(".internal-page-heading") || document.querySelector(".internal-overview");
+  if (!target) return;
+  const headerOffset = (document.querySelector(".topbar")?.getBoundingClientRect().height || 0) + 18;
+  const top = target.getBoundingClientRect().top + window.scrollY - headerOffset;
+  window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+}
+
+function wireInternalScrollTop() {
+  document.querySelectorAll("[data-internal-scroll-top]").forEach((button) => {
+    button.addEventListener("click", () => scrollToInternalOverviewTop());
+  });
+}
+
+function scrollToMembershipForm() {
+  const form = document.querySelector("#membership-application-form");
+  if (!form) return;
+  const headerOffset = (document.querySelector(".topbar")?.getBoundingClientRect().height || 0) + 18;
+  const top = form.getBoundingClientRect().top + window.scrollY - headerOffset;
+  window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+}
+
+function wireJoinScroll() {
+  document.querySelectorAll("[data-join-scroll]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      scrollToMembershipForm();
+    });
+  });
+}
+
 function wireStickyRotators() {
   document.querySelectorAll("[data-sticky-rotator], [data-rubric-rotator]").forEach((rotator) => {
     const slides = Array.from(rotator.querySelectorAll("[data-sticky-slide], [data-rubric-slide]"));
@@ -2074,6 +2185,8 @@ function wireActions() {
   applyTheme();
   wirePublicMenu();
   wireAboutJumps();
+  wireInternalScrollTop();
+  wireJoinScroll();
   wireStickyRotators();
   wireCmsMenu();
   wireImageDropzones();
@@ -2180,6 +2293,19 @@ function wireActions() {
       }
     });
   });
+  document.querySelectorAll("[data-tts-toggle]").forEach((button) => {
+    if (button.dataset.ttsToggleWired === "1") return;
+    button.dataset.ttsToggleWired = "1";
+    button.addEventListener("click", () => {
+      const reader = button.closest("[data-tts-reader]");
+      const actions = reader?.querySelector("[data-tts-actions]");
+      if (!actions) return;
+      const open = actions.hasAttribute("hidden");
+      actions.toggleAttribute("hidden", !open);
+      reader.classList.toggle("is-open", open);
+      button.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+  });
   document.querySelectorAll("[data-generate-article-speech]").forEach((button) => button.addEventListener("click", async () => {
     const result = button.closest(".audio-list-cell, .audio-generation-panel")?.querySelector("[data-speech-result]");
     const audioUrl = button.dataset.audioUrl || "";
@@ -2219,16 +2345,22 @@ function wireActions() {
     else button.textContent = "Audio wird erzeugt ...";
     const form = button.closest("form");
     if (result) result.innerHTML = `<div class="alert">${progressMarkup(form ? "Aktuelle Texte werden zuerst gespeichert ..." : "Gemini erzeugt und speichert die Audiodatei ...", 30)}</div>`;
+    let generationItem = null;
     try {
       if (form?.matches("#topic-editor-form, #content-edit-form, #ai-article-edit-form")) {
         await submitFormAndWait(form);
         if (result) result.innerHTML = `<div class="alert">${progressMarkup("Gemini erzeugt und speichert die Audiodatei ...", 72)}</div>`;
       }
+      generationItem = await getOne(button.dataset.collection, button.dataset.recordId);
+      if (generationItem) await upsert(button.dataset.collection, { id: generationItem.id, ...audioStatusUpdate(button.dataset.collection, generationItem, "in_erstellung") });
       const speech = await generateArticleSpeechAsset({ collection: button.dataset.collection, id: button.dataset.recordId, variant: button.dataset.ttsVariant || "all" });
+      const generatedItem = await getOne(button.dataset.collection, button.dataset.recordId);
+      if (generatedItem) await upsert(button.dataset.collection, { id: generatedItem.id, ...audioStatusUpdate(button.dataset.collection, generatedItem, "aktuell"), audioGeneratedAt: new Date().toISOString() });
       const truncated = speech.truncated || Object.values(speech.variants || {}).some((item) => item.truncated);
       if (result) result.innerHTML = `<div class="alert alert--success">Audio-Varianten gespeichert.${truncated ? " Der Text wurde fuer die Sprachausgabe gekuerzt." : ""}</div>`;
       await render();
     } catch (error) {
+      if (generationItem) await upsert(button.dataset.collection, { id: generationItem.id, ...audioStatusUpdate(button.dataset.collection, generationItem, "fehler"), audioErrorMessage: error.message || String(error), audioErrorAt: new Date().toISOString() });
       if (result) result.innerHTML = `<div class="alert alert--error">Audio konnte nicht erzeugt werden: ${escapeHtml(error.message || String(error))}</div>`;
     } finally {
       button.disabled = false;
@@ -4121,14 +4253,16 @@ function wireActions() {
       delete values.assetFile;
       delete values.assetFileDataUrl;
       delete values.removeAssetFile;
-      const savedValues = { ...existing, ...values };
+      const savedValues = withContentVersionMetadata(form.dataset.module, existing, { ...existing, ...values });
       await upsert(form.dataset.module, savedValues);
-      const audioUpdated = await autoGenerateSpeechIfNeeded(form.dataset.module, existing, savedValues, result);
       if (image || removeAssetRequested) {
         updateDropzoneSavedImage(form, savedValues.imageUrl || savedValues.logoUrl || savedValues.photoUrl || "");
       }
-      if (result && !audioUpdated) {
-        result.innerHTML = `<div class="alert alert--success">Gespeichert.</div>`;
+      if (result) {
+        const audioHint = ["editorialContent", "topics"].includes(form.dataset.module) && savedValues.audioStatus === "veraltet"
+          ? " Audio ist als veraltet markiert und kann im CMS manuell neu erzeugt werden."
+          : "";
+        result.innerHTML = `<div class="alert alert--success">Gespeichert.${audioHint}</div>`;
         result.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
       form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: savedValues }));
@@ -4211,8 +4345,6 @@ function wireActions() {
       updatedAt: new Date().toISOString()
     };
     await upsert("topics", savedTopic);
-    const audioUpdated = await autoGenerateSpeechIfNeeded("topics", topic, savedTopic, result);
-
     const selected = new Set(Array.from(form.querySelectorAll('input[name="assignedSpeakerIds"]:checked')).map((input) => input.value));
     const speakers = await list("speakers");
     await Promise.all(speakers.map((speaker) => {
@@ -4251,8 +4383,9 @@ function wireActions() {
     const imageStatus = form.querySelector("[data-image-status]");
     if (imageStatus) imageStatus.textContent = imageUpdate.imageUrl ? "Bild wurde gespeichert." : imageUpdate.imageUrl === "" ? "Bild wurde geloescht." : imageStatus.textContent;
     if (Object.prototype.hasOwnProperty.call(imageUpdate, "imageUrl")) updateDropzoneSavedImage(form, imageUpdate.imageUrl);
-    if (result && !audioUpdated) {
-      result.innerHTML = `<div class="alert alert--success">Thema wurde gespeichert.${imageUpdate.imageUrl ? " Bild wurde hochgeladen." : ""}</div>`;
+    if (result) {
+      const audioHint = savedTopic.audioStatus === "veraltet" ? " Audio ist als veraltet markiert und kann im CMS manuell neu erzeugt werden." : "";
+      result.innerHTML = `<div class="alert alert--success">Thema wurde gespeichert.${imageUpdate.imageUrl ? " Bild wurde hochgeladen." : ""}${audioHint}</div>`;
       result.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
     form.classList.add("is-saved");

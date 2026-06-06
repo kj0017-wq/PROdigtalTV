@@ -103,6 +103,10 @@ CMS-Routen sind fuer `admin` und `editor` vorgesehen:
 
 Die Routine ergaenzt fehlende Basisdokumente und ueberschreibt keine produktiven Inhalte. Das Entfernen von Demo-Daten ist in der UI bestaetigungspflichtig.
 
+## Verwaltete Interna-Inhalte
+
+Die oeffentlichen Rubriken `Ueber uns` und `Mitglied werden` werden ueber vorhandene `editorialContent`-Datensaetze mit `editorialManaged` gepflegt. Die Rubrik `mitglied_werden` nutzt die bestehenden Felder `bereich`, `typ`, `sortierung`, `status`, `sichtbarkeit`, `kurztext`, `langtext`, `button_text` und `button_ziel`; neue oder geaenderte Bausteine werden ueber den vorhandenen Interna-/Redaktionseditor administriert.
+
 ## Lokal starten
 
 ```powershell
