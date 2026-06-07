@@ -8,6 +8,7 @@ import { escapeHtml, formatDateTime, formatShortDate } from "../utils/format.js"
 
 const sections = [
   ["dashboard", "Themenliste"],
+  ["news-import", "News importieren"],
   ["press", "Presse"],
   ["articles", "Beitraege"],
   ["sources", "Quellen"],
@@ -857,6 +858,7 @@ function keywordTopicRows(topics = [], articles = []) {
 }
 
 function isAiEditorialArticle(item = {}) {
+  if (item.generation_origin === "manual_news_import" || item.ai_log_json?.import_flow === "manual_news_import") return false;
   return item.author_type === "ai"
     || item.authorType === "ai"
     || item.aiGenerated === true
@@ -1124,6 +1126,40 @@ function demoModeNotice() {
   return `<div class="alert alert--warning ai-demo-mode-notice"><strong>Lokale Vorschau:</strong> Die Themenrecherche nutzt hier einen festen Demo-Themenpool. Echte Themenrecherche, Quellenabruf und produktive KI-Pruefung laufen erst ueber die deployte Cloud Function.</div>`;
 }
 
+function newsImportPageContent(active) {
+  return `${cmsTitle("KI-Redaktion", "News importieren")}
+    ${nav(active)}
+    <section class="panel ai-news-import-panel">
+      <div class="ai-news-import-head">
+        <div>
+          <p class="eyebrow">Quellenimport</p>
+          <h2>News importieren</h2>
+          <p>Fuegen Sie Text ein oder laden Sie Bild- und Textdateien hoch. Die KI analysiert das Material und erstellt daraus einen redaktionellen News-Beitrag.</p>
+        </div>
+        <div class="ai-news-import-badge">visible = false</div>
+      </div>
+      <form id="ai-news-import-form" class="form-grid">
+        <div class="field editorial-text-field editorial-text-field--body">
+          <label>Textquelle einfuegen</label>
+          <textarea name="sourceText" placeholder="Pressemitteilung, Webseiten-Text, Notizen, Interview, E-Mail oder andere Textquelle hier einfuegen ..."></textarea>
+        </div>
+        <label class="ai-news-dropzone" data-ai-news-dropzone>
+          <strong>Text- oder Bilddateien hier ablegen</strong>
+          <span>PDF, DOCX, TXT, HTML, JPG, JPEG, PNG, WEBP</span>
+          <input type="file" name="sourceFiles" accept=".pdf,.docx,.txt,.html,.htm,image/jpeg,image/png,image/webp" multiple hidden>
+        </label>
+        <div class="ai-news-file-list" data-ai-news-file-list>
+          <p class="muted">Noch keine Dateien ausgewaehlt.</p>
+        </div>
+        <div class="actions">
+          <button class="button button--secondary" type="button" data-ai-news-add-source>+ Quelle hinzufuegen</button>
+          <button class="button button--primary" type="submit">Analysieren & neu formulieren</button>
+        </div>
+        <div id="ai-news-import-result"></div>
+      </form>
+    </section>`;
+}
+
 export async function aiEditorialPage(section = "dashboard", query = new URLSearchParams()) {
   const active = section || "dashboard";
   const resetLocalTopics = query.get("resetTopics") === "1";
@@ -1222,6 +1258,7 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
       ${demoModeNotice()}
       ${topicResearchPanel}
       <div id="ai-editorial-run-result"></div>`,
+    "news-import": newsImportPageContent(active),
     articles: `${cmsTitle("KI-Redaktion", "Beitraege")}${nav(active)}${demoModeNotice()}<section class="panel"><p class="muted">Neueste Beitraege zuerst.</p><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Beitrag</th><th>Herkunft</th><th>Kategorie</th><th>Quellen</th><th>Dubletten</th><th>KI-Pruefung</th><th>Status</th><th>Datum</th></tr></thead><tbody>${aiArticles.length ? articleRows(aiArticles) : `<tr><td colspan="8">Noch keine KI-Beitraege.</td></tr>`}</tbody></table></div></section><div id="ai-editorial-run-result"></div>`,
     press: pressPanel,
     sources: `${cmsTitle("KI-Redaktion", "Quellen")}${nav(active)}<section class="panel"><details class="source-management-details"><summary><strong>Quellen verwalten</strong><span>manuell hinzufuegen, automatisch erweitern, loeschen</span></summary><p class="muted">Quellen koennen manuell ergaenzt oder aus dem Systemkatalog automatisch in die verifizierte Quellenliste uebernommen werden.</p>${verifiedSourceForm()}</details></section><section class="panel"><h2>Quellen nach Themenbereich</h2><p class="muted">Orientierungsliste fuer die Themenrecherche. Die Quellen sind noch keine Belege fuer einen Artikel; die konkrete Belegpruefung erfolgt im Editor.</p>${sourceCategoryBlocks(sources)}</section><section class="panel"><h2>Alle verifizierten Quellen</h2><div class="table-wrap"><table class="table"><thead><tr><th>Nr.</th><th>Quelle</th><th>Typ</th><th>Status</th><th>Trust</th><th>Link</th><th>Aktion</th></tr></thead><tbody>${sources.length ? sourceRows(sources, { numbered: true, manageable: true }) : `<tr><td colspan="7">Noch keine Quellen erfasst.</td></tr>`}</tbody></table></div></section>`,

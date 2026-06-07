@@ -10,6 +10,34 @@ function fileAsDataUrl(file) {
   });
 }
 
+function imageAsOptimizedDataUrl(file, maxSize = 960, quality = 0.72) {
+  if (!file?.type?.startsWith("image/") || file.type === "image/svg+xml") return fileAsDataUrl(file);
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    image.addEventListener("load", () => {
+      const scale = Math.min(1, maxSize / Math.max(image.naturalWidth || maxSize, image.naturalHeight || maxSize));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round((image.naturalWidth || maxSize) * scale));
+      canvas.height = Math.max(1, Math.round((image.naturalHeight || maxSize) * scale));
+      const context = canvas.getContext("2d");
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(objectUrl);
+      let dataUrl = canvas.toDataURL("image/webp", quality);
+      if (dataUrl.length > 850000 && maxSize > 640) {
+        imageAsOptimizedDataUrl(file, 640, 0.65).then(resolve).catch(reject);
+        return;
+      }
+      resolve(dataUrl);
+    });
+    image.addEventListener("error", () => {
+      URL.revokeObjectURL(objectUrl);
+      fileAsDataUrl(file).then(resolve).catch(reject);
+    });
+    image.src = objectUrl;
+  });
+}
+
 export async function uploadEventMedia(eventId, files, metadata = {}, onProgress = () => {}) {
   const firebase = await getFirebaseServices();
   const results = [];
@@ -88,15 +116,36 @@ export async function uploadGalleryImages(galleryId, files, onProgress = () => {
   return results;
 }
 
+export async function uploadMediaAsset(file, storagePath) {
+  if (!file || !storagePath) return null;
+  const firebase = await getFirebaseServices();
+  if (!firebase) return { url: await imageAsOptimizedDataUrl(file), storagePath: "", fallback: true };
+  const safePath = String(storagePath || "").replace(/^\/+/, "");
+  if (!safePath.startsWith("images/")) throw new Error("Medien muessen unter images gespeichert werden.");
+  try {
+    const reference = firebase.storageLib.ref(firebase.storage, safePath);
+    await firebase.storageLib.uploadBytes(reference, file, { contentType: file.type });
+    return { url: await firebase.storageLib.getDownloadURL(reference), storagePath: safePath };
+  } catch (error) {
+    return {
+      url: await imageAsOptimizedDataUrl(file),
+      storagePath: "",
+      fallback: true,
+      error: error?.message || String(error)
+    };
+  }
+}
+
 export async function deleteStoredAsset(entity) {
-  if (!entity?.storagePath && !entity?.assetStoragePath) return;
+  if (!entity?.storagePath && !entity?.assetStoragePath && !entity?.storage_path_original && !entity?.storage_path_web && !entity?.file_path_original) return;
   const firebase = await getFirebaseServices();
   if (!firebase) return;
-  const path = entity.storagePath || entity.assetStoragePath;
+  const path = entity.storagePath || entity.assetStoragePath || entity.storage_path_original || entity.storage_path_web || entity.file_path_original;
   try {
     await firebase.storageLib.deleteObject(firebase.storageLib.ref(firebase.storage, path));
   } catch (error) {
-    if (error?.code !== "storage/object-not-found") throw error;
+    const code = String(error?.code || error?.message || "");
+    if (!["storage/object-not-found", "storage/unauthorized", "permission-denied", "unauthorized"].some((item) => code.includes(item))) throw error;
     console.warn("Stored asset could not be deleted:", path, error);
   }
 }

@@ -621,6 +621,7 @@ const editorialSections = {
 };
 
 function isAiGeneratedEditorialItem(item = {}) {
+  if (item.generation_origin === "manual_news_import" || item.ai_log_json?.import_flow === "manual_news_import") return false;
   return item.author_type === "ai"
     || item.authorType === "ai"
     || item.aiGenerated === true
@@ -837,6 +838,12 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
     const thumbState = item.imageUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`;
     const audioState = item.audioUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
     const galleryState = selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
+    const isNewsVisible = item.visible === true;
+    const visibleButtonLabel = isNewsVisible ? "Unsichtbar schalten" : "Freischalten";
+    const visibleButtonClass = isNewsVisible ? "button--secondary" : "button--primary";
+    const visibleState = isNewsVisible ? "Oeffentlich sichtbar" : "Oeffentlich unsichtbar";
+    const sourceJsonValue = JSON.stringify(item.source_snapshot_json || item.sources || [], null, 2);
+    const tagsValue = Array.isArray(item.tags) ? item.tags.join(", ") : item.tags || "";
     return protect(cmsShell(`cms/${backPath}`, `${cmsTitle("Redaktion", sectionKey === "press" ? "Pressemeldung bearbeiten" : "News bearbeiten", `<a class="button button--secondary button--small" href="#/cms/${backPath}">Zurueck</a>`)}
       <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid">
         <input type="hidden" name="page" value="${escapeHtml(sectionKey)}">
@@ -854,12 +861,14 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
             <section class="editorial-meta-panel">
               <div class="editorial-tools__head"><p class="eyebrow">Meta</p><h3>Veroeffentlichung</h3></div>
               <div class="field"><label>Kategorie</label><select name="category">${categoryOptions.map((category) => `<option value="${escapeHtml(category)}" ${category === categoryValue ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}</select></div>
+              ${sectionKey === "news" ? `<div class="field"><label>Tags</label><input name="tags" value="${escapeHtml(tagsValue)}" placeholder="Streaming, KI, Vermarktung"></div>` : ""}
               <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="published" ${item.status === "published" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div>
               <div class="meta-date-row"><div class="field"><label>Veroeffentlichungsdatum</label><input type="date" name="publishDate" value="${escapeHtml(item.publishDate || "")}"></div><div class="field"><label>Enddatum</label><input type="date" name="validTo" value="${escapeHtml(item.validTo || "")}"></div></div>
+              ${sectionKey === "news" ? `<div class="news-visible-control"><span>${visibleState}</span><button class="button ${visibleButtonClass} button--small" type="button" data-news-visible-toggle="${escapeHtml(item.id)}" data-visible="${isNewsVisible ? "false" : "true"}">${visibleButtonLabel}</button></div>` : ""}
             </section>
             <details class="editorial-tool-details"${item.imageUrl ? " open" : ""}>
               <summary><span>Medien</span><strong>Bild / Thumb</strong>${thumbState}</summary>
-              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultSize: "1200x675", aiCollage: true })}</div></div>
+              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultSize: "1200x675", aiCollage: true })}</div>${sectionKey === "news" ? `<div class="field"><label>Thumbnail-Prompt</label><textarea name="thumbnail_prompt">${escapeHtml(item.thumbnail_prompt || item.thumbnailPrompt || "")}</textarea></div><div class="field"><label>Thumbnail-Alt-Text</label><input name="thumbnail_alt" value="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || "")}"></div>` : ""}</div>
             </details>
             <details class="editorial-tool-details"${item.audioUrl ? " open" : ""}>
               <summary><span>Audio</span><strong>Vorlesen</strong>${audioState}</summary>
@@ -880,6 +889,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
             <details class="editorial-tool-details">
               <summary><span>Werkzeuge</span><strong>Rueckblick & Verknuepfungen</strong></summary>
             <section class="retrospective-tool">
+              ${sectionKey === "news" ? `<div class="field"><label>Quellen</label><textarea name="source_snapshot_json_text" placeholder='[{ "title": "", "url": "", "source_type": "" }]'>${escapeHtml(sourceJsonValue)}</textarea></div><div class="field"><label>Interne Hinweise</label><textarea name="editorial_note">${escapeHtml(item.editorial_note || item.editorialNote || "")}</textarea></div>` : ""}
               <div class="field"><label>Rückblick-Prompt</label><textarea name="retrospectivePrompt">${escapeHtml(retrospectivePrompt)}</textarea></div>
               <div class="field"><label>Event-Bezug</label><select name="linkedEventId">${eventOptions}</select></div>
               <div class="field"><label>Sponsorlogo</label><select name="sponsorId">${sponsorOptions}</select></div>

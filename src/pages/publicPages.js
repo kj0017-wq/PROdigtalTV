@@ -6,8 +6,125 @@ import { eventCard, topicCard } from "../components/cards.js";
 import { accessLabels, lifecycleLabels } from "../data/demoData.js";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
 
+function editorialThumbDataUrl(title = "", label = "", context = "") {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675">
+    <defs>
+      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#071f3f"/>
+        <stop offset=".58" stop-color="#123866"/>
+        <stop offset="1" stop-color="#e30613"/>
+      </linearGradient>
+      <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#ffffff" stop-opacity=".96"/>
+        <stop offset="1" stop-color="#eaf2fb" stop-opacity=".88"/>
+      </linearGradient>
+    </defs>
+    <rect width="1200" height="675" fill="url(#bg)"/>
+    <path d="M0 485 C260 380 350 520 560 425 C775 326 840 180 1200 240 L1200 675 L0 675 Z" fill="#ffffff" opacity=".12"/>
+    <path d="M140 128 H486 V486 H140 Z" rx="28" fill="url(#panel)"/>
+    <path d="M730 128 H1070 V486 H730 Z" rx="28" fill="#081a33" opacity=".72"/>
+    <path d="M285 276 h58 v-72 h46 v72 h58 v42 h-58 v72 h-46 v-72 h-58z" fill="#e30613"/>
+    <path d="M805 342 C850 260 954 260 999 342" fill="none" stroke="#ffffff" stroke-width="22" stroke-linecap="round"/>
+    <path d="M815 380 C885 328 930 328 990 380" fill="none" stroke="#e30613" stroke-width="18" stroke-linecap="round"/>
+    <path d="M557 205 h86 v270 h-86z" fill="#ffffff" opacity=".92"/>
+    <path d="M508 475 h184" stroke="#ffffff" stroke-width="20" stroke-linecap="round"/>
+    <path d="M526 255 h148" stroke="#ffffff" stroke-width="16" stroke-linecap="round"/>
+    <path d="M526 255 l-62 128 h124z" fill="none" stroke="#ffffff" stroke-width="14" stroke-linejoin="round"/>
+    <path d="M674 255 l-62 128 h124z" fill="none" stroke="#ffffff" stroke-width="14" stroke-linejoin="round"/>
+    <text x="80" y="82" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="800" letter-spacing="3">${escapeHtml(label)}</text>
+    <text x="80" y="592" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="900">${escapeHtml(title)}</text>
+    <text x="82" y="632" fill="#dce8f7" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">${escapeHtml(context)}</text>
+  </svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+const editorialFallbackNews = [
+  {
+    id: "news-gema-suno-ki-musik-urheberrecht",
+    title: "GEMA gegen Suno: KI-Musik wird zum Grundsatzfall fuer die Kreativwirtschaft",
+    headline: "GEMA gegen Suno: KI-Musik wird zum Grundsatzfall fuer die Kreativwirtschaft",
+    subtitle: "Vor dem Landgericht Muenchen geht es um die Frage, ob KI-Musik mit geschuetzten Werken trainiert wurde. Der Fall koennte wichtige Standards fuer Verguetung, Lizenzen und kreative Rechte setzen.",
+    subline: "Vor dem Landgericht Muenchen geht es um die Frage, ob KI-Musik mit geschuetzten Werken trainiert wurde. Der Fall koennte wichtige Standards fuer Verguetung, Lizenzen und kreative Rechte setzen.",
+    shortText: "Der Streit zwischen GEMA und Suno koennte zum europaeischen Musterfall fuer KI-Musik werden.",
+    bodyText: [
+      "Der Rechtsstreit zwischen der GEMA und dem US-Unternehmen Suno gehoert zu den wichtigsten Verfahren rund um generative KI in der Musikbranche. Suno bietet ein KI-Tool an, mit dem Nutzer per Texteingabe vollstaendige Songs erzeugen koennen. Die GEMA wirft dem Unternehmen vor, geschuetzte Werke aus ihrem Repertoire ohne Lizenz fuer das Training des Systems genutzt zu haben. Ausserdem sollen erzeugte KI-Songs bekannten Titeln teilweise so stark aehneln, dass Urheberrechte verletzt sein koennten.",
+      "Die Klage wurde am 21. Januar 2025 beim Landgericht Muenchen eingereicht. Am 9. Maerz 2026 wurde der Fall dort verhandelt. Nach Einschaetzung der GEMA handelt es sich um das erste europaeische Verfahren, das sich direkt mit der Nutzung von Audioinhalten durch KI-Unternehmen befasst. Ein Urteil steht noch aus; ein Copyright-Tracker von Taylor Wessing nennt den 12. Juni 2026 als erwarteten Entscheidungstermin.",
+      "Im Kern geht es um eine zentrale Frage fuer die digitale Medien- und Kreativwirtschaft: Darf ein KI-System mit urheberrechtlich geschuetzter Musik trainiert werden, ohne dass die Komponisten, Textautoren und Musikverlage zustimmen oder verguetet werden? Die GEMA argumentiert, dass der wirtschaftliche Erfolg solcher KI-Systeme auf menschlicher Kreativitaet beruht und die Rechteinhaber deshalb an der Nutzung beteiligt werden muessen.",
+      "Fuer die Medienbranche ist der Fall weit ueber Musik hinaus relevant. Wenn Gerichte klarstellen, dass KI-Training mit geschuetzten Inhalten lizenzpflichtig ist, haette das Folgen fuer viele Bereiche: Musikproduktion, TV, Streaming, Werbung, Archivnutzung, Synchronisation, Voice-Cloning, Trailer-Produktion und automatisierte Content-Erstellung. Besonders betroffen waeren Geschaeftsmodelle, bei denen KI neue Inhalte erzeugt, die auf bestehenden Werken, Stimmen, Stilen oder Produktionen beruhen.",
+      "Gleichzeitig zeigt der internationale Markt, dass sich die Branche bereits neu sortiert. In den USA haben grosse Musikunternehmen Verfahren gegen KI-Musikdienste wie Suno und Udio gefuehrt oder teilweise beigelegt. Reuters berichtete Anfang Juni 2026 zudem ueber eine neue Klage der US-Musikergewerkschaft gegen Warner und Universal, weil deren KI-Lizenzvereinbarungen aus Sicht der Musiker nicht ausreichend kompensieren.",
+      "Der Fall GEMA gegen Suno ist deshalb mehr als ein einzelner Urheberrechtsstreit. Er steht fuer die Frage, ob KI-Anbieter kreative Leistungen einfach als Trainingsmaterial nutzen duerfen - oder ob dafuer klare Lizenzmodelle entstehen muessen. Fuer Kreative, Rechteinhaber, Medienhaeuser und Plattformbetreiber geht es um nicht weniger als die wirtschaftliche Grundlage professioneller Inhalteproduktion im KI-Zeitalter.",
+      "Kurzfazit: Der Streit zwischen GEMA und Suno koennte zum europaeischen Musterfall fuer KI-Musik werden. Entscheidend wird sein, ob Gerichte das Training und die Ausgabe KI-generierter Musik als lizenzpflichtige Nutzung geschuetzter Werke bewerten."
+    ].join("\n\n"),
+    page: "news",
+    section: "news",
+    category: "KI / Musikrechte / Medienrecht / Digitale Medien",
+    tags: ["GEMA", "Suno", "KI-Musik", "Urheberrecht", "generative KI", "Musikrechte", "Lizenzierung", "Medienrecht", "Kreativwirtschaft", "AI Act"],
+    thumbnail_idea: "Geteiltes Bild: links ein klassisches Tonstudio mit Noten und Mischpult, rechts ein KI-Musikgenerator mit Wellenform und AI-Music-Label. In der Mitte eine Waage als Symbol fuer Urheberrecht und faire Verguetung.",
+    thumbnail_prompt: "Serioese redaktionelle Illustration fuer eine Medienbranchen-News, Thema GEMA gegen Suno, KI-Musik und Urheberrecht, links Tonstudio mit Noten und Mischpult, rechts digitales KI-Musikinterface mit Audiowellenform, zentrale Waage als Rechtssymbol, professioneller Stil, klare Linien, serioese Farben, keine Comicoptik, geeignet fuer TV-, Streaming- und Digitalbranche.",
+    imageUrl: editorialThumbDataUrl("GEMA vs. Suno", "KI-Musik", "Urheberrecht und faire Verguetung"),
+    thumbnail_url: editorialThumbDataUrl("GEMA vs. Suno", "KI-Musik", "Urheberrecht und faire Verguetung"),
+    thumbnail_alt: "Redaktionelles Thumb zu GEMA gegen Suno mit Studio, KI-Musik und Rechtssymbol.",
+    source_snapshot_json: [
+      { title: "GEMA klagt gegen Suno: Landgericht Muenchen verhandelt erstes Verfahren im Bereich Audio-KI", publisher: "GEMA", url: "https://www.gema.de/de/w/gema-klagt-gegen-suno-2026", source_type: "Verwertungsgesellschaft" },
+      { title: "Suno AI und Open AI: GEMA klagt fuer faire Verguetung", publisher: "GEMA", url: "https://www.gema.de/de/aktuelles/ki-und-musik/ki-klage", source_type: "Verwertungsgesellschaft" },
+      { title: "Musicians union sues record labels over AI licensing", publisher: "Reuters", url: "https://www.reuters.com/legal/litigation/musicians-union-sues-record-labels-over-ai-licensing-2026-06-05/", source_type: "Nachrichtenagentur" }
+    ],
+    publishDate: "2026-06-07",
+    validFrom: "2026-06-07",
+    status: "published",
+    visibility: "public",
+    visible: true
+  },
+  {
+    id: "news-ki-kennzeichnungspflicht-transparenz-medienanbieter",
+    title: "KI-Kennzeichnungspflicht: Transparenz wird zur Pflichtaufgabe fuer Medienanbieter",
+    headline: "KI-Kennzeichnungspflicht: Transparenz wird zur Pflichtaufgabe fuer Medienanbieter",
+    subtitle: "Ab August 2026 gelten neue EU-Regeln fuer KI-generierte Inhalte. Fuer Medienanbieter wird Transparenz damit zur Pflichtaufgabe.",
+    subline: "Ab August 2026 gelten neue EU-Regeln fuer KI-generierte Inhalte. Fuer Medienanbieter wird Transparenz damit zur Pflichtaufgabe.",
+    shortText: "Medienanbieter sollten schon jetzt klare Regeln fuer Kennzeichnung, redaktionelle Pruefung und Verantwortlichkeit vorbereiten.",
+    bodyText: [
+      "Kuenstliche Intelligenz ist laengst in der Medienproduktion angekommen. Texte werden mit KI vorbereitet, Pressemitteilungen redaktionell umformuliert, Bilder generiert, Stimmen synthetisch erzeugt und Videos automatisiert bearbeitet. Was bisher oft eine technische oder redaktionelle Entscheidung war, wird mit dem europaeischen AI Act zunehmend auch zu einer Frage von Transparenz, Verantwortung und Vertrauen.",
+      "Die Transparenzpflichten des AI Act sollen ab 2. August 2026 gelten. Sie betreffen unter anderem KI-Systeme, mit denen Menschen direkt interagieren, sowie bestimmte KI-generierte oder manipulierte Inhalte. Die Europaeische Kommission nennt ausdruecklich synthetische Inhalte, Deepfakes und KI-generierte Veroeffentlichungen zu Themen von oeffentlichem Interesse.",
+      "Fuer Medienanbieter ist dabei entscheidend: Nicht jede Nutzung von KI muss automatisch gross sichtbar gekennzeichnet werden. Es macht einen Unterschied, ob KI nur bei Recherche, Zusammenfassung, Uebersetzung oder Formulierung unterstuetzt - oder ob Inhalte so erzeugt oder veraendert wurden, dass das Publikum ueber deren Ursprung getaeuscht werden koennte.",
+      "Besonders relevant wird die Kennzeichnung bei Bild-, Audio- und Videoinhalten, die reale Personen, Stimmen oder Ereignisse taeuschend echt darstellen oder veraendern. Wer solche Deepfakes oder synthetischen Medien veroeffentlicht, muss kuenftig klarer offenlegen, dass KI eingesetzt wurde. Auch Anbieter generativer KI-Systeme sollen technische Markierungen ermoeglichen, damit kuenstlich erzeugte oder manipulierte Inhalte maschinenlesbar erkannt werden koennen.",
+      "Auch Texte koennen betroffen sein, wenn sie mit KI erstellt und veroeffentlicht werden, um die Oeffentlichkeit ueber Themen von allgemeinem Interesse zu informieren. Fuer Redaktionen bleibt deshalb wichtig, dass KI-generierte Inhalte redaktionell geprueft, eingeordnet und verantwortet werden. Genau hier liegt die Chance fuer professionelle Medienanbieter: Nicht die KI selbst ist das Problem, sondern ein unklarer oder verdeckter Einsatz.",
+      "Fuer TV-, Streaming- und Digitalanbieter sollte KI-Transparenz kuenftig direkt im Redaktionssystem mitgedacht werden. Sinnvoll ist eine einfache Dokumentation: Wurde KI fuer Text, Bild, Audio, Video, Zusammenfassung oder Uebersetzung genutzt? Wurde der Inhalt redaktionell geprueft? Wer traegt die finale Verantwortung? Solche Informationen helfen nicht nur bei der rechtlichen Einordnung, sondern staerken auch die Glaubwuerdigkeit gegenueber Publikum, Partnern und Mitgliedern.",
+      "Die KI-Kennzeichnungspflicht ist damit kein reines Warnschild gegen neue Technologie. Sie ist ein Instrument, um Vertrauen in digitale Medien zu sichern. Wer KI offen, nachvollziehbar und redaktionell kontrolliert einsetzt, kann neue Produktionsmoeglichkeiten nutzen, ohne journalistische Standards aufzugeben.",
+      "Kurzfazit: Medienanbieter sollten schon jetzt klare Regeln fuer den Einsatz von KI vorbereiten. Dazu gehoeren Kennzeichnung, redaktionelle Pruefung, Verantwortlichkeit und eine einfache Dokumentation im CMS."
+    ].join("\n\n"),
+    page: "news",
+    section: "news",
+    category: "Medienrecht / KI / Digitale Medien",
+    tags: ["KI-Kennzeichnungspflicht", "AI Act", "Kuenstliche Intelligenz", "Medienrecht", "Deepfake", "Transparenzpflicht", "Redaktion", "CMS", "generative KI", "digitale Medien"],
+    thumbnail_idea: "Moderner digitaler Newsroom mit Monitoren, KI-Symbol und dezenter Label-Markierung AI. Der Stil sollte serioes, klar und redaktionell wirken - keine uebertriebene Science-Fiction.",
+    thumbnail_prompt: "Serioese redaktionelle Illustration fuer eine Medienbranchen-News, moderner digitaler Newsroom, Monitore, dezentes KI-Symbol, transparente Label-Markierung AI, europaeischer Regulierungs-Kontext, professionelle Atmosphaere, klare Linien, serioeser Stil, geeignet fuer TV-, Streaming- und Digitalbranche.",
+    imageUrl: editorialThumbDataUrl("AI Label", "KI-Transparenz", "Kennzeichnungspflicht fuer Medienanbieter"),
+    thumbnail_url: editorialThumbDataUrl("AI Label", "KI-Transparenz", "Kennzeichnungspflicht fuer Medienanbieter"),
+    thumbnail_alt: "Redaktionelles Thumb zur KI-Kennzeichnungspflicht mit Newsroom, AI-Label und Regulierungskontext.",
+    source_snapshot_json: [
+      { title: "Consultation on the draft guidelines on transparency obligations under AI Act", publisher: "Digitale Strategie Europa", url: "https://digital-strategy.ec.europa.eu/en/consultations/consultation-draft-guidelines-transparency-obligations-under-ai-act", source_type: "EU-Kommission" }
+    ],
+    publishDate: "2026-06-07",
+    validFrom: "2026-06-07",
+    status: "published",
+    visibility: "public",
+    visible: true
+  }
+];
+
 function subhero(eyebrow, title, text) {
   return `<section class="subhero"><div class="container">${eyebrow ? `<p class="eyebrow">${eyebrow}</p>` : ""}<h1>${title}</h1><p>${text}</p></div></section>`;
+}
+
+function articleHeader({ eyebrow = "", title = "", intro = "", logoUrl = "", logoAlt = "" } = {}) {
+  return `<header class="article-header">
+    <div class="article-header__copy">
+      ${eyebrow ? `<p class="eyebrow">${escapeHtml(eyebrow)}</p>` : ""}
+      <h1>${escapeHtml(title)}</h1>
+      ${intro ? `<p>${escapeHtml(intro)}</p>` : ""}
+    </div>
+    ${logoUrl ? `<figure class="article-header__logo"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(logoAlt || title)}"></figure>` : ""}
+  </header>`;
 }
 
 function memberLogo(member) {
@@ -328,6 +445,14 @@ function articleSourcesList(item = {}) {
   return `<details class="sources-list" open><summary>Quellen anzeigen</summary><ul>${sources.map((source) => `<li><a class="link" href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.publisher || source.name || "Quelle")}: ${escapeHtml(source.title || source.relevance_note || source.url)}</a></li>`).join("")}</ul></details>`;
 }
 
+function publicNewsItems(items = []) {
+  return items.filter((item) => {
+    const isNews = item.page === "news" || item.section === "news";
+    const isHidden = item.visible === false || item.status === "archived" || item.status === "draft" || item.visibility === "internal";
+    return isNews && !isHidden;
+  });
+}
+
 function isAiGeneratedArticle(item = {}) {
   return item.author_type === "ai" || item.authorType === "ai" || item.aiGenerated === true;
 }
@@ -423,8 +548,7 @@ export async function homePage() {
   const primaryButtonUrl = hero.buttonUrl || (next ? `#/event/${next.id}` : "#/events");
   const secondaryButtonText = hero.secondaryButtonText || "Mitglied werden";
   const secondaryButtonUrl = hero.secondaryButtonUrl || "#/join";
-  const latestNewsItems = editorial
-    .filter((content) => content.page === "news" && content.status === "published")
+  const latestNewsItems = publicNewsItems(editorial)
     .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")))
     .slice(0, 4);
   const featuredTopic = topics[0];
@@ -544,20 +668,21 @@ export async function registrationPage(id) {
 export async function topicsPage() {
   const topics = await listPublicContent("topics");
   return publicShell("topics", `${subhero("Themen", "Die Agenda der digitalen Medienwirtschaft.", "PROdigitalTV buendelt relevante Fragestellungen und bringt sie in konkreten Events zur Diskussion.")}
-    <section class="section"><div class="container"><div class="card-grid card-grid--three">${topics.map(topicCard).join("")}</div></div></section>`);
+    <section class="section"><div class="container"><div class="card-grid card-grid--three editorial-list editorial-list--topics">${topics.map(topicCard).join("")}</div></div></section>`);
 }
 
 export async function newsPage() {
-  const news = (await listPublicContent("editorialContent"))
-    .filter((item) => item.page === "news" || item.section === "news")
+  const cmsNews = publicNewsItems(await listPublicContent("editorialContent"));
+  const news = [...cmsNews, ...editorialFallbackNews.filter((fallback) => !cmsNews.some((item) => item.id === fallback.id))]
     .sort(editorialPrioritySort);
   return publicShell("news", `${subhero("News", "Aktuelles von PROdigitalTV.", "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.")}
-    <section class="section"><div class="container">${news.length ? `<div class="card-grid card-grid--three">${news.map((item) => `<a class="quick-card news-card" href="#/news/${item.id}">${item.imageUrl ? `<figure class="news-card__thumb"><img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.title || "News")}"></figure>` : ""}<p class="eyebrow">${escapeHtml(item.category || "News")}</p><h3>${escapeHtml(item.title || "")}</h3>${item.subtitle ? `<p class="news-card__subtitle">${escapeHtml(item.subtitle)}</p>` : ""}<p>${escapeHtml(item.shortText || item.teaserText || item.introText || item.bodyText || "").slice(0, 180)}</p></a>`).join("")}</div>` : `<div class="alert">Aktuell sind keine News veroeffentlicht.</div>`}</div></section>`);
+    <section class="section"><div class="container">${news.length ? `<div class="card-grid card-grid--three editorial-list editorial-list--news">${news.map((item) => `<a class="quick-card news-card" href="#/news/${item.id}">${item.imageUrl ? `<figure class="news-card__thumb"><img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.title || "News")}"></figure>` : ""}<p class="eyebrow">${escapeHtml(item.category || "News")}</p><h3>${escapeHtml(item.title || "")}</h3>${item.subtitle ? `<p class="news-card__subtitle">${escapeHtml(item.subtitle)}</p>` : ""}<p>${escapeHtml(item.shortText || item.teaserText || item.introText || item.bodyText || "").slice(0, 180)}</p></a>`).join("")}</div>` : `<div class="alert">Aktuell sind keine News veroeffentlicht.</div>`}</div></section>`);
 }
 
 export async function newsDetailPage(id) {
-  const item = await getOne("editorialContent", id);
+  const item = await getOne("editorialContent", id) || editorialFallbackNews.find((entry) => entry.id === id);
   if (!item || (item.page !== "news" && item.section !== "news" && !item.isRetrospective)) return notFoundPage();
+  if (!item.isRetrospective && (item.visible === false || item.status === "archived" || item.status === "draft" || item.visibility === "internal")) return notFoundPage();
   const [sponsors, galleries] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries")]);
   const date = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   const text = item.bodyText || item.mainText || item.text || item.shortText || item.teaserText || "";
@@ -566,9 +691,7 @@ export async function newsDetailPage(id) {
   const attachedGalleryImages = Array.isArray(selectedGallery?.images)
     ? [...selectedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 12)
     : [];
-  const leadMedia = attachedGalleryImages.length
-    ? galleryPlayCta(selectedGallery, attachedGalleryImages)
-    : item.imageUrl ? `<figure class="news-detail__thumb news-detail__thumb--in-text"><img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.title || "News")}"></figure>` : "";
+  const leadMedia = attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "";
   const detailSection = item.isRetrospective ? "archive" : "news";
   const detailTitle = item.isRetrospective ? "Rückblicke" : "News";
   const detailIntro = item.isRetrospective ? "Nachberichte, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen." : "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.";
@@ -581,8 +704,12 @@ export async function newsDetailPage(id) {
       <article class="detail-main news-detail">
         <a class="link news-detail__back" href="${backHref}">${backText}</a>
         <p class="eyebrow">${escapeHtml(item.category || "News")}${date ? ` · ${formatDate(date)}` : ""}</p>
-        <h2>${escapeHtml(item.title || "")}</h2>
-        ${item.subtitle ? `<p class="lead">${escapeHtml(item.subtitle)}</p>` : ""}
+        ${articleHeader({
+          title: item.title || "",
+          intro: item.subtitle || "",
+          logoUrl: item.imageUrl || "",
+          logoAlt: `Artikelmotiv ${item.title || "News"}`
+        })}
         ${ttsReader({ title: item.title || "", text, audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
         <div class="editorial-text">${leadMedia}${articleParagraphs(text)}</div>
         ${articleSourcesList(item)}
@@ -597,24 +724,35 @@ export async function newsDetailPage(id) {
 }
 
 export async function topicDetailPage(id) {
-  const [topic, events, sponsors, galleries] = await Promise.all([getOne("topics", id), listPublicEvents(), listPublicContent("sponsors"), listPublicContent("galleries")]);
+  const [topic, events, sponsors, galleries, allTopics] = await Promise.all([getOne("topics", id), listPublicEvents(), listPublicContent("sponsors"), listPublicContent("galleries"), listPublicContent("topics")]);
   if (!topic) return notFoundPage();
   const linked = events.filter((event) => event.topicIds.includes(id) && event.visibility === "public" && !isPastEvent(event));
+  const relatedTopics = allTopics.filter((entry) => entry.id !== topic.id).slice(0, 4);
   const topicIntro = topic.shortDescription || topic.subtitle || topic.longDescription || topic.bodyText || "";
   const topicText = topic.longDescription || topic.bodyText || topic.shortDescription || "";
   const selectedGallery = topic.galleryId ? galleries.find((gallery) => gallery.id === topic.galleryId) : null;
   const attachedGalleryImages = Array.isArray(selectedGallery?.images)
     ? [...selectedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 12)
     : [];
-  const leadMedia = attachedGalleryImages.length
-    ? galleryPlayCta(selectedGallery, attachedGalleryImages)
-    : topic.imageUrl ? `<figure class="topic-hero-image"><img src="${escapeHtml(topic.imageUrl)}" alt="Themenbild ${escapeHtml(topic.title)}"></figure>` : "";
+  const leadMedia = attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "";
   const editorialBlock = topicText
     ? `<section class="section section--white"><div class="container topic-article">${ttsReader({ title: topic.title || "", text: topicText, audioUrl: topic.audioUrl || "", audioAccessibleUrl: topic.audioAccessibleUrl || "", audioNaturalUrl: topic.audioNaturalUrl || "", audioStatus: topic.audioStatus || "", audioAccessibleStatus: topic.audioAccessibleStatus || "", audioNaturalStatus: topic.audioNaturalStatus || "" })}${articleParagraphs(topicText)}</div></section>`
     : "";
-  return publicShell("topics", `${subhero("Thema", escapeHtml(topic.title), escapeHtml(topicIntro))}
+  const relatedTopicsBlock = relatedTopics.length
+    ? `<section class="section section--white section--related-topics"><div class="container"><div class="section-head"><div><p class="eyebrow">Weitere Themen</p><h2>Mehr aus der Rubrik</h2></div></div><div class="card-grid card-grid--four">${relatedTopics.map(topicCard).join("")}</div></div></section>`
+    : "";
+  return publicShell("topics", `<section class="section section--article-head"><div class="container">
+      ${articleHeader({
+        eyebrow: "Thema",
+        title: topic.title || "",
+        intro: topicIntro,
+        logoUrl: topic.imageUrl || "",
+        logoAlt: `Themenmotiv ${topic.title || "Thema"}`
+      })}
+    </div></section>
     ${leadMedia ? `<section class="section section--flush"><div class="container">${leadMedia}</div></section>` : ""}
     ${editorialBlock}
+    ${relatedTopicsBlock}
     <section class="section"><div class="container"><div class="section-head"><div><p class="eyebrow">Verknuepfte Events</p><h2>Im Dialog</h2></div></div><div class="card-grid card-grid--three">${linked.map((event) => eventCard(event, event.date < "2026-05-26", sponsors)).join("")}</div></div></section>`);
 }
 

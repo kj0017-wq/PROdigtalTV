@@ -73,6 +73,19 @@ function localSuggestion(action, payload) {
       status: "suggested"
     };
   }
+  if (action === "generateImageAltText") {
+    const title = payload.context?.title || payload.context?.filename || "Bild";
+    const text = `Bildanalyse ist lokal nicht verfuegbar. Bitte die Cloud-KI nutzen oder den sichtbaren Bildinhalt manuell beschreiben: ${title}.`;
+    return {
+      action,
+      suggestedText: text,
+      structured: {
+        description: text,
+        alt_text: title
+      },
+      status: "suggested"
+    };
+  }
   return {
     action,
     suggestedText: text
@@ -331,6 +344,96 @@ export async function importGermanPressReleases(options = {}) {
     perSourceLimit: Math.max(1, Math.min(10, Number(options.perSourceLimit || 4)))
   });
   return result.data;
+}
+
+function compactSourceText(value = "", limit = 9000) {
+  return String(value || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
+    .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, limit);
+}
+
+function firstSentence(text = "") {
+  return compactSourceText(text).split(/(?<=[.!?])\s+/).find((part) => part.trim().length > 20) || "";
+}
+
+function sourceTitleFromFile(source = {}, index = 0) {
+  return source.name || source.fileName || source.title || `Quelle ${index + 1}`;
+}
+
+function localImportedNewsDraft(payload = {}) {
+  const textSources = Array.isArray(payload.textSources) ? payload.textSources : [];
+  const imageSources = Array.isArray(payload.imageSources) ? payload.imageSources : [];
+  const combinedText = compactSourceText([payload.sourceText, ...textSources.map((source) => source.text || source.content || "")].filter(Boolean).join("\n\n"), 14000);
+  const lead = firstSentence(combinedText);
+  const words = combinedText.split(/\s+/).filter((word) => word.length > 3);
+  const titleSeed = lead || combinedText.slice(0, 140) || "Neue Entwicklung in der digitalen Medienwirtschaft";
+  const headline = titleSeed
+    .replace(/^Pressemitteilung[:\s-]*/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 92)
+    .replace(/[,:;]\s*$/, "");
+  const body = combinedText
+    ? [
+      lead || headline,
+      compactSourceText(combinedText, 1100),
+      "Der Beitrag wurde aus den eingefuegten Quellen vorbereitet. Redaktion, Fakten, Quellen und Bildverwendung muessen vor der Freischaltung geprueft werden."
+    ].filter(Boolean).join("\n\n")
+    : "Aus den bereitgestellten Dateien konnte noch kein belastbarer Fliesstext extrahiert werden. Bitte Textquelle ergaenzen und redaktionell pruefen.";
+  const tags = Array.from(new Set(words
+    .map((word) => word.replace(/[^A-Za-zÀ-ž0-9-]/g, ""))
+    .filter((word) => word.length >= 5)
+    .filter((word) => !/^(diese|dieser|diesen|einer|einem|einen|werden|wurde|haben|ueber|fuer|nicht|auch)$/i.test(word))
+    .slice(0, 12))).slice(0, 8);
+  const sources = textSources.map((source, index) => ({
+    title: sourceTitleFromFile(source, index),
+    url: source.url || "",
+    source_type: source.type || source.mimeType || "Textquelle"
+  }));
+  return {
+    headline: headline || "Neue Entwicklung in der digitalen Medienwirtschaft",
+    subline: lead && lead !== headline ? lead.slice(0, 160) : "Redaktioneller News-Entwurf aus gelieferten Quellen.",
+    body,
+    sources,
+    tags,
+    category: tags.find((tag) => /ki|streaming|tv|werbung|medien|plattform/i.test(tag)) || "News",
+    relevance_score: combinedText ? 65 : 25,
+    relevance_reason: combinedText ? "Aus lokal bereitgestellten Textquellen abgeleitet." : "Es liegt noch zu wenig extrahierbarer Text vor.",
+    thumbnail_idea: imageSources.length ? `Eines der gelieferten Bilder als redaktionelles Vorschaubild pruefen: ${imageSources[0].name || imageSources[0].fileName || "Bildquelle"}.` : "Redaktionelles Motiv zur digitalen Medienwirtschaft.",
+    thumbnail_prompt: "Serioeses redaktionelles 16:9-Vorschaubild fuer PROdigitalTV, digitale Medienwirtschaft, sachlich, modern, keine erfundenen Logos, keine realen Personen identifizieren.",
+    thumbnail_alt: headline || "News-Motiv",
+    gallery_suggestions: imageSources.map((image) => ({
+      file_name: image.name || image.fileName || "",
+      caption: image.caption || image.name || "Bildquelle redaktionell pruefen",
+      alt_text: image.altText || image.name || "Redaktionelles Bildmotiv"
+    })),
+    editorial_note: "Lokaler Import-Fallback: Text und Bilddaten wurden ohne Live-GPT verarbeitet. Keine Fakten ergaenzen, Quellen pruefen, erst danach freischalten."
+  };
+}
+
+export async function importNewsFromSources(payload = {}) {
+  const firebase = await getFirebaseServices();
+  if (firebase && !localPreviewMode()) {
+    try {
+      const callable = firebase.functionsLib.httpsCallable(firebase.functions, "importNewsFromSources", { timeout: 600000 });
+      const result = await callable(payload);
+      return result.data;
+    } catch (error) {
+      if (!["functions/not-found", "functions/unavailable", "functions/internal", "functions/deadline-exceeded"].includes(error?.code)) throw error;
+    }
+  }
+  return {
+    ok: true,
+    localOnly: true,
+    article: localImportedNewsDraft(payload),
+    message: "Lokaler redaktioneller Vorschlag wurde aus den gelieferten Quellen vorbereitet."
+  };
 }
 
 function rotateLocalSources(sources = [], existingSuggestions = [], category = "", keywords = "") {

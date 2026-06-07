@@ -28,7 +28,7 @@ const ACTIONS = {
   generateArchiveText: { label: "Archivtext erzeugen", mode: "text", instruction: "Formuliere einen Rueckblicktext fuer Archiv oder Eventnachlauf." },
   generateEventRetrospective: { label: "Rueckblick aus Redaktionstext erzeugen", mode: "text", instruction: "Erzeuge aus Pressemitteilung, Einladung, Agenda oder vorhandenen Stichpunkten einen zusammenhaengenden Rueckblick als Fliesstext. Nutze den im Feld retrospectivePrompt uebergebenen Redaktionsprompt als vorrangige Arbeitsanweisung. Formuliere konsequent in der Vergangenheit, bevorzugt mit Praeteritum oder Perfekt. Beginne nach Moeglichkeit konkret: 'Am [Datum] fand das [Event] bei [Gastgeber] im [Ort/Location] statt. Im Mittelpunkt standen [Themen].' Keine Einladung, keine Anmeldung, keine Zukunftsform, keine Bulletpoints und keine nicht belegten Fakten erfinden." },
   generateGalleryIntro: { label: "Galerie-Einleitung erzeugen", mode: "text", instruction: "Erzeuge eine kurze Einleitung fuer eine Event-Fotogalerie." },
-  generateImageAltText: { label: "Alt-Texte erzeugen", mode: "json", instruction: "Erzeuge JSON mit images[]. Nutze Dateiname, Eventtitel, Thema und manuelle Beschreibung; keine Bildinhalte erfinden." },
+  generateImageAltText: { label: "Bildinhalt beschreiben", mode: "json", instruction: "Beschreibe den Bildinhalt und die visuelle Wirkung. Fuer Bilder darf die KI visuelle Motive, Stimmung, Stil und plausible Bildaussage redaktionell einordnen. Nutze die Bilddatei, sofern imageUrl uebergeben wurde. Antworte als JSON mit description, alt_text, thumbnail_alt, thumbnail_description und optional images[0].beschreibung." },
   generateDownloadDescription: { label: "Downloadbeschreibung erzeugen", mode: "text", instruction: "Erzeuge eine sachliche Beschreibung fuer einen Download." },
   analyzeEventPipelineQuality: { label: "Pipeline-KI-Pruefung", mode: "json", instruction: "Pruefe die Event-Pipeline als JSON mit blockers, warnings, recommendations, optionalNotes und summary. KI-Hinweise duerfen Statuswechsel nicht blockieren." }
 };
@@ -116,17 +116,47 @@ function buildPrompt(action, payload) {
   ].join("\n\n");
 }
 
+function buildImageAltTextPrompt(payload) {
+  const context = payload.context || {};
+  return [
+    "Erzeuge eine echte Bildinhaltsbeschreibung fuer die PROdigitalTV-Mediathek.",
+    "Beschreibe Motiv, Bildtyp, Farben, Aufbau, Text im Bild, grafische Elemente, Stimmung, Stil und plausible redaktionelle Bildaussage.",
+    "Fuer Bilder darfst du die visuelle Wirkung einordnen und einen passenden redaktionellen Kontext formulieren.",
+    "Keine CMS-Verwendungsbeschreibung, keine Aussage wie 'fuer die Mediathek', keine Dateinamen-Erklaerung.",
+    "Die Beschreibung soll ein bis zwei sachliche deutsche Saetze haben.",
+    "Der Alt-Text soll kurz und konkret sein, maximal 160 Zeichen.",
+    "Antworte ausschliesslich als valides JSON mit description, alt_text, thumbnail_alt, thumbnail_description und images[0].beschreibung.",
+    `CMS-Kontext nur zur Orientierung, nicht als Ersatz fuer Bildanalyse: ${JSON.stringify({
+      title: context.title || "",
+      filename: context.filename || "",
+      mediaType: context.mediaType || "",
+      format: context.format || "",
+      tags: context.tags || []
+    })}`
+  ].join("\n\n");
+}
+
 async function callOpenAi(action, payload, settings) {
   const key = openAiApiKey.value() || process.env.OPENAI_API_KEY;
   if (!key) throw new HttpsError("failed-precondition", "OPENAI_API_KEY ist nicht als Firebase Secret/Environment gesetzt.");
   const actionConfig = ACTIONS[action];
+  const imageUrl = String(payload.imageUrl || payload.context?.imageUrl || "").trim();
+  const isImageAltText = action === "generateImageAltText" && imageUrl;
   const body = {
     model: settings.model || "gpt-4.1-mini",
     temperature: Number(settings.temperature ?? 0.3),
     max_output_tokens: Number(settings.maxTokens ?? 900),
     input: [
       { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: buildPrompt(action, payload) }
+      {
+        role: "user",
+        content: isImageAltText
+          ? [
+              { type: "input_text", text: buildImageAltTextPrompt(payload) },
+              { type: "input_image", image_url: imageUrl }
+            ]
+          : buildPrompt(action, payload)
+      }
     ]
   };
   if (actionConfig.mode === "json") {

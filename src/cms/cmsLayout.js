@@ -16,10 +16,22 @@ const sections = [
   },
   ["cms/audio", "Audio & Barrierefreiheit"],
   {
+    route: "cms/media/library",
+    title: "Medien & Thumbnails",
+    children: [
+      ["cms/media/library", "Mediathek"],
+      ["cms/media/upload", "Bild hochladen"],
+      ["cms/media/ai", "KI-Grafik erstellen"],
+      ["cms/media/edit", "Bild bearbeiten"],
+      ["cms/media/variants", "Varianten"]
+    ]
+  },
+  {
     route: "cms/ai-editorial/dashboard",
     title: "KI-Redaktion",
     children: [
       ["cms/ai-editorial/dashboard", "Themenliste"],
+      ["cms/ai-editorial/news-import", "News importieren"],
       ["cms/ai-editorial/articles", "Beitraege"],
       ["cms/ai-editorial/sources", "Quellen"],
       ["cms/ai-editorial/prompts", "Prompts"],

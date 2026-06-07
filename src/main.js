@@ -7,14 +7,15 @@ import {
   dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage, moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, mailAdminPage, audioAdminPage
 } from "./cms/cmsPages.js?v=460";
 import { aiEditorialPage } from "./cms/aiEditorialPages.js?v=460";
+import { mediaPage } from "./cms/mediaPages.js?v=1";
 import { createRegistration } from "./firebase/registrationService.js";
 import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=460";
 import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=460";
-import { deleteStoredAsset, uploadEntityImage, uploadEventMedia, uploadGalleryImages } from "./firebase/storageService.js";
+import { deleteStoredAsset, uploadEntityImage, uploadEventMedia, uploadGalleryImages, uploadMediaAsset } from "./firebase/storageService.js?v=3";
 import { checkFirebaseConnection, checkFirestoreStructure, initializeDatabase, createDemoData, removeDemoData } from "./firebase/setupService.js";
 import { downloadRegistrationsCsv } from "./utils/csv.js";
 import { escapeHtml } from "./utils/format.js";
-import { callChatGptAction, generateCmsThumbCollage, saveAiDraft, runAiEditorialTask, saveAiEditorialSettings, generateAiEditorialThumbnail, generateAiTopicSuggestions, importGermanPressReleases } from "./ai/openaiService.js?v=314";
+import { callChatGptAction, generateCmsThumbCollage, saveAiDraft, runAiEditorialTask, saveAiEditorialSettings, generateAiEditorialThumbnail, generateAiTopicSuggestions, importGermanPressReleases, importNewsFromSources } from "./ai/openaiService.js?v=314";
 import { generateArticleSpeechAsset } from "./ai/ttsService.js";
 import { aiSourceCatalog } from "./data/aiSourceCatalog.js";
 
@@ -23,8 +24,10 @@ const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 
 function applyTheme(theme = localStorage.getItem("pdtTheme") || "day") {
-  const nextTheme = theme === "night" ? "night" : "day";
+  const currentRoute = route();
+  const nextTheme = currentRoute.path === "cms" ? "day" : theme === "night" ? "night" : "day";
   document.documentElement.dataset.theme = nextTheme;
+  document.documentElement.style.colorScheme = nextTheme === "night" ? "dark" : "light";
   document.querySelectorAll("[data-theme-label]").forEach((label) => {
     label.textContent = nextTheme === "night" ? "Night" : "Day";
   });
@@ -63,7 +66,8 @@ async function viewForRoute(current) {
   if (current.path === "cms" && current.id === "events") return eventsAdminPage();
   if (current.path === "cms" && current.id === "event") return eventEditPage(current.section, current.query.get("tab") || "base", current.query);
   if (current.path === "cms" && current.id === "registrations") return registrationsPage();
-  if (current.path === "cms" && ["followup", "media"].includes(current.id)) return eventFollowUpPage();
+  if (current.path === "cms" && current.id === "media") return mediaPage(current.section || "library", current.query);
+  if (current.path === "cms" && current.id === "followup") return eventFollowUpPage();
   if (current.path === "cms" && current.id === "topics") return moduleListPage("topics");
   if (current.path === "cms" && current.id === "galleries") return moduleListPage("galleries");
   if (current.path === "cms" && current.id === "speakers") return moduleListPage("speakers");
@@ -297,6 +301,108 @@ function formObject(form) {
     data[item.name] = item.checked;
   });
   return data;
+}
+
+const AI_NEWS_TEXT_TYPES = new Set([
+  "text/plain",
+  "text/html",
+  "application/xhtml+xml"
+]);
+
+const AI_NEWS_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp"
+]);
+
+const AI_NEWS_EXTRA_TEXT_EXTENSIONS = /\.(txt|html?|pdf|docx)$/i;
+const AI_NEWS_SUPPORTED_EXTENSIONS = /\.(txt|html?|pdf|docx|jpe?g|png|webp)$/i;
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result || "")));
+    reader.addEventListener("error", () => reject(reader.error));
+    reader.readAsText(file);
+  });
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result || "")));
+    reader.addEventListener("error", () => reject(reader.error));
+    reader.readAsDataURL(file);
+  });
+}
+
+function cleanImportedHtml(value = "") {
+  return String(value || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
+    .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
+    .replace(/<aside[\s\S]*?<\/aside>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function collectAiNewsImportSources(form) {
+  const fileInput = form.querySelector('input[name="sourceFiles"]');
+  const files = Array.from(fileInput?.files || []);
+  const invalid = files.filter((file) => !AI_NEWS_SUPPORTED_EXTENSIONS.test(file.name) && !AI_NEWS_TEXT_TYPES.has(file.type) && !AI_NEWS_IMAGE_TYPES.has(file.type));
+  if (invalid.length) throw new Error(`Nicht unterstuetzte Datei: ${invalid.map((file) => file.name).join(", ")}`);
+  const textSources = [];
+  const imageFiles = [];
+  const imageSources = [];
+  const unsupportedTextFiles = [];
+  for (const file of files) {
+    if (AI_NEWS_IMAGE_TYPES.has(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name)) {
+      imageFiles.push(file);
+      imageSources.push({
+        name: file.name,
+        type: file.type || "Bilddatei",
+        size: file.size,
+        dataUrl: await readFileAsDataUrl(file)
+      });
+      continue;
+    }
+    if (AI_NEWS_TEXT_TYPES.has(file.type) || /\.(txt|html?)$/i.test(file.name)) {
+      const rawText = await readFileAsText(file);
+      textSources.push({
+        name: file.name,
+        type: file.type || "Textdatei",
+        text: file.type === "text/html" || /\.html?$/i.test(file.name) ? cleanImportedHtml(rawText) : rawText
+      });
+      continue;
+    }
+    if (AI_NEWS_EXTRA_TEXT_EXTENSIONS.test(file.name)) {
+      unsupportedTextFiles.push(file.name);
+      textSources.push({
+        name: file.name,
+        type: file.type || "Textdatei",
+        text: "",
+        note: "Datei wurde angenommen. Bitte serverseitige Textextraktion fuer PDF/DOCX nutzen oder den Text zusaetzlich einfuegen."
+      });
+    }
+  }
+  return {
+    textSources,
+    imageFiles,
+    imageSources,
+    unsupportedTextFiles
+  };
+}
+
+function renderAiNewsImportFileList(form) {
+  const fileInput = form.querySelector('input[name="sourceFiles"]');
+  const output = form.querySelector("[data-ai-news-file-list]");
+  if (!fileInput || !output) return;
+  const files = Array.from(fileInput.files || []);
+  output.innerHTML = files.length
+    ? `<div class="ai-news-file-pills">${files.map((file) => `<span>${escapeHtml(file.name)} <small>${Math.round(file.size / 1024)} KB</small></span>`).join("")}</div>`
+    : `<p class="muted">Noch keine Dateien ausgewaehlt.</p>`;
 }
 
 function mailAdminConfig() {
@@ -965,6 +1071,364 @@ function slugify(value = "") {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
+}
+
+function normalizeMediaSlug(value = "") {
+  return slugify(value)
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    || "prodigitaltv-bild";
+}
+
+function mediaFileExtension(file = {}, fallback = "webp") {
+  const extension = String(file.name || "").includes(".") ? String(file.name).split(".").pop().toLowerCase() : "";
+  const normalized = extension === "jpeg" ? "jpg" : extension;
+  return ["jpg", "png", "webp", "svg"].includes(normalized) ? normalized : fallback;
+}
+
+function mediaFolderForType(type = "upload") {
+  const folders = {
+    upload: "uploads",
+    ai: "ai",
+    event: "events",
+    article: "articles",
+    topic: "articles",
+    person: "persons",
+    logo: "logos",
+    thumb: "thumbs",
+    landscape: "variants",
+    portrait: "variants",
+    social: "social",
+    archive: "archive"
+  };
+  return folders[type] || "uploads";
+}
+
+function normalizedMediaType(type = "upload") {
+  const allowed = new Set(["upload", "ai", "event", "article", "topic", "person", "logo", "thumb", "landscape", "portrait", "social", "archive"]);
+  return allowed.has(type) ? type : "upload";
+}
+
+function mediaShortCode() {
+  const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  if (window.crypto?.getRandomValues) {
+    const values = new Uint32Array(4);
+    window.crypto.getRandomValues(values);
+    return Array.from(values).map((value) => alphabet[value % alphabet.length]).join("");
+  }
+  return Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
+}
+
+function buildMediaFileName({ title = "", mediaType = "upload", format = "16x9", version = "v1", extension = "webp", code = "" } = {}) {
+  const slug = normalizeMediaSlug(title);
+  const type = normalizedMediaType(mediaType);
+  const safeFormat = String(format || "16x9").toLowerCase().replace(/[^0-9x]/g, "") || "16x9";
+  const safeVersion = /^v[0-9]+$/.test(String(version || "")) ? String(version) : "v1";
+  const safeExtension = String(extension || "webp").toLowerCase().replace(/[^a-z0-9]/g, "") || "webp";
+  const safeCode = String(code || mediaShortCode()).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4) || mediaShortCode();
+  return `${slug}_${safeCode}_${type}_${safeFormat}_${safeVersion}.${safeExtension}`;
+}
+
+function mediaStoragePath(filename = "", mediaType = "upload", code = "") {
+  const folder = mediaFolderForType(normalizedMediaType(mediaType));
+  const safeCode = String(code || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+  return safeCode ? `images/${folder}/${safeCode}/${filename}` : `images/${folder}/${filename}`;
+}
+
+function mediaTags(value = "") {
+  return String(value || "").split(",").map((tag) => tag.trim()).filter(Boolean);
+}
+
+function mediaTitleFromFileName(fileName = "") {
+  const baseName = String(fileName || "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/\b(v|version)[-_ ]?[0-9]+\b/gi, " ")
+    .replace(/\b[0-9]{3,5}x[0-9]{3,5}\b/gi, " ")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!baseName) return "PROdigitalTV Bild";
+  return baseName.split(" ").map((word) => {
+    if (/^(tv|ki|cms|pdtv|pro)$/i.test(word)) return word.toUpperCase();
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  }).join(" ");
+}
+
+function mediaAutoTags(title = "", mediaType = "upload") {
+  const stopWords = new Set(["bild", "image", "foto", "photo", "final", "neu", "new", "copy", "kopie", "version", "upload"]);
+  const tokens = String(title || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .split(/[^A-Za-z0-9]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 2 && !stopWords.has(token.toLowerCase()));
+  return Array.from(new Set(["PROdigitalTV", mediaType === "ai" ? "KI-Grafik" : "Bild", ...tokens])).slice(0, 8).join(", ");
+}
+
+function mediaAutoDescription(title = "") {
+  return `${title || "Bild"} fuer die PROdigitalTV-Mediathek.`;
+}
+
+function mediaSizeLabel(bytes = 0) {
+  const size = Number(bytes || 0);
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+  if (size >= 1024) return `${Math.round(size / 1024)} KB`;
+  return `${size} B`;
+}
+
+function mediaVariantCanvasSize(format = "16x9") {
+  const clean = String(format || "16x9").toLowerCase();
+  if (clean === "1x1") return { width: 1200, height: 1200, aspect: "1x1" };
+  if (clean === "4x5") return { width: 1200, height: 1500, aspect: "4x5" };
+  if (clean === "9x16" || clean === "portrait" || clean === "hochkant") return { width: 1080, height: 1920, aspect: "9x16" };
+  if (clean === "logo") return { width: 1200, height: 900, aspect: "4x3" };
+  return { width: 1600, height: 900, aspect: "16x9" };
+}
+
+function canvasToFile(canvas, filename = "bild.webp", type = "image/webp", quality = .9) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("Bildvariante konnte nicht erzeugt werden."));
+        return;
+      }
+      resolve(new File([blob], filename, { type }));
+    }, type, quality);
+  });
+}
+
+function mediaDescriptionSuggestion(asset = {}, values = {}) {
+  const title = values.title || asset.title || asset.filename_original || "PROdigitalTV Bild";
+  const labels = { upload: "Upload-Bild", ai: "KI-Grafik", event: "Eventbild", article: "Artikelbild", topic: "Themenbild", person: "Personenbild", logo: "Logo", thumb: "Thumbnail" };
+  const type = labels[asset.media_type] || asset.media_type || "Bild";
+  const format = values.active_variant_format || asset.aspect_ratio || "16x9";
+  const tags = Array.isArray(asset.tags) ? asset.tags.join(", ") : String(asset.tags || "");
+  return [
+    `${title} als ${type} fuer die PROdigitalTV-Mediathek.`,
+    `Das Motiv ist fuer das Format ${format} vorgesehen und kann redaktionell fuer Webseite, CMS und Medienbeitraege eingesetzt werden.`,
+    tags ? `Schlagworte: ${tags}.` : ""
+  ].filter(Boolean).join(" ");
+}
+
+function mediaAiDescriptionFromResult(result = {}, fallback = "") {
+  const structured = result.structured || result.data || {};
+  const parseJsonDescription = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw || !raw.startsWith("{")) return "";
+    try {
+      const parsed = JSON.parse(raw);
+      const firstImage = Array.isArray(parsed.images) ? parsed.images[0] : null;
+      return firstImage?.beschreibung || firstImage?.description || parsed.beschreibung || parsed.description || "";
+    } catch {
+      return "";
+    }
+  };
+  const suggestedText = String(result.suggestedText || "").trim();
+  const candidates = [
+    structured.images?.[0]?.beschreibung,
+    structured.images?.[0]?.description,
+    structured.beschreibung,
+    structured.description,
+    structured.image_description,
+    structured.imageDescription,
+    structured.alt_text,
+    structured.altText,
+    result.description,
+    result.image_description,
+    result.imageDescription,
+    result.alt_text,
+    result.altText,
+    parseJsonDescription(suggestedText),
+    suggestedText.startsWith("{") ? "" : suggestedText
+  ];
+  return String(candidates.find((value) => String(value || "").trim()) || fallback).trim();
+}
+
+function mediaAiThumbTextFromResult(result = {}, description = "") {
+  const structured = result.structured || result.data || {};
+  const parseJsonThumb = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw || !raw.startsWith("{")) return "";
+    try {
+      const parsed = JSON.parse(raw);
+      const firstImage = Array.isArray(parsed.images) ? parsed.images[0] : null;
+      return firstImage?.thumbnail_alt || firstImage?.thumbnailAlt || firstImage?.thumb || parsed.thumbnail_alt || parsed.thumbnailAlt || parsed.thumbnail_description || "";
+    } catch {
+      return "";
+    }
+  };
+  const suggestedText = String(result.suggestedText || "").trim();
+  const candidates = [
+    structured.thumbnail_alt,
+    structured.thumbnailAlt,
+    structured.thumbnail_description,
+    structured.thumbnailDescription,
+    structured.images?.[0]?.thumbnail_alt,
+    structured.images?.[0]?.thumbnailAlt,
+    structured.images?.[0]?.thumb,
+    result.thumbnail_alt,
+    result.thumbnailAlt,
+    result.thumbnail_description,
+    parseJsonThumb(suggestedText)
+  ];
+  const value = String(candidates.find((item) => String(item || "").trim()) || "").trim();
+  return value || String(description || "").replace(/\s+/g, " ").slice(0, 160);
+}
+
+function wireMediaCardLinks() {
+  document.querySelectorAll("[data-media-edit-link]").forEach((card) => {
+    if (card.dataset.mediaEditLinkWired === "1") return;
+    card.dataset.mediaEditLinkWired = "1";
+    const open = () => {
+      if (card.dataset.mediaEditLink) window.location.hash = card.dataset.mediaEditLink;
+    };
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("a, button, input, select, textarea, label")) return;
+      open();
+    });
+    card.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      open();
+    });
+  });
+}
+
+function mediaFormatLabel(file = {}) {
+  const extension = String(file.name || "").includes(".") ? String(file.name).split(".").pop().toUpperCase() : "";
+  const mime = String(file.type || "").replace(/^image\//, "").toUpperCase();
+  return extension || mime || "Bild";
+}
+
+function readImageDimensions(file) {
+  if (!file?.type?.startsWith("image/") || file.type === "image/svg+xml") return Promise.resolve({ width: 0, height: 0 });
+  return new Promise((resolve) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    image.addEventListener("load", () => {
+      const dimensions = { width: image.naturalWidth || 0, height: image.naturalHeight || 0 };
+      URL.revokeObjectURL(objectUrl);
+      resolve(dimensions);
+    });
+    image.addEventListener("error", () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve({ width: 0, height: 0 });
+    });
+    image.src = objectUrl;
+  });
+}
+
+function renderMediaFileMeta(form, file, dimensions = {}) {
+  const meta = form.querySelector("[data-media-file-meta]");
+  if (!meta) return;
+  if (!file) {
+    meta.innerHTML = `<span>Noch keine Datei ausgewaehlt.</span>`;
+    return;
+  }
+  const changed = file.lastModified ? new Date(file.lastModified).toLocaleDateString("de-DE") : "-";
+  const pixel = dimensions.width && dimensions.height ? `${dimensions.width} x ${dimensions.height}px` : "Pixelmasse unbekannt";
+  meta.innerHTML = `<dl>
+    <div><dt>Format</dt><dd>${escapeHtml(mediaFormatLabel(file))}</dd></div>
+    <div><dt>Groesse</dt><dd>${escapeHtml(mediaSizeLabel(file.size))}</dd></div>
+    <div><dt>Pixel</dt><dd>${escapeHtml(pixel)}</dd></div>
+    <div><dt>Datei</dt><dd>${escapeHtml(file.name || "-")}</dd></div>
+    <div><dt>Geaendert</dt><dd>${escapeHtml(changed)}</dd></div>
+  </dl>`;
+}
+
+function writeMediaFileMetaFields(form, file, dimensions = {}) {
+  if (!form || !file) return;
+  if (form.elements.image_width) form.elements.image_width.value = dimensions.width || "";
+  if (form.elements.image_height) form.elements.image_height.value = dimensions.height || "";
+  if (form.elements.image_format) form.elements.image_format.value = mediaFormatLabel(file);
+  if (form.elements.file_size_label) form.elements.file_size_label.value = mediaSizeLabel(file.size);
+  if (form.elements.original_filename) form.elements.original_filename.value = file.name || "";
+  if (form.elements.file_last_modified) form.elements.file_last_modified.value = file.lastModified ? new Date(file.lastModified).toISOString() : "";
+}
+
+function updateMediaAutoFileName(form) {
+  const output = form.querySelector("[data-media-auto-filename]");
+  if (!output) return;
+  const file = form.elements.mediaFile?.files?.[0];
+  if (!file) {
+    output.textContent = "Der Dateiname wird beim Speichern automatisch erstellt.";
+    return;
+  }
+  const values = formObject(form);
+  const mediaType = normalizedMediaType(values.media_type || "upload");
+  const extension = mediaFileExtension(file, mediaType === "logo" ? "png" : "webp");
+  const filename = buildMediaFileName({
+    title: values.title || file.name,
+    mediaType,
+    format: values.aspect_ratio,
+    version: values.version || "v1",
+    extension,
+    code: values.media_code || ensureMediaCode(form)
+  });
+  output.textContent = `Speichername: ${mediaStoragePath(filename, mediaType, values.media_code || ensureMediaCode(form))}`;
+}
+
+function ensureMediaCode(form) {
+  const input = form?.elements?.media_code || form?.querySelector("[data-media-auto-code]");
+  if (!input) return mediaShortCode();
+  if (!/^[A-Z0-9]{4}$/.test(String(input.value || ""))) input.value = mediaShortCode();
+  return input.value;
+}
+
+function setAutoField(field, value, force = false) {
+  if (!field) return;
+  if (force || !field.value || field.dataset.autoValue === "1") {
+    field.value = value;
+    field.dataset.autoValue = "1";
+  }
+}
+
+function wireMediaUploadAutomation(form) {
+  if (!form || form.dataset.mediaAutomationWired === "1") return;
+  form.dataset.mediaAutomationWired = "1";
+  const fileInput = form.elements.mediaFile;
+  const title = form.elements.title;
+  const description = form.elements.description;
+  const tags = form.elements.tags;
+  const alt = form.elements.alt_text;
+  const mediaType = form.elements.media_type;
+  const format = form.elements.aspect_ratio;
+  const preview = form.querySelector("[data-media-upload-preview]");
+  const refreshGeneratedFields = (force = false) => {
+    const file = fileInput?.files?.[0];
+    if (file) ensureMediaCode(form);
+    const nextTitle = title?.value || mediaTitleFromFileName(file?.name || "");
+    setAutoField(title, nextTitle, force);
+    setAutoField(description, mediaAutoDescription(title?.value || nextTitle), force);
+    setAutoField(tags, mediaAutoTags(title?.value || nextTitle, mediaType?.value || "upload"), force);
+    setAutoField(alt, title?.value || nextTitle, force);
+    updateMediaAutoFileName(form);
+  };
+  fileInput?.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    const dimensions = file ? await readImageDimensions(file) : { width: 0, height: 0 };
+    writeMediaFileMetaFields(form, file, dimensions);
+    renderMediaFileMeta(form, file, dimensions);
+    if (preview) {
+      if (file && file.type?.startsWith("image/")) {
+        const url = URL.createObjectURL(file);
+        preview.innerHTML = `<img src="${url}" alt="">`;
+      } else {
+        preview.innerHTML = `<span>Vorschau</span>`;
+      }
+    }
+    refreshGeneratedFields(true);
+  });
+  title?.addEventListener("input", () => {
+    title.dataset.autoValue = "0";
+    refreshGeneratedFields(false);
+  });
+  [description, tags, alt].forEach((field) => field?.addEventListener("input", () => {
+    field.dataset.autoValue = "0";
+  }));
+  mediaType?.addEventListener("change", () => refreshGeneratedFields(false));
+  format?.addEventListener("change", () => updateMediaAutoFileName(form));
+  refreshGeneratedFields(false);
 }
 
 function localSeoDescription(article = {}) {
@@ -2176,6 +2640,603 @@ function wireStickyRotators() {
   });
 }
 
+function wireMediaLibraryFilters() {
+  const cards = Array.from(document.querySelectorAll("[data-media-card]"));
+  if (!cards.length) return;
+  const search = document.querySelector("[data-media-search]");
+  const filters = Array.from(document.querySelectorAll("[data-media-filter]"));
+  const apply = () => {
+    const term = String(search?.value || "").trim().toLowerCase();
+    const activeFilters = filters.map((filter) => [filter.dataset.mediaFilter, filter.value]).filter(([, value]) => value);
+    cards.forEach((card) => {
+      const matchesTerm = !term || String(card.dataset.search || "").includes(term);
+      const matchesFilters = activeFilters.every(([key, value]) => card.dataset[key] === value);
+      card.hidden = !(matchesTerm && matchesFilters);
+    });
+  };
+  search?.addEventListener("input", apply);
+  filters.forEach((filter) => filter.addEventListener("change", apply));
+  apply();
+}
+
+function wireCentralMediaUpload() {
+  const uploadForm = document.querySelector("[data-media-upload-form]");
+  wireMediaUploadAutomation(uploadForm);
+  uploadForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = form.querySelector("#central-media-upload-result");
+    const file = form.elements.mediaFile?.files?.[0];
+    if (!file) return;
+    const values = formObject(form);
+    const mediaType = normalizedMediaType(values.media_type || "upload");
+    const mediaCode = /^[A-Z0-9]{4}$/.test(String(values.media_code || "")) ? values.media_code : ensureMediaCode(form);
+    const extension = mediaFileExtension(file, mediaType === "logo" ? "png" : "webp");
+    const filename = buildMediaFileName({ title: values.title || file.name, mediaType, format: values.aspect_ratio, version: values.version, extension, code: mediaCode });
+    const path = mediaStoragePath(filename, mediaType, mediaCode);
+    const button = form.querySelector('button[type="submit"]');
+    if (button) button.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">${progressMarkup("Bild wird unter images gespeichert ...", 45)}</div>`;
+    try {
+      const uploaded = await uploadMediaAsset(file, path);
+      const now = new Date().toISOString();
+      const assetId = `media-asset-${crypto.randomUUID()}`;
+      const asset = await upsert("media_assets", {
+        id: assetId,
+        media_code: mediaCode,
+        title: values.title || file.name,
+        slug: normalizeMediaSlug(values.title || file.name),
+        media_type: mediaType,
+        filename_original: filename,
+        filename_web: filename,
+        filename_thumb: filename,
+        file_path_original: path,
+        file_path_web: path,
+        file_path_thumb: path,
+        file_path_original_url: uploaded?.url || "",
+        file_path_web_url: uploaded?.url || "",
+        file_path_thumb_url: uploaded?.url || "",
+        storage_path_original: uploaded?.storagePath || path,
+        mime_type: file.type,
+        aspect_ratio: values.aspect_ratio || "16x9",
+        file_size: file.size,
+        file_size_label: values.file_size_label || mediaSizeLabel(file.size),
+        image_width: Number(values.image_width || 0),
+        image_height: Number(values.image_height || 0),
+        image_format: values.image_format || mediaFormatLabel(file),
+        original_filename: values.original_filename || file.name,
+        file_last_modified: values.file_last_modified || "",
+        file_metadata: {
+          format: values.image_format || mediaFormatLabel(file),
+          mime_type: file.type,
+          size_bytes: file.size,
+          size_label: values.file_size_label || mediaSizeLabel(file.size),
+          width: Number(values.image_width || 0),
+          height: Number(values.image_height || 0),
+          original_filename: values.original_filename || file.name,
+          last_modified: values.file_last_modified || ""
+        },
+        source_type: "upload",
+        created_by: currentUser()?.email || currentUser()?.uid || "cms",
+        created_at: now,
+        updated_at: now,
+        status: "active",
+        alt_text: values.alt_text || values.title || file.name,
+        description: values.description || "",
+        tags: mediaTags(values.tags)
+      });
+      await upsert("media_variants", {
+        id: `media-variant-${crypto.randomUUID()}`,
+        media_asset_id: asset.id,
+        variant_type: "original",
+        format: values.aspect_ratio || "16x9",
+        file_path: path,
+        file_url: uploaded?.url || "",
+        filename,
+        version: values.version || "v1",
+        created_at: now,
+        created_by: currentUser()?.email || currentUser()?.uid || "cms"
+      });
+      if (result) {
+        const note = uploaded?.fallback
+          ? "Bild gespeichert. Storage war nicht erreichbar, deshalb wurde eine optimierte Web-Version in der Datenbank abgelegt. Bildbearbeitung wird geoeffnet ..."
+          : `Bild gespeichert: <code>${escapeHtml(path)}</code>. Bildbearbeitung wird geoeffnet ...`;
+        result.innerHTML = `<div class="alert alert--success">${note}</div>`;
+      }
+      window.setTimeout(() => { window.location.hash = `#/cms/media/edit?id=${asset.id}`; }, 700);
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Upload fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
+}
+
+function wireMediaAiDraft() {
+  document.querySelector("[data-media-ai-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = formObject(form);
+    const result = form.querySelector("#media-ai-result");
+    const now = new Date().toISOString();
+    const mediaType = normalizedMediaType(values.media_type || "ai");
+    const filename = buildMediaFileName({ title: values.title, mediaType: "ai", format: values.aspect_ratio, version: "v1", extension: "webp" });
+    const path = mediaStoragePath(filename, "ai");
+    try {
+      const asset = await upsert("media_assets", {
+        id: `media-asset-${crypto.randomUUID()}`,
+        title: values.title,
+        slug: normalizeMediaSlug(values.title),
+        media_type: mediaType,
+        filename_original: filename,
+        filename_web: filename,
+        filename_thumb: filename,
+        file_path_original: path,
+        file_path_web: path,
+        file_path_thumb: path,
+        mime_type: "image/webp",
+        aspect_ratio: values.aspect_ratio || "16x9",
+        source_type: "ai",
+        created_by: currentUser()?.email || currentUser()?.uid || "cms",
+        created_at: now,
+        updated_at: now,
+        status: "active",
+        alt_text: values.title || "KI-Grafik",
+        description: values.source_text || "",
+        tags: mediaTags([values.style, values.color_world].filter(Boolean).join(",")),
+        source_note: "KI-Bildvorschlag"
+      });
+      await upsert("ai_image_generations", {
+        id: `ai-image-generation-${crypto.randomUUID()}`,
+        media_asset_id: asset.id,
+        prompt_id: "",
+        source_text: values.source_text || "",
+        generated_prompt: values.generated_prompt || "",
+        negative_prompt: "",
+        model_name: "OpenAI Image",
+        generation_status: "draft",
+        review_status: "draft",
+        created_by: currentUser()?.email || currentUser()?.uid || "cms",
+        created_at: now
+      });
+      if (result) result.innerHTML = `<div class="alert alert--success">KI-Bildentwurf gespeichert.</div>`;
+      window.setTimeout(() => { window.location.hash = `#/cms/media/edit?id=${asset.id}`; }, 700);
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">KI-Entwurf konnte nicht gespeichert werden: ${escapeHtml(error.message || String(error))}</div>`;
+    }
+  });
+}
+
+function wireMediaEdit() {
+  wireMediaCropMask();
+  const editForm = document.querySelector("[data-media-edit-form]");
+  editForm?.querySelector("[data-media-description-ai]")?.addEventListener("click", async () => {
+    const button = editForm.querySelector("[data-media-description-ai]");
+    const originalLabel = button?.textContent || "";
+    const asset = await getOne("media_assets", editForm.dataset.mediaId);
+    if (!asset) return;
+    const values = { ...formObject(editForm), active_variant_format: editForm.dataset.activeVariantFormat || asset.aspect_ratio || "16x9" };
+    const fallback = `Keine echte Bildbeschreibung erzeugt. Bitte Cloud-KI deployen oder den sichtbaren Bildinhalt manuell beschreiben.`;
+    const result = editForm.querySelector("#media-edit-result");
+    if (button) {
+      button.disabled = true;
+      button.textContent = "KI beschreibt ...";
+    }
+    if (result) result.innerHTML = `<div class="alert">${progressMarkup("KI-Bildbeschreibung wird erzeugt ...", 55)}</div>`;
+    try {
+      const aiResult = await callChatGptAction("generateImageAltText", {
+        module: "media_library",
+        entityType: "media_assets",
+        entityId: asset.id,
+        fieldName: "description",
+        originalText: "",
+        imageUrl: asset.file_path_web_url || asset.file_path_original_url || asset.imageUrl || asset.assetUrl || "",
+        context: {
+          title: values.title || asset.title || "",
+          altText: values.alt_text || asset.alt_text || "",
+          description: values.description || asset.description || "",
+          mediaType: asset.media_type || "",
+          format: values.active_variant_format || asset.aspect_ratio || "",
+          filename: asset.filename_web || asset.filename_original || "",
+          mediaCode: asset.media_code || "",
+          tags: asset.tags || []
+        }
+      });
+      const description = mediaAiDescriptionFromResult(aiResult, fallback);
+      const thumbText = mediaAiThumbTextFromResult(aiResult, description);
+      editForm.elements.description.value = description;
+      if (!String(editForm.elements.alt_text.value || "").trim()) editForm.elements.alt_text.value = description.slice(0, 180);
+      const now = new Date().toISOString();
+      await upsert("media_assets", {
+        ...asset,
+        title: values.title || asset.title || "",
+        alt_text: editForm.elements.alt_text.value || asset.alt_text || "",
+        description,
+        thumbnail_alt: thumbText,
+        thumbnailAlt: thumbText,
+        thumbnail_description: thumbText,
+        thumb_text: thumbText,
+        thumbnail_url: asset.file_path_thumb_url || asset.file_path_web_url || asset.imageUrl || asset.assetUrl || "",
+        updated_at: now,
+        updatedAt: now
+      });
+      if (result) result.innerHTML = `<div class="alert alert--success">KI-Bildbeschreibung und Thumb-Text wurden erzeugt und gespeichert.</div>`;
+    } catch (error) {
+      editForm.elements.description.value = fallback;
+      if (result) result.innerHTML = `<div class="alert alert--warning">KI-Bildanalyse war nicht erreichbar. Es wurde nur ein Hinweis eingesetzt, keine echte Bildbeschreibung.</div>`;
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalLabel;
+      }
+    }
+  });
+  editForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = formObject(form);
+    const result = form.querySelector("#media-edit-result");
+    const asset = await getOne("media_assets", form.dataset.mediaId);
+    if (!asset) return;
+    const now = new Date().toISOString();
+    try {
+      const update = {
+        ...asset,
+        title: values.title || asset.title,
+        alt_text: values.alt_text || "",
+        description: values.description || "",
+        status: asset.status || "active",
+        focal_point_x: Number(values.focal_point_x || 50),
+        focal_point_y: Number(values.focal_point_y || 50),
+        crop_x: Number(values.crop_x || 0),
+        crop_y: Number(values.crop_y || 0),
+        crop_scale: Number(values.crop_scale || 1),
+        brightness: Number(values.brightness || 0),
+        contrast: Number(values.contrast || 0),
+        saturation: Number(values.saturation || 0),
+        sharpness: Number(values.sharpness || 0),
+        black_white: Boolean(values.black_white),
+        updated_at: now
+      };
+      await upsert("media_assets", update);
+      if (values.createVariant === "1") {
+        const nextVersion = `v${Date.now().toString().slice(-6)}`;
+        const filename = buildMediaFileName({ title: update.title, mediaType: update.media_type || "upload", format: update.aspect_ratio || "16x9", version: "v1", extension: String(update.filename_web || "webp").split(".").pop() });
+        await upsert("media_variants", {
+          id: `media-variant-${crypto.randomUUID()}`,
+          media_asset_id: asset.id,
+          variant_type: "edited",
+          format: asset.aspect_ratio || "16x9",
+          file_path: asset.file_path_web || asset.file_path_original || "",
+          file_url: asset.file_path_web_url || asset.file_path_original_url || "",
+          filename,
+          crop_data: { x: update.crop_x, y: update.crop_y, scale: update.crop_scale, brightness: update.brightness, contrast: update.contrast, saturation: update.saturation, sharpness: update.sharpness },
+          focal_point_x: update.focal_point_x,
+          focal_point_y: update.focal_point_y,
+          version: nextVersion,
+          created_at: now,
+          created_by: currentUser()?.email || currentUser()?.uid || "cms"
+        });
+      }
+      const presetVariants = mediaPresetVariants(update, values);
+      await Promise.all(presetVariants.map((variant) => upsert("media_variants", variant)));
+      if (result) result.innerHTML = `<div class="alert alert--success">Bilddaten gespeichert.</div>`;
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Speichern fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+    }
+  });
+}
+
+function mediaPresetVariants(asset = {}, values = {}) {
+  const now = new Date().toISOString();
+  const extension = String(asset.filename_web || asset.filename_original || "webp").split(".").pop();
+  const base = {
+    media_asset_id: asset.id,
+    file_path: asset.file_path_web || asset.file_path_original || "",
+    file_url: asset.file_path_web_url || asset.file_path_original_url || "",
+    source_filename: asset.filename_web || asset.filename_original || "",
+    crop_data: {
+      x: asset.crop_x || 0,
+      y: asset.crop_y || 0,
+      scale: asset.crop_scale || 1,
+      brightness: asset.brightness || 0,
+      contrast: asset.contrast || 0,
+      saturation: asset.saturation || 0,
+      sharpness: asset.sharpness || 0,
+      black_white: Boolean(asset.black_white)
+    },
+    created_at: now,
+    created_by: currentUser()?.email || currentUser()?.uid || "cms"
+  };
+  const presets = [
+    values.variant_news ? { type: "news", label: "News / Artikel", format: "16x9", usage_type: "news_header" } : null,
+    values.variant_landscape ? { type: "landscape", label: "Landscape", format: "16x9", usage_type: "landscape" } : null,
+    values.variant_portrait ? { type: "portrait", label: "Hochkant", format: "9x16", usage_type: "portrait" } : null,
+    values.variant_board ? { type: "board", label: "Vorstand / Person", format: "1x1", usage_type: "profile" } : null,
+    values.variant_logo ? { type: "logo", label: "Logo / Mitglieder", format: "logo", usage_type: "logo_card" } : null
+  ].filter(Boolean);
+  return presets.map((preset) => ({
+    ...base,
+    id: `media-variant-${asset.id}-${preset.type}`,
+    variant_type: preset.type,
+    variant_label: preset.label,
+    usage_type: preset.usage_type,
+    format: preset.format,
+    filename: buildMediaFileName({
+      title: asset.title || asset.filename_original || "bild",
+      mediaType: preset.type === "board" ? "person" : preset.type,
+      format: preset.format === "logo" ? "4x3" : preset.format,
+      version: "v1",
+      extension,
+      code: asset.media_code || ""
+    }),
+    version: "v1",
+    updated_at: now
+  }));
+}
+
+function wireMediaCropMask() {
+  const stage = document.querySelector("[data-media-crop-stage]");
+  const image = document.querySelector("[data-media-crop-image]");
+  const scaleInput = document.querySelector("[data-media-crop-scale]");
+  const scaleValue = document.querySelector("[data-media-crop-scale-value]");
+  const xInput = document.querySelector("[data-media-crop-x]");
+  const yInput = document.querySelector("[data-media-crop-y]");
+  const reset = document.querySelector("[data-media-crop-reset]");
+  const apply = document.querySelector("[data-media-crop-apply]");
+  const form = document.querySelector("[data-media-edit-form]");
+  if (!stage || !image || !scaleInput || !scaleValue || !xInput || !yInput || stage.dataset.mediaCropWired === "1") return;
+  stage.dataset.mediaCropWired = "1";
+  const variantInputs = Array.from(document.querySelectorAll("[data-media-variant-aspect]"));
+  const result = form?.querySelector("#media-edit-result");
+  const neutralValues = { brightness: 0, contrast: 0, saturation: 0, sharpness: 0, black_white: false };
+  const state = {
+    x: Number(xInput.value || 0),
+    y: Number(yInput.value || 0),
+    scale: Math.max(1, Number(scaleValue.value || scaleInput.value || 1)),
+    format: form?.dataset.activeVariantFormat || "16x9",
+    dragging: false,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0
+  };
+  const render = () => {
+    state.scale = Math.max(1, Number(state.scale || 1));
+    image.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+    const brightness = 1 + (Number(form?.elements.brightness?.value || 0) / 100);
+    const contrast = 1 + (Number(form?.elements.contrast?.value || 0) / 100);
+    const saturation = 1 + (Number(form?.elements.saturation?.value || 0) / 100);
+    const sharpness = Number(form?.elements.sharpness?.value || 0);
+    const grayscale = form?.elements.black_white?.checked ? " grayscale(1)" : "";
+    image.style.filter = `brightness(${brightness}) contrast(${contrast}) saturate(${saturation})${grayscale}`;
+    stage.style.setProperty("--media-crop-sharpness", `${Math.min(.28, sharpness / 80)}px`);
+    scaleInput.value = String(state.scale);
+  };
+  const applyCrop = () => {
+    xInput.value = String(Math.round(state.x));
+    yInput.value = String(Math.round(state.y));
+    scaleValue.value = String(state.scale);
+    apply?.classList.add("is-applied");
+    if (apply) apply.textContent = "Uebernommen";
+  };
+  const markDirty = () => {
+    apply?.classList.remove("is-applied");
+    if (apply) apply.textContent = "OK uebernehmen";
+  };
+  const activeFormat = () => {
+    const checked = variantInputs.find((input) => input.checked);
+    return checked?.dataset.mediaVariantFormat || state.format || "16x9";
+  };
+  const setAspect = (input) => {
+    if (!input) return;
+    state.format = input.dataset.mediaVariantFormat || "16x9";
+    form.dataset.activeVariantFormat = state.format;
+    stage.style.setProperty("--media-crop-aspect", input.dataset.mediaVariantAspect || "16 / 9");
+    state.x = 0;
+    state.y = 0;
+    state.scale = Math.max(1, Number(scaleInput.value || 1));
+    markDirty();
+    render();
+  };
+  const saveEditedAsset = async () => {
+    applyCrop();
+    const asset = await getOne("media_assets", form.dataset.mediaId);
+    if (!asset) return;
+    const values = formObject(form);
+    const format = activeFormat();
+    const size = mediaVariantCanvasSize(format);
+    const canvas = document.createElement("canvas");
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const context = canvas.getContext("2d");
+    const stageRect = stage.getBoundingClientRect();
+    const baseScale = Math.max(stageRect.width / Math.max(1, image.naturalWidth), stageRect.height / Math.max(1, image.naturalHeight));
+    const outputScale = canvas.width / Math.max(1, stageRect.width);
+    const drawWidth = image.naturalWidth * baseScale * state.scale * outputScale;
+    const drawHeight = image.naturalHeight * baseScale * state.scale * outputScale;
+    const drawX = (canvas.width - drawWidth) / 2 + state.x * outputScale;
+    const drawY = (canvas.height - drawHeight) / 2 + state.y * outputScale;
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    const brightness = 1 + (Number(values.brightness || 0) / 100);
+    const contrast = 1 + (Number(values.contrast || 0) / 100);
+    const saturation = 1 + (Number(values.saturation || 0) / 100);
+    context.filter = `brightness(${brightness}) contrast(${contrast}) saturate(${saturation})${values.black_white ? " grayscale(1)" : ""}`;
+    context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+    context.filter = "none";
+    const mediaCode = mediaShortCode();
+    const version = `v${Date.now().toString().slice(-6)}`;
+    const mediaType = format === "portrait" ? "portrait" : format === "landscape" ? "landscape" : asset.media_type || "upload";
+    const filename = buildMediaFileName({ title: values.title || asset.title || "bild", mediaType, format: size.aspect, version: "v1", extension: "webp", code: mediaCode });
+    const file = await canvasToFile(canvas, filename, "image/webp", .9);
+    const path = mediaStoragePath(filename, mediaType, mediaCode);
+    if (result) result.innerHTML = `<div class="alert">${progressMarkup("Variante wird als neues Bild gespeichert ...", 60)}</div>`;
+    const uploaded = await uploadMediaAsset(file, path);
+    const now = new Date().toISOString();
+    const newAsset = await upsert("media_assets", {
+      ...asset,
+      id: `media-asset-${crypto.randomUUID()}`,
+      media_code: mediaCode,
+      parent_media_asset_id: asset.id,
+      title: `${values.title || asset.title || "Bild"} ${format === "portrait" ? "Hochkant" : format === "landscape" ? "Landscape" : "Variante"}`,
+      slug: normalizeMediaSlug(`${values.title || asset.title || "bild"}-${format}-${mediaCode}`),
+      media_type: mediaType,
+      filename_original: filename,
+      filename_web: filename,
+      filename_thumb: filename,
+      file_path_original: path,
+      file_path_web: path,
+      file_path_thumb: path,
+      file_path_original_url: uploaded?.url || "",
+      file_path_web_url: uploaded?.url || "",
+      file_path_thumb_url: uploaded?.url || "",
+      storage_path_original: uploaded?.storagePath || path,
+      mime_type: file.type,
+      aspect_ratio: size.aspect,
+      file_size: file.size,
+      file_size_label: mediaSizeLabel(file.size),
+      image_width: canvas.width,
+      image_height: canvas.height,
+      image_format: "WEBP",
+      original_filename: asset.original_filename || asset.filename_original || filename,
+      source_type: "edited",
+      source_note: `Bearbeitete Variante aus ${asset.media_code ? `ID ${asset.media_code}` : asset.id}`,
+      alt_text: values.alt_text || asset.alt_text || values.title || asset.title || "Bildvariante",
+      description: values.description || asset.description || "",
+      crop_x: 0,
+      crop_y: 0,
+      crop_scale: 1,
+      brightness: Number(values.brightness || 0),
+      contrast: Number(values.contrast || 0),
+      saturation: Number(values.saturation || 0),
+      sharpness: Number(values.sharpness || 0),
+      black_white: Boolean(values.black_white),
+      file_metadata: {
+        format: "WEBP",
+        mime_type: file.type,
+        size_bytes: file.size,
+        size_label: mediaSizeLabel(file.size),
+        width: canvas.width,
+        height: canvas.height,
+        original_filename: asset.original_filename || asset.filename_original || filename,
+        edited_from: asset.id
+      },
+      created_by: currentUser()?.email || currentUser()?.uid || "cms",
+      created_at: now,
+      updated_at: now,
+      status: "active"
+    });
+    await upsert("media_variants", {
+      id: `media-variant-${crypto.randomUUID()}`,
+      media_asset_id: asset.id,
+      derived_media_asset_id: newAsset.id,
+      variant_type: format,
+      format: size.aspect,
+      file_path: path,
+      file_url: uploaded?.url || "",
+      filename,
+      crop_data: { x: Number(xInput.value || 0), y: Number(yInput.value || 0), scale: Number(scaleValue.value || 1), brightness: Number(values.brightness || 0), contrast: Number(values.contrast || 0), saturation: Number(values.saturation || 0), sharpness: Number(values.sharpness || 0), black_white: Boolean(values.black_white) },
+      version,
+      created_at: now,
+      created_by: currentUser()?.email || currentUser()?.uid || "cms"
+    });
+    if (result) result.innerHTML = `<div class="alert alert--success">Variante als neues Bild gespeichert. <a href="#/cms/media/edit?id=${newAsset.id}">Neues Bild bearbeiten</a></div>`;
+  };
+  stage.addEventListener("pointerdown", (event) => {
+    state.dragging = true;
+    state.startX = event.clientX;
+    state.startY = event.clientY;
+    state.originX = state.x;
+    state.originY = state.y;
+    stage.setPointerCapture?.(event.pointerId);
+  });
+  stage.addEventListener("pointermove", (event) => {
+    if (!state.dragging) return;
+    state.x = state.originX + event.clientX - state.startX;
+    state.y = state.originY + event.clientY - state.startY;
+    render();
+  });
+  const stop = () => { state.dragging = false; };
+  stage.addEventListener("pointerup", stop);
+  stage.addEventListener("pointerleave", stop);
+  scaleInput.addEventListener("input", () => {
+    state.scale = Math.max(1, Number(scaleInput.value || 1));
+    markDirty();
+    render();
+  });
+  stage.addEventListener("pointermove", () => {
+    markDirty();
+  });
+  variantInputs.forEach((input) => input.addEventListener("change", () => setAspect(input)));
+  apply?.addEventListener("click", async () => {
+    apply.disabled = true;
+    try {
+      await saveEditedAsset();
+      apply.textContent = "Gespeichert";
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Variante konnte nicht gespeichert werden: ${escapeHtml(error.message || String(error))}</div>`;
+      apply.textContent = "OK uebernehmen";
+    } finally {
+      apply.disabled = false;
+    }
+  });
+  reset?.addEventListener("click", () => {
+    state.x = 0;
+    state.y = 0;
+    state.scale = 1;
+    ["brightness", "contrast", "saturation", "sharpness"].forEach((name) => {
+      if (form?.elements[name]) form.elements[name].value = neutralValues[name];
+    });
+    if (form?.elements.black_white) form.elements.black_white.checked = false;
+    render();
+    applyCrop();
+  });
+  ["brightness", "contrast", "saturation", "sharpness", "black_white"].forEach((name) => {
+    form?.elements[name]?.addEventListener("input", () => {
+      markDirty();
+      render();
+    });
+    form?.elements[name]?.addEventListener("change", () => {
+      markDirty();
+      render();
+    });
+  });
+  setAspect(variantInputs.find((input) => input.checked) || variantInputs[0]);
+  render();
+  applyCrop();
+}
+
+function wireMediaDelete() {
+  document.querySelectorAll("[data-media-delete]").forEach((button) => {
+    if (button.dataset.mediaDeleteWired === "1") return;
+    button.dataset.mediaDeleteWired = "1";
+    button.addEventListener("click", async () => {
+      const assetId = button.dataset.mediaDelete;
+      const title = button.dataset.mediaTitle || "Bild";
+      if (!assetId) return;
+      if (!window.confirm(`Bild "${title}" wirklich loeschen?`)) return;
+      button.disabled = true;
+      const originalText = button.textContent;
+      button.textContent = "Loesche ...";
+      try {
+        const asset = await getOne("media_assets", assetId);
+        if (asset) await deleteStoredAsset(asset);
+        const variants = (await list("media_variants")).filter((variant) => variant.media_asset_id === assetId);
+        await Promise.all(variants.map((variant) => remove("media_variants", variant.id)));
+        await remove("media_assets", assetId);
+        const card = button.closest("[data-media-card]");
+        if (card) card.remove();
+      } catch (error) {
+        window.alert(`Loeschen fehlgeschlagen: ${error.message || String(error)}`);
+      } finally {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    });
+  });
+}
+
 function wireActions() {
   document.querySelector("[data-theme-toggle]")?.addEventListener("click", () => {
     const next = document.documentElement.dataset.theme === "night" ? "day" : "night";
@@ -2188,6 +3249,12 @@ function wireActions() {
   wireInternalScrollTop();
   wireJoinScroll();
   wireStickyRotators();
+  wireMediaLibraryFilters();
+  wireMediaCardLinks();
+  wireCentralMediaUpload();
+  wireMediaAiDraft();
+  wireMediaEdit();
+  wireMediaDelete();
   wireCmsMenu();
   wireImageDropzones();
   wireGalleryEditor();
@@ -2565,6 +3632,178 @@ function wireActions() {
       button.textContent = originalLabel;
     }
   }));
+
+  document.querySelector("#ai-news-import-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const output = form.querySelector("#ai-news-import-result");
+    const submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
+    if (output) output.innerHTML = `<div class="alert">${progressMarkup("Quellen werden analysiert und als News vorbereitet ...", 45)}</div>`;
+    try {
+      const values = formObject(form);
+      const { textSources, imageFiles, imageSources, unsupportedTextFiles } = await collectAiNewsImportSources(form);
+      if (!String(values.sourceText || "").trim() && !textSources.length && !imageFiles.length) {
+        throw new Error("Bitte Text einfuegen oder mindestens eine Text- oder Bilddatei hochladen.");
+      }
+      const result = await importNewsFromSources({
+        sourceText: values.sourceText || "",
+        textSources,
+        imageSources,
+        rules: {
+          visible: false,
+          noStatusLogic: true,
+          noAudioVideo: true
+        }
+      });
+      const draft = result.article || result.news || result;
+      if (!draft) throw new Error("Die KI hat keinen News-Beitrag zurueckgegeben.");
+      const now = new Date().toISOString();
+      const cleanHeadline = String(draft.headline || draft.title || "Importierte News").trim();
+      const articleId = `news-import-${crypto.randomUUID()}`;
+      let imageUrl = "";
+      let assetStoragePath = "";
+      let galleryId = "";
+      let galleryImages = [];
+      if (imageFiles[0]) {
+        const uploaded = await uploadEntityImage("editorialContent", articleId, imageFiles[0]);
+        imageUrl = uploaded?.url || "";
+        assetStoragePath = uploaded?.storagePath || "";
+      }
+      if (imageFiles.length > 1) {
+        galleryId = `gallery-${articleId}`;
+        galleryImages = await uploadGalleryImages(galleryId, imageFiles);
+        await upsert("galleries", {
+          id: galleryId,
+          title: `Galerie: ${cleanHeadline}`,
+          description: "Aus dem News-Import uebernommene Bildquellen. Bildunterschriften und Alt-Texte redaktionell pruefen.",
+          status: "published",
+          visibility: "public",
+          images: galleryImages.map((image, index) => ({
+            ...image,
+            caption: draft.gallery_suggestions?.[index]?.caption || image.caption || image.fileName || "",
+            altText: draft.gallery_suggestions?.[index]?.alt_text || draft.gallery_suggestions?.[index]?.altText || image.altText || image.fileName || ""
+          })),
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+      const tags = Array.isArray(draft.tags) ? draft.tags : String(draft.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean);
+      const sourceSnapshot = Array.isArray(draft.sources) ? draft.sources : [];
+      await upsert("editorialContent", {
+        id: articleId,
+        title: cleanHeadline,
+        headline: cleanHeadline,
+        subtitle: draft.subline || draft.subtitle || "",
+        subline: draft.subline || draft.subtitle || "",
+        introText: draft.subline || draft.subtitle || "",
+        shortText: draft.subline || draft.subtitle || "",
+        teaserText: draft.subline || draft.subtitle || "",
+        bodyText: draft.body || draft.bodyText || "",
+        page: "news",
+        section: "news",
+        key: `news.${articleId}`,
+        slug: slugify(cleanHeadline),
+        category: draft.category || "News",
+        tags,
+        primary_keyword: tags[0] || "",
+        keyword_json: tags.map((tag, index) => ({ keyword: tag, relevance_score: index === 0 ? 90 : 70 })),
+        source_snapshot_json: sourceSnapshot,
+        thumbnail_idea: draft.thumbnail_idea || draft.thumbnailIdea || "",
+        thumbnail_prompt: draft.thumbnail_prompt || draft.thumbnailPrompt || "",
+        thumbnail_alt: draft.thumbnail_alt || draft.thumbnailAlt || cleanHeadline,
+        imageUrl,
+        thumbnail_url: imageUrl,
+        assetUrl: imageUrl,
+        assetFileName: imageFiles[0]?.name || "",
+        assetType: imageUrl ? "image" : "",
+        assetStoragePath,
+        galleryId,
+        gallery_suggestions: draft.gallery_suggestions || draft.gallerySuggestions || [],
+        editorial_note: [
+          draft.editorial_note || draft.editorialNote || "",
+          unsupportedTextFiles.length ? `PDF/DOCX-Text bitte pruefen oder separat einfuegen: ${unsupportedTextFiles.join(", ")}` : ""
+        ].filter(Boolean).join("\n\n"),
+        relevance_score: Number(draft.relevance_score || draft.relevanceScore || 0),
+        relevance_reason: draft.relevance_reason || draft.relevanceReason || "",
+        visible: false,
+        status: "published",
+        visibility: "public",
+        author_type: "ai",
+        author_name: "KI-Redaktion",
+        generation_origin: "manual_news_import",
+        ai_log_json: {
+          import_flow: "manual_news_import",
+          no_status_logic: true,
+          visible: false,
+          textSourceCount: textSources.length,
+          imageSourceCount: imageFiles.length,
+          localOnly: Boolean(result.localOnly)
+        },
+        publishDate: now.slice(0, 10),
+        validFrom: now.slice(0, 10),
+        createdAt: now,
+        updatedAt: now
+      });
+      await Promise.all(sourceSnapshot.map((source, index) => upsert("article_sources", {
+        id: `article-source-${crypto.randomUUID()}`,
+        article_id: articleId,
+        title: source.title || `Quelle ${index + 1}`,
+        publisher: source.title || source.publisher || "",
+        domain: source.url ? domainFromUrl(source.url) : "",
+        url: source.url || "",
+        source_type: source.source_type || source.sourceType || "Importquelle",
+        relevance_note: "Aus dem manuellen News-Import uebernommen. Redaktionell pruefen.",
+        claim_reference: "",
+        trust_score: 0,
+        check_status: "ungeprueft",
+        created_at: now,
+        updated_at: now
+      })));
+      await Promise.all(tags.slice(0, 10).map((tag, index) => upsert("article_keywords", {
+        id: `article-keyword-${crypto.randomUUID()}`,
+        article_id: articleId,
+        keyword: tag,
+        keyword_type: index === 0 ? "Hauptkeyword" : "Branchenkeyword",
+        relevance_score: index === 0 ? 90 : 70,
+        is_primary: index === 0,
+        explanation: "Aus dem manuellen News-Import abgeleitet.",
+        ai_generated: true,
+        manually_confirmed: false,
+        created_at: now,
+        updated_at: now
+      })));
+      if (output) output.innerHTML = `<div class="alert alert--success">News wurde importiert und bleibt unsichtbar. Der Editor wird geoeffnet.</div>`;
+      window.location.hash = `#/cms/edit?module=editorialContent&id=${encodeURIComponent(articleId)}&section=news`;
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">News-Import fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+
+  document.querySelector("#ai-news-import-form input[name='sourceFiles']")?.addEventListener("change", (event) => {
+    renderAiNewsImportFileList(event.currentTarget.closest("form"));
+  });
+  document.querySelector("[data-ai-news-add-source]")?.addEventListener("click", () => {
+    document.querySelector("#ai-news-import-form textarea[name='sourceText']")?.focus();
+  });
+  document.querySelectorAll("[data-ai-news-dropzone]").forEach((dropzone) => {
+    const form = dropzone.closest("form");
+    const input = dropzone.querySelector('input[type="file"]');
+    dropzone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      dropzone.classList.add("is-dragover");
+    });
+    dropzone.addEventListener("dragleave", () => dropzone.classList.remove("is-dragover"));
+    dropzone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dropzone.classList.remove("is-dragover");
+      if (!input) return;
+      input.files = event.dataTransfer.files;
+      renderAiNewsImportFileList(form);
+    });
+  });
 
   document.querySelectorAll("[data-ai-topic-raw-clear]").forEach((button) => button.addEventListener("click", async () => {
     const output = document.querySelector("#ai-topic-research-result") || document.querySelector("#ai-editorial-run-result");
@@ -4211,6 +5450,18 @@ function wireActions() {
       const existing = (await getOne(form.dataset.module, form.dataset.id)) || { id: form.dataset.id, createdAt: new Date().toISOString() };
       let values = formObject(form);
       values = normalizeInternalEditorialValues(values);
+      if (form.dataset.module === "editorialContent" && Object.prototype.hasOwnProperty.call(values, "tags")) {
+        values.tags = String(values.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean);
+        values.primary_keyword = values.tags[0] || values.primary_keyword || "";
+        values.keyword_json = values.tags.map((tag, index) => ({ keyword: tag, relevance_score: index === 0 ? 90 : 70 }));
+      }
+      if (form.dataset.module === "editorialContent" && Object.prototype.hasOwnProperty.call(values, "source_snapshot_json_text")) {
+        try {
+          values.source_snapshot_json = values.source_snapshot_json_text.trim() ? JSON.parse(values.source_snapshot_json_text) : [];
+        } catch {
+          throw new Error("Quellen muessen als gueltiges JSON gespeichert werden.");
+        }
+      }
       const removeAssetRequested = values.removeAssetFile === "1";
       if (form.dataset.module === "editorialContent" && values.publishDate) values.validFrom = values.publishDate;
       if (form.dataset.module === "editorialContent" && Object.prototype.hasOwnProperty.call(values, "linkedEventId")) {
@@ -4253,6 +5504,7 @@ function wireActions() {
       delete values.assetFile;
       delete values.assetFileDataUrl;
       delete values.removeAssetFile;
+      delete values.source_snapshot_json_text;
       const savedValues = withContentVersionMetadata(form.dataset.module, existing, { ...existing, ...values });
       await upsert(form.dataset.module, savedValues);
       if (image || removeAssetRequested) {
@@ -4273,6 +5525,32 @@ function wireActions() {
       if (submitButton) submitButton.disabled = false;
     }
   });
+
+  document.querySelectorAll("[data-news-visible-toggle]").forEach((button) => button.addEventListener("click", async () => {
+    const articleId = button.dataset.newsVisibleToggle;
+    const nextVisible = button.dataset.visible === "true";
+    const form = button.closest("form");
+    const result = form?.querySelector("#content-save-result") || button.closest(".editorial-meta-panel");
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = nextVisible ? "Schalte frei ..." : "Blende aus ...";
+    try {
+      const existing = await getOne("editorialContent", articleId);
+      if (!existing) throw new Error("News-Beitrag nicht gefunden.");
+      await upsert("editorialContent", {
+        ...existing,
+        visible: nextVisible,
+        updatedAt: new Date().toISOString()
+      });
+      if (result) result.insertAdjacentHTML("beforeend", `<div class="alert alert--success">${nextVisible ? "News ist freigeschaltet." : "News ist unsichtbar geschaltet."}</div>`);
+      window.setTimeout(render, 500);
+    } catch (error) {
+      if (result) result.insertAdjacentHTML("beforeend", `<div class="alert alert--error">Sichtbarkeit konnte nicht geaendert werden: ${escapeHtml(error.message || String(error))}</div>`);
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
 
   document.querySelector("#membership-application-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
