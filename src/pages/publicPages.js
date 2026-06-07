@@ -446,11 +446,71 @@ function articleSourcesList(item = {}) {
 }
 
 function publicNewsItems(items = []) {
-  return items.filter((item) => {
+  const filtered = items.filter((item) => {
     const isNews = item.page === "news" || item.section === "news";
     const isHidden = item.visible === false || item.status === "archived" || item.status === "draft" || item.visibility === "internal";
     return isNews && !isHidden;
   });
+  return dedupeNewsItems(filtered);
+}
+
+function newsThumbUrl(item = {}) {
+  return item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || item.asset_url || "";
+}
+
+function newsIdentity(item = {}) {
+  const value = item.slug || item.key || item.title || item.headline || item.id || "";
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function newsDateValue(item = {}) {
+  return String(item.publishDate || item.validFrom || item.updatedAt || item.createdAt || "");
+}
+
+function dedupeNewsItems(items = []) {
+  const byKey = new Map();
+  items
+    .slice()
+    .sort((a, b) => newsDateValue(b).localeCompare(newsDateValue(a)))
+    .forEach((item) => {
+      const key = newsIdentity(item);
+      const existing = byKey.get(key);
+      if (!existing) {
+        byKey.set(key, item);
+        return;
+      }
+      const existingThumb = newsThumbUrl(existing);
+      const itemThumb = newsThumbUrl(item);
+      if (!existingThumb && itemThumb) byKey.set(key, item);
+    });
+  return Array.from(byKey.values());
+}
+
+function mergeNewsWithFallback(cmsNews = [], fallbackNews = []) {
+  const byKey = new Map();
+  cmsNews.forEach((item) => byKey.set(newsIdentity(item), item));
+  fallbackNews.forEach((fallback) => {
+    const key = newsIdentity(fallback);
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, fallback);
+      return;
+    }
+    const fallbackThumb = newsThumbUrl(fallback);
+    if (!newsThumbUrl(existing) && fallbackThumb) {
+      byKey.set(key, {
+        ...existing,
+        imageUrl: fallbackThumb,
+        thumbnail_url: fallback.thumbnail_url || fallbackThumb,
+        thumbnail_alt: existing.thumbnail_alt || fallback.thumbnail_alt || existing.title || fallback.title || ""
+      });
+    }
+  });
+  return Array.from(byKey.values());
 }
 
 function isAiGeneratedArticle(item = {}) {
@@ -673,10 +733,10 @@ export async function topicsPage() {
 
 export async function newsPage() {
   const cmsNews = publicNewsItems(await listPublicContent("editorialContent"));
-  const news = [...cmsNews, ...editorialFallbackNews.filter((fallback) => !cmsNews.some((item) => item.id === fallback.id))]
+  const news = mergeNewsWithFallback(cmsNews, editorialFallbackNews)
     .sort(editorialPrioritySort);
   return publicShell("news", `${subhero("News", "Aktuelles von PROdigitalTV.", "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.")}
-    <section class="section"><div class="container">${news.length ? `<div class="card-grid card-grid--three editorial-list editorial-list--news">${news.map((item) => `<a class="quick-card news-card" href="#/news/${item.id}">${item.imageUrl ? `<figure class="news-card__thumb"><img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.title || "News")}"></figure>` : ""}<p class="eyebrow">${escapeHtml(item.category || "News")}</p><h3>${escapeHtml(item.title || "")}</h3>${item.subtitle ? `<p class="news-card__subtitle">${escapeHtml(item.subtitle)}</p>` : ""}<p>${escapeHtml(item.shortText || item.teaserText || item.introText || item.bodyText || "").slice(0, 180)}</p></a>`).join("")}</div>` : `<div class="alert">Aktuell sind keine News veroeffentlicht.</div>`}</div></section>`);
+    <section class="section"><div class="container">${news.length ? `<div class="card-grid card-grid--three editorial-list editorial-list--news">${news.map((item) => { const thumb = newsThumbUrl(item); return `<a class="quick-card news-card" href="#/news/${item.id}">${thumb ? `<figure class="news-card__thumb"><img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}"></figure>` : ""}<p class="eyebrow">${escapeHtml(item.category || "News")}</p><h3>${escapeHtml(item.title || "")}</h3>${item.subtitle ? `<p class="news-card__subtitle">${escapeHtml(item.subtitle)}</p>` : ""}<p>${escapeHtml(item.shortText || item.teaserText || item.introText || item.bodyText || "").slice(0, 180)}</p></a>`; }).join("")}</div>` : `<div class="alert">Aktuell sind keine News veroeffentlicht.</div>`}</div></section>`);
 }
 
 export async function newsDetailPage(id) {

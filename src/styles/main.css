@@ -3768,6 +3768,48 @@ form.is-saved [data-image-crop] {
 }
 .ai-dialog-grid { display: grid; gap: 16px; margin: 20px 0; }
 .ai-dialog textarea { min-height: 230px; }
+.ai-dialog--news-review { width: min(1280px, 100%); }
+.ai-dialog-grid--review {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: stretch;
+}
+.ai-dialog-grid--review > .field,
+.ai-news-review-fields {
+  min-width: 0;
+}
+.ai-dialog-grid--review textarea {
+  min-height: 360px;
+}
+.ai-dialog-grid--review label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ai-dialog-grid--review label span {
+  color: var(--pdt-muted);
+  font-size: .86rem;
+  font-weight: 700;
+}
+.ai-news-review-fields textarea[name="subline"] {
+  min-height: 86px;
+}
+.ai-news-review-controls {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) auto;
+  gap: 12px;
+  align-items: end;
+}
+.ai-news-review-controls .button {
+  min-height: 48px;
+  justify-content: center;
+}
+.ai-news-review-fields textarea[name="body"] {
+  min-height: 360px;
+}
+@media (max-width: 820px) {
+  .ai-dialog-grid--review { grid-template-columns: 1fr; }
+  .ai-news-review-controls { grid-template-columns: 1fr; }
+}
 .ai-release-grid {
   display: grid;
   gap: 14px;

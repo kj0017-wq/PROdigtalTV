@@ -96,16 +96,24 @@ function defaultSystemPrompt(type, label) {
     ].join("\n")
     : type === "Beitragstext"
       ? [
-        "Aufgabe: Erstelle einen redaktionellen Kurzbeitrag fuer PROdigitalTV aus einem ausgewaehlten Thema.",
-        "Ziel: Der Beitrag soll wie ein CMS-fertiger Branchenbeitrag klingen: aktuell, serioes, leicht verstaendlich, fachlich belastbar und klar fuer TV-, Streaming-, Digital- und Medienbranche eingeordnet.",
+        "Aufgabe: Erstelle einen normalen redaktionellen Beitrag fuer PROdigitalTV aus einem ausgewaehlten Thema.",
+        "Ziel: Der Beitrag soll wie ein veroeffentlichter Branchenbeitrag klingen: aktuell, serioes, leicht verstaendlich, fachlich belastbar und klar fuer TV-, Streaming-, Digital- und Medienbranche eingeordnet.",
         "Nutze nur die gelieferten Daten aus {{THEMA}}, {{KATEGORIE}}, {{QUELLEN}}, {{HEADLINE}}, {{SUBLINE}}, {{KEYWORDS}}, {{SPRACHSTIL}}, {{TEXTLAENGE}} und {{HEUTIGES_DATUM}}.",
-        "Keine Fakten, Zahlen, Zitate, Namen, Studien, Quellen oder URLs erfinden. Wenn eine Information nicht belegbar ist, weglassen.",
-        "Der Beitragstext darf je nach Thema bis ca. 500 Woerter haben. Er beantwortet: Was ist passiert? Warum ist das fuer die Medienbranche relevant? Welche Bedeutung hat es fuer Sender, Produzenten, Plattformen, Verlage, Streaminganbieter oder regionale Medien?",
+        "Keine Fakten, Zahlen, Zitate, Namen, Studien, Quellen oder URLs erfinden. Wenn eine Information nicht belegbar ist, lasse sie weg und schreibe enger entlang der vorhandenen Informationen.",
+        "Der neue Beitragstext muss mindestens 300 Woerter haben und soll idealerweise 300 bis 400 Woerter umfassen, sofern die gelieferten Informationen dafuer ausreichen. Er beantwortet: Was ist passiert? Warum ist das fuer die Medienbranche relevant? Welche Bedeutung hat es fuer Sender, Produzenten, Plattformen, Verlage, Streaminganbieter oder regionale Medien?",
+        "Den Haupttext immer neu formulieren. Keine langen Passagen aus dem Ausgangstext kopieren, keine Satz-fuer-Satz-Paraphrase. Inhalt, Reihenfolge und Einstieg eigenstaendig redaktionell strukturieren.",
+        "Beim Neuformulieren den Kern der Aussagen bewahren: konkrete Akteure, Daten, Verfahren, Zahlen, Rechtsfragen, Marktfolgen und zentrale Ursache-Wirkung-Beziehungen nicht verwässern und nicht durch allgemeine Branchenfloskeln ersetzen.",
+        "Verwende deutsche Umlaute und ß in sichtbaren deutschen Texten: ä, ö, ü, Ä, Ö, Ü, ß. Nicht ae, oe, ue oder ss schreiben, wenn ein deutscher Umlaut gemeint ist.",
+        "Headline, Subline und Beitragstext haben unterschiedliche Aufgaben und duerfen nicht dasselbe in anderer Reihenfolge wiederholen. Headline: Kern der Nachricht. Subline: zusaetzlicher Kontext oder Bedeutung. Beitragstext: neue Einstiegsformulierung, Hintergruende, Einordnung und Folgen.",
+        "Headline und Subline duerfen im Wortlaut keine identischen Phrasen enthalten. Die Subline muss einen neuen Aspekt liefern: Zeitraum, Akteure, Folgen, Einordnung, Konflikt, Marktbezug oder Bedeutung fuer die Branche.",
+        "Subline immer als vollstaendigen, sauber endenden Satz formulieren. Nicht mitten im Satz abbrechen, keine abgeschnittenen Nebensaetze.",
+        "Keywords: genau 4 Keywords pro Beitrag. Jedes Keyword besteht aus genau einem fachlichen Wort, keine Satzteile, keine Mehrwort-Phrasen, keine Halbsätze, keine Wortfragmente wie gepr. Keine Funktionswoerter wie wird, werden, ist, sind, eine, der, die, das, mit, fuer, auf.",
+        "Vermeide Wiederholungen gleicher Aussagen, gleicher Satzanfaenge und gleicher Woerter direkt nacheinander.",
         "Sprache: sachlich, journalistisch, klar, nicht werblich, nicht reisserisch, keine langen Schachtelsaetze. Fachbegriffe nur verwenden, wenn sie noetig sind, und kurz erklaeren.",
-        "Keine Meta-Sprache im Beitrag: nicht Arbeitsentwurf, nicht Themenkandidat, nicht Vorschlag, nicht Quellenfund, nicht redaktionell pruefen.",
-        "Ausgabeformat: Headline, Subline, Redaktioneller Beitrag, Quellen, Tags / Keywords, Relevanzbewertung, Thumbnail-Idee, CMS-Status.",
-        "CMS-Status: Veroeffentlichungsfaehig nur, wenn Quellen und Faktenlage belastbar sind. Sonst Pruefung erforderlich.",
-        "Wenn keine ausreichenden Quellen vorhanden sind, keinen scheinbar fertigen Artikel schreiben, sondern einen kurzen pruefpflichtigen Textkern mit klarer Quellenwarnung ausgeben."
+        "Keine Meta-Sprache im Beitrag: nicht Arbeitsentwurf, nicht Themenkandidat, nicht Vorschlag, nicht Quellenfund, nicht redaktionell pruefen, nicht Freischaltung, nicht CMS, nicht Redakteur.",
+        "Keine technischen oder organisatorischen Hinweise an die Redaktion. Die Aufgabe ist die Information des Beitrags, nicht die Beschreibung eines Workflows.",
+        "Ausgabeformat: Headline, Subline, Beitragstext, Kategorie, Keywords, Thumbnail-Idee.",
+        "Wenn die Informationen duenn sind, schreibe einen kuerzeren sachlichen Beitrag, der nur das vorhandene Thema erklaert."
       ].join("\n")
     : [
       `Aufgabe: ${label} fuer die PROdigitalTV KI-Redaktion.`,
@@ -177,7 +185,8 @@ async function ensureSystemPrompts(prompts = []) {
   const shouldUpdateArticlePrompt = articleSystemPrompt
     && String(articleSystemPrompt.created_by || articleSystemPrompt.createdBy || "").toLowerCase() === "system"
     && String(articleSystemPrompt.updated_by || articleSystemPrompt.updatedBy || "System").toLowerCase() === "system"
-    && !String(articleSystemPrompt.prompt_text || articleSystemPrompt.promptText || "").includes("bis ca. 500");
+    && (!String(articleSystemPrompt.prompt_text || articleSystemPrompt.promptText || "").includes("normalen redaktionellen Beitrag")
+      || /CMS-Status|Freischaltung|redaktionell pruefen|Pruefung erforderlich|Redakteur/i.test(String(articleSystemPrompt.prompt_text || articleSystemPrompt.promptText || "")));
   if (shouldUpdateArticlePrompt) {
     const updated = {
       ...articleSystemPrompt,

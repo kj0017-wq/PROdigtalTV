@@ -8,7 +8,7 @@ const db = getFirestore();
 const region = "europe-west3";
 const openAiApiKey = defineSecret("OPENAI_API_KEY");
 
-const SYSTEM_PROMPT = "Du schreibst fuer PROdigitalTV, ein professionelles Branchennetzwerk der digitalen Medienwirtschaft. Die Sprache ist deutsch, serioes, klar, hochwertig und B2B-orientiert. Texte sollen praezise, gut lesbar und nicht uebertrieben werblich sein. Erfinde keine Fakten. Wenn Informationen fehlen, weise auf fehlende Angaben hin. Erzeuge nur Inhalte, die ein Redakteur anschliessend pruefen und freigeben kann.";
+const SYSTEM_PROMPT = "Du schreibst fuer PROdigitalTV, ein professionelles Branchennetzwerk der digitalen Medienwirtschaft. Die Sprache ist deutsch, serioes, klar, hochwertig und B2B-orientiert. Texte sollen praezise, gut lesbar und nicht uebertrieben werblich sein. Erfinde keine Fakten. Schreibe sichtbare Texte wie normale redaktionelle Beitraege fuer Leserinnen und Leser. Keine Meta-Hinweise, keine Arbeitsanweisungen, keine Hinweise auf Pruefung, Freischaltung, CMS, Redaktion oder technische/organisatorische Aufgaben.";
 
 const ACTIONS = {
   improveText: { label: "Text verbessern", mode: "text", instruction: "Verbessere den Text redaktionell, ohne Fakten zu erfinden." },
@@ -110,8 +110,19 @@ function buildPrompt(action, payload) {
     fieldRules[fieldName] || "",
     isRetrospective ? "Kontextregel Rueckblick: Alle Texte muessen als nachtraegliche Berichterstattung ueber ein bereits vergangenes Event klingen. Verboten sind Formulierungen wie 'wir laden ein', 'melden Sie sich an', 'findet statt', 'wird stattfinden', 'wird sich beschaeftigen', 'wir freuen uns' oder andere Einladungs- und Zukunftslogik. Verwende stattdessen 'fand statt', 'stand im Mittelpunkt', 'diskutierten', 'beleuchtete', 'bot'." : "",
     "Arbeite nur mit den uebergebenen Informationen.",
-    "Gib keine automatische Freigabe oder Veroeffentlichung aus.",
-    actionConfig.mode === "json" ? "Antworte ausschliesslich als valides JSON." : "Antworte als direkt nutzbarer redaktioneller Vorschlag.",
+    "Der sichtbare Text muss die Sache selbst erklaeren: Was ist passiert, worum geht es, warum ist es relevant, welche Einordnung ergibt sich fuer die Medienbranche.",
+    "Wenn ein Haupt- oder Beitragstext erzeugt wird, muss der neue Text mindestens 300 Woerter haben und soll idealerweise 300 bis 400 Woerter umfassen, sofern die gelieferten Informationen dafuer ausreichen.",
+    "Den Haupttext immer neu formulieren. Keine langen Passagen aus dem Ausgangstext kopieren, keine Satz-fuer-Satz-Paraphrase. Inhalt, Reihenfolge und Einstieg eigenstaendig redaktionell strukturieren.",
+    "Beim Neuformulieren den Kern der Aussagen bewahren: konkrete Akteure, Daten, Verfahren, Zahlen, Rechtsfragen, Marktfolgen und zentrale Ursache-Wirkung-Beziehungen nicht verwässern und nicht durch allgemeine Branchenfloskeln ersetzen.",
+    "Verwende deutsche Umlaute und ß in sichtbaren deutschen Texten: ä, ö, ü, Ä, Ö, Ü, ß. Nicht ae, oe, ue oder ss schreiben, wenn ein deutscher Umlaut gemeint ist.",
+    "Headline, Subline und Beitragstext duerfen sich nicht gegenseitig wiederholen: Headline nennt den Kern, Subline liefert einen neuen Zusatznutzen oder Kontext, der Beitragstext beginnt mit einer anderen Formulierung und entwickelt das Thema weiter.",
+    "Headline und Subline duerfen im Wortlaut keine identischen Phrasen enthalten. Die Subline wiederholt die Headline nicht mit anderen Fuellwoertern, sondern ergaenzt einen neuen Aspekt: Zeitraum, Akteure, Folgen, Einordnung, Konflikt, Marktbezug oder Bedeutung fuer die Branche.",
+    "Subline immer als vollstaendigen, sauber endenden Satz formulieren. Nicht mitten im Satz abbrechen, keine abgeschnittenen Nebensaetze.",
+    "Keywords: genau 4 Keywords pro Beitrag. Jedes Keyword besteht aus genau einem fachlichen Wort, keine Satzteile, keine Mehrwort-Phrasen, keine Halbsätze, keine Wortfragmente wie gepr. Keine Funktionswoerter wie wird, werden, ist, sind, eine, der, die, das, mit, fuer, auf.",
+    "Keine Wiederholung gleicher Satzanfänge, gleicher Aussagen oder gleicher Begriffe direkt hintereinander.",
+    "Keine Meta-Sprache: keine Hinweise auf Pruefung, Freischaltung, CMS, Redakteure, Quellenarbeit, Arbeitsstand, technische oder organisatorische Aufgaben.",
+    "Wenn Informationen fehlen, schreibe nicht ueber fehlende Angaben, sondern formuliere den Beitrag enger entlang der belegten Informationen.",
+    actionConfig.mode === "json" ? "Antworte ausschliesslich als valides JSON." : "Antworte als direkt nutzbaren redaktionellen Fliesstext oder Feldtext ohne interne Hinweise.",
     `Eingaben: ${JSON.stringify(safePayload)}`
   ].join("\n\n");
 }

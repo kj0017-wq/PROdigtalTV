@@ -1,4 +1,4 @@
-import { getFirebaseServices, localPreviewMode } from "../firebase/firebaseClient.js";
+﻿import { getFirebaseServices, localPreviewMode } from "../firebase/firebaseClient.js";
 import { currentUser } from "../firebase/authService.js?v=284";
 import { upsert } from "../firebase/dataService.js?v=284";
 import { aiSourceCatalog } from "../data/aiSourceCatalog.js";
@@ -89,8 +89,8 @@ function localSuggestion(action, payload) {
   return {
     action,
     suggestedText: text
-      ? `${text}\n\nRedaktioneller KI-Vorschlag: Bitte sachlich pruefen, fehlende Fakten ergaenzen und erst danach uebernehmen.`
-      : "Redaktioneller KI-Vorschlag: Bitte Eventtitel, Datum, Themen und Stichpunkte ergaenzen. Ohne belastbare Informationen werden keine Fakten erfunden.",
+      ? text
+      : "Aus den vorhandenen Angaben laesst sich noch kein aussagekraeftiger Beitrag formulieren.",
     structured: null,
     status: "suggested"
   };
@@ -362,6 +362,114 @@ function firstSentence(text = "") {
   return compactSourceText(text).split(/(?<=[.!?])\s+/).find((part) => part.trim().length > 20) || "";
 }
 
+function textTokens(value = "") {
+  return new Set(String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9Ã¤Ã¶Ã¼ÃŸ]+/gi, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 4)
+    .filter((word) => !["diese", "dieser", "diesen", "einer", "einem", "einen", "werden", "wurde", "haben", "ueber", "fuer", "nicht", "auch"].includes(word)));
+}
+
+function textSimilarity(a = "", b = "") {
+  const aTokens = textTokens(a);
+  const bTokens = textTokens(b);
+  if (!aTokens.size || !bTokens.size) return 0;
+  const overlap = [...aTokens].filter((token) => bTokens.has(token)).length;
+  return overlap / Math.min(aTokens.size, bTokens.size);
+}
+
+function singleWordKeywords(values = [], fallbackText = "") {
+  const stop = new Set(["gepr", "pruef", "pruefen", "geprueft", "redaktionell", "wird", "sind", "sein", "eine", "eines", "einen", "einem", "einer", "diese", "dieser", "diesen", "werden", "wurde", "wurden", "haben", "hatte", "hatten", "ueber", "fuer", "nicht", "auch", "oder", "und", "der", "die", "das", "dem", "den", "des", "mit", "von", "zur", "zum", "aus", "bei", "auf", "als", "dass", "wenn", "weil", "nach", "vor", "wie", "was"]);
+  const raw = [
+    ...(Array.isArray(values) ? values : String(values || "").split(",")),
+    ...String(fallbackText || "").split(/\s+/)
+  ];
+  const seen = new Set();
+  return raw
+    .flatMap((item) => String(item || "").split(/[^A-Za-z0-9-]+/))
+    .map((word) => word.replace(/^-+|-+$/g, "").trim())
+    .filter((word) => word.length >= 4 && word.length <= 22)
+    .filter((word) => !stop.has(word.toLowerCase()))
+    .filter((word) => !/^(gepr|pruef|redakt|quelle|quellen|status)$/i.test(word))
+    .filter((word) => {
+      const key = word.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 4);
+}
+
+function complementarySubline(headline = "", text = "") {
+  const sentences = compactSourceText(text)
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 35);
+  return cleanSublineEnd(sentences.find((sentence) => textSimilarity(headline, sentence) < 0.45 && sentence !== headline) || "", 180)
+    || "Der Beitrag ordnet die Entwicklung fuer die digitale Medien- und Kreativwirtschaft ein.";
+}
+
+function cleanSublineEnd(value = "", maxLength = 180) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (text.length <= maxLength) return /[.!?]$/.test(text) ? text : `${text}.`;
+  const clipped = text.slice(0, maxLength + 1);
+  const sentenceEnd = Math.max(clipped.lastIndexOf("."), clipped.lastIndexOf("!"), clipped.lastIndexOf("?"));
+  if (sentenceEnd > 60) return clipped.slice(0, sentenceEnd + 1).trim();
+  const wordEnd = clipped.lastIndexOf(" ");
+  const clean = clipped.slice(0, wordEnd > 60 ? wordEnd : maxLength).replace(/[,:;â€“-]\s*$/, "").trim();
+  return clean ? `${clean}.` : "";
+}
+
+function localWordCount(value = "") {
+  return String(value || "").trim().split(/\s+/).filter((word) => /[A-Za-z0-9]/.test(word)).length;
+}
+
+function sourceSentences(value = "") {
+  return compactSourceText(value, 9000)
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.replace(/^Pressemitteilung[:\s-]*/i, "").trim())
+    .filter((part) => part.length > 45)
+    .filter((part, index, list) => list.findIndex((item) => item.toLowerCase() === part.toLowerCase()) === index)
+    .slice(0, 12);
+}
+
+function sentenceSubject(headline = "", tags = []) {
+  return String(headline || tags[0] || "die Entwicklung").replace(/[.!?]+$/g, "").trim() || "die Entwicklung";
+}
+
+function reformulatedNewsBody({ headline = "", subline = "", combinedText = "", tags = [], targetWords = 300 } = {}) {
+  const minimumWords = Math.max(180, Math.min(900, Number(targetWords || 300)));
+  const sentences = sourceSentences(combinedText);
+  const subject = sentenceSubject(headline, tags);
+  if (!sentences.length) return "Aus den bereitgestellten Informationen laesst sich derzeit noch kein aussagekraeftiger Beitrag ableiten.";
+  const facts = sentences.map((sentence) => sentence.replace(/\s+/g, " ").trim());
+  const paragraphSeeds = [
+    `Die aktuelle Entwicklung rund um ${subject} rueckt ein Thema in den Mittelpunkt, das fuer die digitale Medienwirtschaft spuerbar an Bedeutung gewinnt. ${subline || facts[0]} Fuer Unternehmen aus TV, Streaming, Produktion, Vermarktung und Plattformbetrieb geht es dabei nicht nur um eine einzelne Meldung, sondern um die Frage, welche Folgen sich fuer Geschaeftsmodelle, Rechte, Nutzung und Sichtbarkeit digitaler Inhalte ergeben.`,
+    `Im Kern beschreibt der vorliegende Informationsstand, dass ${facts[0].replace(/^[A-ZÄÖÜ][^a-zäöüß]{0,20}[:\-]\s*/, "")} Daraus entsteht ein Branchenbezug, weil solche Entwicklungen zunehmend entscheiden, wie Inhalte produziert, verbreitet, finanziert oder rechtlich eingeordnet werden. Besonders relevant ist, ob daraus neue Standards, neue Marktbewegungen oder veraenderte Erwartungen an Anbieter entstehen.`,
+    facts[1]
+      ? `Ein weiterer Aspekt ist ${facts[1].replace(/^[A-ZÄÖÜ][^a-zäöüß]{0,20}[:\-]\s*/, "")} Fuer Medienanbieter bedeutet das, Entwicklungen frueh einzuordnen und nicht nur auf technische Neuerungen zu schauen. Entscheidend ist, wie sich Reichweite, Nutzerfuehrung, Lizenzierung, redaktionelle Verantwortung oder wirtschaftliche Planbarkeit veraendern.`
+      : `Fuer Medienanbieter bedeutet das, die Entwicklung nicht isoliert zu betrachten. Entscheidend ist, wie sich Reichweite, Nutzerfuehrung, Lizenzierung, redaktionelle Verantwortung oder wirtschaftliche Planbarkeit veraendern.`,
+    facts[2]
+      ? `Hinzu kommt: ${facts[2]} Diese Einordnung ist wichtig, weil digitale Medienmaerkte immer staerker von Plattformlogik, Daten, Automatisierung, Regulierung und neuen Nutzungsformen gepraegt werden. Was heute als einzelnes Thema erscheint, kann schnell Auswirkungen auf Produktionsprozesse, Rechteklaerung, Vermarktung oder die strategische Positionierung von Anbietern haben.`
+      : `Die Einordnung ist wichtig, weil digitale Medienmaerkte immer staerker von Plattformlogik, Daten, Automatisierung, Regulierung und neuen Nutzungsformen gepraegt werden. Was heute als einzelnes Thema erscheint, kann schnell Auswirkungen auf Produktionsprozesse, Rechteklaerung, Vermarktung oder die strategische Positionierung von Anbietern haben.`,
+    `Fuer die Branche bleibt damit vor allem die praktische Frage, wie Unternehmen auf ${tags[0] || "diese Entwicklung"} reagieren. Professionelle Anbieter muessen Chancen erkennen, Risiken sauber bewerten und ihre Angebote so weiterentwickeln, dass technische Innovation, rechtliche Sicherheit und publizistische Qualitaet zusammenpassen. Genau darin liegt die Relevanz des Themas fuer PROdigitalTV: Es verbindet Marktbeobachtung mit konkreter Orientierung fuer digitale Medienanbieter.`
+  ];
+  let body = paragraphSeeds.join("\n\n");
+  for (const fact of facts.slice(3)) {
+    if (localWordCount(body) >= minimumWords) break;
+    body += `\n\nZusaetzlich zeigt der Quellenstand: ${fact} Auch dieser Punkt unterstreicht, dass die Entwicklung nicht nur eine Detailfrage ist, sondern Teil eines groesseren Wandels in der digitalen Medienwirtschaft.`;
+  }
+  while (localWordCount(body) < minimumWords) {
+    body += `\n\nIn der weiteren Einordnung wird deutlich, dass ${tags[1] || tags[0] || "das Thema"} fuer Medienunternehmen vor allem dort relevant wird, wo strategische Entscheidungen, technische Entwicklung und wirtschaftliche Rahmenbedingungen zusammenkommen. Anbieter muessen nicht jede Entwicklung sofort uebernehmen, sollten aber verstehen, welche Erwartungen sich daraus fuer Partner, Publikum und Marktakteure ergeben.`;
+    if (localWordCount(body) > minimumWords + 90) break;
+  }
+  return body;
+}
+
 function sourceTitleFromFile(source = {}, index = 0) {
   return source.name || source.fileName || source.title || `Quelle ${index + 1}`;
 }
@@ -369,6 +477,7 @@ function sourceTitleFromFile(source = {}, index = 0) {
 function localImportedNewsDraft(payload = {}) {
   const textSources = Array.isArray(payload.textSources) ? payload.textSources : [];
   const imageSources = Array.isArray(payload.imageSources) ? payload.imageSources : [];
+  const targetWords = Math.max(300, Math.min(900, Number(payload.targetWords || payload.rules?.targetWords || 300)));
   const combinedText = compactSourceText([payload.sourceText, ...textSources.map((source) => source.text || source.content || "")].filter(Boolean).join("\n\n"), 14000);
   const lead = firstSentence(combinedText);
   const words = combinedText.split(/\s+/).filter((word) => word.length > 3);
@@ -379,18 +488,9 @@ function localImportedNewsDraft(payload = {}) {
     .trim()
     .slice(0, 92)
     .replace(/[,:;]\s*$/, "");
-  const body = combinedText
-    ? [
-      lead || headline,
-      compactSourceText(combinedText, 1100),
-      "Der Beitrag wurde aus den eingefuegten Quellen vorbereitet. Redaktion, Fakten, Quellen und Bildverwendung muessen vor der Freischaltung geprueft werden."
-    ].filter(Boolean).join("\n\n")
-    : "Aus den bereitgestellten Dateien konnte noch kein belastbarer Fliesstext extrahiert werden. Bitte Textquelle ergaenzen und redaktionell pruefen.";
-  const tags = Array.from(new Set(words
-    .map((word) => word.replace(/[^A-Za-zÀ-ž0-9-]/g, ""))
-    .filter((word) => word.length >= 5)
-    .filter((word) => !/^(diese|dieser|diesen|einer|einem|einen|werden|wurde|haben|ueber|fuer|nicht|auch)$/i.test(word))
-    .slice(0, 12))).slice(0, 8);
+  const tags = singleWordKeywords(words, combinedText);
+  const subline = lead && lead !== headline && textSimilarity(headline, lead) < 0.45 ? cleanSublineEnd(lead, 180) : complementarySubline(headline, combinedText);
+  const body = reformulatedNewsBody({ headline, subline, combinedText, tags, targetWords });
   const sources = textSources.map((source, index) => ({
     title: sourceTitleFromFile(source, index),
     url: source.url || "",
@@ -398,22 +498,22 @@ function localImportedNewsDraft(payload = {}) {
   }));
   return {
     headline: headline || "Neue Entwicklung in der digitalen Medienwirtschaft",
-    subline: lead && lead !== headline ? lead.slice(0, 160) : "Redaktioneller News-Entwurf aus gelieferten Quellen.",
+    subline,
     body,
     sources,
     tags,
     category: tags.find((tag) => /ki|streaming|tv|werbung|medien|plattform/i.test(tag)) || "News",
     relevance_score: combinedText ? 65 : 25,
     relevance_reason: combinedText ? "Aus lokal bereitgestellten Textquellen abgeleitet." : "Es liegt noch zu wenig extrahierbarer Text vor.",
-    thumbnail_idea: imageSources.length ? `Eines der gelieferten Bilder als redaktionelles Vorschaubild pruefen: ${imageSources[0].name || imageSources[0].fileName || "Bildquelle"}.` : "Redaktionelles Motiv zur digitalen Medienwirtschaft.",
+    thumbnail_idea: imageSources.length ? `Redaktionelles Vorschaubild auf Basis der gelieferten Bildquelle: ${imageSources[0].name || imageSources[0].fileName || "Bildquelle"}.` : "Redaktionelles Motiv zur digitalen Medienwirtschaft.",
     thumbnail_prompt: "Serioeses redaktionelles 16:9-Vorschaubild fuer PROdigitalTV, digitale Medienwirtschaft, sachlich, modern, keine erfundenen Logos, keine realen Personen identifizieren.",
     thumbnail_alt: headline || "News-Motiv",
     gallery_suggestions: imageSources.map((image) => ({
       file_name: image.name || image.fileName || "",
-      caption: image.caption || image.name || "Bildquelle redaktionell pruefen",
+      caption: image.caption || image.name || "Redaktionelles Bildmotiv",
       alt_text: image.altText || image.name || "Redaktionelles Bildmotiv"
     })),
-    editorial_note: "Lokaler Import-Fallback: Text und Bilddaten wurden ohne Live-GPT verarbeitet. Keine Fakten ergaenzen, Quellen pruefen, erst danach freischalten."
+    editorial_note: "Lokaler Import-Fallback: Text und Bilddaten wurden ohne Live-GPT verarbeitet."
   };
 }
 
@@ -460,7 +560,7 @@ function rotateLocalSources(sources = [], existingSuggestions = [], category = "
 
 function cleanAiEditorialSentence(value = "") {
   return String(value || "")
-    .replace(/\b(redaktioneller Themenkandidat|Themenkandidat|Vorschlag|Quellenfund|redaktionell pruefen|redaktionell prüfen)\b/gi, "")
+    .replace(/\b(redaktioneller Themenkandidat|Themenkandidat|Vorschlag|Quellenfund|redaktionell pruefen|redaktionell prÃ¼fen)\b/gi, "")
     .replace(/\s+/g, " ")
     .replace(/\s+([.,;:!?])/g, "$1")
     .trim();

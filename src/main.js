@@ -303,6 +303,120 @@ function formObject(form) {
   return data;
 }
 
+function countWords(value = "") {
+  return String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter((word) => /[\p{L}\p{N}]/u.test(word)).length;
+}
+
+function normalizeFourKeywords(values = "", fallbackText = "") {
+  const stop = new Set(["gepr", "pruef", "pruefen", "geprueft", "redaktionell", "wird", "sind", "sein", "eine", "eines", "einen", "einem", "einer", "diese", "dieser", "diesen", "werden", "wurde", "wurden", "haben", "hatte", "hatten", "ueber", "fuer", "nicht", "auch", "oder", "und", "der", "die", "das", "dem", "den", "des", "mit", "von", "zur", "zum", "aus", "bei", "auf", "als", "dass", "wenn", "weil", "nach", "vor", "wie", "was"]);
+  const raw = [
+    ...String(values || "").split(/[,;\s]+/),
+    ...String(fallbackText || "").split(/\s+/)
+  ];
+  const seen = new Set();
+  return raw
+    .map((word) => word.replace(/[^A-Za-z0-9ÄÖÜäöüß-]/g, "").replace(/^-+|-+$/g, "").trim())
+    .filter((word) => word.length >= 4 && word.length <= 22)
+    .filter((word) => !stop.has(word.toLowerCase()))
+    .filter((word) => !/^(gepr|pruef|redakt|quelle|quellen|status)$/i.test(word))
+    .filter((word) => {
+      const key = word.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 4);
+}
+
+function newsSourceSentences(value = "") {
+  return String(value || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.replace(/^Pressemitteilung[:\s-]*/i, "").trim())
+    .filter((sentence) => sentence.length > 45)
+    .filter((sentence, index, list) => list.findIndex((item) => item.toLowerCase() === sentence.toLowerCase()) === index)
+    .slice(0, 14);
+}
+
+function cleanNewsSentence(value = "") {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/^(und|oder|aber|denn|weil|dass)\s+/i, "")
+    .replace(/[“”"']+/g, "")
+    .trim();
+}
+
+function keyNewsFacts(sourceText = "", limit = 5) {
+  const sentences = newsSourceSentences(sourceText);
+  const scored = sentences.map((sentence, index) => {
+    const score = (/\b\d{4}|\b\d{1,2}\.\s*[A-ZÄÖÜa-zäöü]+|\b[A-ZÄÖÜ]{2,}\b|Landgericht|GEMA|Suno|EU|AI|KI|Urteil|Klage|Pflicht|Recht|Lizenz|Verguetung|Streaming|TV|Medien|Plattform|Musik|Urheber/i.test(sentence) ? 30 : 0)
+      + Math.max(0, 12 - index)
+      + Math.min(18, Math.round(sentence.length / 18));
+    return { sentence: cleanNewsSentence(sentence), score };
+  });
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .map((item) => item.sentence)
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function trimTextToWordGoal(value = "", targetWords = 300) {
+  const target = Math.max(120, Math.min(900, Number(targetWords || 300)));
+  const paragraphs = String(value || "").split(/\n{2,}/).map((paragraph) => paragraph.trim()).filter(Boolean);
+  const kept = [];
+  for (const paragraph of paragraphs) {
+    const next = [...kept, paragraph].join("\n\n");
+    if (countWords(next) <= target + 25) {
+      kept.push(paragraph);
+      continue;
+    }
+    const sentences = paragraph.split(/(?<=[.!?])\s+/).map((sentence) => sentence.trim()).filter(Boolean);
+    for (const sentence of sentences) {
+      const sentenceNext = [...kept, sentence].join("\n\n");
+      if (countWords(sentenceNext) <= target + 10) kept.push(sentence);
+      if (countWords(kept.join("\n\n")) >= target - 15) break;
+    }
+    break;
+  }
+  let text = kept.join("\n\n").trim();
+  if (countWords(text) <= target + 20) return text;
+  const words = text.split(/\s+/).slice(0, target);
+  text = words.join(" ").replace(/[,:;–-]\s*$/, "").trim();
+  const lastSentenceEnd = Math.max(text.lastIndexOf("."), text.lastIndexOf("!"), text.lastIndexOf("?"));
+  if (lastSentenceEnd > text.length * 0.75) return text.slice(0, lastSentenceEnd + 1).trim();
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+}
+
+function rewriteNewsBodyClient({ sourceText = "", headline = "", subline = "", tags = [], targetWords = 300 } = {}) {
+  const goal = Math.max(120, Math.min(900, Number(targetWords || 300)));
+  const sentences = newsSourceSentences(sourceText);
+  const facts = keyNewsFacts(sourceText, 5);
+  const subject = cleanNewsSentence(headline || tags[0] || "die Entwicklung");
+  const mainTag = tags[0] || "Medienbranche";
+  const secondTag = tags[1] || "digitale Medien";
+  const fact = (index, fallback) => cleanNewsSentence(facts[index] || sentences[index] || fallback);
+  let body = [
+    `Die Entwicklung rund um ${subject} rückt eine konkrete Frage für die digitale Medienwirtschaft in den Mittelpunkt. ${fact(0, subline || `${mainTag} gewinnt für Anbieter, Plattformen und Partner der Medienbranche an Bedeutung.`)} Damit geht es nicht um eine abstrakte Trendmeldung, sondern um eine Entwicklung mit praktischen Folgen für Produktion, Verbreitung, Rechte, Refinanzierung und strategische Positionierung.`,
+    `Der Kern der Meldung bleibt dabei klar: ${fact(1, `die Verbindung von ${mainTag} und ${secondTag} verändert die Rahmenbedingungen für Medienanbieter.`)} Für Sender, Produzenten, Streaminganbieter, Vermarkter und regionale Medien ist wichtig, welche Akteure betroffen sind, welche Regeln oder Marktbewegungen dahinterstehen und welche Entscheidungen daraus entstehen können.`,
+    `Besonders relevant ist auch dieser Punkt: ${fact(2, `Medienunternehmen müssen neue Entwicklungen früh einordnen, ohne die konkreten Aussagen des Ausgangsmaterials zu verwischen.`)} Daraus ergibt sich ein Branchenbezug, weil digitale Medienangebote heute stark von Plattformlogik, Daten, Regulierung, Lizenzmodellen und neuen Nutzungsformen geprägt werden.`,
+    `Die Einordnung darf den Inhalt nicht verallgemeinern. ${fact(3, `Entscheidend bleibt, welche unmittelbaren Folgen sich aus dem beschriebenen Vorgang ergeben.`)} Genau deshalb sollte die weitere Bewertung an den belegten Aussagen ansetzen: Was wurde beschlossen, verhandelt, angekündigt oder kritisiert? Welche Fristen, Verfahren, Unternehmen oder Rechte sind genannt? Und welche Bedeutung hat das für die praktische Arbeit der Medienbranche?`,
+    `Für PROdigitalTV liegt die Relevanz des Themas darin, diese konkreten Punkte für die Branche nutzbar zu machen. ${fact(4, `Die Entwicklung zeigt, dass technische Innovation, rechtliche Sicherheit und wirtschaftliche Tragfähigkeit zusammen betrachtet werden müssen.`)} So entsteht ein Beitrag, der den Kern der Ausgangsinformation bewahrt und zugleich erklärt, warum er für digitale Medienanbieter wichtig ist.`
+  ].join("\n\n");
+  let index = 4;
+  while (countWords(body) < goal) {
+    const extra = fact(index, `Zugleich bleibt ${secondTag} ein Feld, in dem technische Möglichkeiten, wirtschaftliche Interessen und publizistische Verantwortung zusammen gedacht werden müssen.`);
+    body += `\n\n${extra} Für die Branche ist deshalb entscheidend, nicht nur auf einzelne Schlagworte zu reagieren, sondern den konkreten Nutzen, die rechtlichen Rahmenbedingungen und die Auswirkungen auf Nutzerinnen und Nutzer mitzudenken.`;
+    index += 1;
+    if (index > 12 && countWords(body) > goal) break;
+  }
+  return trimTextToWordGoal(body, goal);
+}
+
 const AI_NEWS_TEXT_TYPES = new Set([
   "text/plain",
   "text/html",
@@ -1939,7 +2053,7 @@ function showAiDialog({ button, originalText, result, sourceField }) {
     </div>
     ${result.structured ? `<pre class="ai-structured">${escapeHtml(JSON.stringify(result.structured, null, 2))}</pre>` : ""}
     <div class="actions"><button type="button" class="button button--primary" data-ai-accept>Uebernehmen</button><button type="button" class="button button--secondary" data-ai-save-draft>Als Entwurf speichern</button><button type="button" class="button button--secondary" data-ai-regenerate>Neu generieren</button><button type="button" class="button button--secondary" data-ai-close>Verwerfen</button></div>
-    <p class="muted">KI-Ausgaben werden nicht automatisch veroeffentlicht. Bitte pruefen, bearbeiten und erst danach speichern.</p>
+    <p class="muted">Der Vorschlag wird erst nach Uebernehmen ins Feld geschrieben.</p>
   </div>`;
   document.body.append(wrapper);
   wrapper.querySelectorAll("[data-ai-close]").forEach((item) => item.addEventListener("click", () => wrapper.remove()));
@@ -1963,6 +2077,109 @@ function showAiDialog({ button, originalText, result, sourceField }) {
   wrapper.querySelector("[data-ai-regenerate]").addEventListener("click", () => {
     wrapper.remove();
     button.click();
+  });
+}
+
+function confirmAiNewsImportDraft({ sourceText = "", draft = {}, regenerateDraft = null } = {}) {
+  document.querySelector(".ai-dialog-backdrop")?.remove();
+  return new Promise((resolve) => {
+    const wrapper = document.createElement("div");
+    const headline = String(draft.headline || draft.title || "Importierte News").trim();
+    const subline = String(draft.subline || draft.subtitle || "").trim();
+    const body = String(draft.body || draft.bodyText || "").trim();
+    const category = String(draft.category || "News").trim();
+    const tags = normalizeFourKeywords(Array.isArray(draft.tags) ? draft.tags.join(", ") : String(draft.tags || ""), `${headline} ${subline} ${body}`).join(", ");
+    const sourceWords = countWords(sourceText);
+    const bodyWords = countWords(body);
+    const initialTargetWords = Math.max(120, Math.min(900, Number(draft.targetWords || bodyWords || 300)));
+    wrapper.className = "ai-dialog-backdrop";
+    wrapper.innerHTML = `<div class="ai-dialog ai-dialog--news-review" role="dialog" aria-modal="true">
+      <div class="actions" style="justify-content:space-between"><div><p class="eyebrow">News-Import</p><h2>Textvorschlag abstimmen</h2></div><button type="button" class="link-button" data-ai-news-cancel>Schließen</button></div>
+      <div class="ai-dialog-grid ai-dialog-grid--review">
+        <div class="field"><label>Ausgangstext / Quelle <span data-word-count-source>${sourceWords} Wörter</span></label><textarea readonly>${escapeHtml(sourceText || "Keine Textquelle eingefügt.")}</textarea></div>
+        <form class="ai-news-review-fields">
+          <div class="field"><label>Headline</label><input name="headline" value="${escapeHtml(headline)}"></div>
+          <div class="field"><label>Subline</label><textarea name="subline" rows="3">${escapeHtml(subline)}</textarea></div>
+          <div class="ai-news-review-controls">
+            <div class="field"><label>Wortmenge neuer Text</label><input name="targetWords" type="number" min="120" max="900" step="25" value="${initialTargetWords}"></div>
+            <button type="button" class="button button--secondary" data-ai-news-rewrite>Neu formulieren</button>
+          </div>
+          <div class="field"><label>Beitragstext <span data-word-count-body>${bodyWords} Wörter${bodyWords < 300 ? " - mindestens 300" : ""}</span></label><textarea name="body" rows="12">${escapeHtml(body)}</textarea></div>
+          <div class="form-grid form-grid--compact">
+            <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(category)}"></div>
+            <div class="field"><label>Keywords</label><input name="tags" value="${escapeHtml(tags)}"></div>
+          </div>
+        </form>
+      </div>
+      <div class="actions"><button type="button" class="button button--primary" data-ai-news-accept>Übernehmen und speichern</button><button type="button" class="button button--secondary" data-ai-news-cancel>Verwerfen</button></div>
+      <p class="muted">Neu formulieren nutzt immer die linke Datenbasis. Gespeichert wird erst nach deiner Auswahl.</p>
+    </div>`;
+    const close = (value) => {
+      wrapper.remove();
+      resolve(value);
+    };
+    wrapper.querySelectorAll("[data-ai-news-cancel]").forEach((button) => button.addEventListener("click", () => close(null)));
+    const bodyField = wrapper.querySelector('textarea[name="body"]');
+    const bodyCount = wrapper.querySelector("[data-word-count-body]");
+    const targetWordsField = wrapper.querySelector('input[name="targetWords"]');
+    const readTargetWords = () => Math.max(120, Math.min(900, Number(targetWordsField?.value || 300)));
+    const updateBodyCount = () => {
+      const words = countWords(bodyField?.value || "");
+      const target = readTargetWords();
+      bodyCount.textContent = `${words} Wörter - Ziel ${target}${words > target + 25 ? " - zu lang" : words < target - 25 ? " - zu kurz" : ""}`;
+    };
+    bodyField?.addEventListener("input", () => {
+      updateBodyCount();
+    });
+    targetWordsField?.addEventListener("input", updateBodyCount);
+    wrapper.querySelector("[data-ai-news-rewrite]")?.addEventListener("click", async (event) => {
+      const rewriteButton = event.currentTarget;
+      const fields = wrapper.querySelector(".ai-news-review-fields");
+      const values = formObject(fields);
+      const targetWords = readTargetWords();
+      const oldLabel = rewriteButton.textContent;
+      rewriteButton.disabled = true;
+      rewriteButton.textContent = "Formuliere neu ...";
+      try {
+        const nextHeadline = String(values.headline || headline || "").trim();
+        const nextSubline = String(values.subline || subline || "").trim();
+        const nextTags = normalizeFourKeywords(values.tags || "", `${nextHeadline} ${nextSubline} ${sourceText}`);
+        const nextBody = rewriteNewsBodyClient({
+          sourceText,
+          headline: nextHeadline,
+          subline: nextSubline,
+          tags: nextTags,
+          targetWords
+        });
+        fields.elements.headline.value = nextHeadline;
+        fields.elements.subline.value = nextSubline;
+        fields.elements.body.value = nextBody;
+        fields.elements.tags.value = nextTags.join(", ");
+        updateBodyCount();
+      } catch (error) {
+        const note = wrapper.querySelector(".muted");
+        if (note) note.textContent = `Neuformulierung fehlgeschlagen: ${error.message || String(error)}`;
+      } finally {
+        rewriteButton.disabled = false;
+        rewriteButton.textContent = oldLabel;
+      }
+    });
+    wrapper.querySelector("[data-ai-news-accept]").addEventListener("click", () => {
+      const values = formObject(wrapper.querySelector(".ai-news-review-fields"));
+      close({
+        ...draft,
+        headline: values.headline || headline,
+        title: values.headline || headline,
+        subline: values.subline || "",
+        subtitle: values.subline || "",
+        body: values.body || "",
+        bodyText: values.body || "",
+        category: values.category || category,
+        targetWords: readTargetWords(),
+        tags: normalizeFourKeywords(values.tags || "", `${values.headline || headline} ${values.subline || ""} ${values.body || ""}`)
+      });
+    });
+    document.body.append(wrapper);
   });
 }
 
@@ -3646,18 +3863,42 @@ function wireActions() {
       if (!String(values.sourceText || "").trim() && !textSources.length && !imageFiles.length) {
         throw new Error("Bitte Text einfuegen oder mindestens eine Text- oder Bilddatei hochladen.");
       }
-      const result = await importNewsFromSources({
+      const baseImportPayload = {
         sourceText: values.sourceText || "",
         textSources,
         imageSources,
         rules: {
-          visible: false,
+          visible: true,
           noStatusLogic: true,
-          noAudioVideo: true
+          noAudioVideo: true,
+          targetWords: 300
         }
-      });
+      };
+      const result = await importNewsFromSources(baseImportPayload);
       const draft = result.article || result.news || result;
       if (!draft) throw new Error("Die KI hat keinen News-Beitrag zurueckgegeben.");
+      const sourcePreviewText = [
+        values.sourceText || "",
+        ...textSources.map((source) => source.text || source.content || source.name || source.fileName || "")
+      ].filter(Boolean).join("\n\n").trim();
+      const acceptedDraft = await confirmAiNewsImportDraft({
+        sourceText: sourcePreviewText,
+        draft,
+        regenerateDraft: async (targetWords) => {
+          const rerun = await importNewsFromSources({
+            ...baseImportPayload,
+            targetWords,
+            rules: { ...baseImportPayload.rules, targetWords }
+          });
+          return rerun.article || rerun.news || rerun;
+        }
+      });
+      if (!acceptedDraft) {
+        if (output) output.innerHTML = `<div class="alert">News-Import wurde verworfen. Es wurde nichts gespeichert.</div>`;
+        return;
+      }
+      Object.assign(draft, acceptedDraft);
+      if (output) output.innerHTML = `<div class="alert">${progressMarkup("News wird nach deiner Auswahl gespeichert ...", 78)}</div>`;
       const now = new Date().toISOString();
       const cleanHeadline = String(draft.headline || draft.title || "Importierte News").trim();
       const articleId = `news-import-${crypto.randomUUID()}`;
@@ -3726,7 +3967,7 @@ function wireActions() {
         ].filter(Boolean).join("\n\n"),
         relevance_score: Number(draft.relevance_score || draft.relevanceScore || 0),
         relevance_reason: draft.relevance_reason || draft.relevanceReason || "",
-        visible: false,
+        visible: true,
         status: "published",
         visibility: "public",
         author_type: "ai",
@@ -3735,7 +3976,7 @@ function wireActions() {
         ai_log_json: {
           import_flow: "manual_news_import",
           no_status_logic: true,
-          visible: false,
+          visible: true,
           textSourceCount: textSources.length,
           imageSourceCount: imageFiles.length,
           localOnly: Boolean(result.localOnly)
@@ -3773,7 +4014,7 @@ function wireActions() {
         created_at: now,
         updated_at: now
       })));
-      if (output) output.innerHTML = `<div class="alert alert--success">News wurde importiert und bleibt unsichtbar. Der Editor wird geoeffnet.</div>`;
+      if (output) output.innerHTML = `<div class="alert alert--success">News wurde importiert und ist im Newsbereich sichtbar. Der Editor wird geoeffnet.</div>`;
       window.location.hash = `#/cms/edit?module=editorialContent&id=${encodeURIComponent(articleId)}&section=news`;
     } catch (error) {
       if (output) output.innerHTML = `<div class="alert alert--error">News-Import fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
@@ -5540,6 +5781,12 @@ function wireActions() {
       await upsert("editorialContent", {
         ...existing,
         visible: nextVisible,
+        status: nextVisible ? "published" : existing.status || "draft",
+        visibility: nextVisible ? "public" : existing.visibility || "public",
+        page: "news",
+        section: "news",
+        validFrom: nextVisible ? existing.validFrom || existing.publishDate || new Date().toISOString().slice(0, 10) : existing.validFrom || "",
+        publishDate: nextVisible ? existing.publishDate || new Date().toISOString().slice(0, 10) : existing.publishDate || "",
         updatedAt: new Date().toISOString()
       });
       if (result) result.insertAdjacentHTML("beforeend", `<div class="alert alert--success">${nextVisible ? "News ist freigeschaltet." : "News ist unsichtbar geschaltet."}</div>`);
