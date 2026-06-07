@@ -5781,8 +5781,8 @@ function wireActions() {
       await upsert("editorialContent", {
         ...existing,
         visible: nextVisible,
-        status: nextVisible ? "published" : existing.status || "draft",
-        visibility: nextVisible ? "public" : existing.visibility || "public",
+        status: nextVisible ? "published" : "draft",
+        visibility: nextVisible ? "public" : "internal",
         page: "news",
         section: "news",
         validFrom: nextVisible ? existing.validFrom || existing.publishDate || new Date().toISOString().slice(0, 10) : existing.validFrom || "",

@@ -448,8 +448,10 @@ function articleSourcesList(item = {}) {
 function publicNewsItems(items = []) {
   const filtered = items.filter((item) => {
     const isNews = item.page === "news" || item.section === "news";
-    const isHidden = item.visible === false || item.status === "archived" || item.status === "draft" || item.visibility === "internal";
-    return isNews && !isHidden;
+    const isPublishedPublic = item.status === "published" && item.visibility === "public";
+    const isVisibleNews = item.visible === true || (isPublishedPublic && item.visible !== false);
+    const isHidden = item.status === "archived" || item.visibility === "internal";
+    return isNews && isVisibleNews && !isHidden;
   });
   return dedupeNewsItems(filtered);
 }
@@ -459,7 +461,7 @@ function newsThumbUrl(item = {}) {
 }
 
 function newsIdentity(item = {}) {
-  const value = item.slug || item.key || item.title || item.headline || item.id || "";
+  const value = item.title || item.headline || item.slug || item.key || item.id || "";
   return String(value)
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -592,7 +594,7 @@ function isPastEvent(event) {
 }
 
 export async function homePage() {
-  const [events, topics, members, editorial, sponsors] = await Promise.all([listPublicEvents(), listPublicContent("topics"), listPublicContent("members"), listPublicContent("editorialContent"), listPublicContent("sponsors")]);
+  const [events, topics, members, editorial, sponsors] = await Promise.all([listPublicEvents(), listPublicContent("topics"), listPublicContent("members"), list("editorialContent"), listPublicContent("sponsors")]);
   const upcoming = events.filter((event) => !isPastEvent(event) && event.visibility === "public").sort((a, b) => a.date.localeCompare(b.date));
   const next = upcoming[0];
   const hero = editorial.find((content) => content.key === "home.hero") || {
@@ -732,7 +734,7 @@ export async function topicsPage() {
 }
 
 export async function newsPage() {
-  const cmsNews = publicNewsItems(await listPublicContent("editorialContent"));
+  const cmsNews = publicNewsItems(await list("editorialContent"));
   const news = mergeNewsWithFallback(cmsNews, editorialFallbackNews)
     .sort(editorialPrioritySort);
   return publicShell("news", `${subhero("News", "Aktuelles von PROdigitalTV.", "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.")}
@@ -742,7 +744,9 @@ export async function newsPage() {
 export async function newsDetailPage(id) {
   const item = await getOne("editorialContent", id) || editorialFallbackNews.find((entry) => entry.id === id);
   if (!item || (item.page !== "news" && item.section !== "news" && !item.isRetrospective)) return notFoundPage();
-  if (!item.isRetrospective && (item.visible === false || item.status === "archived" || item.status === "draft" || item.visibility === "internal")) return notFoundPage();
+  const isPublishedPublic = item.status === "published" && item.visibility === "public";
+  const isVisibleNews = item.visible === true || (isPublishedPublic && item.visible !== false);
+  if (!item.isRetrospective && (!isVisibleNews || item.status === "archived" || item.visibility === "internal")) return notFoundPage();
   const [sponsors, galleries] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries")]);
   const date = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   const text = item.bodyText || item.mainText || item.text || item.shortText || item.teaserText || "";
