@@ -137,15 +137,26 @@ export async function uploadMediaAsset(file, storagePath) {
 }
 
 export async function deleteStoredAsset(entity) {
-  if (!entity?.storagePath && !entity?.assetStoragePath && !entity?.storage_path_original && !entity?.storage_path_web && !entity?.file_path_original) return;
+  const paths = [
+    entity?.storagePath,
+    entity?.assetStoragePath,
+    entity?.storage_path_original,
+    entity?.storage_path_web,
+    entity?.storage_path_thumb,
+    entity?.file_path_original,
+    entity?.file_path_web,
+    entity?.file_path_thumb
+  ].filter(Boolean);
+  if (!paths.length) return;
   const firebase = await getFirebaseServices();
   if (!firebase) return;
-  const path = entity.storagePath || entity.assetStoragePath || entity.storage_path_original || entity.storage_path_web || entity.file_path_original;
-  try {
-    await firebase.storageLib.deleteObject(firebase.storageLib.ref(firebase.storage, path));
-  } catch (error) {
-    const code = String(error?.code || error?.message || "");
-    if (!["storage/object-not-found", "storage/unauthorized", "permission-denied", "unauthorized"].some((item) => code.includes(item))) throw error;
-    console.warn("Stored asset could not be deleted:", path, error);
+  for (const path of [...new Set(paths)]) {
+    try {
+      await firebase.storageLib.deleteObject(firebase.storageLib.ref(firebase.storage, path));
+    } catch (error) {
+      const code = String(error?.code || error?.message || "");
+      if (!["storage/object-not-found", "storage/unauthorized", "permission-denied", "unauthorized"].some((item) => code.includes(item))) throw error;
+      console.warn("Stored asset could not be deleted:", path, error);
+    }
   }
 }

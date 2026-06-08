@@ -20,9 +20,8 @@ const sections = [
     title: "Medien & Thumbnails",
     children: [
       ["cms/media/library", "Mediathek"],
-      ["cms/media/upload", "Bild hochladen"],
-      ["cms/media/ai", "KI-Grafik erstellen"],
       ["cms/media/edit", "Bild bearbeiten"],
+      ["cms/media/ai", "KI-Grafik erstellen"],
       ["cms/media/variants", "Varianten"]
     ]
   },

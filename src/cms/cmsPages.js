@@ -359,6 +359,21 @@ function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", d
   </div>`;
 }
 
+function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altField = "thumbnail_alt", returnTo = "" } = {}) {
+  if (!collection || !id) return "";
+  const params = new URLSearchParams({
+    targetCollection: collection,
+    targetId: id,
+    targetField: field,
+    targetAltField: altField,
+    returnTo
+  });
+  return `<div class="linked-media-actions">
+    <a class="button button--secondary button--small" href="#/cms/media/library?${params.toString()}">Thumb aus Mediathek waehlen</a>
+    <a class="button button--secondary button--small" href="#/cms/media/ai?${params.toString()}">Thumb erstellen</a>
+  </div>`;
+}
+
 function topicSpeakersForEvent(topic, event, speakers) {
   const eventSpeakerIds = new Set(event.speakerIds || []);
   return speakers.filter((speaker) => {
@@ -868,7 +883,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
             </section>
             <details class="editorial-tool-details"${item.imageUrl ? " open" : ""}>
               <summary><span>Medien</span><strong>Bild / Thumb</strong>${thumbState}</summary>
-              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultSize: "1200x675", aiCollage: true })}</div>${sectionKey === "news" ? `<div class="field"><label>Thumbnail-Prompt</label><textarea name="thumbnail_prompt">${escapeHtml(item.thumbnail_prompt || item.thumbnailPrompt || "")}</textarea></div><div class="field"><label>Thumbnail-Alt-Text</label><input name="thumbnail_alt" value="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || "")}"></div>` : ""}</div>
+              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultSize: "1200x675", aiCollage: true })}${linkedMediaActions({ collection: module, id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=${module}&id=${item.id}&section=${sectionKey}` })}</div>${sectionKey === "news" ? `<div class="field"><label>Thumbnail-Prompt</label><textarea name="thumbnail_prompt">${escapeHtml(item.thumbnail_prompt || item.thumbnailPrompt || "")}</textarea></div><div class="field"><label>Thumbnail-Alt-Text</label><input name="thumbnail_alt" value="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || "")}"></div>` : ""}</div>
             </details>
             <details class="editorial-tool-details"${item.audioUrl ? " open" : ""}>
               <summary><span>Audio</span><strong>Vorlesen</strong>${audioState}</summary>
@@ -943,7 +958,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
             </section>
             <details class="editorial-tool-details"${item.imageUrl ? " open" : ""}>
               <summary><span>Medien</span><strong>Bild / Thumb</strong>${thumbState}</summary>
-              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: item.imageUrl || "", label: "Themenbild", defaultSize: "1200x675", aiCollage: true })}</div></div>
+              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: item.imageUrl || "", label: "Themenbild", defaultSize: "1200x675", aiCollage: true })}${linkedMediaActions({ collection: "topics", id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=topics&id=${item.id}` })}</div></div>
             </details>
             <details class="editorial-tool-details"${selectedGallery ? " open" : ""}>
               <summary><span>Medien</span><strong>Galerie</strong>${galleryState}</summary>
