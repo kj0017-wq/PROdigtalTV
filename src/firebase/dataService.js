@@ -1,7 +1,7 @@
-import { demoDatabase } from "../data/demoData.js";
+import { demoDatabase } from "../data/demoData.js?v=3";
 import { getFirebaseServices, firebaseEnabled, realDataMode } from "./firebaseClient.js";
 
-const STORE_KEY = "prodigitaltv-demo-db-official-assets-v3";
+const STORE_KEY = "prodigitaltv-demo-db-official-assets-v4";
 
 function canFallbackToLocal(error) {
   return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)
@@ -41,6 +41,8 @@ function localDb() {
     mergeMissingDemoRecords(db, "events");
     mergeMissingDemoRecords(db, "eventMedia");
     mergeMissingDemoRecords(db, "galleries");
+    mergeMissingDemoRecords(db, "media_assets");
+    mergeMissingDemoRecords(db, "media_variants");
     mergeMissingDemoRecords(db, "downloads");
     mergeMissingDemoRecords(db, "editorialContent");
     mergeMissingDemoRecords(db, "verified_sources");
@@ -75,6 +77,9 @@ function localDb() {
       delete event.sourceUrl;
     });
     (db.editorialContent || []).forEach((item) => {
+      if (["press", "news"].includes(item.page) && item.status === "published" && item.visibility === "public" && !Object.prototype.hasOwnProperty.call(item, "visible")) {
+        item.visible = true;
+      }
       if (typeof item.title === "string") item.title = item.title.replace(/^Themenvorschlag:\s*/i, "");
       if (typeof item.headline === "string") item.headline = item.headline.replace(/^Themenvorschlag:\s*/i, "");
       if (typeof item.bodyText === "string") {

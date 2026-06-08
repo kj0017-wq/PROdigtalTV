@@ -22,6 +22,7 @@ const ACTION_FUNCTIONS = {
   generateGalleryIntro: "generateGalleryIntro",
   generateImageAltText: "generateImageAltText",
   generateDownloadDescription: "generateDownloadDescription",
+  rewritePressRetrospective: "rewritePressRetrospective",
   analyzeEventPipelineQuality: "analyzeEventPipelineQuality"
 };
 
@@ -83,6 +84,20 @@ function localSuggestion(action, payload) {
         description: text,
         alt_text: title
       },
+      status: "suggested"
+    };
+  }
+  if (action === "rewritePressRetrospective") {
+    const prompt = String(payload.prompt || payload.context?.retrospectivePrompt || "").trim();
+    return {
+      action,
+      suggestedText: [
+        prompt ? `Prompt:\n${prompt}` : "Prompt fuer Rueckblick fehlt.",
+        "",
+        "Ausgangstext:",
+        text || "Keine Pressemitteilung im Haupttext vorhanden."
+      ].join("\n"),
+      structured: null,
       status: "suggested"
     };
   }

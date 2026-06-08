@@ -202,7 +202,7 @@ function officialArchiveEvent(officialId, date, title, locationName, city, optio
     speakerIds: [],
     sponsorIds: [],
     hostId: options.hostId || "",
-    imageUrl: options.imageUrl || "",
+    imageUrl: options.imageUrl || `/assets/official/events/archive-${officialId}.svg`,
     postEventSummary: options.summary || `${title} ist als Rueckblick im PROdigitalTV-Archiv erfasst. Die Veranstaltung steht fuer Dialog, Austausch und Vernetzung in der digitalen Medienwirtschaft.`,
     createdAt: `${date || "2014-01-01"}T10:00:00`,
     updatedAt: "2026-05-26T10:00:00"
@@ -365,6 +365,35 @@ export const topics = [
   }
 ];
 
+function newsArticleFromTopic(topic, index = 0) {
+  const publishDates = ["2026-06-05", "2026-06-04", "2026-06-03", "2026-06-02", "2026-06-01", "2026-05-31"];
+  const publishDate = publishDates[index] || "2026-05-30";
+  return {
+    id: `news-topic-${topic.id}`,
+    key: `news.topic.${topic.id}`,
+    page: "news",
+    section: "news",
+    title: `${topic.title}: Was die Medienwirtschaft jetzt beschaeftigt`,
+    subtitle: topic.longDescription || topic.shortDescription || "",
+    introText: topic.shortDescription || topic.longDescription || "",
+    bodyText: topic.articleText || topic.longDescription || topic.shortDescription || "",
+    category: topic.title,
+    publishDate,
+    validFrom: publishDate,
+    validTo: "",
+    visibility: "public",
+    visible: true,
+    status: "published",
+    imageUrl: topic.imageUrl || "",
+    topicId: topic.id,
+    sortOrder: 1500 - index
+  };
+}
+
+const topicalNewsArticles = topics
+  .filter((topic) => !["fast-channels", "ki-medienwirtschaft"].includes(topic.id))
+  .map(newsArticleFromTopic);
+
 export const speakers = [];
 
 export const sponsors = [
@@ -488,12 +517,53 @@ export const galleries = [
   }
 ];
 
+function pressArticleFromEvent(event, index = 0) {
+  const dateLabel = event.displayDate || (event.date ? event.date.split("-").reverse().join(".") : "");
+  const location = [event.locationName, event.city].filter(Boolean).join(", ");
+  const introText = event.postEventSummary || event.description || event.subtitle || "";
+  const bodyText = [
+    event.postEventSummary || event.description || `${event.title} ist als Rueckblick im PROdigitalTV-Archiv erfasst.`,
+    location || dateLabel
+      ? `Der Beitrag dokumentiert das PROdigitalTV-Format${dateLabel ? ` vom ${dateLabel}` : ""}${location ? ` in ${location}` : ""} und macht den Branchendialog redaktionell auffindbar.`
+      : "Der Beitrag macht den Branchendialog redaktionell auffindbar.",
+    "Im Fokus stehen Austausch, Vernetzung und die kontinuierliche Begleitung zentraler Themen der digitalen Medienwirtschaft."
+  ].filter(Boolean).join("\n\n");
+  return {
+    id: `press-retrospective-${event.id}`,
+    key: `press.retrospective.${event.id}`,
+    page: "press",
+    section: "pressRelease",
+    title: `Rueckblick: ${event.title}`,
+    subtitle: event.subtitle || `${event.eventType || "PROdigitalTV-Veranstaltung"} im Rueckblick`,
+    introText,
+    bodyText,
+    category: "Rueckblicke",
+    publishDate: event.date || "",
+    validFrom: event.date || "",
+    validTo: "",
+    visibility: "public",
+    visible: true,
+    status: "published",
+    imageUrl: event.imageUrl || "",
+    linkedEventId: event.id,
+    isRetrospective: true,
+    sortOrder: 2000 - index
+  };
+}
+
+const pressRetrospectiveArticles = [...events, ...additionalArchiveEvents]
+  .filter((event) => event.date || event.postEventSummary || event.description)
+  .filter((event) => event.id !== "event-salzburg-red-bull-hangar7-2026")
+  .map(pressArticleFromEvent);
+
 export const editorialContent = [
   ...internalEditorialSeed,
   { id: "home-hero", key: "home.hero", page: "home", section: "hero", title: "Die Zukunft digitaler Medien gemeinsam gestalten.", subtitle: "PROdigitalTV verbindet Entscheider, Impulsgeber und Unternehmen der digitalen Medienwirtschaft.", teaserText: "Das Branchennetzwerk der digitalen Medienwirtschaft.", buttonText: "Naechstes Event", buttonUrl: "#/events", validFrom: "", validTo: "", visibility: "public", status: "published", sortOrder: 1 },
-  { id: "press-hangar7-salzburg-2026", key: "press.hangar7.2026", page: "press", section: "pressRelease", title: "PROdigitalTV Medienfruehstueck im Hangar-7", subtitle: "Branchendialog in Salzburg mit Gaesten aus Medien, Technik und Vermarktung.", introText: "PROdigitalTV laedt zum Medienfruehstueck im Red Bull Hangar-7 nach Salzburg ein.", bodyText: "Das Medienfruehstueck bringt Entscheiderinnen und Entscheider aus TV, Streaming, Produktion, Technologie und Vermarktung zusammen. Im Mittelpunkt stehen aktuelle Fragen der digitalen Medienwirtschaft: Wie entwickeln sich Plattformen, welche Rolle spielen neue Distributionsmodelle, und wie koennen Anbieter ihre Inhalte sichtbar und wirtschaftlich tragfaehig positionieren?\n\nDer Austausch im Netzwerk soll Orientierung geben und konkrete Erfahrungen aus der Branche sichtbar machen. PROdigitalTV versteht das Format als kompakten Rahmen fuer Wissenstransfer, persoenliche Begegnung und neue Kooperationen.", category: "Presse", publishDate: "2026-05-20", validFrom: "2026-05-20", validTo: "", visibility: "public", status: "published", sortOrder: 10 },
-  { id: "news-ki-medienwirtschaft", key: "news.ki.medienwirtschaft", page: "news", section: "news", title: "KI bleibt ein zentrales Thema der Medienwirtschaft", subtitle: "Redaktion, Produktion und Distribution brauchen klare Regeln fuer KI-Werkzeuge.", introText: "Kuenstliche Intelligenz veraendert Arbeitsablaeufe in Redaktion, Produktion und Auswertung.", bodyText: "KI-Werkzeuge koennen Medienunternehmen bei Recherche, Transkription, Untertitelung, Archivsuche und Content-Planung unterstuetzen. Gleichzeitig steigen die Anforderungen an Kontrolle, Transparenz und Verantwortung.\n\nFuer die Branche ist entscheidend, dass automatisierte Prozesse nicht zu ungeprueften Aussagen, unklaren Quellen oder rechtlichen Risiken fuehren. PROdigitalTV betrachtet KI deshalb als strategisches Thema, das Technik, Redaktion, Recht und Management gemeinsam betrifft.", category: "KI", publishDate: "2026-05-22", validFrom: "2026-05-22", validTo: "", visibility: "public", status: "published", sortOrder: 11 },
-  { id: "news-fast-channels-distribution", key: "news.fast.distribution", page: "news", section: "news", title: "FAST-Channels gewinnen als Distributionsmodell an Bedeutung", subtitle: "Lineare Streaming-Angebote schaffen neue Optionen fuer Reichweite und Vermarktung.", introText: "FAST-Channels verbinden kuratierte Programme mit digitaler Ausspielung.", bodyText: "Werbefinanzierte lineare Streaming-Kanaele koennen vorhandene Inhalte neu buendeln und Zielgruppen in digitalen Umgebungen erreichen. Fuer Anbieter entstehen Chancen bei Reichweite, Markenbildung und Vermarktung.\n\nEntscheidend bleiben redaktionelle Programmierung, verlaessliche Technik, Rechteklaerung und klare Messbarkeit. Damit wird FAST nicht nur zu einem technischen, sondern auch zu einem strategischen Thema fuer Medienanbieter und Plattformen.", category: "Distribution", publishDate: "2026-05-24", validFrom: "2026-05-24", validTo: "", visibility: "public", status: "published", sortOrder: 12 },
+  { id: "press-hangar7-salzburg-2026", key: "press.hangar7.2026", page: "press", section: "pressRelease", title: "PROdigitalTV Medienfruehstueck im Hangar-7", subtitle: "Branchendialog in Salzburg mit Gaesten aus Medien, Technik und Vermarktung.", introText: "PROdigitalTV laedt zum Medienfruehstueck im Red Bull Hangar-7 nach Salzburg ein.", bodyText: "Das Medienfruehstueck bringt Entscheiderinnen und Entscheider aus TV, Streaming, Produktion, Technologie und Vermarktung zusammen. Im Mittelpunkt stehen aktuelle Fragen der digitalen Medienwirtschaft: Wie entwickeln sich Plattformen, welche Rolle spielen neue Distributionsmodelle, und wie koennen Anbieter ihre Inhalte sichtbar und wirtschaftlich tragfaehig positionieren?\n\nDer Austausch im Netzwerk soll Orientierung geben und konkrete Erfahrungen aus der Branche sichtbar machen. PROdigitalTV versteht das Format als kompakten Rahmen fuer Wissenstransfer, persoenliche Begegnung und neue Kooperationen.", category: "Presse", publishDate: "2026-05-20", validFrom: "2026-05-20", validTo: "", visibility: "public", visible: true, status: "published", sortOrder: 10 },
+  ...pressRetrospectiveArticles,
+  { id: "news-ki-medienwirtschaft", key: "news.ki.medienwirtschaft", page: "news", section: "news", title: "KI bleibt ein zentrales Thema der Medienwirtschaft", subtitle: "Redaktion, Produktion und Distribution brauchen klare Regeln fuer KI-Werkzeuge.", introText: "Kuenstliche Intelligenz veraendert Arbeitsablaeufe in Redaktion, Produktion und Auswertung.", bodyText: "KI-Werkzeuge koennen Medienunternehmen bei Recherche, Transkription, Untertitelung, Archivsuche und Content-Planung unterstuetzen. Gleichzeitig steigen die Anforderungen an Kontrolle, Transparenz und Verantwortung.\n\nFuer die Branche ist entscheidend, dass automatisierte Prozesse nicht zu ungeprueften Aussagen, unklaren Quellen oder rechtlichen Risiken fuehren. PROdigitalTV betrachtet KI deshalb als strategisches Thema, das Technik, Redaktion, Recht und Management gemeinsam betrifft.", category: "KI", publishDate: "2026-05-22", validFrom: "2026-05-22", validTo: "", visibility: "public", visible: true, status: "published", sortOrder: 11 },
+  { id: "news-fast-channels-distribution", key: "news.fast.distribution", page: "news", section: "news", title: "FAST-Channels gewinnen als Distributionsmodell an Bedeutung", subtitle: "Lineare Streaming-Angebote schaffen neue Optionen fuer Reichweite und Vermarktung.", introText: "FAST-Channels verbinden kuratierte Programme mit digitaler Ausspielung.", bodyText: "Werbefinanzierte lineare Streaming-Kanaele koennen vorhandene Inhalte neu buendeln und Zielgruppen in digitalen Umgebungen erreichen. Fuer Anbieter entstehen Chancen bei Reichweite, Markenbildung und Vermarktung.\n\nEntscheidend bleiben redaktionelle Programmierung, verlaessliche Technik, Rechteklaerung und klare Messbarkeit. Damit wird FAST nicht nur zu einem technischen, sondern auch zu einem strategischen Thema fuer Medienanbieter und Plattformen.", category: "Distribution", publishDate: "2026-05-24", validFrom: "2026-05-24", validTo: "", visibility: "public", visible: true, status: "published", sortOrder: 12 },
+  ...topicalNewsArticles,
   { id: "about-intro", key: "about.intro", page: "about", section: "intro", title: "Das Branchennetzwerk der digitalen Medienwirtschaft.", introText: "PROdigitalTV vernetzt Unternehmen und Akteure der digitalen Medienwirtschaft im deutschsprachigen Raum.", bodyText: "PROdigitalTV e.V. vernetzt Unternehmen und Akteure der digitalen Medienwirtschaft im deutschsprachigen Raum und begleitet die Branche aktiv im digitalen Wandel. In einer Zeit, in der sich Mediennutzung, Technologien und Geschaeftsmodelle rasant veraendern, schaffen wir eine Plattform fuer Austausch, Kooperation und praxisnahes Lernen. Unsere Mitglieder kommen aus den Bereichen TV, Streaming, Plattformen, Produktion, Distribution, Technologie, Start-ups und Medienservices - verbunden durch das gemeinsame Ziel, die Zukunft digitaler Medien aktiv mitzugestalten.\n\nDer Verein foerdert den Dialog zwischen etablierten Marktteilnehmern und innovativen Unternehmen, unterstuetzt den Wissenstransfer zu aktuellen Entwicklungen und bietet Raum fuer neue Ideen und Partnerschaften. Durch Veranstaltungen wie Medienfruehstuecke, Fachgespraeche und Interviewformate wie \"Von den Besten lernen\" entstehen wertvolle Kontakte und Impulse zu Themen wie digitale Transformation, Content-Strategien, neue Technologien, Monetarisierung, KI, Streaming oder die Zukunft des Fernsehens.\n\nMitglieder profitieren von einem starken Netzwerk, hoher Branchenkompetenz und einer Plattform, die den persoenlichen Austausch in den Mittelpunkt stellt. Gleichzeitig unterstuetzt PROdigitalTV die Sichtbarkeit seiner Mitglieder innerhalb der Medienbranche und schafft Verbindungen zwischen Technologie, Content und Vermarktung. Fuer TV-Sender bietet der Verein darueber hinaus die Moeglichkeit, von einem Vereinsrabatt bei der GEMA zu profitieren.\n\nPROdigitalTV versteht sich als unabhaengiges Netzwerk und Impulsgeber fuer die digitale Medienwelt - offen, praxisorientiert und zukunftsgerichtet.", validFrom: "", validTo: "", visibility: "public", status: "published", sortOrder: 1 },
   { id: "join-intro", key: "join.intro", page: "join", section: "intro", title: "Mitglied werden", introText: "Werden Sie Teil eines aktiven B2B-Netzwerks mit direktem Zugang zu Expertise und Entscheiderinnen und Entscheidern.", validFrom: "", validTo: "", visibility: "public", status: "published", sortOrder: 1 },
   { id: "download-info-satzung", key: "join.downloadInfo.satzung", page: "join", section: "internal", title: "Vereinssatzung", bodyText: "Die Vereinssatzung regelt Zweck, Mitgliedschaft, Organe und grundlegende Arbeitsweise von PROdigitalTV e.V. Bitte lesen Sie die Satzung vor dem Absenden des Mitgliedsantrags.", validFrom: "", validTo: "", visibility: "public", status: "published", sortOrder: 2 },
@@ -556,8 +626,47 @@ export const ai_editorial_logs = [
   { id: "ai-editorial-log-initial", article_id: "", task_name: "KI_Redaktion_Taeglicher_Beitrag", status: "blocked", message: "Initialer Sicherheitsstatus: Ohne aktuelle Quellenrecherche wird kein Beitrag erzeugt.", found_topics_json: [], rejected_topics_json: [], used_sources_json: [], source_check_json: { source_status: "unzureichend" }, duplicate_check_json: {}, keyword_result_json: {}, ai_check_json: { status: "nicht bestanden" }, error_json: {}, created_at: "2026-05-29T10:00:00" }
 ];
 
+function mediaAssetFromRecord(record, collection, type, urlField = "imageUrl") {
+  const url = record[urlField];
+  if (!url) return null;
+  const fileName = url.split("/").filter(Boolean).pop() || `${record.id}.jpg`;
+  return {
+    id: `asset-${collection}-${record.id}`,
+    title: record.title || record.name || record.titel || fileName,
+    alt_text: record.title || record.name || record.titel || fileName,
+    description: record.description || record.shortDescription || record.shortBio || "",
+    media_type: type,
+    source_type: url.includes("/assets/official/") ? "official" : "upload",
+    aspect_ratio: type === "board" || type === "person" ? "4x5" : type === "member" || type === "logo" ? "4x3" : "16x9",
+    imageUrl: url,
+    file_path_original_url: url,
+    file_path_web_url: url,
+    file_path_thumb_url: url,
+    filename_original: fileName,
+    filename_web: fileName,
+    filename_thumb: fileName,
+    target_collection: collection,
+    target_id: record.id,
+    status: "active",
+    visibility: "public",
+    created_at: "2026-06-08T08:00:00",
+    updated_at: "2026-06-08T08:00:00"
+  };
+}
+
+export const media_assets = [
+  ...events.map((event) => mediaAssetFromRecord(event, "events", "event")),
+  ...additionalArchiveEvents.map((event) => mediaAssetFromRecord(event, "events", "event")),
+  ...topics.map((topic) => mediaAssetFromRecord(topic, "topics", "topic")),
+  ...members.map((member) => mediaAssetFromRecord(member, "members", "member", "logoUrl")),
+  ...boardMembers.map((member) => mediaAssetFromRecord(member, "boardMembers", "board", "photoUrl"))
+].filter(Boolean);
+
+export const media_variants = [];
+
 export const demoDatabase = {
   events: [...events, ...additionalArchiveEvents], topics, speakers, sponsors, members, boardMembers, registrations, membershipApplications, downloads, eventMedia, galleries,
+  media_assets, media_variants,
   editorialContent, mailQueue, settings, verified_sources, article_sources, article_keywords, ai_prompts, ai_prompt_versions, ai_prompt_tests, ai_editorial_logs,
   users: [{ id: "demo-admin", email: "admin@prodigitaltv.de", displayName: "Demo Administrator", role: "admin", status: "active" }],
   system: [{ id: "setup", installed: true, version: "1.0.0-demo", demoDataInstalled: true, installedAt: "2026-05-26T08:00:00" }],

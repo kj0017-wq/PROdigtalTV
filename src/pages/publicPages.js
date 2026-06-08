@@ -1,4 +1,4 @@
-import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=460";
+import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=463";
 import { currentUser, isMember } from "../firebase/authService.js?v=460";
 import { firebaseEnabled, localPreviewMode } from "../firebase/firebaseClient.js";
 import { publicShell, logo } from "../components/layout.js";
@@ -169,7 +169,7 @@ function archiveEditorialArticle(item, partners = []) {
       <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Event-Nachlauf"}${sponsor ? ` · ${escapeHtml(sponsor.name)}` : ""}</p>
       <h2>${escapeHtml(item.title || "Rueckblick")}</h2>
       ${item.subtitle ? `<p class="archive-article__meta">${escapeHtml(item.subtitle)}</p>` : ""}
-      <p>${escapeHtml(teaserText(item.introText || item.bodyText || "", 260))}</p>
+      <p>${escapeHtml(teaserText(item.longDescription || item.articleText || item.bodyText || item.mainText || item.fullText || item.longText || item.introText || "", 260))}</p>
       <a class="link" href="#/retrospective/${item.id}">Rueckblick lesen →</a>
     </div>
   </article>`;
@@ -177,6 +177,81 @@ function archiveEditorialArticle(item, partners = []) {
 
 function articleParagraphs(text = "") {
   return text.split(/\n+/).filter(Boolean).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("");
+}
+
+function archiveEventImageUrl(event = {}) {
+  const archivePhotoExtensions = {
+    32: "jpg",
+    33: "jpg",
+    37: "jpg",
+    45: "jpg",
+    48: "png",
+    61: "jpg",
+    62: "jpg",
+    69: "jpg",
+    70: "jpg",
+    76: "jpg"
+  };
+  const archiveUrl = (id) => `/assets/official/events/archive-${id}.${archivePhotoExtensions[id] || "svg"}`;
+  if (event.officialId) return archiveUrl(event.officialId);
+  const match = String(event.id || "").match(/event-archive-(\d+)/);
+  if (match) return archiveUrl(match[1]);
+  if (event.imageUrl) return event.imageUrl;
+  return event.id ? `/assets/official/events/${escapeHtml(event.id)}.svg` : "";
+}
+
+function retrospectiveLinkedEvent(item = {}, events = []) {
+  const explicit = events.find((event) => event.id === item.linkedEventId || event.id === item.galleryEventId);
+  if (explicit) return explicit;
+  const haystack = `${item.title || ""} ${item.subtitle || ""} ${item.introText || ""} ${item.bodyText || ""} ${item.longDescription || ""} ${item.articleText || ""}`.toLowerCase();
+  const knownEventId = haystack.includes("leica") || haystack.includes("wetzlar")
+    ? "event-leica-welt-2026"
+    : haystack.includes("berlinale") || haystack.includes("heussen")
+      ? "event-berlinale-2026"
+      : haystack.includes("salzburg") || haystack.includes("red bull")
+        ? "event-salzburg-2025"
+        : "";
+  if (knownEventId) return events.find((event) => event.id === knownEventId) || null;
+  return null;
+}
+
+function archiveListEvent(event, partners = []) {
+  const host = partners.find((partner) => partner.id === event.hostId);
+  const dateLabel = event.displayDate || formatDate(event.date);
+  const detailUrl = `#/event/${escapeHtml(event.id)}`;
+  const imageUrl = archiveEventImageUrl(event);
+  return `<article class="archive-article archive-article--list">
+    <a class="archive-article__thumb" href="${detailUrl}" aria-label="Rueckblick ${escapeHtml(event.title)} ansehen">
+      ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="Rueckblick ${escapeHtml(event.title)}" loading="eager" decoding="async">` : `<span>${escapeHtml(event.eventType || "Archiv")}</span>`}
+    </a>
+    <div class="archive-article__body">
+      <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` · ${escapeHtml(event.city)}` : ""}</p>
+      <h2><a href="${detailUrl}">${escapeHtml(event.title)}</a></h2>
+      <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` · Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
+      <p>${escapeHtml(teaserText(event.postEventummary || event.description || "", 260))}</p>
+      <a class="link" href="${detailUrl}">Rueckblick ansehen -></a>
+    </div>
+  </article>`;
+}
+
+function archiveListEditorial(item, partners = [], events = []) {
+  const sponsor = item.sponsorId ? partners.find((partner) => partner.id === item.sponsorId) : null;
+  const linkedEvent = retrospectiveLinkedEvent(item, events);
+  const thumbUrl = item.imageUrl || (linkedEvent ? archiveEventImageUrl(linkedEvent) : "");
+  const dateLabel = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
+  const detailUrl = `#/retrospective/${escapeHtml(item.id)}`;
+  return `<article class="archive-article archive-article--list">
+    <a class="archive-article__thumb" href="${detailUrl}" aria-label="Rueckblick ${escapeHtml(item.title || "Rueckblick")} lesen">
+      ${thumbUrl ? `<img src="${escapeHtml(thumbUrl)}" alt="Rueckblick ${escapeHtml(item.title || "")}" loading="eager" decoding="async">` : `<span>Rueckblick</span>`}
+    </a>
+    <div class="archive-article__body">
+      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Event-Nachlauf"}${sponsor ? ` · ${escapeHtml(sponsor.name)}` : ""}</p>
+      <h2><a href="${detailUrl}">${escapeHtml(item.title || "Rueckblick")}</a></h2>
+      ${item.subtitle ? `<p class="archive-article__meta">${escapeHtml(item.subtitle)}</p>` : ""}
+      <p>${escapeHtml(teaserText(item.longDescription || item.articleText || item.bodyText || item.mainText || item.fullText || item.longText || item.introText || "", 260))}</p>
+      <a class="link" href="${detailUrl}">Rueckblick lesen -></a>
+    </div>
+  </article>`;
 }
 
 const internalPageMeta = {
@@ -308,17 +383,25 @@ function aboutInternalCard(block, meta, options = {}) {
   const summary = options.summary === "long"
     ? teaserText(block.langtext || block.kurztext, 190)
     : block.kurztext;
+  if (options.joinCta) {
+    return `<article class="internal-card internal-card--about internal-card--join internal-card--${escapeHtml(block.typ)}">
+    <span class="internal-about-thumb internal-about-thumb--${escapeHtml(block.icon || "modules")}" aria-hidden="true">${aboutPicto(block.icon)}<strong>${escapeHtml(aboutThumbLabel(block.icon))}</strong></span>
+    <span class="internal-about-copy"><strong>${escapeHtml(block.titel)}</strong><small>${escapeHtml(summary)}</small></span>
+    <button class="join-text-link internal-card__join-cta" type="button" data-join-scroll>Mitgliedsantrag -></button>
+  </article>`;
+  }
   return `<button class="internal-card internal-card--about internal-card--${escapeHtml(block.typ)}" type="button" data-about-jump="${escapeHtml(block.slug)}">
     <span class="internal-about-thumb internal-about-thumb--${escapeHtml(block.icon || "modules")}" aria-hidden="true">${aboutPicto(block.icon)}<strong>${escapeHtml(aboutThumbLabel(block.icon))}</strong></span>
     <span class="internal-about-copy"><strong>${escapeHtml(block.titel)}</strong><small>${escapeHtml(summary)}</small></span>
   </button>`;
 }
 
-function aboutLongTextSection(block) {
+function aboutLongTextection(block, options = {}) {
   return `<article class="internal-about-text" id="about-text-${escapeHtml(block.slug)}">
     <div class="internal-about-text__head">${aboutPicto(block.icon)}<div><p class="eyebrow">${escapeHtml(block.titel)}</p><h2>${escapeHtml(block.titel)}</h2><p>${escapeHtml(block.kurztext)}</p></div></div>
     ${ttsReader({ title: block.titel || "", text: block.langtext || "", audioUrl: block.audioUrl || "", audioAccessibleUrl: block.audioAccessibleUrl || "", audioNaturalUrl: block.audioNaturalUrl || "", audioStatus: block.audioStatus || "", audioAccessibleStatus: block.audioAccessibleStatus || "", audioNaturalStatus: block.audioNaturalStatus || "" })}
     <div class="editorial-text">${articleParagraphs(block.langtext)}</div>
+    ${options.joinCta ? `<button class="join-text-link internal-text-join-cta" type="button" data-join-scroll>Mitgliedsantrag -></button>` : ""}
     <button class="internal-about-top-button" type="button" data-internal-scroll-top aria-label="Nach oben">↑</button>
   </article>`;
 }
@@ -453,6 +536,14 @@ function publicNewsItems(items = []) {
   });
 }
 
+function isRetrospectiveArticle(item = {}) {
+  const category = String(item.category || "").toLowerCase();
+  const inPress = item.page === "press" || item.section === "pressRelease";
+  const isRetrospective = item.isRetrospective || category.includes("rückblick") || category.includes("rueckblick") || category.includes("rückblick") || category.includes("rückblick");
+  const isHidden = item.status === "archived" || item.status === "draft" || item.visibility === "internal";
+  return inPress && isRetrospective && !isHidden;
+}
+
 function isAiGeneratedArticle(item = {}) {
   return item.author_type === "ai" || item.authorType === "ai" || item.aiGenerated === true;
 }
@@ -560,7 +651,32 @@ export async function homePage() {
     url: `#/news/${item.id}`,
     link: "News lesen"
   }));
+  const mobileCards = [
+    ["#/events", "events", "Events", "Medienfruehstuecke, Veranstaltungen und Rueckblicke"],
+    ["#/topics", "topics", "Themen", "Aktuelle Entwicklungen, Positionen und Expertise"],
+    ["#/members", "members", "Mitglieder", "Unser Netzwerk, Vorteile und Mitglied werden"],
+    ["#/about", "about", "Ueber uns", "Der Verband, Vorstand und Ziele"]
+  ];
+  const mobileHome = `<section class="pdtv-mobile-home" aria-label="Mobile tartseite">
+    <div class="container">
+      <div class="pdtv-mobile-hero">
+        <h1>Digitaler Content.<br>Starke Verbindungen.<br>Gemeinsam fuer die <span>Medienzukunft.</span></h1>
+        <p>PROdigitalTV ist das Netzwerk fuer digitale Medien, Streaming, Smart-TV, Plattformen und regionale Anbieter.</p>
+        <article class="pdtv-mobile-next-event">
+          <span class="pdtv-mobile-icon" aria-hidden="true">□</span>
+          <div>
+            <p>Naechstes Medienfruehstueck</p>
+            ${next ? `<h2>${escapeHtml(formatDate(next.date))}${next.city ? ` · ${escapeHtml(next.city)}` : ""}</h2><span>${escapeHtml(next.subtitle || next.title || "")}</span><div class="pdtv-mobile-next-actions"><a class="button button--primary button--small" href="#/register/${next.id}">Anmelden</a><a href="#/event/${next.id}">Details ansehen -></a></div>` : `<h2>Neue Termine in Vorbereitung</h2><span>Die naechsten Formate werden in Kuerze veroeffentlicht.</span><div class="pdtv-mobile-next-actions"><a href="#/events">Events ansehen -></a></div>`}
+          </div>
+        </article>
+      </div>
+      <nav class="pdtv-mobile-card-grid" aria-label="Hauptbereiche">
+        ${mobileCards.map(([href, type, title, text], index) => `<a class="pdtv-mobile-card pdtv-mobile-card--${type} ${index === 0 || index === 3 ? "pdtv-mobile-card--dark" : ""}" href="${href}"><span class="pdtv-mobile-card__icon" aria-hidden="true"></span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(text)}</small></a>`).join("")}
+      </nav>
+    </div>
+  </section>`;
   return publicShell("home", `
+    ${mobileHome}
     <section class="hero"><div class="container hero__grid">
       <div><p class="eyebrow">${escapeHtml(hero.teaserText || "PROdigitalTV")}</p><h1>${escapeHtml(hero.title)}</h1><p class="lead">${escapeHtml(hero.subtitle)}</p>
         <div class="hero__buttons"><a class="button button--primary" href="${escapeHtml(primaryButtonUrl)}">${escapeHtml(primaryButtonText)}</a><a class="button button--secondary" href="${escapeHtml(secondaryButtonUrl)}">${escapeHtml(secondaryButtonText)}</a></div>
@@ -614,17 +730,21 @@ export async function eventDetailPage(id) {
     ? [...assignedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 24)
     : [];
   const registrationAllowed = event.registrationEnabled && (!restricted || isMember());
+  const eventImageUrl = archiveEventImageUrl(event);
+  const introText = event.description || event.shortDescription || event.subtitle || "";
+  const longText = event.postEventummary || event.archiveText || event.longDescription || event.bodyText || event.articleText || "";
+  const haseparateLongText = longText.trim() && longText.trim() !== introText.trim();
   return publicShell("events", `${subhero(event.eventType, event.title, event.subtitle)}
     <section class="section"><div class="container detail-grid">
       <article class="detail-main">
-        ${event.imageUrl ? `<figure class="event-detail-image"><img src="${escapeHtml(event.imageUrl)}" alt="Eventbild ${escapeHtml(event.title)}"></figure>` : ""}
+        ${eventImageUrl ? `<figure class="event-detail-image"><img src="${escapeHtml(eventImageUrl)}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy"></figure>` : ""}
         ${restricted ? `<div class="alert alert--warning">Details und Anmeldung dieses Mitglieder-Events stehen nach dem Login zur Verfuegung.</div>` : ""}
-        <h2>Zum Event</h2><p class="lead">${escapeHtml(event.description)}</p>
+        <h2>Zum Event</h2>${introText ? `<p class="lead">${escapeHtml(introText)}</p>` : ""}
+        ${haseparateLongText ? `<h2>Rückblick</h2><div class="editorial-text">${articleParagraphs(longText)}</div>` : ""}
         <h2>Themen</h2><div class="filters">${assignedTopics.map((topic) => `<a class="filter" href="#/topic/${topic.id}">${escapeHtml(topic.title)}</a>`).join("")}</div>
         ${event.lunchNote ? `<div class="alert">${escapeHtml(event.lunchNote)}</div>` : ""}
         ${restricted ? "" : `<section class="venue-stage"><div class="venue-stage__place"><p class="eyebrow">Veranstaltungsort</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Gastgeber und Sponsoren</p>${eventPartners.length ? eventPartners.map((partner) => `<article class="partner-spotlight"><span class="avatar">${initials(partner.name)}</span><div><span class="tag tag--red">${escapeHtml(partner.role)}</span><h3>${escapeHtml(partner.name)}</h3>${partner.description ? `<p>${escapeHtml(partner.description)}</p>` : ""}</div></article>`).join("") : `<p>Partner werden bei Bekanntgabe ergaenzt.</p>`}</div></section>
         ${assignedSpeakers.length ? `<h2>Referentinnen und Referenten</h2><div class="speaker-grid">${assignedSpeakers.map((speaker) => `<article class="speaker-profile"><div class="speaker-profile__portrait">${speakerPortrait(speaker)}</div><div class="speaker-profile__body"><h3>${escapeHtml(speaker.name)}</h3><p class="speaker-profile__position">${escapeHtml(speaker.position)}${speaker.company ? ` · ${escapeHtml(speaker.company)}` : ""}</p>${speaker.shortBio ? `<p class="speaker-profile__intro">${escapeHtml(speaker.shortBio)}</p>` : ""}${speaker.longBio ? `<p>${escapeHtml(speaker.longBio)}</p>` : ""}</div></article>`).join("")}</div>` : ""}`}
-        ${event.postEventSummary ? `<h2>Nachbericht</h2><p>${escapeHtml(event.postEventSummary)}</p>` : ""}
         ${assignedGalleryImages.length ? galleryPlayCta(assignedGallery, assignedGalleryImages) : ""}
       </article>
       <aside class="detail-aside">
@@ -681,24 +801,27 @@ export async function newsPage() {
 
 export async function newsDetailPage(id) {
   const item = await getOne("editorialContent", id) || editorialFallbackNews.find((entry) => entry.id === id);
-  if (!item || (item.page !== "news" && item.section !== "news" && !item.isRetrospective)) return notFoundPage();
-  if (!item.isRetrospective && (item.visible === false || item.status === "archived" || item.status === "draft" || item.visibility === "internal")) return notFoundPage();
-  const [sponsors, galleries] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries")]);
+  const isRetrospective = isRetrospectiveArticle(item);
+  if (!item || (item.page !== "news" && item.section !== "news" && !isRetrospective)) return notFoundPage();
+  if (!isRetrospective && (item.visible === false || item.status === "archived" || item.status === "draft" || item.visibility === "internal")) return notFoundPage();
+  const [sponsors, galleries, events] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries"), listPublicEvents()]);
   const date = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
-  const text = item.bodyText || item.mainText || item.text || item.shortText || item.teaserText || "";
+  const text = item.longDescription || item.articleText || item.bodyText || item.mainText || item.text || item.fullText || item.longText || item.shortText || item.teaserText || "";
   const sponsor = item.sponsorId ? sponsors.find((entry) => entry.id === item.sponsorId) : null;
+  const linkedEvent = retrospectiveLinkedEvent(item, events);
+  const articleImageUrl = item.imageUrl || (linkedEvent ? archiveEventImageUrl(linkedEvent) : "");
   const selectedGallery = item.galleryId ? galleries.find((gallery) => gallery.id === item.galleryId) : null;
   const attachedGalleryImages = Array.isArray(selectedGallery?.images)
     ? [...selectedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 12)
     : [];
   const leadMedia = attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "";
-  const detailSection = item.isRetrospective ? "archive" : "news";
-  const detailTitle = item.isRetrospective ? "Rückblicke" : "News";
-  const detailIntro = item.isRetrospective ? "Nachberichte, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen." : "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.";
-  const backHref = item.isRetrospective ? "#/archive" : "#/news";
-  const backText = item.isRetrospective ? "Zurueck zu Rückblicke" : "Zurueck zu News";
-  const sectionLabel = item.isRetrospective ? "Event-Nachlauf" : item.category || "News";
-  const allText = item.isRetrospective ? "Alle Rückblicke" : "Alle News";
+  const detailection = isRetrospective ? "archive" : "news";
+  const detailTitle = isRetrospective ? "Rückblicke" : "News";
+  const detailIntro = isRetrospective ? "Nachberichte, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen." : "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.";
+  const backHref = isRetrospective ? "#/archive" : "#/news";
+  const backText = isRetrospective ? "Zurück zu Rückblicke" : "Zurück zu News";
+  const sectionLabel = isRetrospective ? "Event-Nachlauf" : item.category || "News";
+  const allText = isRetrospective ? "Alle Rückblicke" : "Alle News";
   return publicShell(detailSection, `${subhero("", detailTitle, detailIntro)}
     <section class="section"><div class="container detail-grid">
       <article class="detail-main news-detail">
@@ -707,7 +830,7 @@ export async function newsDetailPage(id) {
         ${articleHeader({
           title: item.title || "",
           intro: item.subtitle || "",
-          logoUrl: item.imageUrl || "",
+          logoUrl: articleImageUrl,
           logoAlt: `Artikelmotiv ${item.title || "News"}`
         })}
         ${ttsReader({ title: item.title || "", text, audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
@@ -775,10 +898,11 @@ export async function archivePage() {
   const events = allEvents.filter((event) => isPastEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
   const retrospectives = editorial
-    .filter((item) => item.isRetrospective)
+    .filter(isRetrospectiveArticle)
     .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")));
+  const items = retrospectives.map((item) => archiveListEditorial(item, sponsors, events)).join("");
   return publicShell("archive", `${subhero("Event-Nachlauf", "Eventarchiv", "Nachberichte, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen.")}
-    <section class="section"><div class="container archive-list">${retrospectives.map((item) => archiveEditorialArticle(item, sponsors)).join("")}${events.map((event) => archiveArticle(event, sponsors)).join("")}</div></section>`);
+    <section class="section"><div class="container"><div class="section-head archive-list-head"><div><p class="eyebrow">Medienfruehstuecke</p><h2>Rückblicke</h2><p>Vergangene Veranstaltungen mit Nachbericht, Ort, Gastgeber und Detailseite.</p></div></div><div class="archive-list archive-list--compact">${items || `<div class="alert">Rueckblicke werden aktuell vorbereitet.</div>`}</div></div></section>`);
 }
 
 export async function downloadsPage() {
@@ -786,6 +910,24 @@ export async function downloadsPage() {
     .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   return publicShell("downloads", `${subhero("Downloads", "Oeffentliche Downloads.", "Vereinssatzung, Beitraege und weitere oeffentliche Dokumente von PROdigitalTV.")}
     <section class="section"><div class="container">${downloads.length ? `<div class="card-grid card-grid--three">${downloads.map(downloadCard).join("")}</div>` : `<div class="alert">Oeffentliche Downloads werden aktuell vorbereitet.</div>`}</div></section>`);
+}
+
+export function webappQrPage() {
+  const webappUrl = "https://prodigitaltv-da47b.web.app/#/home";
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=720x720&margin=2&data=${encodeURIComponent(webappUrl)}`;
+  return publicShell("webapp-qr", `${subhero("WebApp", "QR-Code zur mobilen WebApp.", "Direkt scannen und PROdigitalTV auf dem Smartphone oeffnen.")}
+    <section class="section"><div class="container webapp-qr-page">
+      <article class="webapp-qr-card">
+        <figure class="webapp-qr-card__code"><img src="${escapeHtml(qrUrl)}" alt="QR-Code zur PROdigitalTV WebApp" loading="lazy"></figure>
+        <div class="webapp-qr-card__copy">
+          <p class="eyebrow">PROdigitalTV WebApp</p>
+          <h2>QR-Code scannen</h2>
+          <p>Der Code fuehrt direkt zur mobilen PROdigitalTV-WebApp.</p>
+          <p class="webapp-qr-card__url">${escapeHtml(webappUrl)}</p>
+          <div class="actions"><a class="button button--primary" href="${escapeHtml(webappUrl)}" target="_blank" rel="noreferrer">WebApp oeffnen</a><a class="button button--secondary" href="#/home">Zur Website</a></div>
+        </div>
+      </article>
+    </div></section>`);
 }
 
 function joinAside(downloads, editorial) {
@@ -831,10 +973,16 @@ export async function joinPage() {
   const [blocks, downloads, editorial] = await Promise.all([internalBlocks("mitglied_werden"), listPublicContent("downloads"), listPublicContent("editorialContent")]);
   const hero = blocks.find((block) => block.typ === "hero") || blocks[0];
   const cardBlocks = blocks.filter((block) => block.typ !== "hero");
-  const joinCards = aboutCardGroups(cardBlocks, meta, { summary: "long", all: true });
-  const joinTexts = blocks.map((block) => aboutLongTextSection(block)).join("");
+  const joinCards = aboutCardGroups(cardBlocks, meta, { summary: "long", all: true, joinCta: true });
+  const joinTexts = blocks.map((block) => aboutLongTextection(block, { joinCta: block.typ !== "hero" })).join("");
+  const joinIntroCard = `<article class="join-intro-card">
+    ${aboutPicto(hero?.icon || "membership")}
+    <div><p class="eyebrow">Mitglied werden</p><h2>${escapeHtml(hero?.titel || meta.title)}</h2><p>${escapeHtml(hero?.langtext || hero?.kurztext || meta.intro)}</p></div>
+    <button class="button button--primary" type="button" data-join-scroll>Mitgliedsantrag</button>
+  </article>`;
   return publicShell("join", `<section class="section internal-overview internal-overview--join"><div class="container"><div class="internal-about-layout"><div class="internal-about-main">
     <div class="internal-page-heading"><p class="eyebrow">${escapeHtml(meta.eyebrow)}</p><h1>${escapeHtml(hero?.titel || meta.title)}</h1><p>${escapeHtml(hero?.kurztext || meta.intro)}</p></div>
+    ${joinIntroCard}
     <div class="internal-mobile-list internal-mobile-list--about">${joinCards || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
     <div class="internal-about-texts">${joinTexts}</div>
   </div>${joinAside(downloads, editorial)}</div></div></section>${membershipFormSection()}`);

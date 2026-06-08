@@ -1,38 +1,44 @@
 import { route, onRouteChange, go } from "./utils/router.js";
 import {
   homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
-  newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, portalPage, legalPage, notFoundPage
-} from "./pages/publicPages.js?v=460";
+  newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, portalPage, legalPage, notFoundPage, webappQrPage
+} from "./pages/publicPages.js?v=484";
 import {
   dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage, moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, mailAdminPage, audioAdminPage
-} from "./cms/cmsPages.js?v=460";
+} from "./cms/cmsPages.js?v=475";
 import { aiEditorialPage } from "./cms/aiEditorialPages.js?v=460";
-import { mediaPage } from "./cms/mediaPages.js?v=25";
+import { mediaPage } from "./cms/mediaPages.js?v=45";
 import { createRegistration } from "./firebase/registrationService.js";
 import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=460";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=460";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=463";
 import { deleteStoredAsset, uploadEntityImage, uploadEventMedia, uploadGalleryImages, uploadMediaAsset } from "./firebase/storageService.js?v=4";
 import { checkFirebaseConnection, checkFirestoreStructure, initializeDatabase, createDemoData, removeDemoData } from "./firebase/setupService.js";
 import { downloadRegistrationsCsv } from "./utils/csv.js";
-import { escapeHtml } from "./utils/format.js";
-import { callChatGptAction, generateCmsThumbCollage, saveAiDraft, runAiEditorialTask, saveAiEditorialSettings, generateAiEditorialThumbnail, generateAiTopicSuggestions, importGermanPressReleases, importNewsFromSources } from "./ai/openaiService.js?v=314";
-import { generateArticleSpeechAsset } from "./ai/ttsService.js";
+import { escapeHtml, formatDate } from "./utils/format.js";
+import { callChatGptAction, generateCmsThumbCollage, saveAiDraft, runAiEditorialTask, saveAiEditorialSettings, generateAiEditorialThumbnail, generateAiTopicSuggestions, importGermanPressReleases, importNewsFromSources } from "./ai/openaiService.js?v=315";
+import { generateArticleSpeechAsset } from "./ai/ttsService.js?v=2";
 import { aiSourceCatalog } from "./data/aiSourceCatalog.js";
 
 const root = document.querySelector("#app");
 const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 
-function applyTheme(theme = localStorage.getItem("pdtTheme") || "day") {
+function storedTheme() {
+  return localStorage.getItem("pdtv-theme") || localStorage.getItem("pdtTheme") || "day";
+}
+
+function applyTheme(theme = storedTheme()) {
   const currentRoute = route();
   const nextTheme = currentRoute.path === "cms" ? "day" : theme === "night" ? "night" : "day";
   document.documentElement.dataset.theme = nextTheme;
   document.documentElement.style.colorScheme = nextTheme === "night" ? "dark" : "light";
+  document.body?.classList.toggle("theme-night", nextTheme === "night");
+  document.body?.classList.toggle("theme-light", nextTheme !== "night");
   document.querySelectorAll("[data-theme-label]").forEach((label) => {
-    label.textContent = nextTheme === "night" ? "Night" : "Day";
+    label.textContent = nextTheme === "night" ? "Day" : "Night";
   });
   document.querySelectorAll("[data-theme-icon]").forEach((icon) => {
-    icon.textContent = nextTheme === "night" ? "☾" : "☀";
+    icon.textContent = nextTheme === "night" ? "\u263e" : "\u2600";
   });
 }
 
@@ -58,6 +64,7 @@ async function viewForRoute(current) {
   if (current.path === "join") return joinPage();
   if (current.path === "downloads") return downloadsPage();
   if (current.path === "archive") return archivePage();
+  if (current.path === "webapp-qr") return webappQrPage();
   if (current.path === "login") return loginPage();
   if (current.path === "portal") return portalPage();
   if (current.path === "imprint") return legalPage("imprint");
@@ -95,6 +102,7 @@ async function render() {
       root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS</p><h1>Lade Inhalte ...</h1></div></section>`;
     }
     root.innerHTML = await viewForRoute(route());
+    normalizePublicGermanText();
     wireActions();
     updateMobileQrCode();
     window.scrollTo({ top: 0 });
@@ -152,6 +160,95 @@ function isExternalPortalLink(link) {
   } catch {
     return false;
   }
+}
+
+function germanizeVisibleText(text = "") {
+  let next = String(text);
+  next = next
+    .replace(/R\ufffdckblicke/g, "R\u00fcckblicke")
+    .replace(/R\ufffdckblick/g, "R\u00fcckblick")
+    .replace(/r\ufffdckblick/g, "r\u00fcckblick");
+  [
+    ["\u00c3\u0192\u00e2\u20ac\u017e", "\u00c4"],
+    ["\u00c3\u0192\u00e2\u20ac\u201c", "\u00d6"],
+    ["\u00c3\u0192\u00c5\u201c", "\u00dc"],
+    ["\u00c3\u0192\u00c2\u00a4", "\u00e4"],
+    ["\u00c3\u0192\u00c2\u00b6", "\u00f6"],
+    ["\u00c3\u0192\u00c2\u00bc", "\u00fc"],
+    ["\u00c3\u0192\u00c5\u00b8", "\u00df"],
+    ["\u00c3\u201e", "\u00c4"],
+    ["\u00c3\u2013", "\u00d6"],
+    ["\u00c3\u0153", "\u00dc"],
+    ["\u00c3\u00a4", "\u00e4"],
+    ["\u00c3\u00b6", "\u00f6"],
+    ["\u00c3\u00bc", "\u00fc"],
+    ["\u00c3\u0178", "\u00df"],
+    ["\u00c2\u00b7", "\u00b7"],
+    ["\u00e2\u02dc\u20ac", "\u2600"],
+    ["\u00e2\u02dc\u00be", "\u263e"],
+    ["&rarr;", "\u2192"]
+  ].forEach(([broken, fixed]) => {
+    next = next.split(broken).join(fixed);
+  });
+  [
+    [/\bUeber\b/g, "\u00dcber"], [/\bueber\b/g, "\u00fcber"],
+    [/\bFuer\b/g, "F\u00fcr"], [/\bfuer\b/g, "f\u00fcr"],
+    [/\bWofuer\b/g, "Wof\u00fcr"], [/\bwofuer\b/g, "wof\u00fcr"],
+    [/\bGaeste\b/g, "G\u00e4ste"], [/\bgaeste\b/g, "g\u00e4ste"],
+    [/\bMuenchen\b/g, "M\u00fcnchen"], [/\bMuenchner\b/g, "M\u00fcnchner"],
+    [/\bKoeln\b/g, "K\u00f6ln"], [/\bDuesseldorf\b/g, "D\u00fcsseldorf"],
+    [/\bRueckblicke\b/g, "R\u00fcckblicke"], [/\bRueckblick\b/g, "R\u00fcckblick"], [/\brueckblick\b/g, "r\u00fcckblick"],
+    [/\bMedienfruehstuecke\b/g, "Medienfr\u00fchst\u00fccke"], [/\bMedienfruehstuecks\b/g, "Medienfr\u00fchst\u00fccks"], [/\bMedienfruehstueck\b/g, "Medienfr\u00fchst\u00fcck"],
+    [/\bmedienfruehstuecke\b/g, "medienfr\u00fchst\u00fccke"], [/\bmedienfruehstuecks\b/g, "medienfr\u00fchst\u00fccks"], [/\bmedienfruehstueck\b/g, "medienfr\u00fchst\u00fcck"],
+    [/\bZurueck\b/g, "Zur\u00fcck"], [/\bzurueck\b/g, "zur\u00fcck"],
+    [/\bOeffentlichkeit\b/g, "\u00d6ffentlichkeit"], [/\bOeffentliche\b/g, "\u00d6ffentliche"], [/\boeffentlich\b/g, "\u00f6ffentlich"],
+    [/\bOeffnen\b/g, "\u00d6ffnen"], [/\boeffnen\b/g, "\u00f6ffnen"],
+    [/\bPersoenlich\b/g, "Pers\u00f6nlich"], [/\bpersoenlich\b/g, "pers\u00f6nlich"], [/\bpersoenliche\b/g, "pers\u00f6nliche"], [/\bpersoenlichen\b/g, "pers\u00f6nlichen"],
+    [/\bPersoenlichkeiten\b/g, "Pers\u00f6nlichkeiten"], [/\bpersoenlichkeiten\b/g, "pers\u00f6nlichkeiten"], [/\bBranchenpersoenlichkeiten\b/g, "Branchenpers\u00f6nlichkeiten"],
+    [/\bGespraeche\b/g, "Gespr\u00e4che"], [/\bgespraeche\b/g, "gespr\u00e4che"], [/\bGespraech\b/g, "Gespr\u00e4ch"], [/\bgespraech\b/g, "gespr\u00e4ch"],
+    [/\bBestaetigt\b/g, "Best\u00e4tigt"], [/\bbestaetigt\b/g, "best\u00e4tigt"], [/\bBestaetigen\b/g, "Best\u00e4tigen"], [/\bbestaetigen\b/g, "best\u00e4tigen"], [/\bbestaetigte\b/g, "best\u00e4tigte"],
+    [/\bgeprueft\b/g, "gepr\u00fcft"], [/\bPruefung\b/g, "Pr\u00fcfung"], [/\bpruefen\b/g, "pr\u00fcfen"], [/\bPruefen\b/g, "Pr\u00fcfen"],
+    [/\bKuenstliche\b/g, "K\u00fcnstliche"], [/\bkuenstliche\b/g, "k\u00fcnstliche"], [/\bkuenftig\b/g, "k\u00fcnftig"], [/\bKuerze\b/g, "K\u00fcrze"], [/\bkuerzen\b/g, "k\u00fcrzen"],
+    [/\bgeschuetzten\b/g, "gesch\u00fctzten"], [/\bgeschuetzte\b/g, "gesch\u00fctzte"], [/\bgeschuetzt\b/g, "gesch\u00fctzt"],
+    [/\bmoeglich\b/g, "m\u00f6glich"], [/\bMoeglichkeit\b/g, "M\u00f6glichkeit"], [/\bmoeglichen\b/g, "m\u00f6glichen"],
+    [/\bkoennen\b/g, "k\u00f6nnen"], [/\bKoennen\b/g, "K\u00f6nnen"], [/\bkoennte\b/g, "k\u00f6nnte"], [/\bKoennte\b/g, "K\u00f6nnte"],
+    [/\bmuesse\b/g, "m\u00fcsse"], [/\bmuessen\b/g, "m\u00fcssen"], [/\bMuessen\b/g, "M\u00fcssen"], [/\bduerfen\b/g, "d\u00fcrfen"], [/\bDuerfen\b/g, "D\u00fcrfen"],
+    [/\bunterstuetzt\b/g, "unterst\u00fctzt"], [/\bUnterstuetzung\b/g, "Unterst\u00fctzung"],
+    [/\belbstverstaendnis\b/g, "elbstverst\u00e4ndnis"], [/\bselbstverstaendlich\b/g, "selbstverst\u00e4ndlich"],
+    [/\bunabhaengig\b/g, "unabh\u00e4ngig"], [/\bunabhaengiger\b/g, "unabh\u00e4ngiger"], [/\bunabhaengiges\b/g, "unabh\u00e4ngiges"],
+    [/\bstaendig\b/g, "st\u00e4ndig"], [/\bverstaendlich\b/g, "verst\u00e4ndlich"], [/\bfruehzeitig\b/g, "fr\u00fchzeitig"],
+    [/\bausgewaehlte\b/g, "ausgew\u00e4hlte"], [/\bhaeufig\b/g, "h\u00e4ufig"], [/\bAtmosphaere\b/g, "Atmosph\u00e4re"], [/\bFuehrungskraefte\b/g, "F\u00fchrungskr\u00e4fte"],
+    [/\bveraendert\b/g, "ver\u00e4ndert"], [/\bveraendern\b/g, "ver\u00e4ndern"], [/\bVeraenderung\b/g, "Ver\u00e4nderung"], [/\bveraenderte\b/g, "ver\u00e4nderte"],
+    [/\bberuehren\b/g, "ber\u00fchren"], [/\bueberdehnen\b/g, "\u00fcberdehnen"], [/\berschliessen\b/g, "erschlie\u00dfen"],
+    [/\bQualitaet\b/g, "Qualit\u00e4t"], [/\bKreativitaet\b/g, "Kreativit\u00e4t"], [/\bProduktivitaet\b/g, "Produktivit\u00e4t"],
+    [/\bVerguetung\b/g, "Verg\u00fctung"], [/\bVerfuegung\b/g, "Verf\u00fcgung"], [/\bverfuegbar\b/g, "verf\u00fcgbar"],
+    [/\bveroeffentlicht\b/g, "ver\u00f6ffentlicht"], [/\bVeroeffentlicht\b/g, "Ver\u00f6ffentlicht"], [/\bVeroeffentlichungen\b/g, "Ver\u00f6ffentlichungen"],
+    [/\btraegt\b/g, "tr\u00e4gt"], [/\bhaette\b/g, "h\u00e4tte"], [/\bwaeren\b/g, "w\u00e4ren"], [/\bwaechst\b/g, "w\u00e4chst"],
+    [/\bMedienhaeusern\b/g, "Medienh\u00e4usern"], [/\bMedienhaeuser\b/g, "Medienh\u00e4user"], [/\bmittelstaendische\b/g, "mittelst\u00e4ndische"],
+    [/\bMassnahmen\b/g, "Ma\u00dfnahmen"], [/\bgross\b/g, "gro\u00df"], [/\bGross\b/g, "Gro\u00df"], [/\bAusserdem\b/g, "Au\u00dferdem"], [/\bausserdem\b/g, "au\u00dferdem"],
+    [/\btrasse\b/g, "tra\u00dfe"], [/\bMass\b/g, "Ma\u00df"]
+  ].forEach(([pattern, fixed]) => {
+    next = next.replace(pattern, fixed);
+  });
+  return next;
+}
+function normalizePublicGermanText() {
+  if (!root || route().path === "cms") return;
+  const walker = document.createTreeWalker(root, NodeFilter.HOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent || ["CRIPT", "TYLE", "TEXTAREA", "INPUT", "CODE"].includes(parent.tagName)) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach((node) => {
+    const next = germanizeVisibleText(node.nodeValue);
+    if (next !== node.nodeValue) node.nodeValue = next;
+  });
 }
 
 let activePublicTts = null;
@@ -1073,6 +1170,25 @@ function slugify(value = "") {
     .slice(0, 80);
 }
 
+function eventRetrospectiveArticleId(eventId = "") {
+  return `retrospective-${slugify(eventId) || crypto.randomUUID()}`;
+}
+
+function eventRetrospectiveBody(event = {}) {
+  const summary = event.longDescription || event.bodyText || event.articleText || event.archiveText || event.postEventSummary || event.postEventummary || event.description || "";
+  const facts = [
+    event.date ? `Die Veranstaltung fand am ${formatDate(event.date)} statt.` : "",
+    [event.locationName, event.city].filter(Boolean).length ? `Veranstaltungsort war ${[event.locationName, event.city].filter(Boolean).join(", ")}.` : "",
+    event.subtitle ? `Im Mittelpunkt stand: ${event.subtitle}` : ""
+  ].filter(Boolean).join(" ");
+  const closing = "Der Rückblick dokumentiert die wichtigsten Impulse, Eindrücke und Anknüpfungspunkte für die digitale Medienwirtschaft.";
+  return [summary, facts, closing].filter(Boolean).join("\n\n");
+}
+
+function eventRetrospectiveIntro(event = {}) {
+  return event.postEventSummary || event.postEventummary || event.description || event.subtitle || "Redaktioneller Rückblick auf ein PROdigitalTV-Event.";
+}
+
 function normalizeMediaSlug(value = "") {
   return slugify(value)
     .replace(/-+/g, "-")
@@ -1142,6 +1258,40 @@ function mediaPresetFields(type = "upload") {
     mobile_usage: preset.mobile,
     aspect_ratio: preset.aspect
   };
+}
+
+function imageGenerationContextFromRecord(record = {}, module = "editorialContent") {
+  return {
+    title: record.title || record.titel || record.headline || record.name || "",
+    subtitle: record.subtitle || record.subline || record.kurztext || record.introText || "",
+    bodyText: record.bodyText || record.articleText || record.longDescription || record.langtext || record.description || "",
+    shortDescription: record.shortDescription || record.introText || record.teaserText || record.kurztext || "",
+    category: record.category || record.bereich || record.page || "",
+    module
+  };
+}
+
+function creativeThumbPrompt(context = {}, userPrompt = "", variantNumber = 1) {
+  const title = context.title || "PROdigitalTV Redaktion";
+  const category = context.category ? `Rubrik: ${context.category}.` : "";
+  const subtitle = context.subtitle ? `Subline: ${context.subtitle}.` : "";
+  const bodyHint = context.bodyText ? `Inhaltlicher Kontext: ${String(context.bodyText).replace(/\s+/g, " ").slice(0, 520)}.` : "";
+  return [
+    userPrompt,
+    `Erzeuge Variante ${variantNumber} als eigenstaendiges, kreatives redaktionelles Thumbnail fuer den Beitrag "${title}".`,
+    subtitle,
+    category,
+    bodyHint,
+    "Bildidee: ueberraschende, aber serioese visuelle Metapher aus digitaler Medienwirtschaft, Streaming, TV, Plattformen, Redaktion, Technologie oder Netzwerk.",
+    "Komposition: starkes zentrales Motiv, klare Tiefe, hochwertige Lichtfuehrung, moderne Business-/Editorial-Aesthetik, PROdigitalTV-Farbakzent in Rot und Dunkelblau.",
+    "Kreativitaet: nicht generisch, keine austauschbare tockfoto-Optik, gern abstrakte Datenraeume, Medieninterfaces, Lichtlinien, Glas, creens, tudio-Atmosphaere oder symbolische Branchenszenen.",
+    "Einschraenkungen: keine echten Logos, keine identifizierbaren realen Personen, keine Textfehler im Bild, keine Comic-Optik, keine irrefuehrenden Fakten.",
+    "Format: 16:9, geeignet als Website-Thumbnail und Artikelkopf."
+  ].filter(Boolean).join("\n");
+}
+
+function generatedThumbTitle(context = {}, variantNumber = 1) {
+  return `${context.title || "PROdigitalTV Thumb"} - KI-Variante ${variantNumber}`;
 }
 
 function mediaPresetSummary(type = "upload") {
@@ -1481,7 +1631,7 @@ function wireMediaCardLinks() {
       }
     };
     card.addEventListener("click", (event) => {
-      if (event.target.closest("a, button, input, select, textarea, label")) return;
+      if (event.target.closest("a, button, input, select, textarea, label, summary, details")) return;
       open();
     });
     card.addEventListener("keydown", (event) => {
@@ -1490,6 +1640,29 @@ function wireMediaCardLinks() {
       open();
     });
   });
+}
+
+function setaveButtonFeedback(button, state, label) {
+  if (!button) return;
+  if (!button.dataset.originalLabel) button.dataset.originalLabel = button.textContent;
+  button.classList.remove("is-save-success", "is-save-error");
+  if (state === "saving") {
+    button.disabled = true;
+    button.textContent = label || "peichere ...";
+    return;
+  }
+  if (state === "success" || state === "error") {
+    button.disabled = false;
+    button.classList.add(state === "success" ? "is-save-success" : "is-save-error");
+    button.textContent = label || (state === "success" ? "Gespeichert" : "Fehler");
+    window.setTimeout(() => {
+      button.classList.remove("is-save-success", "is-save-error");
+      button.textContent = button.dataset.originalLabel || "Speichern";
+    }, 1400);
+    return;
+  }
+  button.disabled = false;
+  button.textContent = button.dataset.originalLabel || button.textContent;
 }
 
 function mediaFormatLabel(file = {}) {
@@ -1726,6 +1899,126 @@ async function saveCentralMediaUpload(form, file, { result = null, auto = false 
   enrichUploadedMediaAsset(asset, { form, file, values, uploaded, mediaCode, filename, mediaType, aspectRatio, dimensions }).catch((error) => {
     console.warn("KI-Bildbeschreibung nach Upload fehlgeschlagen:", error);
   });
+  return asset;
+}
+
+async function saveGeneratedThumbMediaAsset(form, file, { dataUrl = "", prompt = "", result = null, variantNumber = 1, contextOverride = null, targetContextOverride = null } = {}) {
+  const context = contextOverride || imageGenerationContext(form);
+  const targetContext = targetContextOverride || {
+    targetCollection: form?.dataset.module || (form?.id === "topic-editor-form" ? "topics" : "editorialContent"),
+    targetId: form?.dataset.id || form?.dataset.topicId || "",
+    targetField: "imageUrl",
+    targetAltField: "thumbnail_alt"
+  };
+  const mediaCode = mediaShortCode();
+  const mediaType = context.module === "topics" ? "topic" : "news";
+  const aspectRatio = "16x9";
+  const preset = mediaUsagePreset(mediaType);
+  const title = generatedThumbTitle(context, variantNumber);
+  const extension = mediaFileExtension(file, "webp");
+  const filename = buildMediaFileName({ title, mediaType, format: aspectRatio, version: `v${variantNumber}`, extension, code: mediaCode });
+  const path = mediaStoragePath(filename, mediaType, mediaCode);
+  if (result) result.innerHTML = `<div class="alert">${progressMarkup("KI-Thumb wird in der Mediathek gespeichert ...", 64)}</div>`;
+  const optimizedUploads = await createOptimizedMediaUploads(file, { filename, path, mediaType, preset });
+  const uploadedOriginal = await uploadMediaAsset(optimizedUploads.original.file, optimizedUploads.original.path);
+  const [uploadedWeb, uploadedThumb] = await Promise.all([
+    optimizedUploads.web.path === optimizedUploads.original.path ? Promise.resolve(uploadedOriginal) : uploadMediaAsset(optimizedUploads.web.file, optimizedUploads.web.path),
+    optimizedUploads.thumb.path === optimizedUploads.original.path ? Promise.resolve(uploadedOriginal) : uploadMediaAsset(optimizedUploads.thumb.file, optimizedUploads.thumb.path)
+  ]);
+  const now = new Date().toISOString();
+  const description = [
+    `KI-Thumbnail-Variante ${variantNumber} fuer ${context.title || targetContext.targetId}.`,
+    context.subtitle || "",
+    context.category ? `Rubrik: ${context.category}` : ""
+  ].filter(Boolean).join(" ");
+  const asset = await upsert("media_assets", {
+    id: `media-asset-${crypto.randomUUID()}`,
+    media_code: mediaCode,
+    title,
+    slug: normalizeMedialug(title),
+    media_type: mediaType,
+    ...mediaPresetFields(mediaType),
+    filename_original: filename,
+    filename_web: optimizedUploads.web.filename,
+    filename_thumb: optimizedUploads.thumb.filename,
+    file_path_original: optimizedUploads.original.path,
+    file_path_web: optimizedUploads.web.path,
+    file_path_thumb: optimizedUploads.thumb.path,
+    file_path_original_url: uploadedOriginal?.url || dataUrl || "",
+    file_path_web_url: uploadedWeb?.url || uploadedOriginal?.url || dataUrl || "",
+    file_path_thumb_url: uploadedThumb?.url || uploadedWeb?.url || uploadedOriginal?.url || dataUrl || "",
+    storage_path_original: uploadedOriginal?.storagePath || optimizedUploads.original.path,
+    storage_path_web: uploadedWeb?.storagePath || optimizedUploads.web.path,
+    storage_path_thumb: uploadedThumb?.storagePath || optimizedUploads.thumb.path,
+    mime_type: optimizedUploads.web.file.type,
+    aspect_ratio: aspectRatio,
+    detected_aspect_ratio: aspectRatio,
+    file_size: optimizedUploads.web.file.size,
+    file_size_label: mediaizeLabel(optimizedUploads.web.file.size),
+    image_width: optimizedUploads.web.width || 1600,
+    image_height: optimizedUploads.web.height || 900,
+    image_format: mediaFormatLabel(optimizedUploads.web.file),
+    original_filename: file.name,
+    source_type: "ai",
+    source_note: `KI-Thumbnail-Variante ${variantNumber}`,
+    generated_prompt: prompt,
+    prompt,
+    alt_text: context.title || title,
+    thumbnail_alt: context.title || title,
+    thumbnail_description: description,
+    description,
+    tags: mediaKeywordsFromDescription(`${description} ${prompt}`, context.category || mediaType),
+    target_collection: targetContext.targetCollection,
+    target_id: targetContext.targetId,
+    target_field: targetContext.targetField,
+    target_title: context.title || targetContext.targetId,
+    linked_collection: targetContext.targetCollection,
+    linked_record_id: targetContext.targetId,
+    linked_field: targetContext.targetField,
+    linked_title: context.title || targetContext.targetId,
+    created_by: currentUser()?.email || currentUser()?.uid || "cms",
+    created_at: now,
+    updated_at: now,
+    updatedAt: now,
+    status: "active"
+  });
+  await Promise.all([
+    upsert("media_variants", {
+      id: `media-variant-${asset.id}-web`,
+      media_asset_id: asset.id,
+      variant_type: "web",
+      variant_label: "Web optimiert",
+      format: aspectRatio,
+      file_path: optimizedUploads.web.path,
+      file_url: uploadedWeb?.url || uploadedOriginal?.url || dataUrl || "",
+      filename: optimizedUploads.web.filename,
+      width: optimizedUploads.web.width || 0,
+      height: optimizedUploads.web.height || 0,
+      file_size: optimizedUploads.web.file.size,
+      codec: optimizedUploads.web.codec || optimizedUploads.web.file.type,
+      version: `v${variantNumber}`,
+      created_at: now,
+      created_by: currentUser()?.email || currentUser()?.uid || "cms"
+    }),
+    upsert("media_variants", {
+      id: `media-variant-${asset.id}-thumb`,
+      media_asset_id: asset.id,
+      variant_type: "thumb",
+      variant_label: "Thumbnail optimiert",
+      format: "thumb",
+      file_path: optimizedUploads.thumb.path,
+      file_url: uploadedThumb?.url || uploadedWeb?.url || uploadedOriginal?.url || dataUrl || "",
+      filename: optimizedUploads.thumb.filename,
+      width: optimizedUploads.thumb.width || 0,
+      height: optimizedUploads.thumb.height || 0,
+      file_size: optimizedUploads.thumb.file.size,
+      codec: optimizedUploads.thumb.codec || optimizedUploads.thumb.file.type,
+      version: `v${variantNumber}`,
+      created_at: now,
+      created_by: currentUser()?.email || currentUser()?.uid || "cms"
+    })
+  ]);
+  await attachMediaAssetToTarget(asset, targetContext);
   return asset;
 }
 
@@ -2432,6 +2725,9 @@ function showAiDialog({ button, originalText, result, sourceField }) {
   wrapper.querySelector("[data-ai-accept]").addEventListener("click", () => {
     const value = normalizeAiSuggestion(wrapper.querySelector("[data-ai-suggestion]").value, button, sourceField);
     if (sourceField && "value" in sourceField) sourceField.value = value;
+    if (button.dataset.aiAction === "rewritePressRetrospective") {
+      markPressRetrospectiveForm(button);
+    }
     wrapper.remove();
   });
   wrapper.querySelector("[data-ai-save-draft]").addEventListener("click", async () => {
@@ -2450,6 +2746,22 @@ function showAiDialog({ button, originalText, result, sourceField }) {
     wrapper.remove();
     button.click();
   });
+}
+
+function markPressRetrospectiveForm(button) {
+  const form = button.closest("form");
+  if (!form) return;
+  const retrospectiveField = form.querySelector('[name="isRetrospective"]');
+  if (retrospectiveField) retrospectiveField.checked = true;
+  const categoryField = form.querySelector('[name="category"]');
+  if (categoryField) categoryField.value = "R\u00fcckblick";
+  const statusField = form.querySelector('[name="status"]');
+  if (statusField && ["", "draft", "archived"].includes(statusField.value)) {
+    statusField.value = "published";
+  }
+  const visibilityField = form.querySelector('[name="visibility"]');
+  if (visibilityField) visibilityField.value = "public";
+  form.classList.remove("is-saved");
 }
 
 function wireImageDropzones() {
@@ -2608,15 +2920,25 @@ function wireImageDropzones() {
       const button = event.currentTarget;
       const promptField = zone.querySelector("[data-ai-image-prompt]");
       const originalLabel = button.textContent;
+      const targetCollection = form?.dataset.module || (form?.id === "topic-editor-form" ? "topics" : "editorialContent");
+      const targetId = form?.dataset.id || form?.dataset.topicId || "";
+      const targetRecord = targetCollection && targetId ? await getOne(targetCollection, targetId).catch(() => null) : null;
+      const variantNumber = Math.max(1, (Array.isArray(targetRecord?.thumbnail_variant_asset_ids) ? targetRecord.thumbnail_variant_asset_ids.length : 0) + 1);
+      const context = form ? imageGenerationContext(form) : {};
+      const creativePrompt = creativeThumbPrompt(context, promptField?.value || "", variantNumber);
       button.disabled = true;
-      button.textContent = "KI erzeugt Collage ...";
-      status.innerHTML = progressMarkup("KI erzeugt eine redaktionelle Collage ...", 35);
+      button.textContent = variantNumber > 1 ? "KI erzeugt Variante ..." : "KI erzeugt Thumb ...";
+      status.innerHTML = progressMarkup(variantNumber > 1 ? "KI erzeugt eine weitere Thumbnail-Variante ..." : "KI erzeugt ein redaktionelles Thumbnail ...", 35);
       try {
         const generated = await generateCmsThumbCollage({
           entityType: form?.dataset.module || "cms",
           entityId: form?.dataset.id || form?.dataset.topicId || "",
-          prompt: promptField?.value || "",
-          context: form ? imageGenerationContext(form) : {},
+          prompt: creativePrompt,
+          context: {
+            ...context,
+            variantNumber,
+            creativePrompt
+          },
           size: "1536x1024",
           quality: "medium"
         });
@@ -2627,18 +2949,21 @@ function wireImageDropzones() {
         showFile(file, {
           dataUrl: normalized.dataUrl,
           fileName: file.name,
-          statusText: "KI-Collage erzeugt. Speichere Bild automatisch ..."
+          statusText: "KI-Thumb erzeugt. peichere als Mediathek-Variante ..."
         });
-        status.innerHTML = progressMarkup("KI-Collage erzeugt. Bild wird gespeichert ...", 78);
-        try {
-          const saved = await submitFormAndWait(form);
-          const savedImageUrl = saved.imageUrl || saved.assetUrl || saved.logoUrl || saved.photoUrl || normalized.dataUrl;
-          updateDropzoneSavedImage(form, savedImageUrl);
-          status.textContent = "KI-Collage wurde erzeugt und gespeichert.";
-        } catch (saveError) {
-          await saveGeneratedImageFallback(form, normalized.dataUrl, file.name);
-          status.textContent = "KI-Collage wurde erzeugt und ohne Firebase-Storage direkt im Datensatz gespeichert.";
+        status.innerHTML = progressMarkup("KI-Thumb erzeugt. Bild wird in der Mediathek gespeichert ...", 78);
+        const asset = await saveGeneratedThumbMediaAsset(form, file, {
+          dataUrl: normalized.dataUrl,
+          prompt: generated.prompt || creativePrompt,
+          result: status,
+          variantNumber
+        });
+        const savedImageUrl = mediaAssetUrl(asset) || normalized.dataUrl;
+        updateDropzoneavedImage(form, savedImageUrl);
+        if (form?.elements?.thumbnail_alt && !String(form.elements.thumbnail_alt.value || "").trim()) {
+          form.elements.thumbnail_alt.value = asset.thumbnail_alt || asset.alt_text || "";
         }
+        status.innerHTML = `<span>KI-Thumb Variante ${variantNumber} wurde gespeichert, dem Beitrag zugeordnet und ist in der Mediathek auswählbar.</span>`;
       } catch (error) {
         status.textContent = `KI-Bild konnte nicht erzeugt werden: ${error.message || String(error)}`;
       } finally {
@@ -3104,6 +3429,7 @@ function wireJoinScroll() {
   document.querySelectorAll("[data-join-scroll]").forEach((link) => {
     link.addEventListener("click", (event) => {
       event.preventDefault();
+      event.stopPropagation();
       scrollToMembershipForm();
     });
   });
@@ -3131,18 +3457,53 @@ function wireMediaLibraryFilters() {
   if (!cards.length) return;
   const search = document.querySelector("[data-media-search]");
   const filters = Array.from(document.querySelectorAll("[data-media-filter]"));
+  const sourceButtons = Array.from(document.querySelectorAll("[data-media-source-switch]"));
+  let activeource = sourceButtons.find((button) => button.classList.contains("is-active"))?.dataset.mediaourcewitch || "";
   const apply = () => {
     const term = String(search?.value || "").trim().toLowerCase();
     const activeFilters = filters.map((filter) => [filter.dataset.mediaFilter, filter.value]).filter(([, value]) => value);
     cards.forEach((card) => {
       const matchesTerm = !term || String(card.dataset.search || "").includes(term);
+      const matchesource = !activeource || card.dataset.source === activeource;
       const matchesFilters = activeFilters.every(([key, value]) => card.dataset[key] === value);
-      card.hidden = !(matchesTerm && matchesFilters);
+      card.hidden = !(matchesTerm && matchesource && matchesFilters);
     });
   };
   search?.addEventListener("input", apply);
   filters.forEach((filter) => filter.addEventListener("change", apply));
+  sourceButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      activeource = button.dataset.mediaourcewitch || "";
+      sourceButtons.forEach((item) => item.classList.toggle("is-active", item === button));
+      apply();
+    });
+  });
   apply();
+}
+
+function wireExistingThumbImport() {
+  const button = document.querySelector("[data-import-existing-thumbs]");
+  if (!button || button.dataset.importThumbsWired === "1") return;
+  button.dataset.importThumbsWired = "1";
+  button.addEventListener("click", async () => {
+    const result = document.querySelector("#media-import-result");
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Importiere ...";
+    try {
+      const summary = await importExistingThumbsToMediaLibrary(result);
+      button.textContent = "Importiert";
+      window.setTimeout(() => render(), summary.created ? 650 : 1200);
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Thumb-Import fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+      button.textContent = originalLabel;
+    } finally {
+      window.setTimeout(() => {
+        button.disabled = false;
+        button.textContent = originalLabel;
+      }, 900);
+    }
+  });
 }
 
 function mediaContextFromNode(node) {
@@ -3173,6 +3534,172 @@ function mediaAssetUrl(asset = {}) {
   return asset.file_path_thumb_url || asset.file_path_web_url || asset.file_path_original_url || asset.imageUrl || asset.assetUrl || "";
 }
 
+function imageDimensionsFromUrl(url = "") {
+  if (!url || url.startsWith("data:")) return Promise.resolve({ width: 0, height: 0 });
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.addEventListener("load", () => resolve({ width: image.naturalWidth || 0, height: image.naturalHeight || 0 }));
+    image.addEventListener("error", () => resolve({ width: 0, height: 0 }));
+    image.src = url;
+  });
+}
+
+function mediaUrlExtension(url = "") {
+  const clean = String(url || "").split("?")[0].split("#")[0];
+  const extension = clean.includes(".") ? clean.split(".").pop().toLowerCase() : "";
+  if (["jpg", "jpeg", "png", "webp", "svg", "gif"].includes(extension)) return extension === "jpeg" ? "jpg" : extension;
+  if (url.startsWith("data:image/svg")) return "svg";
+  if (url.startsWith("data:image/png")) return "png";
+  if (url.startsWith("data:image/webp")) return "webp";
+  return "webp";
+}
+
+function mediaTitleForRecord(record = {}, fallback = "Bild") {
+  return record.title || record.titel || record.name || record.headline || record.company || fallback;
+}
+
+function collectExistingThumbCandidates(recordsByCollection = {}) {
+  const fieldMap = {
+    editorialContent: ["imageUrl", "thumbnail_url", "thumbnailUrl", "assetUrl"],
+    topics: ["imageUrl", "thumbnail_url", "thumbnailUrl", "assetUrl"],
+    events: ["imageUrl"],
+    members: ["logoUrl", "imageUrl"],
+    boardMembers: ["photoUrl", "imageUrl"],
+    speakers: ["photoUrl", "imageUrl"],
+    sponsors: ["logoUrl", "imageUrl"]
+  };
+  const seen = new Set();
+  return Object.entries(fieldMap).flatMap(([collection, fields]) => {
+    return (recordsByCollection[collection] || []).flatMap((record) => fields.map((field) => {
+      const url = String(record[field] || "").trim();
+      if (!url || url.startsWith("blob:")) return null;
+      const key = `${collection}:${record.id}:${url}`;
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return {
+        collection,
+        id: record.id,
+        field,
+        url,
+        title: mediaTitleForRecord(record),
+        alt: record.thumbnail_alt || record.thumbnailAlt || record.alt_text || record.altText || mediaTitleForRecord(record),
+        sourceType: url.startsWith("data:image/") || /ki|ai/i.test(record.source_type || record.assetType || "") ? "ai" : "upload"
+      };
+    }).filter(Boolean));
+  });
+}
+
+async function importExistingThumbsToMediaLibrary(result) {
+  const collections = ["editorialContent", "topics", "events", "members", "boardMembers", "speakers", "sponsors"];
+  if (result) result.innerHTML = `<div class="alert">${progressMarkup("Vorhandene Thumbs werden gesucht ...", 18)}</div>`;
+  const entries = await Promise.all(collections.map(async (collection) => [collection, await list(collection)]));
+  const recordsByCollection = Object.fromEntries(entries);
+  const existingAssets = await list("media_assets");
+  const knownAssetKeys = new Set(existingAssets.flatMap((asset) => [
+    `${asset.target_collection || ""}:${asset.target_id || ""}:${asset.target_field || "imageUrl"}`,
+    asset.original_source_url || "",
+    mediaAssetUrl(asset) || ""
+  ].filter(Boolean)));
+  const candidates = collectExistingThumbCandidates(recordsByCollection)
+    .filter((candidate) => {
+      const keys = [`${candidate.collection}:${candidate.id}:${candidate.field}`, candidate.url];
+      if (keys.some((key) => knownAssetKeys.has(key))) return false;
+      keys.forEach((key) => knownAssetKeys.add(key));
+      return true;
+    });
+  let created = 0;
+  let linked = 0;
+  for (const [index, candidate] of candidates.entries()) {
+    if (result) result.innerHTML = `<div class="alert">${progressMarkup(`Thumb ${index + 1} von ${candidates.length} wird in die Mediathek übernommen ...`, 25 + Math.round(((index + 1) / Math.max(1, candidates.length)) * 65))}</div>`;
+    const dimensions = await imageDimensionsFromUrl(candidate.url);
+    const aspect = detectMediaAspectRatio(dimensions);
+    const mediaCode = mediaShortCode();
+    const extension = mediaUrlExtension(candidate.url);
+    const filename = buildMediaFileName({ title: candidate.title || candidate.id, mediaType: candidate.sourceType === "ai" ? "ai" : "upload", format: aspect, version: "v1", extension, code: mediaCode });
+    const now = new Date().toISOString();
+    const asset = await upsert("media_assets", {
+      id: `media-asset-${crypto.randomUUID()}`,
+      media_code: mediaCode,
+      title: candidate.title || "PROdigitalTV Bild",
+      slug: normalizeMedialug(`${candidate.title || candidate.id}-${mediaCode}`),
+      media_type: candidate.sourceType === "ai" ? "ai" : "upload",
+      ...mediaPresetFields(candidate.sourceType === "ai" ? "ai" : "upload"),
+      filename_original: filename,
+      filename_web: filename,
+      filename_thumb: filename,
+      file_path_original: "",
+      file_path_web: "",
+      file_path_thumb: "",
+      file_path_original_url: candidate.url,
+      file_path_web_url: candidate.url,
+      file_path_thumb_url: candidate.url,
+      storage_path_original: "",
+      storage_path_web: "",
+      storage_path_thumb: "",
+      mime_type: `image/${extension === "jpg" ? "jpeg" : extension}`,
+      aspect_ratio: aspect,
+      detected_aspect_ratio: aspect,
+      aspect_css: mediaAspectCss(aspect),
+      image_width: dimensions.width || 0,
+      image_height: dimensions.height || 0,
+      image_format: extension.toUpperCase(),
+      original_filename: filename,
+      source_type: candidate.sourceType,
+      source_note: "Aus vorhandenem Thumb-Bestand importiert.",
+      original_source_url: candidate.url,
+      alt_text: candidate.alt || candidate.title || "",
+      description: `Importiertes Thumb fuer ${candidate.title || candidate.id}.`,
+      target_collection: candidate.collection,
+      target_id: candidate.id,
+      target_field: candidate.field,
+      linked_collection: candidate.collection,
+      linked_record_id: candidate.id,
+      linked_field: candidate.field,
+      created_by: currentUser()?.email || currentUser()?.uid || "cms",
+      created_at: now,
+      updated_at: now,
+      status: "active"
+    });
+    created += 1;
+    const target = (recordsByCollection[candidate.collection] || []).find((record) => record.id === candidate.id);
+    if (target) {
+      const variantIds = Array.isArray(target.thumbnail_variant_asset_ids) ? target.thumbnail_variant_asset_ids : [];
+      await upsert(candidate.collection, {
+        ...target,
+        thumbnail_media_asset_id: asset.id,
+        mediaAssetId: asset.id,
+        thumbnail_url: target.thumbnail_url || candidate.url,
+        thumbnailUrl: target.thumbnailUrl || candidate.url,
+        thumbnail_variant_asset_ids: Array.from(new Set([asset.id, ...variantIds].filter(Boolean))).slice(0, 24),
+        updatedAt: new Date().toISOString()
+      });
+      linked += 1;
+    }
+  }
+  if (result) {
+    result.innerHTML = `<div class="alert alert--success">${created} Thumb${created === 1 ? "" : "s"} in die Mediathek übernommen, ${linked} Verknüpfung${linked === 1 ? "" : "en"} aktualisiert.</div>`;
+  }
+  return { created, linked, skipped: collectExistingThumbCandidates(recordsByCollection).length - created };
+}
+
+async function markMediaAssetLinkedToTarget(asset = {}, context = {}, target = {}) {
+  if (!asset?.id || !context.targetCollection || !context.targetId) return asset;
+  return upsert("media_assets", {
+    ...asset,
+    target_collection: context.targetCollection,
+    target_id: context.targetId,
+    target_field: context.targetField || "imageUrl",
+    target_title: target.title || target.titel || target.name || target.headline || context.targetId,
+    linked_collection: context.targetCollection,
+    linked_record_id: context.targetId,
+    linked_field: context.targetField || "imageUrl",
+    linked_title: target.title || target.titel || target.name || target.headline || context.targetId,
+    updated_at: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+}
+
 async function attachMediaAssetToTarget(asset = {}, context = {}) {
   if (!context.targetCollection || !context.targetId) return null;
   const target = await getOne(context.targetCollection, context.targetId);
@@ -3190,8 +3717,11 @@ async function attachMediaAssetToTarget(asset = {}, context = {}) {
     assetType: "image",
     updatedAt: new Date().toISOString()
   };
+  const variantIds = Array.isArray(target.thumbnail_variant_asset_ids) ? target.thumbnail_variant_asset_ids : [];
+  update.thumbnail_variant_asset_ids = Array.from(new Set([asset.id, ...variantIds].filter(Boolean))).slice(0, 24);
   if (context.targetAltField) update[context.targetAltField] = asset.thumbnail_alt || asset.thumbnailAlt || asset.alt_text || asset.description || target[context.targetAltField] || "";
   await upsert(context.targetCollection, update);
+  await markMediaAssetLinkedToTarget(asset, context, target);
   return update;
 }
 
@@ -3223,51 +3753,82 @@ function wireMediaAiDraft() {
     const form = event.currentTarget;
     const values = formObject(form);
     const result = form.querySelector("#media-ai-result");
-    const now = new Date().toISOString();
-    const mediaType = normalizedMediaType(values.media_type || "ai");
-    const filename = buildMediaFileName({ title: values.title, mediaType: "ai", format: values.aspect_ratio, version: "v1", extension: "webp" });
-    const path = mediaStoragePath(filename, "ai");
+    const submitButton = form.querySelector('button[type="submit"], button:not([type])');
+    const originalLabel = submitButton?.textContent || "";
+    const mediaContext = mediaContextFromNode(form);
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = mediaContext.targetId ? "KI-Thumb wird erstellt ..." : "KI-Grafik wird erstellt ...";
+    }
     try {
-      const asset = await upsert("media_assets", {
-        id: `media-asset-${crypto.randomUUID()}`,
-        title: values.title,
-        slug: normalizeMediaSlug(values.title),
-        media_type: mediaType,
-        filename_original: filename,
-        filename_web: filename,
-        filename_thumb: filename,
-        file_path_original: path,
-        file_path_web: path,
-        file_path_thumb: path,
-        mime_type: "image/webp",
-        aspect_ratio: values.aspect_ratio || "16x9",
-        source_type: "ai",
-        created_by: currentUser()?.email || currentUser()?.uid || "cms",
-        created_at: now,
-        updated_at: now,
-        status: "active",
-        alt_text: values.title || "KI-Grafik",
-        description: values.source_text || "",
-        tags: mediaTags([values.style, values.color_world].filter(Boolean).join(",")),
-        source_note: "KI-Bildvorschlag"
+      const target = mediaContext.targetCollection && mediaContext.targetId ? await getOne(mediaContext.targetCollection, mediaContext.targetId) : null;
+      const targetContext = target
+        ? imageGenerationContextFromRecord(target, mediaContext.targetCollection)
+        : {
+            title: values.title || "PROdigitalTV KI-Grafik",
+            subtitle: "",
+            bodyText: values.source_text || "",
+            shortDescription: values.source_text || "",
+            category: "",
+            module: "media_assets"
+          };
+      const variantNumber = Math.max(1, (Array.isArray(target?.thumbnail_variant_asset_ids) ? target.thumbnail_variant_asset_ids.length : 0) + 1);
+      const prompt = creativeThumbPrompt({
+        ...targetContext,
+        title: values.title || targetContext.title,
+        bodyText: [targetContext.bodyText, values.source_text].filter(Boolean).join("\n\n")
+      }, values.generated_prompt || "", variantNumber);
+      if (result) result.innerHTML = `<div class="alert">${progressMarkup("KI erzeugt ein redaktionelles Thumbnail mit Beitragsbezug ...", 35)}</div>`;
+      const generated = await generateCmsThumbCollage({
+        entityType: mediaContext.targetCollection || "media_assets",
+        entityId: mediaContext.targetId || "",
+        prompt,
+        context: {
+          ...targetContext,
+          sourceText: values.source_text || "",
+          style: values.style || "",
+          colorWorld: values.color_world || "",
+          variantNumber
+        },
+        size: "1536x1024",
+        quality: "medium"
+      });
+      const normalized = await generatedThumbToJpeg(generated.imageDataUrl, generated.fileName || `${mediaContext.targetId || values.title || "ki-thumb"}-v${variantNumber}.png`, mediaVariantCanvasize(values.aspect_ratio || "16x9"));
+      if (result) result.innerHTML = `<div class="alert">${progressMarkup("KI-Bild wurde erzeugt und wird gespeichert ...", 72)}</div>`;
+      const asset = await saveGeneratedThumbMediaAsset(form, normalized.file, {
+        dataUrl: normalized.dataUrl,
+        prompt: generated.prompt || prompt,
+        result,
+        variantNumber,
+        contextOverride: { ...targetContext, title: values.title || targetContext.title },
+        targetContextOverride: mediaContext.targetCollection && mediaContext.targetId ? mediaContext : null
       });
       await upsert("ai_image_generations", {
         id: `ai-image-generation-${crypto.randomUUID()}`,
         media_asset_id: asset.id,
         prompt_id: "",
         source_text: values.source_text || "",
-        generated_prompt: values.generated_prompt || "",
+        generated_prompt: generated.prompt || prompt,
         negative_prompt: "",
         model_name: "OpenAI Image",
-        generation_status: "draft",
-        review_status: "draft",
+        generation_status: "generated",
+        review_status: mediaContext.targetId ? "attached" : "draft",
         created_by: currentUser()?.email || currentUser()?.uid || "cms",
-        created_at: now
+        created_at: new Date().toISOString()
       });
-      if (result) result.innerHTML = `<div class="alert alert--success">KI-Bildentwurf gespeichert.</div>`;
-      window.setTimeout(() => { window.location.hash = mediaEditHash(asset.id, form); }, 700);
+      if (result) result.innerHTML = `<div class="alert alert--success">KI-Thumb wurde erzeugt, in der Mediathek gespeichert${mediaContext.targetId ? " und dem Beitrag zugeordnet" : ""}.</div>`;
+      if (mediaContext.returnTo) {
+        window.setTimeout(() => { window.location.hash = mediaContext.returnTo.replace(/^#\/?/, "#/"); }, 900);
+      } else {
+        window.setTimeout(() => { window.location.hash = mediaEditHash(asset.id, form); }, 900);
+      }
     } catch (error) {
-      if (result) result.innerHTML = `<div class="alert alert--error">KI-Entwurf konnte nicht gespeichert werden: ${escapeHtml(error.message || String(error))}</div>`;
+      if (result) result.innerHTML = `<div class="alert alert--error">KI-Thumb konnte nicht erstellt werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = originalLabel;
+      }
     }
   });
 }
@@ -3398,8 +3959,13 @@ function wireMediaEdit() {
     const form = event.currentTarget;
     const values = formObject(form);
     const result = form.querySelector("#media-edit-result");
+    const submitButton = form.querySelector('button[type="submit"], button:not([type])');
+    setaveButtonFeedback(submitButton, "saving", "peichere ...");
     const asset = await getOne("media_assets", form.dataset.mediaId);
-    if (!asset) return;
+    if (!asset) {
+      setaveButtonFeedback(submitButton, "error", "Fehler");
+      return;
+    }
     const mediaContext = mediaContextFromNode(form);
     const now = new Date().toISOString();
     try {
@@ -3452,7 +4018,9 @@ function wireMediaEdit() {
       } else if (result) {
         result.innerHTML = `<div class="alert alert--success">Bilddaten gespeichert.</div>`;
       }
+      setaveButtonFeedback(submitButton, "success", "Gespeichert");
     } catch (error) {
+      setaveButtonFeedback(submitButton, "error", "Fehler");
       if (result) result.innerHTML = `<div class="alert alert--error">Speichern fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
     }
   });
@@ -3735,15 +4303,15 @@ function wireMediaCropMask() {
     button.addEventListener("click", () => loadVariantPreview(button));
   });
   apply?.addEventListener("click", async () => {
-    apply.disabled = true;
+    setaveButtonFeedback(apply, "saving", "peichere ...");
     try {
       await saveEditedAsset();
-      apply.textContent = "Gespeichert";
+      setaveButtonFeedback(apply, "success", "Gespeichert");
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--error">Variante konnte nicht gespeichert werden: ${escapeHtml(error.message || String(error))}</div>`;
-      apply.textContent = "OK uebernehmen";
+      setaveButtonFeedback(apply, "error", "Fehler");
     } finally {
-      apply.disabled = false;
+      if (!apply.classList.contains("is-save-success") && !apply.classList.contains("is-save-error")) apply.disabled = false;
     }
   });
   reset?.addEventListener("click", () => {
@@ -3786,7 +4354,9 @@ function wireMediaDelete() {
   document.querySelectorAll("[data-media-delete]").forEach((button) => {
     if (button.dataset.mediaDeleteWired === "1") return;
     button.dataset.mediaDeleteWired = "1";
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       const assetId = button.dataset.mediaDelete;
       const title = button.dataset.mediaTitle || "Bild";
       if (!assetId) return;
@@ -3833,6 +4403,7 @@ function wireMediaTypeUpdates() {
           updatedAt: new Date().toISOString()
         });
         const card = select.closest("[data-media-card]");
+        if (card) card.dataset.type = nextType;
         const usage = card?.querySelector(".media-asset-card__usage");
         const metaType = card?.querySelector(".media-asset-card__meta span:not(.media-code)");
         const label = select.options[select.selectedIndex]?.textContent || nextType;
@@ -3844,6 +4415,40 @@ function wireMediaTypeUpdates() {
         if (formatBadge) formatBadge.textContent = presetFields.aspect_ratio;
       } catch (error) {
         window.alert(`Zuordnung konnte nicht gespeichert werden: ${error.message || String(error)}`);
+      } finally {
+        select.disabled = false;
+      }
+    });
+  });
+}
+
+function wireMediaourceUpdates() {
+  document.querySelectorAll("[data-media-source-update]").forEach((select) => {
+    if (select.dataset.mediaourceWired === "1") return;
+    select.dataset.mediaourceWired = "1";
+    select.addEventListener("change", async () => {
+      const assetId = select.dataset.mediaourceUpdate;
+      if (!assetId) return;
+      const nextource = select.value || "upload";
+      select.disabled = true;
+      try {
+        const asset = await getOne("media_assets", assetId);
+        if (!asset) throw new Error("Bild wurde nicht gefunden.");
+        await upsert("media_assets", {
+          ...asset,
+          source_type: nextource,
+          updated_at: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        const card = select.closest("[data-media-card]");
+        if (card) card.dataset.source = nextource;
+        const sourceRow = Array.from(card?.querySelectorAll(".media-card-info-table div") || [])
+          .find((row) => row.querySelector("dt")?.textContent?.trim().toLowerCase() === "quelle");
+        const label = select.options[select.selectedIndex]?.textContent || nextource;
+        const dd = sourceRow?.querySelector("dd");
+        if (dd) dd.textContent = label;
+      } catch (error) {
+        window.alert(`Quelle konnte nicht gespeichert werden: ${error.message || String(error)}`);
       } finally {
         select.disabled = false;
       }
@@ -3877,9 +4482,68 @@ function wireMediaFullscreenViewer() {
   });
 }
 
+function editorialPreviewParagraphs(value = "") {
+  const blocks = String(value || "")
+    .replace(/\r/g, "")
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  if (!blocks.length) return `<p class="muted">Noch kein Haupttext vorhanden.</p>`;
+  return blocks.map((block) => {
+    const clean = block.replace(/\n/g, "<br>");
+    if (block.length <= 90 && !/[.!?]$/.test(block)) {
+      return `<h3>${escapeHtml(block)}</h3>`;
+    }
+    return `<p>${escapeHtml(block).replace(/\n/g, "<br>")}</p>`;
+  }).join("");
+}
+
+function openEditorialPreviewLayer(form) {
+  const values = formObject(form);
+  const title = values.title || values.titel || "Redaktioneller Beitrag";
+  const subtitle = values.subtitle || values.subline || "";
+  const intro = values.introText || values.shortDescription || values.kurztext || "";
+  const body = values.bodyText || values.longDescription || values.langtext || "";
+  const category = values.category || values.page || "Redaktion";
+  const date = values.publishDate || values.validFrom || "";
+  const imageUrl = form.querySelector("[data-image-preview] img")?.getAttribute("src") || "";
+  document.querySelector(".editorial-preview-backdrop")?.remove();
+  const wrapper = document.createElement("div");
+  wrapper.className = "editorial-preview-backdrop";
+  wrapper.innerHTML = `<div class="editorial-preview-layer" role="dialog" aria-modal="true" aria-label="Redaktionelle Vorschau">
+    <div class="editorial-preview-top">
+      <div><p class="eyebrow">Vorschau</p><h2>${escapeHtml(title)}</h2></div>
+      <button type="button" class="link-button" data-editorial-preview-close>Schliessen</button>
+    </div>
+    <article class="editorial-preview-article">
+      ${imageUrl ? `<figure class="editorial-preview-hero"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}"><figcaption><p class="eyebrow">${escapeHtml(category)}${date ? ` · ${escapeHtml(date)}` : ""}</p><h1>${escapeHtml(title)}</h1></figcaption></figure>` : `<p class="eyebrow">${escapeHtml(category)}${date ? ` · ${escapeHtml(date)}` : ""}</p><h1>${escapeHtml(title)}</h1>`}
+      ${subtitle ? `<p class="editorial-preview-subline">${escapeHtml(subtitle)}</p>` : ""}
+      ${intro ? `<p class="editorial-preview-intro">${escapeHtml(intro)}</p>` : ""}
+      <div class="editorial-preview-body">${editorialPreviewParagraphs(body)}</div>
+    </article>
+  </div>`;
+  document.body.append(wrapper);
+  const close = () => wrapper.remove();
+  wrapper.querySelectorAll("[data-editorial-preview-close]").forEach((button) => button.addEventListener("click", close));
+  wrapper.addEventListener("click", (event) => {
+    if (event.target === wrapper) close();
+  });
+  wrapper.querySelector("[data-editorial-preview-close]")?.focus();
+}
+
+function wireEditorialPreviewLayer() {
+  document.querySelectorAll("[data-editorial-preview-layer]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const form = button.closest("form");
+      if (form) openEditorialPreviewLayer(form);
+    });
+  });
+}
+
 function wireActions() {
   document.querySelector("[data-theme-toggle]")?.addEventListener("click", () => {
     const next = document.documentElement.dataset.theme === "night" ? "day" : "night";
+    localStorage.setItem("pdtv-theme", next);
     localStorage.setItem("pdtTheme", next);
     applyTheme(next);
   });
@@ -3890,13 +4554,16 @@ function wireActions() {
   wireJoinScroll();
   wireStickyRotators();
   wireMediaLibraryFilters();
+  wireExistingThumbImport();
   wireMediaCardLinks();
   wireCentralMediaUpload();
   wireMediaAiDraft();
   wireMediaEdit();
   wireMediaDelete();
   wireMediaTypeUpdates();
+  wireMediaourceUpdates();
   wireMediaFullscreenViewer();
+  wireEditorialPreviewLayer();
   wireCmsMenu();
   wireImageDropzones();
   wireGalleryEditor();
@@ -4085,6 +4752,9 @@ function wireActions() {
   document.querySelectorAll(".ai-action").forEach((button) => button.addEventListener("click", async () => {
     const originalLabel = button.textContent;
     const { text, field } = findAiSource(button);
+    const form = button.closest("form");
+    const promptField = button.dataset.aiPromptField ? form?.querySelector(`[name="${button.dataset.aiPromptField}"]`) : null;
+    const prompt = promptField?.value || "";
     const compactText = compactAiText(text, button.dataset.aiAction === "generateEventRetrospective" ? 9000 : 12000);
     button.disabled = true;
     button.textContent = "ChatGPT arbeitet ...";
@@ -4095,6 +4765,7 @@ function wireActions() {
         entityId: button.dataset.aiEntityId,
         fieldName: button.dataset.aiField,
         originalText: compactText,
+        prompt,
         context: eventContext(button)
       });
       showAiDialog({ button, originalText: text, result, sourceField: field });
@@ -5700,6 +6371,63 @@ function wireActions() {
     card.addEventListener("dragleave", () => card.classList.remove("is-drop-target"));
   });
 
+  document.querySelectorAll("[data-create-event-retrospective]").forEach((button) => button.addEventListener("click", async () => {
+    const eventId = button.dataset.createEventRetrospective;
+    const result = document.querySelector("#event-retrospective-result");
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Erstelle ...";
+    if (result) result.innerHTML = `<div class="alert">Redaktioneller Rückblick wird vorbereitet ...</div>`;
+    try {
+      const sourceEvent = await getOne("events", eventId);
+      if (!sourceEvent) throw new Error("Event wurde nicht gefunden.");
+      const articleId = document.querySelector("[data-retrospective-article-id]")?.value || eventRetrospectiveArticleId(eventId);
+      const existingArticle = await getOne("editorialContent", articleId).catch(() => null);
+      const title = existingArticle?.title || `Rückblick: ${sourceEvent.title || "PROdigitalTV Event"}`;
+      const bodyText = existingArticle?.longDescription || existingArticle?.articleText || existingArticle?.bodyText || eventRetrospectiveBody(sourceEvent);
+      const now = new Date().toISOString();
+      const article = {
+        ...(existingArticle || { id: articleId, createdAt: now }),
+        id: articleId,
+        page: "press",
+        section: "pressRelease",
+        key: existingArticle?.key || `press.${articleId}`,
+        category: "Rückblicke",
+        title,
+        headline: title,
+        subtitle: existingArticle?.subtitle || sourceEvent.subtitle || "",
+        introText: existingArticle?.introText || eventRetrospectiveIntro(sourceEvent),
+        bodyText,
+        body: bodyText,
+        status: existingArticle?.status || "published",
+        visible: existingArticle?.visible !== false,
+        visibility: "public",
+        publishDate: existingArticle?.publishDate || sourceEvent.date || new Date().toISOString().slice(0, 10),
+        validFrom: existingArticle?.validFrom || sourceEvent.date || new Date().toISOString().slice(0, 10),
+        linkedEventId: sourceEvent.id,
+        galleryEventId: sourceEvent.id,
+        galleryId: existingArticle?.galleryId || sourceEvent.galleryId || "",
+        sponsorId: existingArticle?.sponsorId || sourceEvent.hostId || "",
+        imageUrl: existingArticle?.imageUrl || sourceEvent.imageUrl || "",
+        isRetrospective: true,
+        showGallery: existingArticle?.showGallery ?? true,
+        updatedAt: now
+      };
+      await upsert("editorialContent", withContentVersionMetadata("editorialContent", existingArticle || {}, article));
+      await upsert("events", {
+        ...sourceEvent,
+        retrospectiveArticleId: articleId,
+        updatedAt: now
+      });
+      if (result) result.innerHTML = `<div class="alert alert--success">Rückblick-Beitrag wurde gespeichert. <a class="link" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(articleId)}&section=press">Beitrag öffnen</a></div>`;
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Rückblick konnte nicht erstellt werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
+
   document.querySelector("#event-edit-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -5730,6 +6458,11 @@ function wireActions() {
     }
     delete values.eventImage;
     delete values.newEventType;
+    if (Object.prototype.hasOwnProperty.call(values, "longDescription")) {
+      values.bodyText = values.longDescription;
+      values.articleText = values.longDescription;
+      values.archiveText = values.longDescription;
+    }
     await upsert("events", { ...existing, ...values });
     form.querySelector("#event-save-result").innerHTML = `<div class="alert alert--success">Event wurde gespeichert.</div>`;
   });
@@ -6086,11 +6819,25 @@ function wireActions() {
     const form = event.currentTarget;
     const result = form.querySelector("#content-save-result");
     const submitButton = form.querySelector('button[type="submit"], button:not([type])');
-    if (submitButton) submitButton.disabled = true;
+    setaveButtonFeedback(submitButton, "saving", "peichere ...");
     if (result) result.innerHTML = `<div class="alert">Speichere...</div>`;
     try {
       const existing = (await getOne(form.dataset.module, form.dataset.id)) || { id: form.dataset.id, createdAt: new Date().toISOString() };
       let values = formObject(form);
+      if (form.dataset.module === "editorialContent") {
+        ["category", "linkedEventId", "galleryId", "sponsorId", "retrospectivePrompt", "galleryEventId"].forEach((name) => {
+          if (!Object.prototype.hasOwnProperty.call(values, name)) {
+            const field = document.querySelector(`[name="${name}"]`);
+            if (field) values[name] = field.value || "";
+          }
+        });
+        ["isRetrospective", "showGallery"].forEach((name) => {
+          if (!Object.prototype.hasOwnProperty.call(values, name)) {
+            const field = document.querySelector(`[name="${name}"]`);
+            if (field) values[name] = Boolean(field.checked);
+          }
+        });
+      }
       values = normalizeInternalEditorialValues(values);
       if (form.dataset.module === "editorialContent" && Object.prototype.hasOwnProperty.call(values, "tags")) {
         values.tags = String(values.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean);
@@ -6108,7 +6855,11 @@ function wireActions() {
       if (form.dataset.module === "editorialContent" && values.publishDate) values.validFrom = values.publishDate;
       if (form.dataset.module === "editorialContent" && Object.prototype.hasOwnProperty.call(values, "linkedEventId")) {
         values.galleryEventId = values.linkedEventId || "";
-        if (values.isRetrospective) values.category = "Rückblick";
+        if (values.isRetrospective) values.category = "R\u00fcckblick";
+      }
+      if (form.dataset.module === "editorialContent" && Object.prototype.hasOwnProperty.call(values, "bodyText")) {
+        values.longDescription = values.bodyText;
+        values.articleText = values.bodyText;
       }
       const image = imageFileFromDropzone(form, "assetFile", form.dataset.id);
       if (removeAssetRequested) {
@@ -6159,12 +6910,14 @@ function wireActions() {
         result.innerHTML = `<div class="alert alert--success">Gespeichert.${audioHint}</div>`;
         result.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
+      setaveButtonFeedback(submitButton, "success", "Gespeichert");
       form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: savedValues }));
     } catch (error) {
+      setaveButtonFeedback(submitButton, "error", "Fehler");
       if (result) result.innerHTML = `<div class="alert alert--error">Speichern fehlgeschlagen: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
       form.dispatchEvent(new CustomEvent("cms-form-save-failed", { detail: { error } }));
     } finally {
-      if (submitButton) submitButton.disabled = false;
+      if (submitButton && !submitButton.classList.contains("is-save-success") && !submitButton.classList.contains("is-save-error")) submitButton.disabled = false;
     }
   });
 
@@ -6172,10 +6925,12 @@ function wireActions() {
     const articleId = button.dataset.newsVisibleToggle;
     const nextVisible = button.dataset.visible === "true";
     const form = button.closest("form");
-    const result = form?.querySelector("#content-save-result") || button.closest(".editorial-meta-panel");
+    const result = form?.querySelector("#content-save-result") || button.closest("td") || button.closest(".editorial-meta-panel");
     const originalLabel = button.textContent;
+    const originalTitle = button.getAttribute("title") || "";
     button.disabled = true;
-    button.textContent = nextVisible ? "Schalte frei ..." : "Blende aus ...";
+    if (originalLabel.trim()) button.textContent = nextVisible ? "chalte frei ..." : "Blende aus ...";
+    else button.setAttribute("title", nextVisible ? "chalte frei ..." : "Blende aus ...");
     try {
       const existing = await getOne("editorialContent", articleId);
       if (!existing) throw new Error("News-Beitrag nicht gefunden.");
@@ -6190,7 +6945,8 @@ function wireActions() {
       if (result) result.insertAdjacentHTML("beforeend", `<div class="alert alert--error">Sichtbarkeit konnte nicht geaendert werden: ${escapeHtml(error.message || String(error))}</div>`);
     } finally {
       button.disabled = false;
-      button.textContent = originalLabel;
+      if (originalLabel.trim()) button.textContent = originalLabel;
+      else button.setAttribute("title", originalTitle);
     }
   }));
 
@@ -6229,7 +6985,7 @@ function wireActions() {
     const form = event.currentTarget;
     const result = form.querySelector("#topic-editor-result");
     const submitButton = form.querySelector('button[type="submit"], .actions .button');
-    if (submitButton) submitButton.disabled = true;
+    setaveButtonFeedback(submitButton, "saving", "peichere ...");
     if (result) result.innerHTML = `<div class="alert">Thema wird gespeichert ...</div>`;
     try {
     const topicId = form.dataset.topicId;
@@ -6308,13 +7064,15 @@ function wireActions() {
       result.innerHTML = `<div class="alert alert--success">Thema wurde gespeichert.${imageUpdate.imageUrl ? " Bild wurde hochgeladen." : ""}${audioHint}</div>`;
       result.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
+    setaveButtonFeedback(submitButton, "success", "Gespeichert");
     form.classList.add("is-saved");
     form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: savedTopic }));
     } catch (error) {
+      setaveButtonFeedback(submitButton, "error", "Fehler");
       if (result) result.innerHTML = `<div class="alert alert--error">Speichern fehlgeschlagen: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
       form.dispatchEvent(new CustomEvent("cms-form-save-failed", { detail: { error } }));
     } finally {
-      if (submitButton) submitButton.disabled = false;
+      if (submitButton && !submitButton.classList.contains("is-save-success") && !submitButton.classList.contains("is-save-error")) submitButton.disabled = false;
     }
   });
 

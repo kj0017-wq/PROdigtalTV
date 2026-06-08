@@ -2,8 +2,19 @@ import { currentUser } from "../firebase/authService.js?v=284";
 
 const nav = [
   ["home", "Start"], ["events", "Events"], ["topics", "Themen"], ["news", "News"], ["about", "Ueber uns"],
-  ["board", "Vorstand"], ["members", "Mitglieder"], ["join", "Mitglied werden"], ["archive", "Rueckblicke"]
+  ["board", "Vorstand"], ["members", "Mitglieder"], ["join", "Mitglied werden"], ["archive", "Rueckblicke"], ["webapp-qr", "WebApp QR"]
 ];
+
+function navIcon(name = "home") {
+  const icons = {
+    home: `<path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9.5Z"/>`,
+    events: `<path d="M7 3v3M17 3v3M4 9h16M6 5h12a2 2 0 0 1 2 2v13H4V7a2 2 0 0 1 2-2Z"/><path d="M8 13h3M8 17h6"/>`,
+    topics: `<path d="m12 3 8 8-8 8-8-8 8-8Z"/><path d="M12 7.5 15.5 11 12 14.5 8.5 11 12 7.5Z"/>`,
+    news: `<path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>`,
+    login: `<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 21a8 8 0 0 1 16 0"/>`
+  };
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${icons[name] || icons.home}</svg>`;
+}
 
 export function logo() {
   return `<a class="logo" href="#/home" aria-label="PROdigitalTV Startseite"><span class="logo__asset"><img src="/assets/official/brand/prodigitaltv-logo-claim.png" alt="PROdigitalTV - Interessengemeinschaft Digitale Medien e.V."></span></a>`;
@@ -13,11 +24,11 @@ export function header(active) {
   const user = currentUser();
   const navLink = ([route, label]) => `<a class="${active === route ? "active" : ""}" href="#/${route}">${label}</a>`;
   const menuLink = ([route, label]) => `<a class="${active === route ? "active" : ""}" href="#/${route}" data-public-menu-close>${label}</a>`;
-  return `<header class="topbar"><div class="container topbar__inner">
+  return `<header class="topbar pdtv-mobile-header"><div class="container topbar__inner">
     ${logo()}
     <nav class="desktop-nav" aria-label="Hauptnavigation">${nav.map(navLink).join("")}</nav>
     <div class="actions">
-      <button class="button button--secondary button--small theme-toggle" type="button" data-theme-toggle aria-label="Tag- und Nachtansicht umschalten"><span data-theme-label>Night</span><span aria-hidden="true" data-theme-icon>☾</span></button>
+      <button class="button button--secondary button--small theme-toggle pdtv-mobile-theme-toggle" type="button" data-theme-toggle aria-label="Tag- und Nachtansicht umschalten"><span data-theme-label>Night</span><span aria-hidden="true" data-theme-icon>☾</span></button>
       <a class="button button--secondary button--small header-auth" href="/cms.html#/cms">CMS</a>
       <a class="button button--dark button--small header-auth" href="#/${user ? "portal" : "login"}">${user ? "Profil" : "Login"}</a>
     </div>
@@ -33,9 +44,10 @@ export function header(active) {
 }
 
 export function bottomNav(active) {
-  return `<nav class="bottom-nav" aria-label="Mobile Navigation">
-    ${[["home", "⌂", "Start"], ["events", "◫", "Events"], ["topics", "◇", "Themen"], ["members", "▣", "Mitglieder"], ["login", "○", "Login"]].map(([route, icon, label]) =>
-      `<a href="#/${route}" class="${active === route ? "active" : ""}"><b>${icon}</b>${label}</a>`).join("")}
+  const items = [["home", "home", "Start"], ["events", "events", "Events"], ["topics", "topics", "Themen"], ["news", "news", "News"], ["login", "login", "Login"]];
+  return `<nav class="bottom-nav pdtv-mobile-bottom-nav" aria-label="Mobile Navigation">
+    ${items.map(([route, icon, label]) =>
+      `<a href="#/${route}" class="${active === route ? "active" : ""}" ${active === route ? `aria-current="page"` : ""}><b>${navIcon(icon)}</b><span>${label}</span></a>`).join("")}
   </nav>`;
 }
 
@@ -49,5 +61,5 @@ export function footer() {
 }
 
 export function publicShell(active, content) {
-  return `${header(active)}<main class="page">${content}</main>${footer()}${bottomNav(active)}`;
+  return `<div class="pdtv-mobile-shell pdtv-route-${active || "default"}">${header(active)}<main class="page pdtv-mobile-main">${content}</main>${footer()}${bottomNav(active)}</div>`;
 }
