@@ -1698,16 +1698,16 @@ p { color: var(--pdt-muted); }
 }
 .internal-sticky-member .member-tile {
   width: 100%;
-  min-height: 48px;
-  height: 48px;
-  padding: 6px;
+  min-height: 0;
+  height: auto;
+  padding: 8px 10px;
   border-radius: 8px;
-  aspect-ratio: auto;
+  aspect-ratio: 2.55 / 1;
 }
 .internal-sticky-member .member-logo {
   width: 100%;
-  max-width: 120px;
-  height: 38px;
+  max-width: 148px;
+  height: 42px;
   margin: 0 auto;
 }
 .internal-sticky-dots {

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#071a33">
     <meta name="description" content="PROdigitalTV CMS">
     <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/src/styles/main.css?v=563">
+    <link rel="stylesheet" href="/src/styles/main.css?v=564">
     <title>PROdigitalTV | CMS</title>
   </head>
   <body>
@@ -26,8 +26,10 @@
       });
       if (!window.location.hash || window.location.hash === "#") {
         window.location.hash = "#/cms";
+      } else if (!window.location.hash.replace(/^#\/?/, "").startsWith("cms")) {
+        window.location.replace(`${window.location.origin}/${window.location.search}${window.location.hash}`);
       }
     </script>
-    <script type="module" src="/src/main.js?v=580"></script>
+    <script type="module" src="/src/main.js?v=581"></script>
   </body>
 </html>

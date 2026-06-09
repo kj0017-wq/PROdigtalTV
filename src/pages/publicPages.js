@@ -1020,7 +1020,7 @@ export async function joinPage() {
   const hero = blocks.find((block) => block.typ === "hero") || blocks[0];
   const cardBlocks = blocks.filter((block) => block.typ !== "hero");
   const joinCards = aboutCardGroups(cardBlocks, meta, { summary: "long", all: true, joinCta: true });
-  const joinTexts = blocks.map((block) => aboutLongTextection(block, { joinCta: block.typ !== "hero" })).join("");
+  const joinTexts = blocks.map((block) => aboutLongTextSection(block, { joinCta: block.typ !== "hero" })).join("");
   const joinIntroCard = `<article class="join-intro-card">
     ${aboutPicto(hero?.icon || "membership")}
     <div><p class="eyebrow">Mitglied werden</p><h2>${escapeHtml(hero?.titel || meta.title)}</h2><p>${escapeHtml(hero?.langtext || hero?.kurztext || meta.intro)}</p></div>
