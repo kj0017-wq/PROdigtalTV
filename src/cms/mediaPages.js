@@ -46,9 +46,9 @@ const mediaUsagePresets = {
   article: { label: "Artikelbild", aspect: "16x9", width: 1600, height: 900, portal: "Artikel / Redaktion", mobile: "Mobile Artikelkarte 16:9" },
   topic: { label: "Themenbild", aspect: "16x9", width: 1600, height: 900, portal: "Themenkarte / Themenkopf", mobile: "Mobile Themenkarte 16:9" },
   board: { label: "Vorstand", aspect: "4x5", width: 1200, height: 1500, portal: "Vorstandsprofil", mobile: "Mobile Profilkarte 4:5" },
-  member: { label: "Mitglied", aspect: "4x3", width: 1200, height: 900, portal: "Mitgliederkarte / Logo", mobile: "Mobile Mitgliederkarte 4:3" },
+  member: { label: "Mitglied", aspect: "logo", width: 1530, height: 600, portal: "Mitgliederkarte / Logo 2.55:1", mobile: "Mobile Mitgliederkarte 2.55:1" },
   person: { label: "Personenbild", aspect: "4x5", width: 1200, height: 1500, portal: "Personenprofil", mobile: "Mobile Profilkarte 4:5" },
-  logo: { label: "Logo", aspect: "4x3", width: 1200, height: 900, portal: "Logo-Kachel", mobile: "Mobile Logo-Kachel 4:3" },
+  logo: { label: "Logo", aspect: "logo", width: 1530, height: 600, portal: "Logo-Kachel 2.55:1", mobile: "Mobile Logo-Kachel 2.55:1" },
   thumb: { label: "Thumbnail", aspect: "1x1", width: 1200, height: 1200, portal: "Quadratisches Thumb", mobile: "Mobile Thumb 1:1" }
 };
 
@@ -192,7 +192,8 @@ function mediaAspectStyle(format = "16x9") {
   const clean = String(format || "16x9").toLowerCase();
   if (clean === "1x1") return "1 / 1";
   if (clean === "4x5") return "4 / 5";
-  if (clean === "4x3" || clean === "logo") return "4 / 3";
+  if (clean === "logo") return "2.55 / 1";
+  if (clean === "4x3") return "4 / 3";
   if (clean === "9x16") return "9 / 16";
   if (clean === "portrait" || clean === "hochkant") return "9 / 16";
   if (clean === "landscape") return "16 / 9";
@@ -291,10 +292,10 @@ function mediaPortalVariantButtons(active = "16x9") {
     ["landscape", "Landscape", "16 / 9", "landscape", "16:9", "wide"],
     ["portrait", "Hochkant", "9 / 16", "portrait", "9:16", "portrait"],
     ["board", "Vorstand", "1 / 1", "1x1", "1:1", "square"],
-    ["logo", "Logo", "4 / 3", "logo", "4:3", "logo"]
+    ["logo", "Logo", "2.55 / 1", "logo", "2.55:1", "logo"]
   ];
   return `<div class="media-format-buttons" aria-label="Portalvarianten">${variants.map(([type, label, aspect, format, ratio, shape]) => {
-    const isActive = active === format || (active === "4x3" && format === "logo");
+    const isActive = active === format;
     return `<button class="media-format-button media-format-button--${shape} ${isActive ? "is-active" : ""}" type="button" data-media-variant-button="${type}" data-media-variant-aspect="${aspect}" data-media-variant-format="${format}" aria-pressed="${isActive ? "true" : "false"}"><i aria-hidden="true"></i><strong>${escapeHtml(label)}</strong><span>${escapeHtml(ratio)}</span></button>`;
   }).join("")}</div>`;
 }

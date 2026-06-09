@@ -105,6 +105,26 @@ function memberLogoAsset(item = {}, mediaAssets = []) {
     })[0];
 }
 
+function recordMediaAsset(item = {}, mediaAssets = [], collection = "", field = "imageUrl") {
+  const recordUrl = String(item[field] || editorialThumbUrl(item) || "").trim();
+  return mediaAssets
+    .filter((asset) => {
+      const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
+      return asset.linked_collection === collection && asset.linked_record_id === item.id && (!field || !asset.linked_field || asset.linked_field === field)
+        || asset.target_collection === collection && asset.target_id === item.id && (!field || !asset.target_field || asset.target_field === field)
+        || (recordUrl && urls.includes(recordUrl));
+    })
+    .filter((asset) => mediaAssetUrl(asset))
+    .sort((a, b) => {
+      const score = (asset = {}) => [
+        asset.status === "active" ? "2" : "1",
+        asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
+        asset.id || ""
+      ].join("|");
+      return score(b).localeCompare(score(a));
+    })[0];
+}
+
 function memberLogoUrl(item = {}, mediaAssets = []) {
   const asset = memberLogoAsset(item, mediaAssets);
   return asset ? mediaAssetUrl(asset) || item.logoUrl || "" : item.logoUrl || "";
@@ -381,16 +401,20 @@ function cmsThumbTarget(collection = "", item = {}, section = "", field = "image
     returnTo
   });
   const hasThumb = Boolean(editorialThumbUrl(item));
+  const assetId = item.thumbnail_media_asset_id || item.mediaAssetId || item.media_asset_id || "";
+  if (hasThumb && assetId) return `#/cms/media/edit?id=${encodeURIComponent(assetId)}&${params.toString()}`;
   return hasThumb ? `#/cms/media/library?${params.toString()}` : `#/cms/media/ai?${params.toString()}`;
 }
 
-function editorialThumb(item = {}, { collection = "editorialContent", section = "", field = "imageUrl", altField = "thumbnail_alt" } = {}) {
+function editorialThumb(item = {}, { collection = "editorialContent", section = "", field = "imageUrl", altField = "thumbnail_alt", mediaAssets = [] } = {}) {
   const url = editorialThumbUrl(item);
   const content = url
     ? `<img src="${escapeHtml(url)}" alt="">`
     : `<span>Bild</span>`;
   if (!collection || !item.id) return content;
-  return `<a class="cms-thumb-action" href="${cmsThumbTarget(collection, item, section, field, altField)}" title="${url ? "Thumb aus Mediathek waehlen" : "Thumb mit KI erstellen"}" aria-label="${url ? "Thumb aus Mediathek waehlen" : "Thumb mit KI erstellen"}">${content}</a>`;
+  const asset = recordMediaAsset(item, mediaAssets, collection, field);
+  const targetItem = asset?.id ? { ...item, thumbnail_media_asset_id: asset.id } : item;
+  return `<a class="cms-thumb-action" href="${cmsThumbTarget(collection, targetItem, section, field, altField)}" title="${url ? "Bild bearbeiten" : "Thumb mit KI erstellen"}" aria-label="${url ? "Bild bearbeiten" : "Thumb mit KI erstellen"}">${content}</a>`;
 }
 
 function editorialSummaryThumb(item = {}) {
@@ -444,7 +468,7 @@ function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", d
   </div>`;
 }
 
-function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altField = "thumbnail_alt", returnTo = "", label = "Thumb" } = {}) {
+function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altField = "thumbnail_alt", returnTo = "", label = "Thumb", assetId = "" } = {}) {
   if (!collection || !id) return "";
   const params = new URLSearchParams({
     targetCollection: collection,
@@ -453,8 +477,9 @@ function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altF
     targetAltField: altField,
     returnTo
   });
+  const editHref = assetId ? `#/cms/media/edit?id=${encodeURIComponent(assetId)}&${params.toString()}` : "";
   return `<div class="linked-media-actions">
-    <a class="button button--secondary button--small" href="#/cms/media/library?${params.toString()}">${escapeHtml(label)} aus Mediathek waehlen</a>
+    <a class="button button--secondary button--small" href="${editHref || `#/cms/media/library?${params.toString()}`}">${escapeHtml(label)} ${assetId ? "bearbeiten" : "aus Mediathek waehlen"}</a>
     <a class="button button--secondary button--small" href="#/cms/media/ai?${params.toString()}">${escapeHtml(label)} erstellen</a>
   </div>`;
 }
@@ -483,12 +508,14 @@ function memberLogoEditor(item = {}, mediaAssets = [], returnTo = "") {
 }
 
 function memberLogoThumb(item = {}, mediaAssets = [], section = "all") {
+  const currentAsset = memberLogoAsset(item, mediaAssets);
   const logoUrl = memberLogoUrl(item, mediaAssets);
   const content = logoUrl
     ? `<img src="${escapeHtml(logoUrl)}" alt="">`
     : `<span>Bild</span>`;
   if (!item.id) return content;
-  return `<a class="cms-thumb-action" href="${cmsThumbTarget("members", { ...item, logoUrl }, section, "logoUrl", "altText")}" title="${logoUrl ? "Logo aus Mediathek waehlen" : "Logo mit KI erstellen"}" aria-label="${logoUrl ? "Logo aus Mediathek waehlen" : "Logo mit KI erstellen"}">${content}</a>`;
+  const targetItem = { ...item, logoUrl, thumbnail_media_asset_id: currentAsset?.id || item.thumbnail_media_asset_id || item.mediaAssetId || "" };
+  return `<a class="cms-thumb-action" href="${cmsThumbTarget("members", targetItem, section, "logoUrl", "altText")}" title="${logoUrl ? "Logo bearbeiten" : "Logo mit KI erstellen"}" aria-label="${logoUrl ? "Logo bearbeiten" : "Logo mit KI erstellen"}">${content}</a>`;
 }
 
 function topicSpeakersForEvent(topic, event, speakers) {
@@ -826,6 +853,7 @@ export async function moduleListPage(module, section = "all") {
       return Number(b.sortOrder || 0) - Number(a.sortOrder || 0);
     });
   const memberMediaAssets = module === "members" ? await list("media_assets").catch(() => []) : [];
+  const linkedMediaAssets = ["editorialContent", "boardMembers", "speakers", "sponsors"].includes(module) ? await list("media_assets").catch(() => []) : [];
   const active = editorialConfig?.active || { topics: "cms/topics", galleries: "cms/galleries", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", membershipApplications: "cms/membership-applications", memberDocuments: "cms/member-documents", memberDirectories: "cms/member-directories", users: "cms/users", boardMembers: "cms/board", editorialContent: "cms/editorial", mailQueue: "cms/mail", eventMedia: "cms/followup" }[module];
   const editable = !["mailQueue", "eventMedia"].includes(module);
   const manageable = module !== "mailQueue";
@@ -845,7 +873,7 @@ export async function moduleListPage(module, section = "all") {
     const showAudio = section === "news";
     const actionButtons = section === "interna" ? lockedEditorialActionButtons : editorialVisibilityActionButtons;
     const statusCell = section === "interna" ? editorialListStatus : editorialVisibilityListStatus;
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th>${showAudio ? "<th>Audio</th>" : ""}<th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt" })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td>${showAudio ? `<td>${audioListCell("editorialContent", item)}</td>` : ""}<td>${statusCell(item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${showAudio ? 7 : 6}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th>${showAudio ? "<th>Audio</th>" : ""}<th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td>${showAudio ? `<td>${audioListCell("editorialContent", item)}</td>` : ""}<td>${statusCell(item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${showAudio ? 7 : 6}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "members") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Logo</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table member-logo-thumb--table">${memberLogoThumb(item, memberMediaAssets, section)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a><small>${escapeHtml(shortText(item.description || "-", 90))}</small></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml([item.category, item.city].filter(Boolean).join(" / ") || "-")}</td><td>${memberListStatus(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
@@ -854,7 +882,7 @@ export async function moduleListPage(module, section = "all") {
     const imageField = module === "sponsors" ? "logoUrl" : "photoUrl";
     const titleField = config[2];
     const subField = config[3];
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Bild</th><th>${itemLabel}</th><th>Datum / Gueltigkeit</th><th>Beschreibung / Zuordnung</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: module, section, field: imageField, altField: "altText" })}</div></td><td>${escapeHtml(item[titleField] || "-")}</td><td>${escapeHtml(item.publishDate || item.date || "-")}<br><small>${escapeHtml(item.validFrom || "-")} bis ${escapeHtml(item.validTo || "unendlich")}</small></td><td>${escapeHtml(item[subField] || "-")}</td><td>${status(item.status || item.visibility || "active")}</td><td>${cmsListActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Bild</th><th>${itemLabel}</th><th>Datum / Gueltigkeit</th><th>Beschreibung / Zuordnung</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: module, section, field: imageField, altField: "altText", mediaAssets: linkedMediaAssets })}</div></td><td>${escapeHtml(item[titleField] || "-")}</td><td>${escapeHtml(item.publishDate || item.date || "-")}<br><small>${escapeHtml(item.validFrom || "-")} bis ${escapeHtml(item.validTo || "unendlich")}</small></td><td>${escapeHtml(item[subField] || "-")}</td><td>${status(item.status || item.visibility || "active")}</td><td>${cmsListActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "mailQueue") {
     const counters = {
@@ -918,6 +946,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
   const item = id === "new" ? { ...fallbackItem, id: `${module}-${crypto.randomUUID()}` } : (await getOne(module, id)) || fallbackItem;
   const topicSpeakers = module === "topics" ? await list("speakers") : [];
   const memberMediaAssets = module === "members" ? await list("media_assets").catch(() => []) : [];
+  const editMediaAssets = ["editorialContent", "topics"].includes(module) ? await list("media_assets").catch(() => []) : [];
   const memberOptions = module === "users"
     ? (await list("members"))
       .filter((member) => (member.status || "active") === "active")
@@ -1069,7 +1098,7 @@ Ausgangstext:
             </section>
             <details class="editorial-tool-details"${item.imageUrl ? " open" : ""}>
               <summary><span>Medien</span><strong>Bild / Thumb</strong>${thumbState}</summary>
-              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultize: "1200x675", aiCollage: false })}${linkedMediaActions({ collection: module, id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=${module}&id=${item.id}&section=${sectionKey}` })}</div>${sectionKey === "news" ? `<div class="field"><label>Thumbnail-Prompt</label><textarea name="thumbnail_prompt">${escapeHtml(item.thumbnail_prompt || item.thumbnailPrompt || "")}</textarea></div><div class="field"><label>Thumbnail-Alt-Text</label><input name="thumbnail_alt" value="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || "")}"></div>` : ""}</div>
+              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultize: "1200x675", aiCollage: false })}${linkedMediaActions({ collection: module, id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=${module}&id=${item.id}&section=${sectionKey}`, assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, module, "imageUrl")?.id || "" })}</div>${sectionKey === "news" ? `<div class="field"><label>Thumbnail-Prompt</label><textarea name="thumbnail_prompt">${escapeHtml(item.thumbnail_prompt || item.thumbnailPrompt || "")}</textarea></div><div class="field"><label>Thumbnail-Alt-Text</label><input name="thumbnail_alt" value="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || "")}"></div>` : ""}</div>
             </details>
             <details class="editorial-tool-details"${item.audioUrl ? " open" : ""}>
               <summary><span>Audio</span><strong>Vorlesen</strong>${audioState}</summary>
@@ -1143,7 +1172,7 @@ Ausgangstext:
             </section>
             <details class="editorial-tool-details"${item.imageUrl ? " open" : ""}>
               <summary><span>Medien</span><strong>Bild / Thumb</strong>${thumbState}</summary>
-              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: item.imageUrl || "", label: "Themenbild", defaultize: "1200x675", aiCollage: false })}${linkedMediaActions({ collection: "topics", id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=topics&id=${item.id}` })}</div></div>
+              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: item.imageUrl || "", label: "Themenbild", defaultize: "1200x675", aiCollage: false })}${linkedMediaActions({ collection: "topics", id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=topics&id=${item.id}`, assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, "topics", "imageUrl")?.id || "" })}</div></div>
             </details>
             <details class="editorial-tool-details"${selectedGallery ? " open" : ""}>
               <summary><span>Medien</span><strong>Galerie</strong>${galleryState}</summary>

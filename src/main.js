@@ -12,7 +12,7 @@ const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 
 const lazy = {};
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=486");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=490");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=462");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=49");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js");
@@ -1301,9 +1301,9 @@ const mediaUsagePresets = {
   article: { aspect: "16x9", width: 1600, height: 900, portal: "Artikel / Redaktion", mobile: "Mobile Artikelkarte 16:9" },
   topic: { aspect: "16x9", width: 1600, height: 900, portal: "Themenkarte / Themenkopf", mobile: "Mobile Themenkarte 16:9" },
   board: { aspect: "4x5", width: 1200, height: 1500, portal: "Vorstandsprofil", mobile: "Mobile Profilkarte 4:5" },
-  member: { aspect: "4x3", width: 1200, height: 900, portal: "Mitgliederkarte / Logo", mobile: "Mobile Mitgliederkarte 4:3" },
+  member: { aspect: "logo", width: 1530, height: 600, portal: "Mitgliederkarte / Logo 2.55:1", mobile: "Mobile Mitgliederkarte 2.55:1" },
   person: { aspect: "4x5", width: 1200, height: 1500, portal: "Personenprofil", mobile: "Mobile Profilkarte 4:5" },
-  logo: { aspect: "4x3", width: 1200, height: 900, portal: "Logo-Kachel", mobile: "Mobile Logo-Kachel 4:3" },
+  logo: { aspect: "logo", width: 1530, height: 600, portal: "Logo-Kachel 2.55:1", mobile: "Mobile Logo-Kachel 2.55:1" },
   thumb: { aspect: "1x1", width: 1200, height: 1200, portal: "Quadratisches Thumb", mobile: "Mobile Thumb 1:1" }
 };
 
@@ -1463,7 +1463,8 @@ function detectMediaAspectRatio({ width = 0, height = 0 } = {}) {
     ["1x1", 1],
     ["4x5", 4 / 5],
     ["9x16", 9 / 16],
-    ["4x3", 4 / 3]
+    ["4x3", 4 / 3],
+    ["logo", 2.55]
   ];
   return candidates
     .map(([format, target]) => ({ format, distance: Math.abs(ratio - target) }))
@@ -1475,7 +1476,8 @@ function mediaAspectCss(format = "16x9") {
   if (clean === "1x1") return "1 / 1";
   if (clean === "4x5") return "4 / 5";
   if (clean === "9x16" || clean === "portrait" || clean === "hochkant") return "9 / 16";
-  if (clean === "4x3" || clean === "logo") return "4 / 3";
+  if (clean === "logo") return "2.55 / 1";
+  if (clean === "4x3") return "4 / 3";
   return "16 / 9";
 }
 
@@ -1484,7 +1486,8 @@ function mediaVariantCanvasSize(format = "16x9") {
   if (clean === "1x1") return { width: 1200, height: 1200, aspect: "1x1" };
   if (clean === "4x5") return { width: 1200, height: 1500, aspect: "4x5" };
   if (clean === "9x16" || clean === "portrait" || clean === "hochkant") return { width: 1080, height: 1920, aspect: "9x16" };
-  if (clean === "4x3" || clean === "logo") return { width: 1200, height: 900, aspect: "4x3" };
+  if (clean === "logo") return { width: 1530, height: 600, aspect: "logo" };
+  if (clean === "4x3") return { width: 1200, height: 900, aspect: "4x3" };
   return { width: 1600, height: 900, aspect: "16x9" };
 }
 
@@ -4146,7 +4149,7 @@ function mediaPresetVariants(asset = {}, values = {}) {
     filename: buildMediaFileName({
       title: asset.title || asset.filename_original || "bild",
       mediaType: preset.type === "board" ? "person" : preset.type,
-      format: preset.format === "logo" ? "4x3" : preset.format,
+      format: preset.format,
       version: "v1",
       extension,
       code: asset.media_code || ""
@@ -4172,9 +4175,9 @@ function wireMediaCropMask() {
   const result = form?.querySelector("#media-edit-result");
   const neutralValues = { brightness: 0, contrast: 0, saturation: 0, sharpness: 0, black_white: false };
   const state = {
-    x: Number(xInput.value || 0),
-    y: Number(yInput.value || 0),
-    scale: Math.max(1, Number(scaleValue.value || scaleInput.value || 1)),
+    x: 0,
+    y: 0,
+    scale: 1,
     format: form?.dataset.activeVariantFormat || form?.dataset.mediaAspect || "16x9",
     dragging: false,
     startX: 0,
@@ -4193,6 +4196,9 @@ function wireMediaCropMask() {
     image.style.filter = `brightness(${brightness}) contrast(${contrast}) saturate(${saturation})${grayscale}`;
     stage.style.setProperty("--media-crop-sharpness", `${Math.min(.28, sharpness / 80)}px`);
     scaleInput.value = String(state.scale);
+    scaleValue.value = String(state.scale);
+    xInput.value = String(Math.round(state.x));
+    yInput.value = String(Math.round(state.y));
   };
   const applyCrop = () => {
     xInput.value = String(Math.round(state.x));
@@ -4256,7 +4262,7 @@ function wireMediaCropMask() {
     canvas.height = size.height;
     const context = canvas.getContext("2d");
     const stageRect = stage.getBoundingClientRect();
-    const baseScale = Math.max(stageRect.width / Math.max(1, image.naturalWidth), stageRect.height / Math.max(1, image.naturalHeight));
+    const baseScale = Math.min(stageRect.width / Math.max(1, image.naturalWidth), stageRect.height / Math.max(1, image.naturalHeight));
     const outputScale = canvas.width / Math.max(1, stageRect.width);
     const drawWidth = image.naturalWidth * baseScale * state.scale * outputScale;
     const drawHeight = image.naturalHeight * baseScale * state.scale * outputScale;

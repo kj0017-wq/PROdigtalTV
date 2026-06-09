@@ -1360,9 +1360,9 @@ p { color: var(--pdt-muted); }
 }
 .card .member-tile {
   width: 100%;
-  height: 116px;
+  height: auto;
   min-height: 116px;
-  aspect-ratio: auto;
+  aspect-ratio: 2.55 / 1;
   padding: 16px 18px;
 }
 .member-logo {
@@ -1375,21 +1375,6 @@ p { color: var(--pdt-muted); }
   max-width: 100%;
 }
 .member-tile { overflow: hidden; }
-.card .member-logo--bibel-tv,
-.card .member-logo--anixe-hd,
-.card .member-logo--eutelsat {
-  transform: scale(2.05);
-}
-.card .member-logo--channel-21 {
-  transform: scale(1.72);
-}
-.card .member-logo--deutsches-musik-fernsehen,
-.card .member-logo--erf {
-  transform: scale(1.22);
-}
-.card .member-logo--red-bull-media-house {
-  transform: scale(1.9);
-}
 .footer { background: var(--pdt-navy); color: white; padding: 46px 0 104px; }
 .footer .logo__asset { width: 235px; padding: 10px; background: white; border-radius: 6px; }
 .footer__grid { display: grid; gap: 30px; }
@@ -2394,7 +2379,7 @@ p { color: var(--pdt-muted); }
   border: 1px solid var(--pdt-line);
 }
 .member-logo-editor__preview {
-  aspect-ratio: 2 / 1;
+  aspect-ratio: 2.55 / 1;
   border-radius: 8px;
   display: grid;
   place-items: center;
@@ -2445,8 +2430,8 @@ p { color: var(--pdt-muted); }
   min-height: 86px;
 }
 .member-logo-thumb--table {
-  width: 92px;
-  height: 46px;
+  width: 102px;
+  height: 40px;
   padding: 5px;
 }
 .checkbox-line { display: flex; gap: 8px; align-items: center; margin-top: 9px; color: var(--pdt-muted); font-weight: 640; }
@@ -5285,7 +5270,7 @@ form.is-saved [data-image-crop] {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   transform-origin: center;
   will-change: transform;
   user-select: none;
