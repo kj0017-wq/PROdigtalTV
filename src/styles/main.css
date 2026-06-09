@@ -1415,6 +1415,15 @@ p { color: var(--pdt-muted); }
 .join-aside {
   align-self: start; background: white; border: 1px solid var(--pdt-line); border-radius: var(--pdt-radius);
   padding: 24px; height: max-content; justify-self: stretch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(15, 47, 92, .32) transparent;
+}
+.join-aside::-webkit-scrollbar {
+  width: 8px;
+}
+.join-aside::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(15, 47, 92, .28);
 }
 .join-aside-cta {
   display: grid;
@@ -4229,13 +4238,17 @@ form.is-saved [data-image-crop] {
     top: 18px;
     z-index: 2;
     height: auto;
-    min-height: calc(100dvh - 36px);
-    max-height: calc(100dvh - 36px);
-    overflow: auto;
+    min-height: 0;
+    max-height: calc(100vh - 36px);
+    max-height: calc(100svh - 36px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
   }
   .internal-overview--join .join-aside--overview {
     min-height: auto;
-    max-height: calc(100dvh - 36px);
+    max-height: calc(100vh - 36px);
+    max-height: calc(100svh - 36px);
   }
   .internal-mobile-list { display: none; }
   .internal-desktop-sections { display: grid; gap: 18px; }
@@ -4278,9 +4291,11 @@ form.is-saved [data-image-crop] {
     position: sticky;
     top: 138px;
     display: block;
-    max-height: calc(100dvh - 156px);
+    max-height: calc(100vh - 156px);
+    max-height: calc(100svh - 156px);
     overflow-y: auto;
     overflow-x: hidden;
+    scrollbar-gutter: stable;
     padding: 16px;
     border: 1px solid rgba(15, 47, 92, .10);
     border-radius: 8px;
@@ -4290,7 +4305,8 @@ form.is-saved [data-image-crop] {
   }
   .internal-overview--join .join-aside--overview {
     top: 138px;
-    max-height: calc(100dvh - 156px);
+    max-height: calc(100vh - 156px);
+    max-height: calc(100svh - 156px);
   }
   .topbar__inner {
     min-height: 128px;
