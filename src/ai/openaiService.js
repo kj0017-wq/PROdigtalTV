@@ -1,6 +1,6 @@
 import { getFirebaseServices, localPreviewMode } from "../firebase/firebaseClient.js";
-import { currentUser } from "../firebase/authService.js?v=284";
-import { upsert } from "../firebase/dataService.js?v=284";
+import { currentUser } from "../firebase/authService.js?v=461";
+import { upsert } from "../firebase/dataService.js?v=465";
 import { aiSourceCatalog } from "../data/aiSourceCatalog.js";
 
 const ACTION_FUNCTIONS = {
@@ -170,7 +170,7 @@ export async function generateAiTopicSuggestions(options = {}) {
       if (!["functions/not-found", "functions/unavailable", "functions/internal", "functions/unauthenticated", "functions/permission-denied"].includes(error?.code)) throw error;
     }
   }
-  const { list, upsert } = await import("../firebase/dataService.js?v=284");
+  const { list, upsert } = await import("../firebase/dataService.js?v=465");
   const now = new Date().toISOString();
   const [articles, existingSuggestions, verifiedSources] = await Promise.all([
     list("editorialContent"),
@@ -499,7 +499,7 @@ function localEditorialArticleBody(topic = {}, sources = []) {
 }
 
 async function runLocalAiEditorialTask(mode = "manual") {
-  const { list, upsert } = await import("../firebase/dataService.js?v=284");
+  const { list, upsert } = await import("../firebase/dataService.js?v=465");
   const { verified_sources: demoSources, ai_prompts: demoPrompts } = await import("../data/demoData.js");
   const now = new Date().toISOString();
   let [articles, sources, prompts, queuedTopics] = await Promise.all([

@@ -72,7 +72,7 @@ export async function uploadEventMedia(eventId, files, metadata = {}, onProgress
 }
 
 export async function uploadEntityImage(collection, entityId, file) {
-  const supported = { events: "events", topics: "topics", members: "members", boardMembers: "board", speakers: "speakers", sponsors: "sponsors", editorialContent: "editorial" };
+  const supported = { events: "events", topics: "topics", members: "members", boardMembers: "board", speakers: "speakers", sponsors: "sponsors", editorialContent: "editorial", memberDocuments: "member-documents", memberDirectories: "member-directories" };
   if (!supported[collection] || !file) return null;
   const firebase = await getFirebaseServices();
   if (!firebase) return { url: await fileAsDataUrl(file), storagePath: "" };

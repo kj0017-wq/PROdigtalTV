@@ -664,8 +664,64 @@ export const media_assets = [
 
 export const media_variants = [];
 
+export const memberDocuments = [
+  {
+    id: "member-doc-verfassung-projekt-2026",
+    title: "Projekt neue Vereinsverfassung",
+    category: "Vereinsverfassung",
+    year: "2026",
+    meetingDate: "2026-06-08",
+    description: "Arbeitsstand und Unterlagen zur neuen Vereinsverfassung.",
+    documentUrl: "",
+    visibility: "members",
+    status: "published",
+    createdAt: "2026-06-08T10:00:00",
+    updatedAt: "2026-06-08T10:00:00"
+  },
+  {
+    id: "member-doc-jhv-protokoll-2026",
+    title: "Protokoll Jahreshauptversammlung 2025",
+    category: "Jahreshauptversammlung",
+    year: "2025",
+    meetingDate: "2026-06-08",
+    description: "Ablage fuer das Protokoll der Jahreshauptversammlung zum Vorjahr.",
+    documentUrl: "",
+    visibility: "members",
+    status: "published",
+    createdAt: "2026-06-08T10:00:00",
+    updatedAt: "2026-06-08T10:00:00"
+  },
+  {
+    id: "member-doc-kassenbericht-2026",
+    title: "Kassenbericht 2025",
+    category: "Kassenbericht",
+    year: "2025",
+    description: "Interner Kassenbericht fuer das Vorjahr.",
+    documentUrl: "",
+    visibility: "members",
+    status: "published",
+    createdAt: "2026-06-08T10:00:00",
+    updatedAt: "2026-06-08T10:00:00"
+  }
+];
+
+export const memberDirectories = [
+  {
+    id: "member-directory-2026",
+    title: "Mitgliederverzeichnis 2026",
+    year: "2026",
+    description: "Aktuelles internes Mitgliederverzeichnis.",
+    documentUrl: "",
+    visibility: "members",
+    status: "active",
+    createdAt: "2026-06-08T10:00:00",
+    updatedAt: "2026-06-08T10:00:00"
+  }
+];
+
 export const demoDatabase = {
   events: [...events, ...additionalArchiveEvents], topics, speakers, sponsors, members, boardMembers, registrations, membershipApplications, downloads, eventMedia, galleries,
+  memberDocuments, memberDirectories,
   media_assets, media_variants,
   editorialContent, mailQueue, settings, verified_sources, article_sources, article_keywords, ai_prompts, ai_prompt_versions, ai_prompt_tests, ai_editorial_logs,
   users: [{ id: "demo-admin", email: "admin@prodigitaltv.de", displayName: "Demo Administrator", role: "admin", status: "active" }],

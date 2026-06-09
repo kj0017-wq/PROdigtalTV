@@ -13,6 +13,28 @@ service cloud.firestore {
     function member() {
       return roleIs("member") || editor();
     }
+    function ownMember(memberId) {
+      return signedIn()
+        && profile().status == "active"
+        && profile().memberId == memberId;
+    }
+    function memberProfileUpdateFields() {
+      return [
+        "id",
+        "name",
+        "description",
+        "website",
+        "category",
+        "city",
+        "country",
+        "contactEmail",
+        "phone",
+        "profileContactName",
+        "profileUpdatedAt",
+        "profileUpdatedBy",
+        "updatedAt"
+      ];
+    }
     function editor() {
       return roleIs("editor") || admin();
     }
@@ -53,8 +75,21 @@ service cloud.firestore {
     }
 
     match /members/{id} {
-      allow read: if resource.data.visibility == "public" && resource.data.status == "active" || editor();
-      allow write: if editor();
+      allow read: if resource.data.visibility == "public" && resource.data.status == "active"
+        || editor()
+        || ownMember(id);
+      allow create, delete: if editor();
+      allow update: if editor()
+        || (
+          ownMember(id)
+          && request.resource.data.id == id
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(memberProfileUpdateFields())
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(["profileUpdatedBy"])
+            || request.resource.data.profileUpdatedBy == request.auth.uid
+            || request.resource.data.profileUpdatedBy == request.auth.token.email
+          )
+        );
     }
 
     match /boardMembers/{id} {
@@ -86,6 +121,18 @@ service cloud.firestore {
     match /downloads/{id} {
       allow read: if publicPublished()
         || (member() && resource.data.visibility == "members")
+        || editor();
+      allow write: if editor();
+    }
+
+    match /memberDocuments/{id} {
+      allow read: if (member() && resource.data.visibility == "members" && resource.data.status == "published")
+        || editor();
+      allow write: if editor();
+    }
+
+    match /memberDirectories/{id} {
+      allow read: if (member() && resource.data.visibility == "members" && resource.data.status == "active")
         || editor();
       allow write: if editor();
     }

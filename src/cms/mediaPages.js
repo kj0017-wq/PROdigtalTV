@@ -1,6 +1,6 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=460";
-import { list, getOne } from "../firebase/dataService.js?v=463";
-import { currentUser, canUseCms } from "../firebase/authService.js?v=460";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=461";
+import { list, getOne } from "../firebase/dataService.js?v=465";
+import { currentUser, canUseCms } from "../firebase/authService.js?v=464";
 import { escapeHtml } from "../utils/format.js";
 
 const mediaSections = [
@@ -249,6 +249,25 @@ function mediaContextAttrs(query = new URLSearchParams()) {
     ["data-media-target-alt-field", query.get("targetAltField")],
     ["data-media-return-to", query.get("returnTo")]
   ].filter(([, value]) => value).map(([key, value]) => `${key}="${escapeHtml(value)}"`).join(" ");
+}
+
+function inferredMediaContext(asset = {}, query = new URLSearchParams()) {
+  const linkedCollection = asset.linked_collection || asset.target_collection || "";
+  const linkedId = asset.linked_record_id || asset.target_id || "";
+  const collection = query.get("targetCollection") || linkedCollection;
+  const id = query.get("targetId") || linkedId;
+  const field = collection === "members"
+    ? "logoUrl"
+    : query.get("targetField") || asset.linked_field || asset.target_field || "imageUrl";
+  const returnTo = query.get("returnTo")
+    || (collection === "members" && id ? `#/cms/edit?module=members&id=${id}&section=all` : "");
+  const params = new URLSearchParams(query);
+  if (collection) params.set("targetCollection", collection);
+  if (id) params.set("targetId", id);
+  if (field) params.set("targetField", field);
+  if (!params.get("targetAltField") && collection === "members") params.set("targetAltField", "altText");
+  if (returnTo) params.set("returnTo", returnTo);
+  return params;
 }
 
 function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altField = "thumbnail_alt", returnTo = "" } = {}) {
@@ -529,11 +548,13 @@ function libraryPage(assets = [], query = new URLSearchParams(), usageMap = new 
   return `<section class="panel media-library-panel">
     <div class="media-library-layout">
       <aside class="media-library-sidebar">
-        <form id="central-media-upload-form" class="media-library-upload" data-media-upload-form ${mediaContextAttrs(query)}>
+        <form id="central-media-upload-form" class="media-library-upload" data-media-upload-form tabindex="0" aria-label="Bild per Upload oder Einfuegen speichern" ${mediaContextAttrs(query)}>
           <label class="button button--primary button--small">
             Datei hochladen
             <input class="media-hidden-file" type="file" name="mediaFile" accept="image/jpeg,image/png,image/webp,image/svg+xml" required>
           </label>
+          <button class="button button--secondary button--small" type="button" data-media-paste-focus>Bild einfuegen</button>
+          <p class="muted media-paste-hint">Bilddatei ablegen, Datei hochladen oder kopiertes Bild mit Strg+V einfuegen.</p>
           <input type="hidden" name="version" value="v1">
           <input type="hidden" name="media_code" data-media-auto-code>
           <input type="hidden" name="media_type" value="upload">
@@ -574,11 +595,13 @@ function libraryPage(assets = [], query = new URLSearchParams(), usageMap = new 
 
 function uploadPage() {
   return `${mediaCreateChoice("upload")}<section class="panel media-work-panel media-upload-quick">
-    <form id="central-media-upload-form" class="form-grid" data-media-upload-form>
+    <form id="central-media-upload-form" class="form-grid" data-media-upload-form tabindex="0" aria-label="Bild per Upload oder Einfuegen speichern">
       <div class="media-form-head"><div><p class="eyebrow">Upload</p><h2>Bild speichern</h2><p class="muted">Datei waehlen, die wichtigsten Angaben werden automatisch erzeugt.</p></div></div>
       <div class="media-upload-grid">
         <div class="media-upload-drop">
           <div class="field"><label>Datei</label><input type="file" name="mediaFile" accept="image/jpeg,image/png,image/webp,image/svg+xml" required></div>
+          <button class="button button--secondary button--small" type="button" data-media-paste-focus>Bild aus Zwischenablage einfuegen</button>
+          <p class="muted media-paste-hint">Auch Drag-and-drop direkt auf diese Flaeche ist moeglich.</p>
           <figure data-media-upload-preview><span>Vorschau</span></figure>
           <div class="media-file-meta" data-media-file-meta><span>Noch keine Datei ausgewaehlt.</span></div>
           <p class="muted" data-media-auto-filename>Der Dateiname wird beim Speichern automatisch erstellt.</p>
@@ -654,8 +677,9 @@ function aiPage(query = new URLSearchParams(), targetRecord = null) {
 }
 
 function editPage(asset = null, query = new URLSearchParams(), variants = [], assets = []) {
-  const hasTarget = Boolean(query.get("targetCollection") && query.get("targetId"));
-  return `<section class="panel media-work-panel">${asset ? `<form id="central-media-edit-form" class="form-grid" data-media-edit-form data-media-id="${escapeHtml(asset.id)}" data-media-aspect="${escapeHtml(asset.aspect_ratio || "16x9")}" ${mediaContextAttrs(query)}>
+  const contextQuery = asset ? inferredMediaContext(asset, query) : query;
+  const hasTarget = Boolean(contextQuery.get("targetCollection") && contextQuery.get("targetId"));
+  return `<section class="panel media-work-panel">${asset ? `<form id="central-media-edit-form" class="form-grid" data-media-edit-form data-media-id="${escapeHtml(asset.id)}" data-media-aspect="${escapeHtml(asset.aspect_ratio || "16x9")}" ${mediaContextAttrs(contextQuery)}>
     <div class="media-editor-layout">
       <div class="media-editor-preview">
         <div class="media-crop-stage" data-media-crop-stage style="--media-crop-aspect:${mediaAspectStyle(asset.aspect_ratio)}">
@@ -697,11 +721,11 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
       <div class="form-grid">
         <div class="media-editor-topbar">
           <a class="button button--secondary button--small" href="#/cms/media/library${hasTarget ? `?${new URLSearchParams({
-            targetCollection: query.get("targetCollection"),
-            targetId: query.get("targetId"),
-            targetField: query.get("targetField") || "imageUrl",
-            targetAltField: query.get("targetAltField") || "",
-            returnTo: query.get("returnTo") || ""
+            targetCollection: contextQuery.get("targetCollection"),
+            targetId: contextQuery.get("targetId"),
+            targetField: contextQuery.get("targetField") || "imageUrl",
+            targetAltField: contextQuery.get("targetAltField") || "",
+            returnTo: contextQuery.get("returnTo") || ""
           }).toString()}` : ""}">Neues Bild waehlen</a>
         </div>
         <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(asset.title || "")}" required></div>

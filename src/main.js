@@ -1,27 +1,51 @@
 import { route, onRouteChange, go } from "./utils/router.js";
 import {
   homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
-  newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, portalPage, legalPage, notFoundPage, webappQrPage
-} from "./pages/publicPages.js?v=484";
-import {
-  dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage, moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, mailAdminPage, audioAdminPage
-} from "./cms/cmsPages.js?v=475";
-import { aiEditorialPage } from "./cms/aiEditorialPages.js?v=460";
-import { mediaPage } from "./cms/mediaPages.js?v=45";
-import { createRegistration } from "./firebase/registrationService.js";
-import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=460";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=463";
-import { deleteStoredAsset, uploadEntityImage, uploadEventMedia, uploadGalleryImages, uploadMediaAsset } from "./firebase/storageService.js?v=4";
-import { checkFirebaseConnection, checkFirestoreStructure, initializeDatabase, createDemoData, removeDemoData } from "./firebase/setupService.js";
-import { downloadRegistrationsCsv } from "./utils/csv.js";
+  newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, memberPortalPage, legalPage, notFoundPage, webappQrPage
+} from "./pages/publicPages.js?v=492";
+import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=464";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=465";
 import { escapeHtml, formatDate } from "./utils/format.js";
-import { callChatGptAction, generateCmsThumbCollage, saveAiDraft, runAiEditorialTask, saveAiEditorialSettings, generateAiEditorialThumbnail, generateAiTopicSuggestions, importGermanPressReleases, importNewsFromSources } from "./ai/openaiService.js?v=315";
-import { generateArticleSpeechAsset } from "./ai/ttsService.js?v=2";
-import { aiSourceCatalog } from "./data/aiSourceCatalog.js";
 
 const root = document.querySelector("#app");
 const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
+
+const lazy = {};
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=480");
+const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=462");
+const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=49");
+const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js");
+const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=5");
+const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
+const csvService = () => lazy.csvService ||= import("./utils/csv.js");
+const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=316");
+const ttsService = () => lazy.ttsService ||= import("./ai/ttsService.js?v=2");
+const aiSourceCatalogService = () => lazy.aiSourceCatalog ||= import("./data/aiSourceCatalog.js");
+
+const createRegistration = async (...args) => (await registrationService()).createRegistration(...args);
+const deleteStoredAsset = async (...args) => (await storageService()).deleteStoredAsset(...args);
+const uploadEntityImage = async (...args) => (await storageService()).uploadEntityImage(...args);
+const uploadEventMedia = async (...args) => (await storageService()).uploadEventMedia(...args);
+const uploadGalleryImages = async (...args) => (await storageService()).uploadGalleryImages(...args);
+const uploadMediaAsset = async (...args) => (await storageService()).uploadMediaAsset(...args);
+const checkFirebaseConnection = async (...args) => (await setupService()).checkFirebaseConnection(...args);
+const checkFirestoreStructure = async (...args) => (await setupService()).checkFirestoreStructure(...args);
+const initializeDatabase = async (...args) => (await setupService()).initializeDatabase(...args);
+const createDemoData = async (...args) => (await setupService()).createDemoData(...args);
+const removeDemoData = async (...args) => (await setupService()).removeDemoData(...args);
+const downloadRegistrationsCsv = async (...args) => (await csvService()).downloadRegistrationsCsv(...args);
+const callChatGptAction = async (...args) => (await openaiService()).callChatGptAction(...args);
+const generateCmsThumbCollage = async (...args) => (await openaiService()).generateCmsThumbCollage(...args);
+const saveAiDraft = async (...args) => (await openaiService()).saveAiDraft(...args);
+const runAiEditorialTask = async (...args) => (await openaiService()).runAiEditorialTask(...args);
+const saveAiEditorialSettings = async (...args) => (await openaiService()).saveAiEditorialSettings(...args);
+const generateAiEditorialThumbnail = async (...args) => (await openaiService()).generateAiEditorialThumbnail(...args);
+const generateAiTopicSuggestions = async (...args) => (await openaiService()).generateAiTopicSuggestions(...args);
+const importGermanPressReleases = async (...args) => (await openaiService()).importGermanPressReleases(...args);
+const importNewsFromSources = async (...args) => (await openaiService()).importNewsFromSources(...args);
+const generateArticleSpeechAsset = async (...args) => (await ttsService()).generateArticleSpeechAsset(...args);
+const getAiSourceCatalog = async () => (await aiSourceCatalogService()).aiSourceCatalog;
 
 function storedTheme() {
   return localStorage.getItem("pdtv-theme") || localStorage.getItem("pdtTheme") || "day";
@@ -40,6 +64,19 @@ function applyTheme(theme = storedTheme()) {
   document.querySelectorAll("[data-theme-icon]").forEach((icon) => {
     icon.textContent = nextTheme === "night" ? "\u263e" : "\u2600";
   });
+}
+
+function mobileCmsDisabled() {
+  return window.matchMedia?.("(max-width: 820px), (pointer: coarse)")?.matches;
+}
+
+function mobileCmsPlaceholder() {
+  return `<section class="login-wrap"><div class="form-card login-card">
+    <p class="eyebrow">CMS</p>
+    <h1>CMS nur am Desktop</h1>
+    <p style="margin:14px 0 24px">Die mobile CMS-Version wird spaeter als reduzierte Oberflaeche umgesetzt.</p>
+    <a class="button button--primary" href="#/home">Zur Website</a>
+  </div></section>`;
 }
 
 async function viewForRoute(current) {
@@ -66,31 +103,47 @@ async function viewForRoute(current) {
   if (current.path === "archive") return archivePage();
   if (current.path === "webapp-qr") return webappQrPage();
   if (current.path === "login") return loginPage();
-  if (current.path === "portal") return portalPage();
+  if (current.path === "portal") return memberPortalPage();
   if (current.path === "imprint") return legalPage("imprint");
   if (current.path === "privacy") return legalPage("privacy");
-  if (current.path === "cms" && !current.id) return dashboardPage();
-  if (current.path === "cms" && current.id === "events") return eventsAdminPage();
-  if (current.path === "cms" && current.id === "event") return eventEditPage(current.section, current.query.get("tab") || "base", current.query);
-  if (current.path === "cms" && current.id === "registrations") return registrationsPage();
-  if (current.path === "cms" && current.id === "media") return mediaPage(current.section || "library", current.query);
-  if (current.path === "cms" && current.id === "followup") return eventFollowUpPage();
-  if (current.path === "cms" && current.id === "topics") return moduleListPage("topics");
-  if (current.path === "cms" && current.id === "galleries") return moduleListPage("galleries");
-  if (current.path === "cms" && current.id === "speakers") return moduleListPage("speakers");
-  if (current.path === "cms" && current.id === "sponsors") return moduleListPage("sponsors");
-  if (current.path === "cms" && current.id === "members") return moduleListPage("members");
-  if (current.path === "cms" && current.id === "membership-applications") return moduleListPage("membershipApplications");
-  if (current.path === "cms" && current.id === "board") return moduleListPage("boardMembers");
-  if (current.path === "cms" && current.id === "editorial") return moduleListPage("editorialContent", current.section || "press");
-  if (current.path === "cms" && current.id === "ai-editorial") return aiEditorialPage(current.section || "dashboard", current.query);
-  if (current.path === "cms" && current.id === "mail") return moduleListPage("mailQueue");
-  if (current.path === "cms" && current.id === "audio") return audioAdminPage();
-  if (current.path === "cms" && current.id === "mail-admin") return mailAdminPage();
-  if (current.path === "cms" && current.id === "chatgpt") return chatGptPage();
-  if (current.path === "cms" && current.id === "ai-settings") return aiSettingsPage();
-  if (current.path === "cms" && current.id === "edit") return contentEditPage(current.query.get("module"), current.query.get("id"), current.query);
-  if (current.path === "cms" && current.id === "setup") return setupPage();
+  if (current.path === "cms" && mobileCmsDisabled()) return mobileCmsPlaceholder();
+  if (current.path === "cms" && current.id === "media") {
+    const { mediaPage } = await mediaPages();
+    return mediaPage(current.section || "library", current.query);
+  }
+  if (current.path === "cms" && current.id === "ai-editorial") {
+    const { aiEditorialPage } = await aiEditorialPages();
+    return aiEditorialPage(current.section || "dashboard", current.query);
+  }
+  if (current.path === "cms") {
+    const {
+      dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage,
+      moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, mailAdminPage, audioAdminPage
+    } = await cmsPages();
+    if (!current.id) return dashboardPage();
+    if (current.id === "events") return eventsAdminPage();
+    if (current.id === "event") return eventEditPage(current.section, current.query.get("tab") || "base", current.query);
+    if (current.id === "registrations") return registrationsPage();
+    if (current.id === "followup") return eventFollowUpPage();
+    if (current.id === "topics") return moduleListPage("topics");
+    if (current.id === "galleries") return moduleListPage("galleries");
+    if (current.id === "speakers") return moduleListPage("speakers");
+    if (current.id === "sponsors") return moduleListPage("sponsors");
+    if (current.id === "members") return moduleListPage("members");
+    if (current.id === "membership-applications") return moduleListPage("membershipApplications");
+    if (current.id === "member-documents") return moduleListPage("memberDocuments");
+    if (current.id === "member-directories") return moduleListPage("memberDirectories");
+    if (current.id === "users") return moduleListPage("users");
+    if (current.id === "board") return moduleListPage("boardMembers");
+    if (current.id === "editorial") return moduleListPage("editorialContent", current.section || "press");
+    if (current.id === "mail") return moduleListPage("mailQueue");
+    if (current.id === "audio") return audioAdminPage();
+    if (current.id === "mail-admin") return mailAdminPage();
+    if (current.id === "chatgpt") return chatGptPage();
+    if (current.id === "ai-settings") return aiSettingsPage();
+    if (current.id === "edit") return contentEditPage(current.query.get("module"), current.query.get("id"), current.query);
+    if (current.id === "setup") return setupPage();
+  }
   return notFoundPage();
 }
 
@@ -733,6 +786,18 @@ function filesToInput(input, files) {
   const transfer = new DataTransfer();
   files.forEach((file) => transfer.items.add(file));
   input.files = transfer.files;
+}
+
+function clipboardImageFile(event) {
+  const items = Array.from(event.clipboardData?.items || []);
+  const imageItem = items.find((item) => item.kind === "file" && String(item.type || "").startsWith("image/"));
+  const file = imageItem?.getAsFile?.();
+  if (!file) return null;
+  const extension = mediaFileExtension(file, "png");
+  const fileName = file.name && file.name !== "image.png"
+    ? file.name
+    : `zwischenablage-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`;
+  return new File([file], fileName, { type: file.type || `image/${extension}`, lastModified: Date.now() });
 }
 
 function imageFileFromDropzone(form, inputName, entityId) {
@@ -2130,15 +2195,30 @@ function wireMediaUploadAutomation(form) {
   const mediaType = form.elements.media_type;
   const format = form.elements.aspect_ratio;
   const preview = form.querySelector("[data-media-upload-preview]");
+  const pasteButton = form.querySelector("[data-media-paste-focus]");
   const applyDroppedFile = (file) => {
     if (!file || !fileInput) return false;
     if (!String(file.type || "").startsWith("image/")) return false;
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
-    fileInput.files = transfer.files;
+    filesToInput(fileInput, [file]);
     fileInput.dispatchEvent(new Event("change", { bubbles: true }));
     return true;
   };
+  pasteButton?.addEventListener("click", () => {
+    form.focus();
+    const result = form.querySelector("#central-media-upload-result");
+    if (result) result.innerHTML = `<div class="alert">Bereit: Bild kopieren und mit Strg+V einfuegen oder eine Bilddatei hier ablegen.</div>`;
+  });
+  form.addEventListener("paste", (event) => {
+    const file = clipboardImageFile(event);
+    const result = form.querySelector("#central-media-upload-result");
+    if (!file) {
+      if (result) result.innerHTML = `<div class="alert alert--error">In der Zwischenablage wurde kein Bild gefunden.</div>`;
+      return;
+    }
+    event.preventDefault();
+    if (result) result.innerHTML = `<div class="alert">Bild aus Zwischenablage eingefuegt. Speichere in der Mediathek ...</div>`;
+    applyDroppedFile(file);
+  });
   form.addEventListener("dragover", (event) => {
     event.preventDefault();
     form.classList.add("is-drag-over");
@@ -2188,7 +2268,7 @@ function wireMediaUploadAutomation(form) {
     }
     try {
       const asset = await saveCentralMediaUpload(form, file, { result, auto: true });
-      if (asset?.id) window.setTimeout(() => { window.location.hash = `#/cms/media/edit?id=${asset.id}`; }, 500);
+      if (asset?.id) window.setTimeout(() => { window.location.hash = mediaEditHash(asset.id, form); }, 500);
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--error">Automatisches Speichern fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
       form.dataset.mediaAutoSaving = "0";
@@ -2602,6 +2682,7 @@ async function topicResearchSourcePool(category = "", keywords = "", sourceId = 
   const categoryParts = normalizeResearchTerm(category).split(/[^a-z0-9]+/i).filter((part) => part.length > 3);
   const keywordParts = normalizeResearchTerm(keywords).split(/[,;\s]+/).filter((part) => part.length > 3);
   const terms = [...categoryParts, ...keywordParts];
+  const aiSourceCatalog = await getAiSourceCatalog();
   const allowedSources = uniqueResearchSources([...verifiedSources, ...aiSourceCatalog])
     .filter((source) => !researchSourceIsExcluded(source))
     .filter((source) => !String(source.source_status || source.review_status || "").toLowerCase().includes("gesperrt"))
@@ -4013,7 +4094,8 @@ function wireMediaEdit() {
       await Promise.all(presetVariants.map((variant) => upsert("media_variants", variant)));
       if (mediaContext.targetCollection && mediaContext.targetId) {
         await attachMediaAssetToTarget(update, mediaContext);
-        if (result) result.innerHTML = `<div class="alert alert--success">Bilddaten gespeichert und als Thumb zugeordnet.</div>`;
+        const assignmentLabel = mediaContext.targetCollection === "members" && mediaContext.targetField === "logoUrl" ? "Mitgliederlogo" : "Thumb";
+        if (result) result.innerHTML = `<div class="alert alert--success">Bilddaten gespeichert und als ${assignmentLabel} zugeordnet.</div>`;
         if (mediaContext.returnTo) window.setTimeout(() => { window.location.hash = mediaContext.returnTo.replace(/^#\/?/, "#/"); }, 700);
       } else if (result) {
         result.innerHTML = `<div class="alert alert--success">Bilddaten gespeichert.</div>`;
@@ -4267,7 +4349,8 @@ function wireMediaCropMask() {
     const mediaContext = mediaContextFromNode(form);
     if (mediaContext.targetCollection && mediaContext.targetId) {
       await attachMediaAssetToTarget(newAsset, mediaContext);
-      if (result) result.innerHTML = `<div class="alert alert--success">Variante als neues Thumb gespeichert und zugeordnet.</div>`;
+      const assignmentLabel = mediaContext.targetCollection === "members" && mediaContext.targetField === "logoUrl" ? "Mitgliederlogo" : "Thumb";
+      if (result) result.innerHTML = `<div class="alert alert--success">Variante als neues ${assignmentLabel} gespeichert und zugeordnet.</div>`;
       if (mediaContext.returnTo) window.setTimeout(() => { window.location.hash = mediaContext.returnTo.replace(/^#\/?/, "#/"); }, 700);
     } else if (result) {
       result.innerHTML = `<div class="alert alert--success">Variante als neues Bild gespeichert. <a href="#/cms/media/edit?id=${newAsset.id}">Neues Bild bearbeiten</a></div>`;
@@ -5695,6 +5778,7 @@ function wireActions() {
     button.textContent = "Erweitere ...";
     try {
       const now = new Date().toISOString();
+      const aiSourceCatalog = await getAiSourceCatalog();
       await Promise.all(aiSourceCatalog.map((source) => upsert("verified_sources", {
         ...source,
         source_status: source.source_status || "erlaubt",
@@ -6880,6 +6964,13 @@ function wireActions() {
         if (form.dataset.module === "boardMembers") values.photoUrl = asset.url;
         if (form.dataset.module === "speakers") values.photoUrl = asset.url;
         if (form.dataset.module === "sponsors") values.logoUrl = asset.url;
+        if (["memberDocuments", "memberDirectories"].includes(form.dataset.module)) {
+          values.documentUrl = asset.url;
+          values.assetUrl = asset.url;
+          values.fileName = image.name;
+          values.assetFileName = image.name;
+          values.assetType = image.type.startsWith("image/") ? "image" : "document";
+        }
         if (form.dataset.module === "editorialContent") {
           values.assetUrl = asset.url;
           values.assetFileName = image.name;
@@ -6949,6 +7040,39 @@ function wireActions() {
       else button.setAttribute("title", originalTitle);
     }
   }));
+
+  document.querySelector("#member-profile-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = form.querySelector("#member-profile-result");
+    const submitButton = form.querySelector('button[type="submit"]');
+    const user = currentUser();
+    const memberId = form.dataset.memberId || user?.memberId || "";
+    if (submitButton) submitButton.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Profil wird gespeichert...</div>`;
+    try {
+      if (!user?.memberId) throw new Error("Ihr Login ist keinem Mitgliedsprofil zugeordnet.");
+      if (user.memberId !== memberId) throw new Error("Sie koennen nur Ihr eigenes Mitgliedsprofil bearbeiten.");
+      const existing = await getOne("members", memberId);
+      if (!existing) throw new Error("Das verknuepfte Mitgliedsprofil wurde nicht gefunden.");
+      const values = formObject(form);
+      const allowedFields = ["name", "description", "website", "category", "city", "country", "contactEmail", "phone", "profileContactName"];
+      const update = {
+        id: memberId,
+        profileUpdatedAt: new Date().toISOString(),
+        profileUpdatedBy: user.uid || user.email || ""
+      };
+      allowedFields.forEach((field) => {
+        if (Object.prototype.hasOwnProperty.call(values, field)) update[field] = values[field] || "";
+      });
+      await upsert("members", update);
+      if (result) result.innerHTML = `<div class="alert alert--success">Ihr Mitgliedsprofil wurde gespeichert.</div>`;
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Speichern fehlgeschlagen: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
 
   document.querySelector("#membership-application-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -7239,7 +7363,7 @@ function wireActions() {
   document.querySelectorAll("[data-export-event]").forEach((button) => button.addEventListener("click", async () => {
     const event = await getOne("events", button.dataset.exportEvent);
     const registrations = (await list("registrations")).filter((item) => item.eventId === event.id);
-    downloadRegistrationsCsv(event, registrations);
+    await downloadRegistrationsCsv(event, registrations);
   }));
 
   document.querySelectorAll("[data-setup-action]").forEach((button) => button.addEventListener("click", async () => {

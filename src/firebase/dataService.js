@@ -1,4 +1,4 @@
-import { demoDatabase } from "../data/demoData.js?v=3";
+import { demoDatabase } from "../data/demoData.js";
 import { getFirebaseServices, firebaseEnabled, realDataMode } from "./firebaseClient.js";
 
 const STORE_KEY = "prodigitaltv-demo-db-official-assets-v4";
@@ -44,6 +44,8 @@ function localDb() {
     mergeMissingDemoRecords(db, "media_assets");
     mergeMissingDemoRecords(db, "media_variants");
     mergeMissingDemoRecords(db, "downloads");
+    mergeMissingDemoRecords(db, "memberDocuments");
+    mergeMissingDemoRecords(db, "memberDirectories");
     mergeMissingDemoRecords(db, "editorialContent");
     mergeMissingDemoRecords(db, "verified_sources");
     mergeMissingDemoRecords(db, "ai_prompts");

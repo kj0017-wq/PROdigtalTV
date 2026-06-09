@@ -1,4 +1,4 @@
-import { currentUser } from "../firebase/authService.js?v=284";
+import { currentUser, canUseCms } from "../firebase/authService.js?v=464";
 
 const nav = [
   ["home", "Start"], ["events", "Events"], ["topics", "Themen"], ["news", "News"], ["about", "Ueber uns"],
@@ -22,6 +22,7 @@ export function logo() {
 
 export function header(active) {
   const user = currentUser();
+  const cmsLink = canUseCms(user) ? `<a class="button button--secondary button--small header-auth header-auth--cms" href="/cms.html#/cms">CMS</a>` : "";
   const navLink = ([route, label]) => `<a class="${active === route ? "active" : ""}" href="#/${route}">${label}</a>`;
   const menuLink = ([route, label]) => `<a class="${active === route ? "active" : ""}" href="#/${route}" data-public-menu-close>${label}</a>`;
   return `<header class="topbar pdtv-mobile-header"><div class="container topbar__inner">
@@ -29,8 +30,8 @@ export function header(active) {
     <nav class="desktop-nav" aria-label="Hauptnavigation">${nav.map(navLink).join("")}</nav>
     <div class="actions">
       <button class="button button--secondary button--small theme-toggle pdtv-mobile-theme-toggle" type="button" data-theme-toggle aria-label="Tag- und Nachtansicht umschalten"><span data-theme-label>Night</span><span aria-hidden="true" data-theme-icon>☾</span></button>
-      <a class="button button--secondary button--small header-auth" href="/cms.html#/cms">CMS</a>
-      <a class="button button--dark button--small header-auth" href="#/${user ? "portal" : "login"}">${user ? "Profil" : "Login"}</a>
+      ${cmsLink}
+      <a class="button button--dark button--small header-auth header-auth--member" href="#/${user ? "portal" : "login"}">${user ? "Profil" : "Login"}</a>
     </div>
     <button class="burger-button" type="button" data-public-menu-toggle aria-expanded="false" aria-label="Menue oeffnen"><span></span><span></span><span></span></button>
     <a class="mobile-qr" href="#/home" data-mobile-qr-link target="_blank" rel="noreferrer" aria-label="Diese Seite auf dem Smartphone oeffnen">
@@ -38,16 +39,19 @@ export function header(active) {
     </a>
   </div><nav class="public-mobile-menu" data-public-menu aria-label="Mobile Navigation">
     ${nav.map(menuLink).join("")}
-    <a href="/cms.html#/cms" data-public-menu-close>CMS</a>
+    ${canUseCms(user) ? `<a href="/cms.html#/cms" data-public-menu-close>CMS</a>` : ""}
     <a href="#/${user ? "portal" : "login"}" data-public-menu-close>${user ? "Profil" : "Login"}</a>
   </nav></header>`;
 }
 
 export function bottomNav(active) {
-  const items = [["home", "home", "Start"], ["events", "events", "Events"], ["topics", "topics", "Themen"], ["news", "news", "News"], ["login", "login", "Login"]];
+  const user = currentUser();
+  const memberRoute = user ? "portal" : "login";
+  const memberLabel = user ? "Profil" : "Login";
+  const items = [["home", "home", "Start"], ["events", "events", "Events"], ["topics", "topics", "Themen"], ["news", "news", "News"], [memberRoute, "login", memberLabel]];
   return `<nav class="bottom-nav pdtv-mobile-bottom-nav" aria-label="Mobile Navigation">
     ${items.map(([route, icon, label]) =>
-      `<a href="#/${route}" class="${active === route ? "active" : ""}" ${active === route ? `aria-current="page"` : ""}><b>${navIcon(icon)}</b><span>${label}</span></a>`).join("")}
+      `<a href="#/${route}" class="${active === route || (active === "login" && route === "portal") ? "active" : ""}" ${active === route ? `aria-current="page"` : ""}><b>${navIcon(icon)}</b><span>${label}</span></a>`).join("")}
   </nav>`;
 }
 

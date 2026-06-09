@@ -1,5 +1,5 @@
-import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=463";
-import { currentUser, isMember } from "../firebase/authService.js?v=460";
+import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=465";
+import { currentUser, isMember } from "../firebase/authService.js?v=464";
 import { firebaseEnabled, localPreviewMode } from "../firebase/firebaseClient.js";
 import { publicShell, logo } from "../components/layout.js";
 import { eventCard, topicCard } from "../components/cards.js";
@@ -396,7 +396,7 @@ function aboutInternalCard(block, meta, options = {}) {
   </button>`;
 }
 
-function aboutLongTextection(block, options = {}) {
+function aboutLongTextSection(block, options = {}) {
   return `<article class="internal-about-text" id="about-text-${escapeHtml(block.slug)}">
     <div class="internal-about-text__head">${aboutPicto(block.icon)}<div><p class="eyebrow">${escapeHtml(block.titel)}</p><h2>${escapeHtml(block.titel)}</h2><p>${escapeHtml(block.kurztext)}</p></div></div>
     ${ttsReader({ title: block.titel || "", text: block.langtext || "", audioUrl: block.audioUrl || "", audioAccessibleUrl: block.audioAccessibleUrl || "", audioNaturalUrl: block.audioNaturalUrl || "", audioStatus: block.audioStatus || "", audioAccessibleStatus: block.audioAccessibleStatus || "", audioNaturalStatus: block.audioNaturalStatus || "" })}
@@ -800,7 +800,10 @@ export async function newsPage() {
 }
 
 export async function newsDetailPage(id) {
-  const item = await getOne("editorialContent", id) || editorialFallbackNews.find((entry) => entry.id === id);
+  const publicEditorialContent = await listPublicContent("editorialContent").catch(() => []);
+  const item = publicEditorialContent.find((entry) => [entry.id, entry.slug, entry.key].filter(Boolean).includes(id))
+    || await getOne("editorialContent", id).catch(() => null)
+    || editorialFallbackNews.find((entry) => entry.id === id);
   const isRetrospective = isRetrospectiveArticle(item);
   if (!item || (item.page !== "news" && item.section !== "news" && !isRetrospective)) return notFoundPage();
   if (!isRetrospective && (item.visible === false || item.status === "archived" || item.status === "draft" || item.visibility === "internal")) return notFoundPage();
@@ -815,7 +818,7 @@ export async function newsDetailPage(id) {
     ? [...selectedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 12)
     : [];
   const leadMedia = attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "";
-  const detailection = isRetrospective ? "archive" : "news";
+  const detailSection = isRetrospective ? "archive" : "news";
   const detailTitle = isRetrospective ? "Rückblicke" : "News";
   const detailIntro = isRetrospective ? "Nachberichte, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen." : "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.";
   const backHref = isRetrospective ? "#/archive" : "#/news";
@@ -829,10 +832,9 @@ export async function newsDetailPage(id) {
         <p class="eyebrow">${escapeHtml(item.category || "News")}${date ? ` · ${formatDate(date)}` : ""}</p>
         ${articleHeader({
           title: item.title || "",
-          intro: item.subtitle || "",
-          logoUrl: articleImageUrl,
-          logoAlt: `Artikelmotiv ${item.title || "News"}`
+          intro: item.subtitle || ""
         })}
+        ${articleImageUrl ? `<figure class="news-detail__thumb news-detail__hero-image"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${item.title || "News"}`)}" loading="eager" decoding="async"></figure>` : ""}
         ${ttsReader({ title: item.title || "", text, audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
         <div class="editorial-text">${leadMedia}${articleParagraphs(text)}</div>
         ${articleSourcesList(item)}
@@ -1007,6 +1009,85 @@ export async function portalPage() {
   const events = allEvents.filter((event) => event.accessType === "members_only");
   return publicShell("login", `${subhero("Mitgliederbereich", `Willkommen, ${escapeHtml(user.displayName)}.`, "Exklusive Inhalte und Ihre Veranstaltungen auf einen Blick.")}
     <section class="section"><div class="container"><div class="section-head"><div><h2>Mitglieder-Events</h2><p class="muted">Angemeldet als ${escapeHtml(user.email || "")} · Rolle: ${escapeHtml(user.role || "guest")} · Token bis: ${escapeHtml(user.tokenExpiresAt || "Demo")}</p></div><button id="logout-button" class="button button--secondary">Abmelden</button></div><div class="card-grid card-grid--three">${events.map((event) => eventCard(event, false, sponsors)).join("")}</div></div></section>`);
+}
+
+function memberDirectoryCard(member = {}) {
+  return `<article class="card card__body">
+    <div class="member-tile" style="margin-bottom:16px">${memberLogo(member)}</div>
+    <h3 style="margin:15px 0 8px">${escapeHtml(member.name || "Mitglied")}</h3>
+    ${member.description ? `<p>${escapeHtml(member.description)}</p>` : ""}
+    <p style="margin-top:12px">${escapeHtml(member.category || "Mitglied")}${member.city ? ` / ${escapeHtml(member.city)}` : ""}${member.country ? ` / ${escapeHtml(member.country)}` : ""}</p>
+    ${member.website ? `<a class="link" style="display:inline-block;margin-top:14px" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Zur Website -></a>` : ""}
+  </article>`;
+}
+
+function memberProfileForm(member = {}, user = {}) {
+  if (!user.memberId) {
+    return `<div class="alert">Ihr Login ist noch keinem Mitgliedsprofil zugeordnet. Bitte im CMS beim Benutzer <code>${escapeHtml(user.uid || user.email || "")}</code> das Feld <code>memberId</code> setzen.</div>`;
+  }
+  if (!member?.id) {
+    return `<div class="alert">Das verknuepfte Mitgliedsprofil <code>${escapeHtml(user.memberId)}</code> wurde noch nicht gefunden.</div>`;
+  }
+  return `<form id="member-profile-form" class="form-card form-grid" data-member-id="${escapeHtml(member.id)}">
+    <p class="eyebrow">Eigenes Mitgliedsprofil</p>
+    <h2 style="margin-bottom:6px">Profil bearbeiten</h2>
+    <p class="muted">Diese Angaben werden direkt im Mitglieder-Datensatz gespeichert und im Mitgliederverzeichnis verwendet.</p>
+    <div class="form-grid--two">
+      <div class="field"><label>Name / Unternehmen</label><input name="name" value="${escapeHtml(member.name || "")}" required></div>
+      <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(member.category || "")}" placeholder="z. B. Streaming, Produktion, Beratung"></div>
+    </div>
+    <div class="field"><label>Kurzbeschreibung</label><textarea name="description" rows="5">${escapeHtml(member.description || "")}</textarea></div>
+    <div class="form-grid--two">
+      <div class="field"><label>Website</label><input name="website" type="url" value="${escapeHtml(member.website || "")}" placeholder="https://"></div>
+      <div class="field"><label>Kontakt-E-Mail</label><input name="contactEmail" type="email" value="${escapeHtml(member.contactEmail || member.email || "")}"></div>
+    </div>
+    <div class="form-grid--two">
+      <div class="field"><label>Telefon</label><input name="phone" type="tel" value="${escapeHtml(member.phone || "")}"></div>
+      <div class="field"><label>Ansprechpartner</label><input name="profileContactName" value="${escapeHtml(member.profileContactName || member.contactName || "")}"></div>
+    </div>
+    <div class="form-grid--two">
+      <div class="field"><label>Ort</label><input name="city" value="${escapeHtml(member.city || "")}"></div>
+      <div class="field"><label>Land</label><input name="country" value="${escapeHtml(member.country || "")}"></div>
+    </div>
+    <button class="button button--primary" type="submit">Eigenes Profil speichern</button>
+    <div id="member-profile-result"></div>
+  </form>`;
+}
+
+export async function memberPortalPage() {
+  const user = currentUser();
+  if (!user) return loginPage();
+  if (!isMember(user)) return portalPage();
+  const [allEvents, sponsors, memberDocuments, members, ownMember] = await Promise.all([
+    listPublicEvents(true),
+    listPublicContent("sponsors"),
+    list("memberDocuments").catch(() => []),
+    listPublicContent("members").catch(() => []),
+    user.memberId ? getOne("members", user.memberId).catch(() => null) : Promise.resolve(null)
+  ]);
+  const events = allEvents.filter((event) => event.accessType === "members_only");
+  const visibleDocuments = memberDocuments
+    .filter((item) => item.status === "published" && (item.visibility || "members") === "members")
+    .sort((a, b) => String(b.meetingDate || b.publishDate || b.year || b.updatedAt || "").localeCompare(String(a.meetingDate || a.publishDate || a.year || a.updatedAt || "")));
+  const visibleMembers = members
+    .filter((member) => (member.status || "active") === "active" && (member.visibility || "public") === "public" && member.isLive !== false)
+    .sort((a, b) => Number(a.sortOrder || 9999) - Number(b.sortOrder || 9999) || String(a.name || "").localeCompare(String(b.name || "")));
+  const documentUrl = (item) => item.documentUrl || item.assetUrl || item.fileUrl || item.url || "";
+  const documentCard = (item) => {
+    const url = documentUrl(item);
+    return `<article class="card card__body">
+      <p class="eyebrow">${escapeHtml([item.category || "Dokument", item.year].filter(Boolean).join(" / "))}</p>
+      <h3>${escapeHtml(item.title || item.fileName || "Dokument")}</h3>
+      ${item.description ? `<p>${escapeHtml(item.description)}</p>` : ""}
+      ${item.meetingDate ? `<p class="muted">${formatDate(item.meetingDate)}</p>` : ""}
+      ${url ? `<a class="button button--secondary button--small" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">Datei oeffnen</a>` : `<p class="muted">Datei ist noch nicht hinterlegt.</p>`}
+    </article>`;
+  };
+  return publicShell("login", `${subhero("Mitgliederbereich", `Willkommen, ${escapeHtml(user.displayName)}.`, "Dokumente, Mitgliederverzeichnis und eigenes Profil.")}
+    <section class="section"><div class="container"><div class="section-head"><div><h2>Mitglieder-Dokumente</h2><p class="muted">Angemeldet als ${escapeHtml(user.email || "")} / Rolle: ${escapeHtml(user.role || "guest")}${user.memberId ? ` / Mitglied: ${escapeHtml(user.memberId)}` : ""}</p></div><button id="logout-button" class="button button--secondary">Abmelden</button></div><div class="card-grid card-grid--three">${visibleDocuments.length ? visibleDocuments.map(documentCard).join("") : `<div class="alert">Noch keine freigegebenen Mitgliederdokumente.</div>`}</div></div></section>
+    <section class="section section--white"><div class="container"><div class="section-head"><h2>Mein Profil</h2></div>${memberProfileForm(ownMember, user)}</div></section>
+    <section class="section"><div class="container"><div class="section-head"><h2>Mitgliederverzeichnis</h2></div><div class="card-grid card-grid--three">${visibleMembers.length ? visibleMembers.map(memberDirectoryCard).join("") : `<div class="alert">Noch keine freigegebenen Mitglieder.</div>`}</div></div></section>
+    <section class="section"><div class="container"><div class="section-head"><h2>Mitglieder-Events</h2></div><div class="card-grid card-grid--three">${events.length ? events.map((event) => eventCard(event, false, sponsors)).join("") : `<div class="alert">Aktuell keine Mitglieder-Events.</div>`}</div></div></section>`);
 }
 
 export async function legalPage(type) {
