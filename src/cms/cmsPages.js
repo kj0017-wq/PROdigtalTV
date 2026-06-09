@@ -85,6 +85,31 @@ function mediaAssetUrl(asset = {}) {
   return asset.file_path_thumb_url || asset.file_path_web_url || asset.file_path_original_url || asset.imageUrl || asset.assetUrl || "";
 }
 
+function memberLogoAsset(item = {}, mediaAssets = []) {
+  return mediaAssets
+    .filter((asset) => {
+      const logoUrl = item.logoUrl || "";
+      const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
+      return asset.linked_collection === "members" && asset.linked_record_id === item.id
+        || asset.target_collection === "members" && asset.target_id === item.id
+        || (logoUrl && urls.includes(logoUrl));
+    })
+    .filter((asset) => mediaAssetUrl(asset))
+    .sort((a, b) => {
+      const score = (asset = {}) => [
+        asset.status === "active" ? "2" : "1",
+        asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
+        asset.id || ""
+      ].join("|");
+      return score(b).localeCompare(score(a));
+    })[0];
+}
+
+function memberLogoUrl(item = {}, mediaAssets = []) {
+  const asset = memberLogoAsset(item, mediaAssets);
+  return asset ? mediaAssetUrl(asset) || item.logoUrl || "" : item.logoUrl || "";
+}
+
 function memberActionButtons(item, section) {
   const isLive = memberIsLive(item);
   const toggleStatus = isLive ? "inactive" : "active";
@@ -442,37 +467,28 @@ function memberLogoEditor(item = {}, mediaAssets = [], returnTo = "") {
     targetAltField: "altText",
     returnTo
   });
-  const currentAsset = mediaAssets
-    .filter((asset) => {
-    const logoUrl = item.logoUrl || "";
-    const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
-    return asset.linked_collection === "members" && asset.linked_record_id === item.id
-      || asset.target_collection === "members" && asset.target_id === item.id
-      || (logoUrl && urls.includes(logoUrl));
-  })
-    .filter((asset) => mediaAssetUrl(asset))
-    .sort((a, b) => {
-      const score = (asset = {}) => [
-        asset.status === "active" ? "2" : "1",
-        asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
-        asset.id || ""
-      ].join("|");
-      return score(b).localeCompare(score(a));
-    })[0];
-  const logoUrl = currentAsset
-    ? mediaAssetUrl(currentAsset) || item.logoUrl || ""
-    : item.logoUrl || "";
+  const currentAsset = memberLogoAsset(item, mediaAssets);
+  const logoUrl = memberLogoUrl(item, mediaAssets);
   const editHref = currentAsset?.id
     ? `#/cms/media/edit?id=${encodeURIComponent(currentAsset.id)}&${params.toString()}`
     : `#/cms/media/library?${params.toString()}`;
   return `<div class="member-logo-editor">
     <div class="member-logo-editor__preview">${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(item.name || "")}">` : `<span>Noch kein Logo</span>`}</div>
     <div class="member-logo-editor__actions">
-      <a class="button button--primary button--small" href="${editHref}">${currentAsset?.id ? "Logo in Mediathek bearbeiten" : "Logo aus Mediathek waehlen"}</a>
-      <a class="button button--secondary button--small" href="#/cms/media/upload?${params.toString()}">Neues Logo in Mediathek hochladen</a>
+      <a class="button button--primary button--small" href="${editHref}">Logo bearbeiten</a>
+      ${logoUrl ? `<button class="button button--secondary button--small" type="button" data-clear-member-logo="${escapeHtml(item.id || "")}">Logo loeschen</button>` : ""}
       <p class="muted">Speichern im Mediathek-Editor ersetzt dieses Mitgliederlogo im bestehenden Mitgliedsprofil.</p>
     </div>
   </div>`;
+}
+
+function memberLogoThumb(item = {}, mediaAssets = [], section = "all") {
+  const logoUrl = memberLogoUrl(item, mediaAssets);
+  const content = logoUrl
+    ? `<img src="${escapeHtml(logoUrl)}" alt="">`
+    : `<span>Bild</span>`;
+  if (!item.id) return content;
+  return `<a class="cms-thumb-action" href="${cmsThumbTarget("members", { ...item, logoUrl }, section, "logoUrl", "altText")}" title="${logoUrl ? "Logo aus Mediathek waehlen" : "Logo mit KI erstellen"}" aria-label="${logoUrl ? "Logo aus Mediathek waehlen" : "Logo mit KI erstellen"}">${content}</a>`;
 }
 
 function topicSpeakersForEvent(topic, event, speakers) {
@@ -809,6 +825,7 @@ export async function moduleListPage(module, section = "all") {
       if (dateA || dateB) return String(dateB).localeCompare(String(dateA));
       return Number(b.sortOrder || 0) - Number(a.sortOrder || 0);
     });
+  const memberMediaAssets = module === "members" ? await list("media_assets").catch(() => []) : [];
   const active = editorialConfig?.active || { topics: "cms/topics", galleries: "cms/galleries", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", membershipApplications: "cms/membership-applications", memberDocuments: "cms/member-documents", memberDirectories: "cms/member-directories", users: "cms/users", boardMembers: "cms/board", editorialContent: "cms/editorial", mailQueue: "cms/mail", eventMedia: "cms/followup" }[module];
   const editable = !["mailQueue", "eventMedia"].includes(module);
   const manageable = module !== "mailQueue";
@@ -831,7 +848,7 @@ export async function moduleListPage(module, section = "all") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th>${showAudio ? "<th>Audio</th>" : ""}<th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt" })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td>${showAudio ? `<td>${audioListCell("editorialContent", item)}</td>` : ""}<td>${statusCell(item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${showAudio ? 7 : 6}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "members") {
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Logo</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table member-logo-thumb--table">${editorialThumb(item, { collection: "members", section, field: "logoUrl", altField: "altText" })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a><small>${escapeHtml(shortText(item.description || "-", 90))}</small></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml([item.category, item.city].filter(Boolean).join(" / ") || "-")}</td><td>${memberListStatus(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Logo</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table member-logo-thumb--table">${memberLogoThumb(item, memberMediaAssets, section)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a><small>${escapeHtml(shortText(item.description || "-", 90))}</small></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml([item.category, item.city].filter(Boolean).join(" / ") || "-")}</td><td>${memberListStatus(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (["boardMembers", "speakers", "sponsors"].includes(module)) {
     const imageField = module === "sponsors" ? "logoUrl" : "photoUrl";
@@ -886,7 +903,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
     topics: { title: "Redaktionelles Thema", fields: [["title", "Thema"], ["shortDescription", "Kurze Beschreibung"]] },
     speakers: { title: "Referent", fields: [["name", "Referent Name"], ["company", "Firma"]] },
     sponsors: { title: "Sponsor / Gastgeber", fields: [["name", "Name"], ["role", "Sponsor / Gastgeber"], ["address", "Adresse"], ["website", "Webseite"]] },
-    members: { title: "Mitglied", fields: [["name", "Firmenname"], ["description", "Beschreibung"], ["website", "Website"], ["category", "Kategorie"], ["city", "Ort"], ["contactEmail", "Kontakt E-Mail"]] },
+    members: { title: "Mitglied", fields: [["membershipType", "Mitgliedstyp"], ["name", "Firma / Name"], ["description", "Beschreibung"], ["website", "Website"], ["category", "Kategorie"], ["city", "Ort"], ["contactName", "Kontaktperson"], ["contactEmail", "Kontakt E-Mail"], ["contactPhone", "Kontakt Telefon"]] },
     membershipApplications: { title: "Mitgliedsantrag", fields: [["company", "Unternehmen / Name"], ["legalForm", "Rechtsform"], ["street", "Strasse"], ["city", "PLZ / Ort"], ["country", "Land"], ["website", "Website"], ["firstName", "Vorname"], ["lastName", "Nachname"], ["position", "Position"], ["email", "E-Mail"], ["phone", "Telefon"], ["membershipType", "Mitgliedschaft: company oder individual"], ["companyDescription", "Kurzbeschreibung"], ["message", "Nachricht"], ["status", "Status"], ["submittedAt", "Eingegangen"]] },
     memberDocuments: { title: "Mitgliederdokument", fields: [["title", "Titel"], ["category", "Kategorie"], ["year", "Jahr"], ["meetingDate", "Datum"], ["description", "Beschreibung"]] },
     memberDirectories: { title: "Mitgliederverzeichnis", fields: [["title", "Titel"], ["year", "Jahr"], ["description", "Beschreibung"], ["documentUrl", "Datei-Link optional"]] },
@@ -1219,6 +1236,10 @@ Ausgangstext:
       ].join("");
       return `<div class="field"><label>${label}</label><select name="memberId">${options}</select><p class="muted">Verknuepft diesen User mit dem Mitgliedsprofil, das er im Mitgliederbereich bearbeiten darf.</p></div>`;
     }
+    if (module === "members" && field === "membershipType") {
+      const currentType = item?.membershipType || "";
+      return `<div class="field"><label>${label}</label><select name="membershipType"><option value="" ${currentType ? "" : "selected"}>Nicht festgelegt</option><option value="company" ${currentType === "company" ? "selected" : ""}>Firmenmitglied</option><option value="individual" ${currentType === "individual" ? "selected" : ""}>Einzelmitglied</option></select></div>`;
+    }
     return `<div class="field"><label>${label}</label>${long ? `<textarea name="${field}">${escapeHtml(item?.[field] || "")}</textarea>` : `<input name="${field}" value="${escapeHtml(item?.[field] || "")}">`}${ai}</div>`;
   }).join("");
   const imageUpload = module === "topics"
@@ -1244,7 +1265,11 @@ Ausgangstext:
   const editorialBack = query.get("section") && editorialSections[query.get("section")] ? `editorial/${query.get("section")}` : item.page === "press" ? "editorial/press" : item.page === "news" ? "editorial/news" : module === "editorialContent" ? "editorial/interna" : "editorial";
   const backSection = { boardMembers: "board", editorialContent: editorialBack, speakers: "speakers", sponsors: "sponsors", memberDocuments: "member-documents", memberDirectories: "member-directories" }[module] || module;
   const activeSection = { topics: "cms/topics", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", memberDocuments: "cms/member-documents", memberDirectories: "cms/member-directories", users: "cms/users", boardMembers: "cms/board", editorialContent: `cms/${editorialBack}` }[module] || "cms/editorial";
-  return protect(cmsShell(activeSection, `${cmsTitle("Bearbeiten", `${definition.title} pflegen`, `<a class="button button--secondary button--small" href="#/cms/${backSection}">Zurueck</a>`)}<section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid">${fieldHtml}${imageUpload}<div class="form-grid--two"><div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="${activeStatus}" ${item.status === activeStatus ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Sichtbarkeit</label><select name="visibility"><option value="public" ${item.visibility === "public" ? "selected" : ""}>Oeffentlich</option><option value="members" ${item.visibility === "members" ? "selected" : ""}>Mitglieder</option><option value="internal" ${item.visibility === "internal" ? "selected" : ""}>Intern</option></select></div></div>${memberLiveControl}<button class="button button--primary">Speichern</button><div id="content-save-result"></div></form></section>${speakerManager}`));
+  const statusVisibilityControls = module === "members"
+    ? ""
+    : `<div class="form-grid--two"><div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="${activeStatus}" ${item.status === activeStatus ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Sichtbarkeit</label><select name="visibility"><option value="public" ${item.visibility === "public" ? "selected" : ""}>Oeffentlich</option><option value="members" ${item.visibility === "members" ? "selected" : ""}>Mitglieder</option><option value="internal" ${item.visibility === "internal" ? "selected" : ""}>Intern</option></select></div></div>`;
+  const formClass = module === "members" ? "form-grid form-grid--two member-edit-form" : "form-grid";
+  return protect(cmsShell(activeSection, `${cmsTitle("Bearbeiten", `${definition.title} pflegen`, `<a class="button button--secondary button--small" href="#/cms/${backSection}">Zurueck</a>`)}<section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="${formClass}">${fieldHtml}${imageUpload}${statusVisibilityControls}${module === "members" ? "" : memberLiveControl}<button class="button button--primary">Speichern</button><div id="content-save-result"></div></form></section>${speakerManager}`));
 }
 
 export async function audioAdminPage() {

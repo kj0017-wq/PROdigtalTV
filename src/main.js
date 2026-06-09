@@ -12,7 +12,7 @@ const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 
 const lazy = {};
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=482");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=485");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=462");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=49");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js");
@@ -7003,6 +7003,7 @@ function wireActions() {
       }
       setaveButtonFeedback(submitButton, "success", "Gespeichert");
       form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: savedValues }));
+      if (form.dataset.module === "members") window.setTimeout(render, 450);
     } catch (error) {
       setaveButtonFeedback(submitButton, "error", "Fehler");
       if (result) result.innerHTML = `<div class="alert alert--error">Speichern fehlgeschlagen: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
@@ -7010,6 +7011,53 @@ function wireActions() {
     } finally {
       if (submitButton && !submitButton.classList.contains("is-save-success") && !submitButton.classList.contains("is-save-error")) submitButton.disabled = false;
     }
+  });
+
+  document.querySelectorAll("[data-clear-member-logo]").forEach((button) => {
+    if (button.dataset.clearMemberLogoWired === "1") return;
+    button.dataset.clearMemberLogoWired = "1";
+    button.addEventListener("click", async () => {
+      const memberId = button.dataset.clearMemberLogo;
+      const form = button.closest("form");
+      const result = form?.querySelector("#content-save-result");
+      if (!memberId) return;
+      button.disabled = true;
+      if (result) result.innerHTML = `<div class="alert">Logo wird geloescht...</div>`;
+      try {
+        const member = await getOne("members", memberId);
+        if (!member) throw new Error("Mitglied wurde nicht gefunden.");
+        await upsert("members", {
+          ...member,
+          logoUrl: "",
+          imageUrl: "",
+          thumbnail_url: "",
+          thumbnailUrl: "",
+          thumbnail_media_asset_id: "",
+          mediaAssetId: "",
+          assetUrl: "",
+          updatedAt: new Date().toISOString()
+        });
+        const assets = await list("media_assets").catch(() => []);
+        await Promise.all(assets
+          .filter((asset) => (asset.linked_collection === "members" && asset.linked_record_id === memberId) || (asset.target_collection === "members" && asset.target_id === memberId))
+          .map((asset) => upsert("media_assets", {
+            ...asset,
+            linked_collection: "",
+            linked_record_id: "",
+            linked_field: "",
+            target_collection: "",
+            target_id: "",
+            target_field: "",
+            updated_at: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          })));
+        if (result) result.innerHTML = `<div class="alert alert--success">Logo geloescht.</div>`;
+        window.setTimeout(render, 500);
+      } catch (error) {
+        if (result) result.innerHTML = `<div class="alert alert--error">Logo konnte nicht geloescht werden: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+        button.disabled = false;
+      }
+    });
   });
 
   document.querySelectorAll("[data-news-visible-toggle]").forEach((button) => button.addEventListener("click", async () => {
