@@ -90,13 +90,19 @@ function memberLogoAsset(item = {}, mediaAssets = []) {
     .filter((asset) => {
       const logoUrl = item.logoUrl || "";
       const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
-      return asset.linked_collection === "members" && asset.linked_record_id === item.id
+      const directIds = [item.logo_media_asset_id, item.logoMediaAssetId, item.thumbnail_media_asset_id, item.mediaAssetId, item.media_asset_id].filter(Boolean);
+      return directIds.includes(asset.id)
+        || asset.linked_collection === "members" && asset.linked_record_id === item.id
         || asset.target_collection === "members" && asset.target_id === item.id
         || (logoUrl && urls.includes(logoUrl));
     })
     .filter((asset) => mediaAssetUrl(asset))
     .sort((a, b) => {
       const score = (asset = {}) => [
+        [item.logo_media_asset_id, item.logoMediaAssetId, item.thumbnail_media_asset_id, item.mediaAssetId, item.media_asset_id].filter(Boolean).includes(asset.id) ? "5" : "0",
+        asset.target_collection === "members" && asset.target_id === item.id && (asset.target_field || "logoUrl") === "logoUrl" ? "4" : "0",
+        asset.linked_collection === "members" && asset.linked_record_id === item.id && (asset.linked_field || "logoUrl") === "logoUrl" ? "3" : "0",
+        asset.source_type === "edited" ? "2" : "0",
         asset.status === "active" ? "2" : "1",
         asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
         asset.id || ""
@@ -514,7 +520,7 @@ function memberLogoThumb(item = {}, mediaAssets = [], section = "all") {
     ? `<img src="${escapeHtml(logoUrl)}" alt="">`
     : `<span>Bild</span>`;
   if (!item.id) return content;
-  const targetItem = { ...item, logoUrl, thumbnail_media_asset_id: currentAsset?.id || item.thumbnail_media_asset_id || item.mediaAssetId || "" };
+  const targetItem = { ...item, logoUrl, logo_media_asset_id: currentAsset?.id || item.logo_media_asset_id || "", thumbnail_media_asset_id: currentAsset?.id || item.thumbnail_media_asset_id || item.mediaAssetId || "" };
   return `<a class="cms-thumb-action" href="${cmsThumbTarget("members", targetItem, section, "logoUrl", "altText")}" title="${logoUrl ? "Logo bearbeiten" : "Logo mit KI erstellen"}" aria-label="${logoUrl ? "Logo bearbeiten" : "Logo mit KI erstellen"}">${content}</a>`;
 }
 
@@ -1273,11 +1279,18 @@ Ausgangstext:
   }).join("");
   const memberField = (field, label) => {
     const long = field === "description";
+    const value = field === "contactName"
+      ? item?.contactName || item?.profileContactName || ""
+      : field === "contactEmail"
+        ? item?.contactEmail || item?.email || ""
+        : field === "contactPhone"
+          ? item?.contactPhone || item?.phone || ""
+          : item?.[field] || "";
     if (field === "membershipType") {
       const currentType = item?.membershipType || "";
       return `<div class="field"><label>${label}</label><select name="membershipType"><option value="" ${currentType ? "" : "selected"}>Nicht festgelegt</option><option value="company" ${currentType === "company" ? "selected" : ""}>Firmenmitglied</option><option value="individual" ${currentType === "individual" ? "selected" : ""}>Einzelmitglied</option></select></div>`;
     }
-    return `<div class="field"><label>${label}</label>${long ? `<textarea name="${field}">${escapeHtml(item?.[field] || "")}</textarea>` : `<input name="${field}" value="${escapeHtml(item?.[field] || "")}">`}</div>`;
+    return `<div class="field"><label>${label}</label>${long ? `<textarea name="${field}">${escapeHtml(value)}</textarea>` : `<input name="${field}" value="${escapeHtml(value)}">`}</div>`;
   };
   const imageUpload = module === "topics"
     ? `<div class="field"><label>Themenbild hochladen</label><input type="file" name="assetFile" accept="image/*"><p class="muted">Das neue Bild ersetzt beim Speichern das zugeordnete Bild.</p></div>`

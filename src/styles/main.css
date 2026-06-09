@@ -2685,8 +2685,8 @@ p { color: var(--pdt-muted); }
 .table--topics td:first-child { min-width: 82px; width: 82px; }
 .topic-thumb--table { width: 58px; height: 44px; border-radius: 8px; }
 .topic-thumb--table.member-logo-thumb--table {
-  width: 102px;
-  height: 40px;
+  width: 135px;
+  height: 53px;
   aspect-ratio: 2.55 / 1;
   padding: 5px;
   border-radius: 8px;

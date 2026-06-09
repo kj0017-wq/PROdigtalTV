@@ -12,7 +12,7 @@ const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 
 const lazy = {};
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=490");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=491");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=462");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=49");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js");
@@ -686,6 +686,26 @@ function withContentVersionMetadata(collection, previous = {}, next = {}) {
     audioNaturalStatus: stale ? "veraltet" : next.audioNaturalStatus || previous.audioNaturalStatus || "deaktiviert",
     audioAccessibleStatus: stale ? "veraltet" : next.audioAccessibleStatus || previous.audioAccessibleStatus || "deaktiviert"
   };
+}
+
+function normalizeMemberContactValues(values = {}) {
+  const normalized = { ...values };
+  if (Object.prototype.hasOwnProperty.call(normalized, "contactName") || Object.prototype.hasOwnProperty.call(normalized, "profileContactName")) {
+    const name = normalized.contactName || normalized.profileContactName || "";
+    normalized.contactName = name;
+    normalized.profileContactName = name;
+  }
+  if (Object.prototype.hasOwnProperty.call(normalized, "contactPhone") || Object.prototype.hasOwnProperty.call(normalized, "phone")) {
+    const phone = normalized.contactPhone || normalized.phone || "";
+    normalized.contactPhone = phone;
+    normalized.phone = phone;
+  }
+  if (Object.prototype.hasOwnProperty.call(normalized, "contactEmail") || Object.prototype.hasOwnProperty.call(normalized, "email")) {
+    const email = normalized.contactEmail || normalized.email || "";
+    normalized.contactEmail = email;
+    normalized.email = email;
+  }
+  return normalized;
 }
 
 async function autoGenerateSpeechIfNeeded(collection, previous, next, result) {
@@ -3801,6 +3821,10 @@ async function attachMediaAssetToTarget(asset = {}, context = {}) {
     assetType: "image",
     updatedAt: new Date().toISOString()
   };
+  if (context.targetCollection === "members" && (context.targetField || "logoUrl") === "logoUrl") {
+    update.logo_media_asset_id = asset.id;
+    update.logoMediaAssetId = asset.id;
+  }
   const variantIds = Array.isArray(target.thumbnail_variant_asset_ids) ? target.thumbnail_variant_asset_ids : [];
   update.thumbnail_variant_asset_ids = Array.from(new Set([asset.id, ...variantIds].filter(Boolean))).slice(0, 24);
   if (context.targetAltField) update[context.targetAltField] = asset.thumbnail_alt || asset.thumbnailAlt || asset.alt_text || asset.description || target[context.targetAltField] || "";
@@ -7007,6 +7031,7 @@ function wireActions() {
       delete values.assetFileDataUrl;
       delete values.removeAssetFile;
       delete values.source_snapshot_json_text;
+      if (form.dataset.module === "members") values = normalizeMemberContactValues(values);
       const savedValues = withContentVersionMetadata(form.dataset.module, existing, { ...existing, ...values });
       await upsert(form.dataset.module, savedValues);
       if (image || removeAssetRequested) {
@@ -7121,8 +7146,8 @@ function wireActions() {
       if (user.memberId !== memberId) throw new Error("Sie koennen nur Ihr eigenes Mitgliedsprofil bearbeiten.");
       const existing = await getOne("members", memberId);
       if (!existing) throw new Error("Das verknuepfte Mitgliedsprofil wurde nicht gefunden.");
-      const values = formObject(form);
-      const allowedFields = ["name", "description", "website", "category", "city", "country", "contactEmail", "phone", "profileContactName"];
+      const values = normalizeMemberContactValues(formObject(form));
+      const allowedFields = ["name", "description", "website", "category", "city", "country", "contactEmail", "email", "phone", "contactPhone", "profileContactName", "contactName"];
       const update = {
         id: memberId,
         profileUpdatedAt: new Date().toISOString(),
