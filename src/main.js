@@ -4051,6 +4051,16 @@ function wireMediaEdit() {
       return;
     }
     const mediaContext = mediaContextFromNode(form);
+    const saveEditedMemberLogo = mediaContext.targetCollection === "members"
+      && mediaContext.targetField === "logoUrl"
+      && form.dataset.mediaCropDirty === "1"
+      && form.querySelector("[data-media-crop-apply]");
+    if (saveEditedMemberLogo) {
+      if (result) result.innerHTML = `<div class="alert">Bearbeitetes Logo wird gespeichert und dem Mitglied zugeordnet ...</div>`;
+      form.querySelector("[data-media-crop-apply]")?.click();
+      setaveButtonFeedback(submitButton, "success", "Logo wird gespeichert");
+      return;
+    }
     const now = new Date().toISOString();
     try {
       const update = {
@@ -4208,6 +4218,7 @@ function wireMediaCropMask() {
     if (apply) apply.textContent = "Uebernommen";
   };
   const markDirty = () => {
+    if (form) form.dataset.mediaCropDirty = "1";
     apply?.classList.remove("is-applied");
     if (apply) apply.textContent = "OK uebernehmen";
   };
@@ -4395,6 +4406,7 @@ function wireMediaCropMask() {
     setaveButtonFeedback(apply, "saving", "peichere ...");
     try {
       await saveEditedAsset();
+      if (form) delete form.dataset.mediaCropDirty;
       setaveButtonFeedback(apply, "success", "Gespeichert");
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--error">Variante konnte nicht gespeichert werden: ${escapeHtml(error.message || String(error))}</div>`;
