@@ -81,6 +81,10 @@ function memberListStatus(item) {
   return status(memberIsLive(item) ? "active" : "inactive");
 }
 
+function mediaAssetUrl(asset = {}) {
+  return asset.file_path_thumb_url || asset.file_path_web_url || asset.file_path_original_url || asset.imageUrl || asset.assetUrl || "";
+}
+
 function memberActionButtons(item, section) {
   const isLive = memberIsLive(item);
   const toggleStatus = isLive ? "inactive" : "active";
@@ -431,7 +435,6 @@ function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altF
 }
 
 function memberLogoEditor(item = {}, mediaAssets = [], returnTo = "") {
-  const logoUrl = item.logoUrl || "";
   const params = new URLSearchParams({
     targetCollection: "members",
     targetId: item.id || "",
@@ -439,12 +442,26 @@ function memberLogoEditor(item = {}, mediaAssets = [], returnTo = "") {
     targetAltField: "altText",
     returnTo
   });
-  const currentAsset = mediaAssets.find((asset) => {
+  const currentAsset = mediaAssets
+    .filter((asset) => {
+    const logoUrl = item.logoUrl || "";
     const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
     return asset.linked_collection === "members" && asset.linked_record_id === item.id
       || asset.target_collection === "members" && asset.target_id === item.id
       || (logoUrl && urls.includes(logoUrl));
-  });
+  })
+    .filter((asset) => mediaAssetUrl(asset))
+    .sort((a, b) => {
+      const score = (asset = {}) => [
+        asset.status === "active" ? "2" : "1",
+        asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
+        asset.id || ""
+      ].join("|");
+      return score(b).localeCompare(score(a));
+    })[0];
+  const logoUrl = currentAsset
+    ? mediaAssetUrl(currentAsset) || item.logoUrl || ""
+    : item.logoUrl || "";
   const editHref = currentAsset?.id
     ? `#/cms/media/edit?id=${encodeURIComponent(currentAsset.id)}&${params.toString()}`
     : `#/cms/media/library?${params.toString()}`;
