@@ -1242,6 +1242,14 @@ Ausgangstext:
     }
     return `<div class="field"><label>${label}</label>${long ? `<textarea name="${field}">${escapeHtml(item?.[field] || "")}</textarea>` : `<input name="${field}" value="${escapeHtml(item?.[field] || "")}">`}${ai}</div>`;
   }).join("");
+  const memberField = (field, label) => {
+    const long = field === "description";
+    if (field === "membershipType") {
+      const currentType = item?.membershipType || "";
+      return `<div class="field"><label>${label}</label><select name="membershipType"><option value="" ${currentType ? "" : "selected"}>Nicht festgelegt</option><option value="company" ${currentType === "company" ? "selected" : ""}>Firmenmitglied</option><option value="individual" ${currentType === "individual" ? "selected" : ""}>Einzelmitglied</option></select></div>`;
+    }
+    return `<div class="field"><label>${label}</label>${long ? `<textarea name="${field}">${escapeHtml(item?.[field] || "")}</textarea>` : `<input name="${field}" value="${escapeHtml(item?.[field] || "")}">`}</div>`;
+  };
   const imageUpload = module === "topics"
     ? `<div class="field"><label>Themenbild hochladen</label><input type="file" name="assetFile" accept="image/*"><p class="muted">Das neue Bild ersetzt beim Speichern das zugeordnete Bild.</p></div>`
     : module === "members"
@@ -1269,7 +1277,23 @@ Ausgangstext:
     ? ""
     : `<div class="form-grid--two"><div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="${activeStatus}" ${item.status === activeStatus ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Sichtbarkeit</label><select name="visibility"><option value="public" ${item.visibility === "public" ? "selected" : ""}>Oeffentlich</option><option value="members" ${item.visibility === "members" ? "selected" : ""}>Mitglieder</option><option value="internal" ${item.visibility === "internal" ? "selected" : ""}>Intern</option></select></div></div>`;
   const formClass = module === "members" ? "form-grid form-grid--two member-edit-form" : "form-grid";
-  return protect(cmsShell(activeSection, `${cmsTitle("Bearbeiten", `${definition.title} pflegen`, `<a class="button button--secondary button--small" href="#/cms/${backSection}">Zurueck</a>`)}<section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="${formClass}">${fieldHtml}${imageUpload}${statusVisibilityControls}${module === "members" ? "" : memberLiveControl}<button class="button button--primary">Speichern</button><div id="content-save-result"></div></form></section>${speakerManager}`));
+  const memberEditHtml = module === "members"
+    ? `<div class="member-edit-form__column member-edit-form__column--identity">
+        ${memberField("membershipType", "Mitgliedstyp")}
+        ${memberField("name", "Firma / Name")}
+        ${memberField("city", "Ort")}
+        ${memberField("contactName", "Kontaktperson")}
+        ${memberField("contactEmail", "Kontakt E-Mail")}
+        ${memberField("contactPhone", "Kontakt Telefon")}
+      </div>
+      <div class="member-edit-form__column member-edit-form__column--content">
+        ${memberField("description", "Beschreibung")}
+        ${memberField("website", "Website")}
+        ${memberField("category", "Kategorie")}
+        ${imageUpload}
+      </div>`
+    : `${fieldHtml}${imageUpload}`;
+  return protect(cmsShell(activeSection, `${cmsTitle("Bearbeiten", `${definition.title} pflegen`, `<a class="button button--secondary button--small" href="#/cms/${backSection}">Zurueck</a>`)}<section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="${formClass}">${memberEditHtml}${statusVisibilityControls}${module === "members" ? "" : memberLiveControl}<button class="button button--primary">Speichern</button><div id="content-save-result"></div></form></section>${speakerManager}`));
 }
 
 export async function audioAdminPage() {

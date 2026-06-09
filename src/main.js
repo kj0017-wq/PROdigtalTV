@@ -12,7 +12,7 @@ const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 
 const lazy = {};
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=485");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=486");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=462");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=49");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js");

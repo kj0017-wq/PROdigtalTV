@@ -2428,6 +2428,14 @@ p { color: var(--pdt-muted); }
   flex-basis: 100%;
   margin: 0;
 }
+.member-edit-form {
+  align-items: start;
+}
+.member-edit-form__column {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
 .member-edit-form .field--member-logo,
 .member-edit-form .button.button--primary,
 .member-edit-form #content-save-result {
