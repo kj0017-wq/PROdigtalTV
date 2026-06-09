@@ -4665,6 +4665,27 @@ function wireEditorialPreviewLayer() {
   });
 }
 
+function wireStickyBoxWheel() {
+  document.querySelectorAll(".internal-about-sticky, .join-aside").forEach((box) => {
+    if (box.dataset.stickyWheelWired === "1") return;
+    box.dataset.stickyWheelWired = "1";
+    box.addEventListener("wheel", (event) => {
+      const maxScroll = box.scrollHeight - box.clientHeight;
+      if (maxScroll <= 1) {
+        window.scrollBy({ top: event.deltaY, left: 0, behavior: "auto" });
+        event.preventDefault();
+        return;
+      }
+      const atTop = box.scrollTop <= 0;
+      const atBottom = box.scrollTop >= maxScroll - 1;
+      if ((event.deltaY < 0 && atTop) || (event.deltaY > 0 && atBottom)) {
+        window.scrollBy({ top: event.deltaY, left: 0, behavior: "auto" });
+        event.preventDefault();
+      }
+    }, { passive: false });
+  });
+}
+
 function wireActions() {
   document.querySelector("[data-theme-toggle]")?.addEventListener("click", () => {
     const next = document.documentElement.dataset.theme === "night" ? "day" : "night";
@@ -4678,6 +4699,7 @@ function wireActions() {
   wireInternalScrollTop();
   wireJoinScroll();
   wireStickyRotators();
+  wireStickyBoxWheel();
   wireMediaLibraryFilters();
   wireExistingThumbImport();
   wireMediaCardLinks();
