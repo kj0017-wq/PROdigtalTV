@@ -129,9 +129,51 @@ function articleHeader({ eyebrow = "", title = "", intro = "", logoUrl = "", log
 
 function memberLogo(member) {
   const logoClass = `member-logo member-logo--${String(member.id || "").replace(/[^a-z0-9-]/gi, "").toLowerCase()}`;
-  return member.logoUrl
-    ? `<img class="${logoClass}" src="${escapeHtml(member.logoUrl)}" alt="Logo ${escapeHtml(member.name)}">`
+  const logoUrl = member.logoDisplayUrl || member.logoUrl || "";
+  return logoUrl
+    ? `<img class="${logoClass}" src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(member.name)}">`
     : escapeHtml(member.name);
+}
+
+function mediaAssetUrl(asset = {}) {
+  return asset.file_path_web_url || asset.file_path_thumb_url || asset.file_path_original_url || asset.imageUrl || asset.assetUrl || "";
+}
+
+function publicMemberLogoAsset(member = {}, mediaAssets = []) {
+  return mediaAssets
+    .filter((asset) => {
+      const logoUrl = member.logoUrl || "";
+      const directIds = [member.logo_media_asset_id, member.logoMediaAssetId, member.thumbnail_media_asset_id, member.mediaAssetId, member.media_asset_id].filter(Boolean);
+      const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
+      return directIds.includes(asset.id)
+        || (asset.target_collection === "members" && asset.target_id === member.id && (asset.target_field || "logoUrl") === "logoUrl")
+        || (asset.linked_collection === "members" && asset.linked_record_id === member.id && (asset.linked_field || "logoUrl") === "logoUrl")
+        || (logoUrl && urls.includes(logoUrl));
+    })
+    .filter((asset) => mediaAssetUrl(asset))
+    .sort((a, b) => {
+      const directIds = [member.logo_media_asset_id, member.logoMediaAssetId, member.thumbnail_media_asset_id, member.mediaAssetId, member.media_asset_id].filter(Boolean);
+      const score = (asset = {}) => [
+        directIds.includes(asset.id) ? "5" : "0",
+        asset.target_collection === "members" && asset.target_id === member.id && (asset.target_field || "logoUrl") === "logoUrl" ? "4" : "0",
+        asset.linked_collection === "members" && asset.linked_record_id === member.id && (asset.linked_field || "logoUrl") === "logoUrl" ? "3" : "0",
+        asset.source_type === "edited" ? "2" : "0",
+        asset.status === "active" ? "2" : "1",
+        asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
+        asset.id || ""
+      ].join("|");
+      return score(b).localeCompare(score(a));
+    })[0];
+}
+
+async function withPublicMemberLogos(members = []) {
+  if (!members.length) return members;
+  const mediaAssets = await list("media_assets").catch(() => []);
+  return members.map((member) => {
+    const asset = publicMemberLogoAsset(member, mediaAssets);
+    const logoDisplayUrl = asset ? mediaAssetUrl(asset) || member.logoUrl || "" : member.logoUrl || "";
+    return { ...member, logoDisplayUrl };
+  });
 }
 
 function boardPortrait(person) {
@@ -479,9 +521,10 @@ function internalDesktopSection(block, meta) {
 function internalOverviewPage(bereich) {
   return async function renderInternalOverview() {
     const meta = internalPageMeta[bereich];
-    const [blocks, events, board, members, topics] = bereich === "ueber_uns"
+    const [blocks, events, board, rawMembers, topics] = bereich === "ueber_uns"
       ? await Promise.all([internalBlocks(bereich), listPublicEvents(), listPublicContent("boardMembers"), listPublicContent("members"), listPublicContent("topics")])
       : [await internalBlocks(bereich), [], [], [], []];
+    const members = await withPublicMemberLogos(rawMembers);
     const hero = blocks.find((block) => block.typ === "hero") || blocks[0];
     const cards = blocks.map((block) => internalCard(block, meta)).join("");
     const aboutCards = aboutCardGroups(blocks, meta);
@@ -623,7 +666,8 @@ function isPastEvent(event) {
 }
 
 export async function homePage() {
-  const [events, topics, members, editorial, sponsors] = await Promise.all([listPublicEvents(), listPublicContent("topics"), listPublicContent("members"), listPublicContent("editorialContent"), listPublicContent("sponsors")]);
+  const [events, topics, rawMembers, editorial, sponsors] = await Promise.all([listPublicEvents(), listPublicContent("topics"), listPublicContent("members"), listPublicContent("editorialContent"), listPublicContent("sponsors")]);
+  const members = await withPublicMemberLogos(rawMembers);
   const upcoming = events.filter((event) => !isPastEvent(event) && event.visibility === "public").sort((a, b) => a.date.localeCompare(b.date));
   const next = upcoming[0];
   const hero = editorial.find((content) => content.key === "home.hero") || {
@@ -884,7 +928,7 @@ export async function topicDetailPage(id) {
 export const aboutPage = internalOverviewPage("ueber_uns");
 
 export async function membersPage() {
-  const members = await listPublicContent("members");
+  const members = await withPublicMemberLogos(await listPublicContent("members"));
   return publicShell("members", `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform fuer Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
     <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input placeholder="Mitglieder suchen"></div></div><div class="card-grid card-grid--three">${members.map((member) => `<article class="card card__body"><div class="member-tile" style="margin-bottom:16px">${memberLogo(member)}</div><h3 style="margin:15px 0 8px">${escapeHtml(member.name)}</h3><p>${escapeHtml(member.description || "")}</p><p style="margin-top:12px">${escapeHtml(member.city)}${member.country ? ` · ${escapeHtml(member.country)}` : ""}</p>${member.website ? `<a class="link" style="display:inline-block;margin-top:14px" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Zur Website →</a>` : ""}</article>`).join("")}</div></div></section>`);
 }
@@ -1062,7 +1106,7 @@ export async function memberPortalPage() {
     listPublicEvents(true),
     listPublicContent("sponsors"),
     list("memberDocuments").catch(() => []),
-    listPublicContent("members").catch(() => []),
+    listPublicContent("members").then(withPublicMemberLogos).catch(() => []),
     user.memberId ? getOne("members", user.memberId).catch(() => null) : Promise.resolve(null)
   ]);
   const events = allEvents.filter((event) => event.accessType === "members_only");
