@@ -1591,6 +1591,17 @@ p { color: var(--pdt-muted); }
 .internal-about-sticky {
   display: none;
 }
+.internal-about-sticky {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(15, 47, 92, .32) transparent;
+}
+.internal-about-sticky::-webkit-scrollbar {
+  width: 8px;
+}
+.internal-about-sticky::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(15, 47, 92, .28);
+}
 .internal-about-sticky__grid {
   display: grid;
   gap: 10px;
@@ -1691,7 +1702,7 @@ p { color: var(--pdt-muted); }
   display: grid;
   gap: 9px;
 }
-.internal-sticky-member {
+.internal-about-sticky a.internal-sticky-member {
   grid-template-columns: 1fr;
   justify-items: center;
   min-height: 72px;
@@ -4267,6 +4278,9 @@ form.is-saved [data-image-crop] {
     position: sticky;
     top: 138px;
     display: block;
+    max-height: calc(100dvh - 156px);
+    overflow-y: auto;
+    overflow-x: hidden;
     padding: 16px;
     border: 1px solid rgba(15, 47, 92, .10);
     border-radius: 8px;
