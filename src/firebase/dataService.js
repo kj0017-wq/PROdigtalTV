@@ -67,7 +67,7 @@ function localDb() {
         localEvent.city = demoEvent.city;
         localEvent.phone = demoEvent.phone;
         localEvent.lunchNote = demoEvent.lunchNote;
-        localEvent.imageUrl = demoEvent.imageUrl;
+        if (!localEvent.imageUrl) localEvent.imageUrl = demoEvent.imageUrl;
         localEvent.expiresAt = demoEvent.expiresAt;
         localEvent.status = demoEvent.status;
         localEvent.lifecyclePhase = demoEvent.lifecyclePhase;

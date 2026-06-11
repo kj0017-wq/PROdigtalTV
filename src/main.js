@@ -1627,13 +1627,17 @@ function mediaVariantCanvasSize(format = "16x9") {
 
 function canvasToFile(canvas, filename = "bild.webp", type = "image/webp", quality = .9) {
   return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        reject(new Error("Bildvariante konnte nicht erzeugt werden."));
-        return;
-      }
-      resolve(new File([blob], filename, { type }));
-    }, type, quality);
+    try {
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error("Bildvariante konnte nicht erzeugt werden."));
+          return;
+        }
+        resolve(new File([blob], filename, { type }));
+      }, type, quality);
+    } catch (error) {
+      reject(new Error("Bildvariante konnte nicht erzeugt werden. Bitte das Bild zuerst in die Mediathek hochladen und dann erneut zuschneiden."));
+    }
   });
 }
 
@@ -3711,15 +3715,21 @@ function wirePublicMenu() {
 }
 
 function wireAboutJumps() {
-  document.querySelectorAll("[data-about-jump]").forEach((link) => {
-    link.addEventListener("click", (event) => {
-      const slug = link.getAttribute("data-about-jump");
+  const jumpToBlock = (trigger, event) => {
+    const slug = trigger.getAttribute("data-about-jump");
       const target = slug ? document.getElementById(`about-text-${slug}`) : null;
       if (!target) return;
       event.preventDefault();
       const headerOffset = (document.querySelector(".topbar")?.getBoundingClientRect().height || 0) + 18;
       const top = target.getBoundingClientRect().top + window.scrollY - headerOffset;
       window.scrollTo({ top, behavior: "smooth" });
+  };
+  document.querySelectorAll("[data-about-jump]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      jumpToBlock(link, event);
+    });
+    link.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") jumpToBlock(link, event);
     });
   });
 }
@@ -3851,8 +3861,34 @@ function mediaEditHash(assetId, node) {
   return `#/cms/media/edit?id=${encodeURIComponent(assetId)}${mediaContextQueryFromNode(node)}`;
 }
 
+function usableMediaAssetUrl(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^(https?:|data:image\/|blob:|\/)/i.test(text)) return text;
+  if (/^assets\//i.test(text)) return `/${text}`;
+  return "";
+}
+
 function mediaAssetUrl(asset = {}) {
-  return asset.file_path_thumb_url || asset.file_path_web_url || asset.file_path_original_url || asset.imageUrl || asset.assetUrl || "";
+  return [
+    asset.file_path_thumb_url,
+    asset.file_path_web_url,
+    asset.file_path_original_url,
+    asset.imageUrl,
+    asset.assetUrl,
+    asset.fileUrl,
+    asset.url,
+    asset.downloadUrl,
+    asset.thumbnail_url,
+    asset.thumbnailUrl,
+    asset.file_url,
+    asset.original_url,
+    asset.web_url,
+    asset.thumb_url,
+    asset.file_path_thumb,
+    asset.file_path_web,
+    asset.file_path_original
+  ].map(usableMediaAssetUrl).find(Boolean) || "";
 }
 
 function imageDimensionsFromUrl(url = "") {
@@ -4048,6 +4084,70 @@ async function attachMediaAssetToTarget(asset = {}, context = {}) {
   await upsert(context.targetCollection, update);
   await markMediaAssetLinkedToTarget(asset, context, target);
   return update;
+}
+
+async function createMediaAssetFromEntityImage({ collection = "", entity = {}, file = null, uploaded = null, field = "imageUrl", mediaType = "upload" } = {}) {
+  const url = uploaded?.url || "";
+  if (!collection || !entity?.id || !file || !url) return null;
+  const dimensions = await readImageDimensions(file).catch(() => ({ width: 0, height: 0 }));
+  const aspect = detectMediaAspectRatio(dimensions);
+  const mediaCode = mediaShortCode();
+  const extension = mediaFileExtension(file, "jpg");
+  const filename = buildMediaFileName({
+    title: entity.title || entity.name || entity.headline || file.name || "bild",
+    mediaType,
+    format: aspect,
+    version: "v1",
+    extension,
+    code: mediaCode
+  });
+  const now = new Date().toISOString();
+  return upsert("media_assets", {
+    id: `media-asset-${crypto.randomUUID()}`,
+    media_code: mediaCode,
+    title: entity.title || entity.name || entity.headline || file.name || "PROdigitalTV Bild",
+    slug: normalizeMediaSlug(`${entity.title || entity.name || entity.headline || file.name || "bild"}-${mediaCode}`),
+    media_type: mediaType,
+    ...mediaPresetFields(mediaType),
+    filename_original: file.name || filename,
+    filename_web: file.name || filename,
+    filename_thumb: file.name || filename,
+    file_path_original: uploaded?.storagePath || "",
+    file_path_web: uploaded?.storagePath || "",
+    file_path_thumb: uploaded?.storagePath || "",
+    file_path_original_url: url,
+    file_path_web_url: url,
+    file_path_thumb_url: url,
+    storage_path_original: uploaded?.storagePath || "",
+    storage_path_web: uploaded?.storagePath || "",
+    storage_path_thumb: uploaded?.storagePath || "",
+    mime_type: file.type || "",
+    aspect_ratio: aspect,
+    detected_aspect_ratio: aspect,
+    aspect_css: mediaAspectCss(aspect),
+    file_size: file.size || 0,
+    file_size_label: mediaSizeLabel(file.size || 0),
+    image_width: dimensions.width || 0,
+    image_height: dimensions.height || 0,
+    image_format: mediaFormatLabel(file),
+    original_filename: file.name || filename,
+    source_type: "upload",
+    source_note: "Direkt im Datensatz hochgeladen und automatisch in der Mediathek verknuepft.",
+    target_collection: collection,
+    target_id: entity.id,
+    target_field: field,
+    target_title: entity.title || entity.name || entity.headline || entity.id,
+    linked_collection: collection,
+    linked_record_id: entity.id,
+    linked_field: field,
+    linked_title: entity.title || entity.name || entity.headline || entity.id,
+    alt_text: entity.thumbnail_alt || entity.thumbnailAlt || entity.title || entity.name || entity.headline || file.name || "",
+    description: entity.description || "",
+    created_by: currentUser()?.email || currentUser()?.uid || "cms",
+    created_at: now,
+    updated_at: now,
+    status: "active"
+  });
 }
 
 function wireCentralMediaUpload() {
@@ -4292,14 +4392,14 @@ function wireMediaEdit() {
       return;
     }
     const mediaContext = mediaContextFromNode(form);
-    const saveEditedMemberLogo = mediaContext.targetCollection === "members"
-      && mediaContext.targetField === "logoUrl"
-      && form.dataset.mediaCropDirty === "1"
+    const saveEditedTargetThumb = mediaContext.targetCollection
+      && mediaContext.targetId
       && form.querySelector("[data-media-crop-apply]");
-    if (saveEditedMemberLogo) {
-      if (result) result.innerHTML = `<div class="alert">Bearbeitetes Logo wird gespeichert und dem Mitglied zugeordnet ...</div>`;
+    if (saveEditedTargetThumb) {
+      const assignmentLabel = mediaContext.targetCollection === "members" && mediaContext.targetField === "logoUrl" ? "Logo" : "Thumb";
+      if (result) result.innerHTML = `<div class="alert">Bearbeitetes ${assignmentLabel} wird gespeichert und zugeordnet ...</div>`;
       form.querySelector("[data-media-crop-apply]")?.click();
-      setaveButtonFeedback(submitButton, "success", "Logo wird gespeichert");
+      setaveButtonFeedback(submitButton, "success", `${assignmentLabel} wird gespeichert`);
       return;
     }
     const now = new Date().toISOString();
@@ -4509,33 +4609,53 @@ function wireMediaCropMask() {
     const values = formObject(form);
     const format = activeFormat();
     const size = mediaVariantCanvasSize(format);
-    const canvas = document.createElement("canvas");
-    canvas.width = size.width;
-    canvas.height = size.height;
-    const context = canvas.getContext("2d");
-    const stageRect = stage.getBoundingClientRect();
-    const baseScale = Math.min(stageRect.width / Math.max(1, image.naturalWidth), stageRect.height / Math.max(1, image.naturalHeight));
-    const outputScale = canvas.width / Math.max(1, stageRect.width);
-    const drawWidth = image.naturalWidth * baseScale * state.scale * outputScale;
-    const drawHeight = image.naturalHeight * baseScale * state.scale * outputScale;
-    const drawX = (canvas.width - drawWidth) / 2 + state.x * outputScale;
-    const drawY = (canvas.height - drawHeight) / 2 + state.y * outputScale;
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    const brightness = 1 + (Number(values.brightness || 0) / 100);
-    const contrast = 1 + (Number(values.contrast || 0) / 100);
-    const saturation = 1 + (Number(values.saturation || 0) / 100);
-    context.filter = `brightness(${brightness}) contrast(${contrast}) saturate(${saturation})${values.black_white ? " grayscale(1)" : ""}`;
-    context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
-    context.filter = "none";
+    const sourceUrl = image.currentSrc || image.src || mediaAssetUrl(asset);
+    const sourceOrigin = (() => {
+      try { return new URL(sourceUrl, window.location.href).origin; } catch { return ""; }
+    })();
+    const canRenderCanvas = sourceUrl
+      && (/^(data:image\/|blob:)/i.test(sourceUrl) || sourceOrigin === window.location.origin);
     const mediaCode = mediaShortCode();
     const version = `v${Date.now().toString().slice(-6)}`;
     const mediaType = format === "portrait" ? "portrait" : format === "landscape" ? "landscape" : asset.media_type || "upload";
     const filename = buildMediaFileName({ title: values.title || asset.title || "bild", mediaType, format: size.aspect, version: "v1", extension: "webp", code: mediaCode });
-    const file = await canvasToFile(canvas, filename, "image/webp", .9);
     const path = mediaStoragePath(filename, mediaType, mediaCode);
     if (result) result.innerHTML = `<div class="alert">${progressMarkup("Variante wird als neues Bild gespeichert ...", 60)}</div>`;
-    const uploaded = await uploadMediaAsset(file, path);
+    let file = null;
+    let uploaded = null;
+    let fallbackUrl = canRenderCanvas ? "" : sourceUrl;
+    let fallbackReason = "";
+    if (!canRenderCanvas) {
+      fallbackReason = "Externes Bild wird ohne Canvas-Neuberechnung als URL-Variante gespeichert.";
+    } else {
+      const canvas = document.createElement("canvas");
+      canvas.width = size.width;
+      canvas.height = size.height;
+      const context = canvas.getContext("2d");
+      const stageRect = stage.getBoundingClientRect();
+      const baseScale = Math.max(stageRect.width / Math.max(1, image.naturalWidth), stageRect.height / Math.max(1, image.naturalHeight));
+      const outputScale = canvas.width / Math.max(1, stageRect.width);
+      const drawWidth = image.naturalWidth * baseScale * state.scale * outputScale;
+      const drawHeight = image.naturalHeight * baseScale * state.scale * outputScale;
+      const drawX = (canvas.width - drawWidth) / 2 + state.x * outputScale;
+      const drawY = (canvas.height - drawHeight) / 2 + state.y * outputScale;
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      const brightness = 1 + (Number(values.brightness || 0) / 100);
+      const contrast = 1 + (Number(values.contrast || 0) / 100);
+      const saturation = 1 + (Number(values.saturation || 0) / 100);
+      context.filter = `brightness(${brightness}) contrast(${contrast}) saturate(${saturation})${values.black_white ? " grayscale(1)" : ""}`;
+      context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+      context.filter = "none";
+      try {
+        file = await canvasToFile(canvas, filename, "image/webp", .9);
+        uploaded = await uploadMediaAsset(file, path);
+      } catch (error) {
+        fallbackUrl = sourceUrl || mediaAssetUrl(asset);
+        fallbackReason = error?.message || "Remote-Bild konnte nicht gerendert werden.";
+        if (!fallbackUrl) throw error;
+      }
+    }
     const now = new Date().toISOString();
     const newAsset = await upsert("media_assets", {
       ...asset,
@@ -4551,20 +4671,20 @@ function wireMediaCropMask() {
       file_path_original: path,
       file_path_web: path,
       file_path_thumb: path,
-      file_path_original_url: uploaded?.url || "",
-      file_path_web_url: uploaded?.url || "",
-      file_path_thumb_url: uploaded?.url || "",
-      storage_path_original: uploaded?.storagePath || path,
-      mime_type: file.type,
+      file_path_original_url: uploaded?.url || fallbackUrl,
+      file_path_web_url: uploaded?.url || fallbackUrl,
+      file_path_thumb_url: uploaded?.url || fallbackUrl,
+      storage_path_original: uploaded?.storagePath || "",
+      mime_type: file?.type || asset.mime_type || "",
       aspect_ratio: size.aspect,
-      file_size: file.size,
-      file_size_label: mediaSizeLabel(file.size),
-      image_width: canvas.width,
-      image_height: canvas.height,
-      image_format: "WEBP",
+      file_size: file?.size || asset.file_size || 0,
+      file_size_label: file ? mediaSizeLabel(file.size) : asset.file_size_label || "",
+      image_width: file ? size.width : image.naturalWidth || asset.image_width || 0,
+      image_height: file ? size.height : image.naturalHeight || asset.image_height || 0,
+      image_format: file ? "WEBP" : asset.image_format || "",
       original_filename: asset.original_filename || asset.filename_original || filename,
       source_type: "edited",
-      source_note: `Bearbeitete Variante aus ${asset.media_code ? `ID ${asset.media_code}` : asset.id}`,
+      source_note: fallbackUrl ? `URL-basierte Variante aus ${asset.media_code ? `ID ${asset.media_code}` : asset.id}: ${fallbackReason}` : `Bearbeitete Variante aus ${asset.media_code ? `ID ${asset.media_code}` : asset.id}`,
       alt_text: values.alt_text || asset.alt_text || values.title || asset.title || "Bildvariante",
       description: values.description || asset.description || "",
       crop_x: 0,
@@ -4576,14 +4696,15 @@ function wireMediaCropMask() {
       sharpness: Number(values.sharpness || 0),
       black_white: Boolean(values.black_white),
       file_metadata: {
-        format: "WEBP",
-        mime_type: file.type,
-        size_bytes: file.size,
-        size_label: mediaSizeLabel(file.size),
-        width: canvas.width,
-        height: canvas.height,
+        format: file ? "WEBP" : asset.image_format || "",
+        mime_type: file?.type || asset.mime_type || "",
+        size_bytes: file?.size || asset.file_size || 0,
+        size_label: file ? mediaSizeLabel(file.size) : asset.file_size_label || "",
+        width: file ? size.width : image.naturalWidth || asset.image_width || 0,
+        height: file ? size.height : image.naturalHeight || asset.image_height || 0,
         original_filename: asset.original_filename || asset.filename_original || filename,
-        edited_from: asset.id
+        edited_from: asset.id,
+        fallback_reason: fallbackReason
       },
       created_by: currentUser()?.email || currentUser()?.uid || "cms",
       created_at: now,
@@ -4597,7 +4718,7 @@ function wireMediaCropMask() {
       variant_type: format,
       format: size.aspect,
       file_path: path,
-      file_url: uploaded?.url || "",
+      file_url: uploaded?.url || fallbackUrl,
       filename,
       crop_data: { x: Number(xInput.value || 0), y: Number(yInput.value || 0), scale: Number(scaleValue.value || 1), brightness: Number(values.brightness || 0), contrast: Number(values.contrast || 0), saturation: Number(values.saturation || 0), sharpness: Number(values.sharpness || 0), black_white: Boolean(values.black_white) },
       version,
@@ -6822,12 +6943,35 @@ function wireActions() {
     const form = event.currentTarget;
     const existing = (await getOne("events", form.dataset.eventId)) || { id: form.dataset.eventId, topicIds: [], speakerIds: [], sponsorIds: [], status: "draft" };
     const values = formObject(form);
-    const image = form.querySelector('input[name="eventImage"]')?.files?.[0];
+    const image = imageFileFromDropzone(form, "eventImage", form.dataset.eventId);
+    const removeEventImageRequested = values.removeEventImage === "1";
     const newEventType = values.newEventType?.trim();
     if (image) {
       const asset = await uploadEntityImage("events", form.dataset.eventId, image);
       values.imageUrl = asset.url;
       values.assetStoragePath = asset.storagePath;
+      const mediaAsset = await createMediaAssetFromEntityImage({
+        collection: "events",
+        entity: { ...existing, ...values, id: form.dataset.eventId },
+        file: image,
+        uploaded: asset,
+        field: "imageUrl",
+        mediaType: "event"
+      });
+      if (mediaAsset?.id) {
+        values.thumbnail_media_asset_id = mediaAsset.id;
+        values.mediaAssetId = mediaAsset.id;
+        values.thumbnail_url = asset.url;
+        values.thumbnailUrl = asset.url;
+        values.assetUrl = asset.url;
+        values.assetType = "image";
+      }
+    }
+    if (removeEventImageRequested) {
+      values.imageUrl = "";
+      values.assetStoragePath = "";
+      values.thumbnail_media_asset_id = "";
+      values.mediaAssetId = "";
     }
     if (newEventType) {
       const eventTypesSetting = (await getOne("settings", "eventTypes")) || {
@@ -6846,13 +6990,17 @@ function wireActions() {
       values.eventType = newEventType;
     }
     delete values.eventImage;
+    delete values.removeEventImage;
+    delete values.eventImageDataUrl;
+    delete values.eventImageFileName;
     delete values.newEventType;
     if (Object.prototype.hasOwnProperty.call(values, "longDescription")) {
       values.bodyText = values.longDescription;
       values.articleText = values.longDescription;
       values.archiveText = values.longDescription;
     }
-    await upsert("events", { ...existing, ...values });
+    const savedEvent = await upsert("events", { ...existing, ...values });
+    if (image || removeEventImageRequested) updateDropzoneSavedImage(form, savedEvent.imageUrl || "");
     form.querySelector("#event-save-result").innerHTML = `<div class="alert alert--success">Event wurde gespeichert.</div>`;
   });
 

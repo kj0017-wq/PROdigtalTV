@@ -139,6 +139,33 @@ function mediaAssetUrl(asset = {}) {
   return asset.file_path_web_url || asset.file_path_thumb_url || asset.file_path_original_url || asset.imageUrl || asset.assetUrl || "";
 }
 
+function publicEventMediaAsset(event = {}, mediaAssets = []) {
+  return mediaAssets
+    .filter((asset) => {
+      const eventUrl = event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "";
+      const directIds = [event.thumbnail_media_asset_id, event.mediaAssetId, event.media_asset_id].filter(Boolean);
+      const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
+      return directIds.includes(asset.id)
+        || (asset.target_collection === "events" && asset.target_id === event.id && (asset.target_field || "imageUrl") === "imageUrl")
+        || (asset.linked_collection === "events" && asset.linked_record_id === event.id && (asset.linked_field || "imageUrl") === "imageUrl")
+        || (eventUrl && urls.includes(eventUrl));
+    })
+    .filter((asset) => mediaAssetUrl(asset))
+    .sort((a, b) => {
+      const directIds = [event.thumbnail_media_asset_id, event.mediaAssetId, event.media_asset_id].filter(Boolean);
+      const score = (asset = {}) => [
+        directIds.includes(asset.id) ? "5" : "0",
+        asset.target_collection === "events" && asset.target_id === event.id && (asset.target_field || "imageUrl") === "imageUrl" ? "4" : "0",
+        asset.linked_collection === "events" && asset.linked_record_id === event.id && (asset.linked_field || "imageUrl") === "imageUrl" ? "3" : "0",
+        asset.source_type === "edited" ? "2" : "0",
+        asset.status === "active" ? "2" : "1",
+        asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
+        asset.id || ""
+      ].join("|");
+      return score(b).localeCompare(score(a));
+    })[0];
+}
+
 function publicMemberLogoAsset(member = {}, mediaAssets = []) {
   return mediaAssets
     .filter((asset) => {
@@ -194,9 +221,9 @@ function archiveArticle(event, partners = []) {
   return `<article class="archive-article">
     ${event.imageUrl ? `<figure class="archive-article__image"><img src="${escapeHtml(event.imageUrl)}" alt="Rueckblick ${escapeHtml(event.title)}"></figure>` : `<div class="archive-article__placeholder"><span>${escapeHtml(event.eventType || "Archiv")}</span></div>`}
     <div class="archive-article__body">
-      <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` · ${escapeHtml(event.city)}` : ""}</p>
+      <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` Â· ${escapeHtml(event.city)}` : ""}</p>
       <h2>${escapeHtml(event.title)}</h2>
-      <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` · Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
+      <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` Â· Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
       <p>${escapeHtml(event.postEventSummary || event.description)}</p>
     </div>
   </article>`;
@@ -208,11 +235,11 @@ function archiveEditorialArticle(item, partners = []) {
   return `<article class="archive-article">
     ${item.imageUrl ? `<figure class="archive-article__image"><img src="${escapeHtml(item.imageUrl)}" alt="Rueckblick ${escapeHtml(item.title || "")}"></figure>` : `<div class="archive-article__placeholder"><span>Rueckblick</span></div>`}
     <div class="archive-article__body">
-      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Event-Nachlauf"}${sponsor ? ` · ${escapeHtml(sponsor.name)}` : ""}</p>
+      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Event-Nachlauf"}${sponsor ? ` Â· ${escapeHtml(sponsor.name)}` : ""}</p>
       <h2>${escapeHtml(item.title || "Rueckblick")}</h2>
       ${item.subtitle ? `<p class="archive-article__meta">${escapeHtml(item.subtitle)}</p>` : ""}
       <p>${escapeHtml(teaserText(item.longDescription || item.articleText || item.bodyText || item.mainText || item.fullText || item.longText || item.introText || "", 260))}</p>
-      <a class="link" href="#/retrospective/${item.id}">Rueckblick lesen →</a>
+      <a class="link" href="#/retrospective/${item.id}">Rueckblick lesen â†’</a>
     </div>
   </article>`;
 }
@@ -221,7 +248,10 @@ function articleParagraphs(text = "") {
   return text.split(/\n+/).filter(Boolean).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("");
 }
 
-function archiveEventImageUrl(event = {}) {
+function archiveEventImageUrl(event = {}, mediaAssets = []) {
+  const asset = publicEventMediaAsset(event, mediaAssets);
+  const currentUrl = mediaAssetUrl(asset || {}) || event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "";
+  if (currentUrl) return currentUrl;
   const archivePhotoExtensions = {
     32: "jpg",
     33: "jpg",
@@ -238,7 +268,6 @@ function archiveEventImageUrl(event = {}) {
   if (event.officialId) return archiveUrl(event.officialId);
   const match = String(event.id || "").match(/event-archive-(\d+)/);
   if (match) return archiveUrl(match[1]);
-  if (event.imageUrl) return event.imageUrl;
   return event.id ? `/assets/official/events/${escapeHtml(event.id)}.svg` : "";
 }
 
@@ -257,29 +286,29 @@ function retrospectiveLinkedEvent(item = {}, events = []) {
   return null;
 }
 
-function archiveListEvent(event, partners = []) {
+function archiveListEvent(event, partners = [], mediaAssets = []) {
   const host = partners.find((partner) => partner.id === event.hostId);
   const dateLabel = event.displayDate || formatDate(event.date);
   const detailUrl = `#/event/${escapeHtml(event.id)}`;
-  const imageUrl = archiveEventImageUrl(event);
+  const imageUrl = archiveEventImageUrl(event, mediaAssets);
   return `<article class="archive-article archive-article--list">
     <a class="archive-article__thumb" href="${detailUrl}" aria-label="Rueckblick ${escapeHtml(event.title)} ansehen">
       ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="Rueckblick ${escapeHtml(event.title)}" loading="eager" decoding="async">` : `<span>${escapeHtml(event.eventType || "Archiv")}</span>`}
     </a>
     <div class="archive-article__body">
-      <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` · ${escapeHtml(event.city)}` : ""}</p>
+      <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` Â· ${escapeHtml(event.city)}` : ""}</p>
       <h2><a href="${detailUrl}">${escapeHtml(event.title)}</a></h2>
-      <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` · Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
+      <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` Â· Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
       <p>${escapeHtml(teaserText(event.postEventummary || event.description || "", 260))}</p>
       <a class="link" href="${detailUrl}">Rueckblick ansehen -></a>
     </div>
   </article>`;
 }
 
-function archiveListEditorial(item, partners = [], events = []) {
+function archiveListEditorial(item, partners = [], events = [], mediaAssets = []) {
   const sponsor = item.sponsorId ? partners.find((partner) => partner.id === item.sponsorId) : null;
   const linkedEvent = retrospectiveLinkedEvent(item, events);
-  const thumbUrl = item.imageUrl || (linkedEvent ? archiveEventImageUrl(linkedEvent) : "");
+  const thumbUrl = linkedEvent ? archiveEventImageUrl(linkedEvent, mediaAssets) : (item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || "");
   const dateLabel = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   const detailUrl = `#/retrospective/${escapeHtml(item.id)}`;
   return `<article class="archive-article archive-article--list">
@@ -287,7 +316,7 @@ function archiveListEditorial(item, partners = [], events = []) {
       ${thumbUrl ? `<img src="${escapeHtml(thumbUrl)}" alt="Rueckblick ${escapeHtml(item.title || "")}" loading="eager" decoding="async">` : `<span>Rueckblick</span>`}
     </a>
     <div class="archive-article__body">
-      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Event-Nachlauf"}${sponsor ? ` · ${escapeHtml(sponsor.name)}` : ""}</p>
+      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Event-Nachlauf"}${sponsor ? ` Â· ${escapeHtml(sponsor.name)}` : ""}</p>
       <h2><a href="${detailUrl}">${escapeHtml(item.title || "Rueckblick")}</a></h2>
       ${item.subtitle ? `<p class="archive-article__meta">${escapeHtml(item.subtitle)}</p>` : ""}
       <p>${escapeHtml(teaserText(item.longDescription || item.articleText || item.bodyText || item.mainText || item.fullText || item.longText || item.introText || "", 260))}</p>
@@ -352,7 +381,7 @@ function internalIcon(name = "") {
     network: "N", compass: "K", modules: "M", dialog: "D", breakfast: "B", interview: "I", transformation: "T", impact: "W",
     membership: "M", knowledge: "W", visibility: "S", presentation: "P", guest: "G", exclusive: "E", law: "R", gema: "G", cooperation: "K", discount: "%", cta: ">"
   };
-  return `<span class="internal-card__icon" aria-hidden="true">${escapeHtml(labels[name] || "•")}</span>`;
+  return `<span class="internal-card__icon" aria-hidden="true">${escapeHtml(labels[name] || "â€¢")}</span>`;
 }
 
 function internalCard(block, meta) {
@@ -360,7 +389,7 @@ function internalCard(block, meta) {
   return `<a class="internal-card internal-card--${escapeHtml(block.typ)}" href="${href}">
     ${internalIcon(block.icon)}
     <span><strong>${escapeHtml(block.titel)}</strong><small>${escapeHtml(block.kurztext)}</small></span>
-    <b aria-hidden="true">→</b>
+    <b aria-hidden="true">â†’</b>
   </a>`;
 }
 
@@ -426,7 +455,7 @@ function aboutInternalCard(block, meta, options = {}) {
     ? teaserText(block.langtext || block.kurztext, 190)
     : block.kurztext;
   if (options.joinCta) {
-    return `<article class="internal-card internal-card--about internal-card--join internal-card--${escapeHtml(block.typ)}">
+    return `<article class="internal-card internal-card--about internal-card--join internal-card--${escapeHtml(block.typ)}" role="button" tabindex="0" data-about-jump="${escapeHtml(block.slug)}">
     <span class="internal-about-thumb internal-about-thumb--${escapeHtml(block.icon || "modules")}" aria-hidden="true">${aboutPicto(block.icon)}<strong>${escapeHtml(aboutThumbLabel(block.icon))}</strong></span>
     <span class="internal-about-copy"><strong>${escapeHtml(block.titel)}</strong><small>${escapeHtml(summary)}</small></span>
     <button class="join-text-link internal-card__join-cta" type="button" data-join-scroll>Mitgliedsantrag -></button>
@@ -444,7 +473,7 @@ function aboutLongTextSection(block, options = {}) {
     ${ttsReader({ title: block.titel || "", text: block.langtext || "", audioUrl: block.audioUrl || "", audioAccessibleUrl: block.audioAccessibleUrl || "", audioNaturalUrl: block.audioNaturalUrl || "", audioStatus: block.audioStatus || "", audioAccessibleStatus: block.audioAccessibleStatus || "", audioNaturalStatus: block.audioNaturalStatus || "" })}
     <div class="editorial-text">${articleParagraphs(block.langtext)}</div>
     ${options.joinCta ? `<button class="join-text-link internal-text-join-cta" type="button" data-join-scroll>Mitgliedsantrag -></button>` : ""}
-    <button class="internal-about-top-button" type="button" data-internal-scroll-top aria-label="Nach oben">↑</button>
+    <button class="internal-about-top-button" type="button" data-internal-scroll-top aria-label="Nach oben">â†‘</button>
   </article>`;
 }
 
@@ -469,7 +498,7 @@ function aboutStickyContent(events = [], board = [], members = [], topics = []) 
   const memberSlides = chunkItems(members.filter((member) => member.featured || member.logoUrl).slice(0, 15), 3);
   const renderEvent = (event) => `<a class="internal-sticky-event" href="#/event/${event.id}">
     ${event.imageUrl ? `<img src="${escapeHtml(event.imageUrl)}" alt="Eventbild ${escapeHtml(event.title || "")}">` : `<span class="internal-sticky-event__picto">${aboutPicto("breakfast")}</span>`}
-    <span><strong>${escapeHtml(event.title || "Event")}</strong><small>${formatDate(event.date)}${event.city ? ` · ${escapeHtml(event.city)}` : ""}</small></span>
+    <span><strong>${escapeHtml(event.title || "Event")}</strong><small>${formatDate(event.date)}${event.city ? ` Â· ${escapeHtml(event.city)}` : ""}</small></span>
   </a>`;
   const renderTopic = (topic) => `<a class="internal-sticky-topic" href="#/topic/${topic.id}">
     <span class="internal-sticky-event__picto">${aboutPicto("dialog")}</span>
@@ -484,19 +513,19 @@ function aboutStickyContent(events = [], board = [], members = [], topics = []) 
   </a>`).join("")}</div>`;
   return `<aside class="internal-about-sticky" aria-label="Aktuelle Inhalte">
     <section class="internal-sticky-section">
-      <a class="internal-sticky-section-title" href="#/events">Aktuelles Event <span aria-hidden="true">→</span></a>
-      ${rubricRotator(eventSlides, renderEvent, `<a class="internal-sticky-event" href="#/events"><span class="internal-sticky-event__picto">${aboutPicto("breakfast")}</span><span><strong>Neue Termine in Vorbereitung</strong><small>Zur Eventübersicht</small></span></a>`)}
+      <a class="internal-sticky-section-title" href="#/events">Aktuelles Event <span aria-hidden="true">â†’</span></a>
+      ${rubricRotator(eventSlides, renderEvent, `<a class="internal-sticky-event" href="#/events"><span class="internal-sticky-event__picto">${aboutPicto("breakfast")}</span><span><strong>Neue Termine in Vorbereitung</strong><small>Zur EventÃ¼bersicht</small></span></a>`)}
     </section>
     <section class="internal-sticky-section">
-      <a class="internal-sticky-section-title" href="#/topics">Themen <span aria-hidden="true">→</span></a>
+      <a class="internal-sticky-section-title" href="#/topics">Themen <span aria-hidden="true">â†’</span></a>
       ${rubricRotator(topicSlides, renderTopic, `<a class="internal-sticky-topic" href="#/topics"><span class="internal-sticky-event__picto">${aboutPicto("dialog")}</span><span><strong>Themen ansehen</strong><small>Aktuelle Themen im Netzwerk</small></span></a>`)}
     </section>
     <section class="internal-sticky-section">
-      <a class="internal-sticky-section-title" href="#/board">Vorstand <span aria-hidden="true">→</span></a>
+      <a class="internal-sticky-section-title" href="#/board">Vorstand <span aria-hidden="true">â†’</span></a>
       ${rubricRotator(boardSlides, renderBoardPair, `<a class="internal-sticky-person" href="#/board">Vorstand ansehen</a>`)}
     </section>
     <section class="internal-sticky-section">
-      <a class="internal-sticky-section-title" href="#/members">Mitglieder <span aria-hidden="true">→</span></a>
+      <a class="internal-sticky-section-title" href="#/members">Mitglieder <span aria-hidden="true">â†’</span></a>
       ${rubricRotator(memberSlides, renderMemberGroup, `<a class="internal-sticky-member" href="#/members">Mitglieder ansehen</a>`)}
     </section>
   </aside>`;
@@ -510,7 +539,7 @@ function aboutCardGroups(blocks, meta, options = {}) {
 
 function internalDesktopSection(block, meta) {
   const detailHref = `#/${meta.detailRoute}/${encodeURIComponent(block.slug)}`;
-  const cta = block.button_text ? `<a class="button button--primary button--small" href="${escapeHtml(block.button_ziel || detailHref)}">${escapeHtml(block.button_text)}</a>` : `<a class="link" href="${detailHref}">Mehr lesen →</a>`;
+  const cta = block.button_text ? `<a class="button button--primary button--small" href="${escapeHtml(block.button_ziel || detailHref)}">${escapeHtml(block.button_text)}</a>` : `<a class="link" href="${detailHref}">Mehr lesen â†’</a>`;
   return `<article class="internal-section internal-section--${escapeHtml(block.typ)}">
     <div class="internal-section__head">${internalIcon(block.icon)}<div><p class="eyebrow">${escapeHtml(block.typ)}</p><h2>${escapeHtml(block.titel)}</h2><p>${escapeHtml(block.kurztext)}</p></div></div>
     <div class="editorial-text internal-section__body">${articleParagraphs(block.langtext)}</div>
@@ -531,8 +560,8 @@ function internalOverviewPage(bereich) {
     const aboutTexts = blocks.map((block) => aboutLongTextSection(block)).join("");
     const desktopSections = blocks.map((block) => internalDesktopSection(block, meta)).join("");
     if (bereich === "ueber_uns") {
-      return publicShell(meta.active, `<section class="section internal-overview internal-overview--about"><div class="container"><div class="internal-about-layout"><div class="internal-about-main">
-        <div class="internal-page-heading"><p class="eyebrow">${escapeHtml(meta.eyebrow)}</p><h1>${escapeHtml(meta.title)}</h1><p>${escapeHtml(meta.intro)}</p></div>
+      return publicShell(meta.active, `${subhero(meta.eyebrow, meta.title, meta.intro)}
+      <section class="section internal-overview internal-overview--about"><div class="container"><div class="internal-about-layout"><div class="internal-about-main">
         <div class="internal-mobile-list internal-mobile-list--about">${aboutCards || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
         <div class="internal-about-texts">${aboutTexts}</div>
         </div>${aboutStickyContent(events, board, members, topics)}</div>
@@ -553,7 +582,7 @@ export async function internalDetailPage(bereich, slug) {
   if (!block) return notFoundPage();
   const cta = block.button_text ? `<div class="actions" style="margin-top:24px"><a class="button button--primary" href="${escapeHtml(block.button_ziel || `#/${meta.route}`)}">${escapeHtml(block.button_text)}</a></div>` : "";
   return publicShell(meta.active, `${subhero(meta.eyebrow, block.titel, block.kurztext)}
-    <section class="section"><div class="container internal-detail"><a class="link" href="#/${meta.route}">← Zurueck</a><article class="detail-main"><div class="editorial-text">${articleParagraphs(block.langtext)}</div>${cta}</article></div></section>`);
+    <section class="section"><div class="container internal-detail"><a class="link" href="#/${meta.route}">â† Zurueck</a><article class="detail-main"><div class="editorial-text">${articleParagraphs(block.langtext)}</div>${cta}</article></div></section>`);
 }
 
 function articleSourcesList(item = {}) {
@@ -642,9 +671,16 @@ function mergeNewsWithFallback(cmsNews = [], fallbackNews = []) {
 }
 
 function isRetrospectiveArticle(item = {}) {
-  const category = String(item.category || "").toLowerCase();
+  const category = String(item.category || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
   const inPress = item.page === "press" || item.section === "pressRelease";
-  const isRetrospective = item.isRetrospective || category.includes("rückblick") || category.includes("rueckblick") || category.includes("rückblick") || category.includes("rückblick");
+  const isRetrospective = item.isRetrospective
+    || category.includes("ruckblick")
+    || category.includes("rueckblick")
+    || category.includes("retrospective")
+    || category.includes("nachlauf");
   const isHidden = item.status === "archived" || item.status === "draft" || item.visibility === "internal";
   return inPress && isRetrospective && !isHidden;
 }
@@ -676,11 +712,11 @@ function ttsReader({ title = "", text = "", audioUrl = "", audioAccessibleUrl = 
   const naturalUrl = availableAudioUrl(audioNaturalUrl, audioNaturalStatus, audioStatus) || accessibleUrl;
   if (!accessibleUrl && !naturalUrl) return "";
   return `<div class="tts-reader" data-tts-reader>
-    <button type="button" class="tts-reader__toggle" data-tts-toggle aria-expanded="false" aria-label="Audio öffnen"><span aria-hidden="true">▶</span></button>
+    <button type="button" class="tts-reader__toggle" data-tts-toggle aria-expanded="false" aria-label="Audio Ã¶ffnen"><span aria-hidden="true">â–¶</span></button>
     <div class="tts-reader__meta"><p class="eyebrow">Audio</p><strong>${escapeHtml(title || "Vorlesen")}</strong></div>
     <template data-tts-source>${escapeHtml(text)}</template>
     <div class="tts-reader__actions" data-tts-actions hidden>
-      <button type="button" class="button button--primary button--small" data-tts-play data-tts-mode="natural" data-audio-url="${escapeHtml(naturalUrl)}" ${naturalUrl ? "" : "disabled"}><span aria-hidden="true">Audio</span> Anhören</button>
+      <button type="button" class="button button--primary button--small" data-tts-play data-tts-mode="natural" data-audio-url="${escapeHtml(naturalUrl)}" ${naturalUrl ? "" : "disabled"}><span aria-hidden="true">Audio</span> AnhÃ¶ren</button>
       <button type="button" class="button button--secondary button--small" data-tts-play data-tts-mode="accessible" data-audio-url="${escapeHtml(accessibleUrl)}" ${accessibleUrl ? "" : "disabled"}><span aria-hidden="true">Aa</span> Barrierefrei vorlesen</button>
     </div>
   </div>`;
@@ -696,7 +732,7 @@ function galleryPlayCta(gallery, images) {
       altText: image.altText || image.caption || gallery.title || "Galeriebild"
     }))
   }));
-  return `<section class="article-gallery-cta"><div><p class="eyebrow">Bildergalerie</p><h3>${escapeHtml(gallery.title || "Bilder ansehen")}</h3><p>${images.length} Bilder als Slideshow ansehen.</p></div><button class="button button--primary gallery-play-cta__button" type="button" data-gallery-play data-gallery-payload="${payload}"><span>▶</span> Galerie abspielen</button></section>`;
+  return `<section class="article-gallery-cta"><div><p class="eyebrow">Bildergalerie</p><h3>${escapeHtml(gallery.title || "Bilder ansehen")}</h3><p>${images.length} Bilder als Slideshow ansehen.</p></div><button class="button button--primary gallery-play-cta__button" type="button" data-gallery-play data-gallery-payload="${payload}"><span>â–¶</span> Galerie abspielen</button></section>`;
 }
 
 function teaserText(value = "", length = 118) {
@@ -732,38 +768,24 @@ export async function homePage() {
   const members = await withPublicMemberLogos(rawMembers);
   const upcoming = events.filter((event) => !isPastEvent(event) && event.visibility === "public").sort((a, b) => a.date.localeCompare(b.date));
   const next = upcoming[0];
-  const hero = editorial.find((content) => content.key === "home.hero") || {
-    title: "Die Zukunft digitaler Medien gemeinsam gestalten.",
-    subtitle: "PROdigitalTV verbindet Entscheider, Impulsgeber und Unternehmen der digitalen Medienwirtschaft.",
-    teaserText: "PROdigitalTV",
-    buttonText: next ? "Naechstes Event" : "Events entdecken",
-    buttonUrl: next ? `#/event/${next.id}` : "#/events",
-    secondaryButtonText: "Mitglied werden",
-    secondaryButtonUrl: "#/join"
-  };
-  const primaryButtonText = hero.buttonText || (next ? "Naechstes Event" : "Events entdecken");
-  const primaryButtonUrl = hero.buttonUrl || (next ? `#/event/${next.id}` : "#/events");
-  const secondaryButtonText = hero.secondaryButtonText || "Mitglied werden";
-  const secondaryButtonUrl = hero.secondaryButtonUrl || "#/join";
   const latestNewsItems = publicNewsItems(editorial)
     .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")))
-    .slice(0, 4);
-  const featuredTopic = topics[0];
-  const homeTopics = topics.filter((topic) => topic.id !== featuredTopic?.id).slice(0, 3);
-  const quickCards = latestNewsItems.map((item) => ({
-    eyebrow: item.category || "News",
-    title: item.title || "Aktuelles von PROdigitalTV",
-    text: teaserText(item.subtitle || item.introText || item.shortText || item.teaserText || item.bodyText || "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.", 130),
-    url: `#/news/${item.id}`,
-    link: "News lesen"
-  }));
+    .slice(0, 3);
+  const featuredMembers = members.filter((member) => member.featured).slice(0, 8);
+  const memberCount = members.length ? `${members.length}+` : "35+";
+  const quickCards = [
+    ["#/events", "events", "Events", "Medienfruehstuecke, Veranstaltungen und Rueckblicke", "Alle Events ansehen"],
+    ["#/topics", "topics", "Themen", "Aktuelle Entwicklungen, Positionen und Expertise", "Alle Themen ansehen"],
+    ["#/members", "members", "Mitglieder", "Unser Netzwerk, Vorteile und Mitglied werden", "Mitglieder entdecken"],
+    ["#/about", "about", "Ueber uns", "Der Verband, Vorstand und Ziele", "Mehr ueber uns"]
+  ];
   const mobileCards = [
     ["#/events", "events", "Events", "Medienfruehstuecke, Veranstaltungen und Rueckblicke"],
     ["#/topics", "topics", "Themen", "Aktuelle Entwicklungen, Positionen und Expertise"],
     ["#/members", "members", "Mitglieder", "Unser Netzwerk, Vorteile und Mitglied werden"],
     ["#/about", "about", "Ueber uns", "Der Verband, Vorstand und Ziele"]
   ];
-  const mobileHome = `<section class="pdtv-mobile-home" aria-label="Mobile tartseite">
+  const mobileHome = `<section class="pdtv-mobile-home" aria-label="Mobile Startseite">
     <div class="container">
       <div class="pdtv-mobile-hero">
         <h1>Digitaler Content.<br>Starke Verbindungen.<br>Gemeinsam fuer die <span>Medienzukunft.</span></h1>
@@ -781,30 +803,61 @@ export async function homePage() {
       </nav>
     </div>
   </section>`;
+  const nextEventCard = next ? `<article class="home-event-card">
+    <div class="home-event-card__icon" aria-hidden="true"><span></span></div>
+    <p class="eyebrow">Naechstes Medienfruehstueck</p>
+    <h2>${escapeHtml(next.title || "Naechste Veranstaltung")}</h2>
+    <p class="home-event-card__meta">${escapeHtml(formatDate(next.date))}${next.startTime ? ` · ${escapeHtml(next.startTime)} Uhr` : ""}${next.city ? ` · ${escapeHtml(next.city)}` : ""}</p>
+    <p>${escapeHtml(next.subtitle || next.locationName || "Austausch, Orientierung und relevante Branchenkontakte.")}</p>
+    <div class="home-event-card__actions"><a class="button button--primary" href="#/register/${escapeHtml(next.id)}">Anmelden</a><a class="home-text-link" href="#/event/${escapeHtml(next.id)}">Details ansehen</a></div>
+  </article>` : `<article class="home-event-card">
+    <div class="home-event-card__icon" aria-hidden="true"><span></span></div>
+    <p class="eyebrow">Naechstes Medienfruehstueck</p>
+    <h2>Neue Termine in Vorbereitung</h2>
+    <p class="home-event-card__meta">PROdigitalTV</p>
+    <p>Die naechsten Formate werden in Kuerze veroeffentlicht.</p>
+    <div class="home-event-card__actions"><a class="button button--primary" href="#/events">Events ansehen</a></div>
+  </article>`;
+  const newsCards = latestNewsItems.map((item) => {
+    const thumb = newsThumbUrl(item);
+    const date = item.publishDate || item.validFrom || item.updatedAt || "";
+    return `<a class="home-news-card" href="#/news/${escapeHtml(item.id)}">
+      <figure class="home-news-card__thumb">${thumb ? `<img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}">` : `<span>${escapeHtml(item.category || "News")}</span>`}</figure>
+      <div class="home-news-card__body">
+        <div class="home-news-card__meta"><span>${escapeHtml(item.category || "News")}</span>${date ? `<time>${escapeHtml(formatDate(date))}</time>` : ""}</div>
+        <h3>${escapeHtml(item.title || "Aktuelles von PROdigitalTV")}</h3>
+        <p>${escapeHtml(teaserText(item.subtitle || item.shortText || item.teaserText || item.introText || item.bodyText || "Meldungen aus dem Netzwerk.", 128))}</p>
+      </div>
+    </a>`;
+  }).join("");
   return publicShell("home", `
     ${mobileHome}
-    <section class="hero"><div class="container hero__grid">
-      <div><p class="eyebrow">${escapeHtml(hero.teaserText || "PROdigitalTV")}</p><h1>${escapeHtml(hero.title)}</h1><p class="lead">${escapeHtml(hero.subtitle)}</p>
-        <div class="hero__buttons"><a class="button button--primary" href="${escapeHtml(primaryButtonUrl)}">${escapeHtml(primaryButtonText)}</a><a class="button button--secondary" href="${escapeHtml(secondaryButtonUrl)}">${escapeHtml(secondaryButtonText)}</a></div>
+    <section class="hero home-hero"><div class="container hero__grid home-hero__grid">
+      <div class="home-hero__copy"><p class="eyebrow">PROdigitalTV</p><h1>Digitaler Content.<br>Starke Verbindungen.<br>Gemeinsam fuer die <span>Medienzukunft.</span></h1><p class="lead">PROdigitalTV ist das Netzwerk fuer digitale Medien, Streaming, Smart-TV, Plattformen und regionale Anbieter.</p>
+        <div class="hero__buttons"><a class="button button--primary" href="#/events">Events entdecken</a><a class="button button--secondary" href="#/join">Mitglied werden</a></div>
       </div>
-      <article class="next-event"><p class="eyebrow">Naechstes Event</p>${next ? `<h2>${escapeHtml(next.title)}</h2><p>${formatDate(next.date)} · ${next.city}</p><p style="margin:18px 0">${escapeHtml(next.subtitle)}</p><a class="button button--primary button--small" href="#/register/${next.id}">Jetzt anmelden</a>` : `<h2>Neue Termine in Vorbereitung</h2><p>Unsere naechsten Formate werden in Kuerze veroeffentlicht.</p>`}</article>
+      ${nextEventCard}
     </div></section>
-    <section class="section quick-links-section"><div class="container">
-      <div class="quick-grid quick-grid--navigation">
-        ${quickCards.map((card, index) => `<a class="quick-card quick-card--navigation" href="${escapeHtml(card.url)}"><span class="quick-card__icon">${String(index + 1).padStart(2, "0")}</span><span class="quick-card__arrow">&rarr;</span><p class="quick-card__eyebrow">${escapeHtml(card.eyebrow)}</p><h3>${escapeHtml(card.title)}</h3><p>${escapeHtml(card.text)}</p><strong>${escapeHtml(card.link)}</strong></a>`).join("")}
+    <section class="section home-quick-section"><div class="container">
+      <div class="section-head"><div><p class="eyebrow">Schnellzugriff</p><h2>Direkt ins Netzwerk</h2></div></div>
+      <div class="home-quick-grid">
+        ${quickCards.map(([href, type, title, text, cta], index) => `<a class="home-quick-card ${index === 0 || index === 3 ? "home-quick-card--dark" : ""}" href="${href}"><span class="home-quick-card__icon home-quick-card__icon--${type}" aria-hidden="true"></span><h3>${escapeHtml(title)}</h3><p>${escapeHtml(text)}</p><strong>${escapeHtml(cta)}</strong></a>`).join("")}
       </div>
       <nav class="mobile-sublinks" aria-label="Weitere Informationen"><a href="#/board">Vorstand</a><a href="#/join">Mitglied werden</a><a href="#/archive">Rueckblicke</a></nav>
     </div></section>
-    <section class="section section--white"><div class="container"><div class="section-head"><div><p class="eyebrow">Events</p><h2>Kommende Termine</h2></div><a class="link" href="#/events">Alle Events →</a></div>
-      ${upcoming.length ? `<div class="card-grid card-grid--three">${upcoming.map((event) => eventCard(event, false, sponsors)).join("")}</div>` : `<div class="alert">Neue Veranstaltungen sind aktuell in Vorbereitung. Entdecken Sie inzwischen unsere Rueckblicke und Netzwerk-Themen.</div>`}
+    <section class="section section--white home-news-section"><div class="container"><div class="section-head"><div><p class="eyebrow">Aktuelles</p><h2>News aus der Medienwirtschaft</h2></div><a class="link" href="#/news">Alle Nachrichten ansehen</a></div>
+      ${latestNewsItems.length ? `<div class="home-news-grid">${newsCards}</div>` : `<div class="alert">Aktuell sind keine News veroeffentlicht.</div>`}
     </div></section>
-    <section class="section"><div class="container"><div class="section-head"><div><p class="eyebrow">Agenda</p><h2>Relevante Themen</h2></div></div>
-      <div class="card-grid card-grid--three">${homeTopics.map(topicCard).join("")}</div>
-    </div></section>
-    <section class="section section--white"><div class="container feature"><div><p class="eyebrow">Netzwerk</p><h2>Mehr als 35 Mitgliedsunternehmen.</h2><p class="lead">Mitglieder profitieren von Fachimpulsen, Medienfruehstuecken und relevanten Branchenkontakten.</p></div><div class="member-logos">${members.filter((member) => member.featured).slice(0, 8).map((member) => `<div class="member-tile">${memberLogo(member)}</div>`).join("")}</div></div></section>
+    <section class="section home-info-section"><div class="container"><div class="home-info-grid">
+      <article class="home-info-card home-info-card--newsletter"><p class="eyebrow">Newsletter</p><h3>Bleiben Sie auf dem Laufenden</h3><p>Impulse, Termine und Nachrichten aus dem PROdigitalTV-Netzwerk.</p><form class="home-newsletter-form"><input type="email" placeholder="E-Mail-Adresse"><button class="button button--primary" type="submit">Abonnieren</button></form></article>
+      <article class="home-info-card"><p class="eyebrow">Event</p><h3>${escapeHtml(next?.title || "Naechstes Medienfruehstueck")}</h3><p>${next ? `${escapeHtml(formatDate(next.date))}${next.city ? ` · ${escapeHtml(next.city)}` : ""}` : "Neue Termine in Vorbereitung"}</p><a class="home-text-link" href="${next ? `#/event/${escapeHtml(next.id)}` : "#/events"}">Event ansehen</a></article>
+      <article class="home-info-card"><p class="eyebrow">Social</p><h3>Mit uns vernetzen</h3><p>Folgen Sie PROdigitalTV auf den relevanten Branchenkanaelen.</p><div class="home-socials"><a href="#/news">RSS</a><a href="#/about">LinkedIn</a><a href="#/events">YouTube</a></div></article>
+      <article class="home-info-card home-info-card--stat"><p class="eyebrow">Netzwerk</p><h3>${escapeHtml(memberCount)}</h3><p>Mitglieder und Partner im digitalen Mediennetzwerk.</p></article>
+    </div></div></section>
+    <section class="section section--white"><div class="container feature home-member-feature"><div><p class="eyebrow">Mitglieder</p><h2>Ein Netzwerk fuer digitale Medien.</h2><p class="lead">Mitglieder profitieren von Fachimpulsen, Medienfruehstuecken und relevanten Branchenkontakten.</p><a class="button button--secondary" href="#/members">Mitglieder entdecken</a></div><div class="member-logos">${featuredMembers.map((member) => `<div class="member-tile">${memberLogo(member)}</div>`).join("")}</div></div></section>
+    <section class="section home-final-cta"><div class="container home-final-cta__inner"><div><h2>Gemeinsam fuer die Medienzukunft.</h2><p>Vernetzen, informieren und die digitale Zukunft gestalten.</p></div><a class="button button--primary" href="#/join">Mitglied werden</a></div></section>
   `);
 }
-
 export async function eventsPage() {
   const [events, sponsors] = await Promise.all([listPublicEvents(isMember()), listPublicContent("sponsors")]);
   const user = currentUser();
@@ -825,7 +878,7 @@ export async function eventDetailPage(id) {
     return publicShell("events", `${subhero("Geschuetzter Bereich", "Login erforderlich", "Dieses Event ist nur fuer berechtigte Personen sichtbar.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
   }
   if (!event) return notFoundPage();
-  const [speakers, sponsors, topics, galleries] = await Promise.all([listPublicContent("speakers"), listPublicContent("sponsors"), listPublicContent("topics"), listPublicContent("galleries")]);
+  const [speakers, sponsors, topics, galleries, mediaAssets] = await Promise.all([listPublicContent("speakers"), listPublicContent("sponsors"), listPublicContent("topics"), listPublicContent("galleries"), list("media_assets").catch(() => [])]);
   const restricted = event.accessType === "members_only" && !isMember();
   if (restricted && !event.showPublicTeaser) return publicShell("events", subhero("Geschuetzter Bereich", "Nur fuer Mitglieder", "Bitte melden Sie sich an, um dieses Event zu sehen."));
   const assignedTopics = topics.filter((topic) => event.topicIds.includes(topic.id));
@@ -836,7 +889,7 @@ export async function eventDetailPage(id) {
     ? [...assignedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 24)
     : [];
   const registrationAllowed = event.registrationEnabled && (!restricted || isMember());
-  const eventImageUrl = archiveEventImageUrl(event);
+  const eventImageUrl = archiveEventImageUrl(event, mediaAssets);
   const introText = event.description || event.shortDescription || event.subtitle || "";
   const longText = event.postEventummary || event.archiveText || event.longDescription || event.bodyText || event.articleText || "";
   const haseparateLongText = longText.trim() && longText.trim() !== introText.trim();
@@ -846,11 +899,11 @@ export async function eventDetailPage(id) {
         ${eventImageUrl ? `<figure class="event-detail-image"><img src="${escapeHtml(eventImageUrl)}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy"></figure>` : ""}
         ${restricted ? `<div class="alert alert--warning">Details und Anmeldung dieses Mitglieder-Events stehen nach dem Login zur Verfuegung.</div>` : ""}
         <h2>Zum Event</h2>${introText ? `<p class="lead">${escapeHtml(introText)}</p>` : ""}
-        ${haseparateLongText ? `<h2>Rückblick</h2><div class="editorial-text">${articleParagraphs(longText)}</div>` : ""}
+        ${haseparateLongText ? `<h2>RÃ¼ckblick</h2><div class="editorial-text">${articleParagraphs(longText)}</div>` : ""}
         <h2>Themen</h2><div class="filters">${assignedTopics.map((topic) => `<a class="filter" href="#/topic/${topic.id}">${escapeHtml(topic.title)}</a>`).join("")}</div>
         ${event.lunchNote ? `<div class="alert">${escapeHtml(event.lunchNote)}</div>` : ""}
         ${restricted ? "" : `<section class="venue-stage"><div class="venue-stage__place"><p class="eyebrow">Veranstaltungsort</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Gastgeber und Sponsoren</p>${eventPartners.length ? eventPartners.map((partner) => `<article class="partner-spotlight"><span class="avatar">${initials(partner.name)}</span><div><span class="tag tag--red">${escapeHtml(partner.role)}</span><h3>${escapeHtml(partner.name)}</h3>${partner.description ? `<p>${escapeHtml(partner.description)}</p>` : ""}</div></article>`).join("") : `<p>Partner werden bei Bekanntgabe ergaenzt.</p>`}</div></section>
-        ${assignedSpeakers.length ? `<h2>Referentinnen und Referenten</h2><div class="speaker-grid">${assignedSpeakers.map((speaker) => `<article class="speaker-profile"><div class="speaker-profile__portrait">${speakerPortrait(speaker)}</div><div class="speaker-profile__body"><h3>${escapeHtml(speaker.name)}</h3><p class="speaker-profile__position">${escapeHtml(speaker.position)}${speaker.company ? ` · ${escapeHtml(speaker.company)}` : ""}</p>${speaker.shortBio ? `<p class="speaker-profile__intro">${escapeHtml(speaker.shortBio)}</p>` : ""}${speaker.longBio ? `<p>${escapeHtml(speaker.longBio)}</p>` : ""}</div></article>`).join("")}</div>` : ""}`}
+        ${assignedSpeakers.length ? `<h2>Referentinnen und Referenten</h2><div class="speaker-grid">${assignedSpeakers.map((speaker) => `<article class="speaker-profile"><div class="speaker-profile__portrait">${speakerPortrait(speaker)}</div><div class="speaker-profile__body"><h3>${escapeHtml(speaker.name)}</h3><p class="speaker-profile__position">${escapeHtml(speaker.position)}${speaker.company ? ` Â· ${escapeHtml(speaker.company)}` : ""}</p>${speaker.shortBio ? `<p class="speaker-profile__intro">${escapeHtml(speaker.shortBio)}</p>` : ""}${speaker.longBio ? `<p>${escapeHtml(speaker.longBio)}</p>` : ""}</div></article>`).join("")}</div>` : ""}`}
         ${assignedGalleryImages.length ? galleryPlayCta(assignedGallery, assignedGalleryImages) : ""}
       </article>
       <aside class="detail-aside">
@@ -875,7 +928,7 @@ export async function registrationPage(id) {
   if (event.accessType === "members_only" && !isMember()) {
     return publicShell("events", `${subhero("Anmeldung", "Login erforderlich", "Dieses Event ist exklusiv fuer Mitglieder.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
   }
-  return publicShell("events", `${subhero("Anmeldung", event.title, `${formatDate(event.date)} · ${event.locationName}, ${event.city}`)}
+  return publicShell("events", `${subhero("Anmeldung", event.title, `${formatDate(event.date)} Â· ${event.locationName}, ${event.city}`)}
     <section class="section"><div class="container" style="max-width:820px"><form id="registration-form" data-event-id="${event.id}" class="form-card form-grid">
       <div class="alert">Ihre Anmeldung ist erst nach Bestaetigung Ihrer E-Mail-Adresse gueltig.</div>
       <div class="form-grid--two"><div class="field"><label for="firstName">Vorname *</label><input id="firstName" name="firstName" required></div><div class="field"><label for="lastName">Nachname *</label><input id="lastName" name="lastName" required></div></div>
@@ -913,29 +966,31 @@ export async function newsDetailPage(id) {
   const isRetrospective = isRetrospectiveArticle(item);
   if (!item || (item.page !== "news" && item.section !== "news" && !isRetrospective)) return notFoundPage();
   if (!isRetrospective && !publicNewsItems([item]).length) return notFoundPage();
-  const [sponsors, galleries, events] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries"), listPublicEvents()]);
+  const [sponsors, galleries, events, mediaAssets] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries"), listPublicEvents(), list("media_assets").catch(() => [])]);
   const date = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   const text = item.longDescription || item.articleText || item.bodyText || item.mainText || item.text || item.fullText || item.longText || item.shortText || item.teaserText || "";
   const sponsor = item.sponsorId ? sponsors.find((entry) => entry.id === item.sponsorId) : null;
   const linkedEvent = retrospectiveLinkedEvent(item, events);
-  const articleImageUrl = item.imageUrl || (linkedEvent ? archiveEventImageUrl(linkedEvent) : "");
+  const articleImageUrl = isRetrospective && linkedEvent
+    ? archiveEventImageUrl(linkedEvent, mediaAssets)
+    : item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || (linkedEvent ? archiveEventImageUrl(linkedEvent, mediaAssets) : "");
   const selectedGallery = item.galleryId ? galleries.find((gallery) => gallery.id === item.galleryId) : null;
   const attachedGalleryImages = Array.isArray(selectedGallery?.images)
     ? [...selectedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 12)
     : [];
   const leadMedia = attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "";
   const detailSection = isRetrospective ? "archive" : "news";
-  const detailTitle = isRetrospective ? "Rückblicke" : "News";
+  const detailTitle = isRetrospective ? "RÃ¼ckblicke" : "News";
   const detailIntro = isRetrospective ? "Nachberichte, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen." : "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.";
   const backHref = isRetrospective ? "#/archive" : "#/news";
-  const backText = isRetrospective ? "Zurück zu Rückblicke" : "Zurück zu News";
+  const backText = isRetrospective ? "ZurÃ¼ck zu RÃ¼ckblicke" : "ZurÃ¼ck zu News";
   const sectionLabel = isRetrospective ? "Event-Nachlauf" : item.category || "News";
-  const allText = isRetrospective ? "Alle Rückblicke" : "Alle News";
+  const allText = isRetrospective ? "Alle RÃ¼ckblicke" : "Alle News";
   return publicShell(detailSection, `${subhero("", detailTitle, detailIntro)}
     <section class="section"><div class="container detail-grid">
       <article class="detail-main news-detail">
         <a class="link news-detail__back" href="${backHref}">${backText}</a>
-        <p class="eyebrow">${escapeHtml(item.category || "News")}${date ? ` · ${formatDate(date)}` : ""}</p>
+        <p class="eyebrow">${escapeHtml(item.category || "News")}${date ? ` Â· ${formatDate(date)}` : ""}</p>
         ${articleHeader({
           title: item.title || "",
           intro: item.subtitle || ""
@@ -947,7 +1002,7 @@ export async function newsDetailPage(id) {
       </article>
       <aside class="detail-aside">
         ${sponsor?.logoUrl ? `<div class="sponsor-logo-card"><span>${escapeHtml(sponsor.role || "Sponsor")}</span><img src="${escapeHtml(sponsor.logoUrl)}" alt="Logo ${escapeHtml(sponsor.name || "")}"><strong>${escapeHtml(sponsor.name || "")}</strong></div>` : ""}
-        <div class="fact"><label>Rubrik</label><strong>${escapeHtml(item.isRetrospective ? "Rückblick" : item.category || "News")}</strong></div>
+        <div class="fact"><label>Rubrik</label><strong>${escapeHtml(item.isRetrospective ? "RÃ¼ckblick" : item.category || "News")}</strong></div>
         ${date ? `<div class="fact"><label>Datum</label><strong>${formatDate(date)}</strong></div>` : ""}
         <a class="button button--secondary" href="${backHref}">${allText}</a>
       </aside>
@@ -992,7 +1047,7 @@ export const aboutPage = internalOverviewPage("ueber_uns");
 export async function membersPage() {
   const members = await withPublicMemberLogos(await listPublicContent("members"));
   return publicShell("members", `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform fuer Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
-    <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input placeholder="Mitglieder suchen"></div></div><div class="card-grid card-grid--three">${members.map((member) => `<article class="card card__body"><div class="member-tile" style="margin-bottom:16px">${memberLogo(member)}</div><h3 style="margin:15px 0 8px">${escapeHtml(member.name)}</h3><p>${escapeHtml(member.description || "")}</p><p style="margin-top:12px">${escapeHtml(member.city)}${member.country ? ` · ${escapeHtml(member.country)}` : ""}</p>${member.website ? `<a class="link" style="display:inline-block;margin-top:14px" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Zur Website →</a>` : ""}</article>`).join("")}</div></div></section>`);
+    <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input placeholder="Mitglieder suchen"></div></div><div class="card-grid card-grid--three">${members.map((member) => `<article class="card card__body"><div class="member-tile" style="margin-bottom:16px">${memberLogo(member)}</div><h3 style="margin:15px 0 8px">${escapeHtml(member.name)}</h3><p>${escapeHtml(member.description || "")}</p><p style="margin-top:12px">${escapeHtml(member.city)}${member.country ? ` Â· ${escapeHtml(member.country)}` : ""}</p>${member.website ? `<a class="link" style="display:inline-block;margin-top:14px" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Zur Website â†’</a>` : ""}</article>`).join("")}</div></div></section>`);
 }
 
 export async function boardPage() {
@@ -1002,15 +1057,17 @@ export async function boardPage() {
 }
 
 export async function archivePage() {
-  const [allEvents, sponsors, editorial] = await Promise.all([listPublicEvents(), listPublicContent("sponsors"), listPublicContent("editorialContent")]);
+  const [allEvents, sponsors, editorial, mediaAssets] = await Promise.all([listPublicEvents(), listPublicContent("sponsors"), listPublicContent("editorialContent"), list("media_assets").catch(() => [])]);
   const events = allEvents.filter((event) => isPastEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
   const retrospectives = editorial
     .filter(isRetrospectiveArticle)
     .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")));
-  const items = retrospectives.map((item) => archiveListEditorial(item, sponsors, events)).join("");
+  const items = retrospectives.length
+    ? retrospectives.map((item) => archiveListEditorial(item, sponsors, events, mediaAssets)).join("")
+    : events.map((event) => archiveListEvent(event, sponsors, mediaAssets)).join("");
   return publicShell("archive", `${subhero("Event-Nachlauf", "Eventarchiv", "Nachberichte, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen.")}
-    <section class="section"><div class="container"><div class="section-head archive-list-head"><div><p class="eyebrow">Medienfruehstuecke</p><h2>Rückblicke</h2><p>Vergangene Veranstaltungen mit Nachbericht, Ort, Gastgeber und Detailseite.</p></div></div><div class="archive-list archive-list--compact">${items || `<div class="alert">Rueckblicke werden aktuell vorbereitet.</div>`}</div></div></section>`);
+    <section class="section"><div class="container"><div class="section-head archive-list-head"><div><p class="eyebrow">Medienfruehstuecke</p><h2>RÃ¼ckblicke</h2><p>Vergangene Veranstaltungen mit Nachbericht, Ort, Gastgeber und Detailseite.</p></div></div><div class="archive-list archive-list--compact">${items || `<div class="alert">Rueckblicke werden aktuell vorbereitet.</div>`}</div></div></section>`);
 }
 
 export async function downloadsPage() {
@@ -1083,14 +1140,8 @@ export async function joinPage() {
   const cardBlocks = blocks.filter((block) => block.typ !== "hero");
   const joinCards = aboutCardGroups(cardBlocks, meta, { summary: "long", all: true, joinCta: true });
   const joinTexts = blocks.map((block) => aboutLongTextSection(block, { joinCta: block.typ !== "hero" })).join("");
-  const joinIntroCard = `<article class="join-intro-card">
-    ${aboutPicto(hero?.icon || "membership")}
-    <div><p class="eyebrow">Mitglied werden</p><h2>${escapeHtml(hero?.titel || meta.title)}</h2><p>${escapeHtml(hero?.langtext || hero?.kurztext || meta.intro)}</p></div>
-    <button class="button button--primary" type="button" data-join-scroll>Mitgliedsantrag</button>
-  </article>`;
-  return publicShell("join", `<section class="section internal-overview internal-overview--join"><div class="container"><div class="internal-about-layout"><div class="internal-about-main">
-    <div class="internal-page-heading"><p class="eyebrow">${escapeHtml(meta.eyebrow)}</p><h1>${escapeHtml(hero?.titel || meta.title)}</h1><p>${escapeHtml(hero?.kurztext || meta.intro)}</p></div>
-    ${joinIntroCard}
+  return publicShell("join", `${subhero(meta.eyebrow, hero?.titel || meta.title, hero?.kurztext || meta.intro)}
+  <section class="section internal-overview internal-overview--join"><div class="container"><div class="internal-about-layout"><div class="internal-about-main">
     <div class="internal-mobile-list internal-mobile-list--about">${joinCards || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
     <div class="internal-about-texts">${joinTexts}</div>
   </div>${joinAside(downloads, editorial)}</div></div></section>${membershipFormSection()}`);
@@ -1114,7 +1165,7 @@ export async function portalPage() {
   const [allEvents, sponsors] = await Promise.all([listPublicEvents(true), listPublicContent("sponsors")]);
   const events = allEvents.filter((event) => event.accessType === "members_only");
   return publicShell("login", `${subhero("Mitgliederbereich", `Willkommen, ${escapeHtml(user.displayName)}.`, "Exklusive Inhalte und Ihre Veranstaltungen auf einen Blick.")}
-    <section class="section"><div class="container"><div class="section-head"><div><h2>Mitglieder-Events</h2><p class="muted">Angemeldet als ${escapeHtml(user.email || "")} · Rolle: ${escapeHtml(user.role || "guest")} · Token bis: ${escapeHtml(user.tokenExpiresAt || "Demo")}</p></div><button id="logout-button" class="button button--secondary">Abmelden</button></div><div class="card-grid card-grid--three">${events.map((event) => eventCard(event, false, sponsors)).join("")}</div></div></section>`);
+    <section class="section"><div class="container"><div class="section-head"><div><h2>Mitglieder-Events</h2><p class="muted">Angemeldet als ${escapeHtml(user.email || "")} Â· Rolle: ${escapeHtml(user.role || "guest")} Â· Token bis: ${escapeHtml(user.tokenExpiresAt || "Demo")}</p></div><button id="logout-button" class="button button--secondary">Abmelden</button></div><div class="card-grid card-grid--three">${events.map((event) => eventCard(event, false, sponsors)).join("")}</div></div></section>`);
 }
 
 function memberDirectoryCard(member = {}) {

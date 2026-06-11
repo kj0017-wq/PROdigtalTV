@@ -88,29 +88,78 @@ function mediaThumb(asset = {}) {
     : `<span>${escapeHtml((asset.media_type || "Bild").slice(0, 2).toUpperCase())}</span>`;
 }
 
-function mediaUrl(asset = {}) {
-  const url = asset.file_path_thumb_url || asset.file_path_web_url || asset.file_path_original_url || asset.imageUrl || asset.assetUrl || "";
-  return url;
+function usableMediaUrl(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^(https?:|data:image\/|blob:|\/)/i.test(text)) return text;
+  if (/^assets\//i.test(text)) return `/${text}`;
+  return "";
 }
 
-function mediaPreviewUrl(asset = {}) {
-  return asset.file_path_original_url || asset.file_path_web_url || asset.imageUrl || asset.assetUrl || asset.file_path_thumb_url || "";
-}
-
-function mediaEditorUrl(asset = {}) {
-  return asset.file_path_web_url || asset.file_path_original_url || asset.imageUrl || asset.assetUrl || asset.file_path_thumb_url || "";
-}
-
-function mediaUrlValues(asset = {}) {
+function mediaUrlCandidates(asset = {}) {
   return [
     asset.file_path_thumb_url,
     asset.file_path_web_url,
     asset.file_path_original_url,
     asset.imageUrl,
     asset.assetUrl,
+    asset.fileUrl,
+    asset.url,
+    asset.downloadUrl,
+    asset.thumbnail_url,
+    asset.thumbnailUrl,
+    asset.file_url,
+    asset.original_url,
+    asset.web_url,
+    asset.thumb_url,
+    asset.file_path_thumb,
+    asset.file_path_web,
+    asset.file_path_original
+  ].map(usableMediaUrl).filter(Boolean);
+}
+
+function mediaUrl(asset = {}) {
+  return mediaUrlCandidates(asset)[0] || "";
+}
+
+function mediaPreviewUrl(asset = {}) {
+  return [
+    asset.file_path_original_url,
+    asset.file_path_web_url,
+    asset.imageUrl,
+    asset.assetUrl,
+    asset.fileUrl,
+    asset.url,
+    asset.downloadUrl,
+    asset.file_path_thumb_url,
+    asset.thumbnail_url,
+    asset.thumbnailUrl,
+    asset.file_path_original,
+    asset.file_path_web,
+    asset.file_path_thumb
+  ].map(usableMediaUrl).find(Boolean) || "";
+}
+
+function mediaEditorUrl(asset = {}) {
+  return [
+    asset.file_path_web_url,
+    asset.file_path_original_url,
+    asset.imageUrl,
+    asset.assetUrl,
+    asset.fileUrl,
+    asset.url,
+    asset.downloadUrl,
+    asset.file_path_thumb_url,
+    asset.file_path_web,
+    asset.file_path_original,
+    asset.file_path_thumb,
     asset.thumbnail_url,
     asset.thumbnailUrl
-  ].filter(Boolean).map((value) => String(value));
+  ].map(usableMediaUrl).find(Boolean) || "";
+}
+
+function mediaUrlValues(asset = {}) {
+  return mediaUrlCandidates(asset);
 }
 
 function mediaAssetSourceGroup(asset = {}) {
@@ -680,13 +729,15 @@ function aiPage(query = new URLSearchParams(), targetRecord = null) {
 function editPage(asset = null, query = new URLSearchParams(), variants = [], assets = []) {
   const contextQuery = asset ? inferredMediaContext(asset, query) : query;
   const hasTarget = Boolean(contextQuery.get("targetCollection") && contextQuery.get("targetId"));
+  const editorUrl = asset ? mediaEditorUrl(asset) : "";
+  const previewUrl = asset ? mediaPreviewUrl(asset) || editorUrl : "";
   return `<section class="panel media-work-panel">${asset ? `<form id="central-media-edit-form" class="form-grid" data-media-edit-form data-media-id="${escapeHtml(asset.id)}" data-media-aspect="${escapeHtml(asset.aspect_ratio || "16x9")}" ${mediaContextAttrs(contextQuery)}>
     <div class="media-editor-layout">
       <div class="media-editor-preview">
         <div class="media-crop-stage" data-media-crop-stage style="--media-crop-aspect:${mediaAspectStyle(asset.aspect_ratio)}">
-          <button class="media-fullscreen-button" type="button" data-media-fullscreen-open data-media-fullscreen-src="${escapeHtml(mediaPreviewUrl(asset) || mediaUrl(asset))}" data-media-fullscreen-alt="${escapeHtml(asset.alt_text || asset.title || "Medienbild")}" title="Bild gross anzeigen" aria-label="Bild gross anzeigen">${mediaFullscreenIcon()}</button>
-          <img src="${escapeHtml(mediaEditorUrl(asset))}" alt="${escapeHtml(asset.alt_text || asset.title || "Medienbild")}" crossorigin="anonymous" data-media-crop-image>
-          <span class="media-crop-frame" aria-hidden="true"></span>
+          ${editorUrl ? `<button class="media-fullscreen-button" type="button" data-media-fullscreen-open data-media-fullscreen-src="${escapeHtml(previewUrl)}" data-media-fullscreen-alt="${escapeHtml(asset.alt_text || asset.title || "Medienbild")}" title="Bild gross anzeigen" aria-label="Bild gross anzeigen">${mediaFullscreenIcon()}</button>
+          <img src="${escapeHtml(editorUrl)}" alt="${escapeHtml(asset.alt_text || asset.title || "Medienbild")}" data-media-crop-image>
+          <span class="media-crop-frame" aria-hidden="true"></span>` : `<div class="alert alert--warning media-crop-empty">Dieses Bild hat noch keine verwendbare URL. Bitte ein anderes Bild waehlen oder die Datei neu hochladen.</div>`}
         </div>
         <div class="field media-editor-assignment"><label>Bildzuordnung</label><select name="media_type" data-media-editor-type-update>${mediaTypeOptions(asset.media_type || "upload")}</select><p class="media-preset-hint" data-media-preset-hint>${escapeHtml(mediaPresetSummary(asset.media_type || "upload"))}</p></div>
         ${mediaVariantChooser(asset, variants, assets)}

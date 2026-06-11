@@ -113,16 +113,22 @@ function memberLogoAsset(item = {}, mediaAssets = []) {
 
 function recordMediaAsset(item = {}, mediaAssets = [], collection = "", field = "imageUrl") {
   const recordUrl = String(item[field] || editorialThumbUrl(item) || "").trim();
+  const directIds = [item.thumbnail_media_asset_id, item.mediaAssetId, item.media_asset_id, item.logo_media_asset_id, item.logoMediaAssetId].filter(Boolean);
   return mediaAssets
     .filter((asset) => {
       const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
-      return asset.linked_collection === collection && asset.linked_record_id === item.id && (!field || !asset.linked_field || asset.linked_field === field)
+      return directIds.includes(asset.id)
+        || asset.linked_collection === collection && asset.linked_record_id === item.id && (!field || !asset.linked_field || asset.linked_field === field)
         || asset.target_collection === collection && asset.target_id === item.id && (!field || !asset.target_field || asset.target_field === field)
         || (recordUrl && urls.includes(recordUrl));
     })
     .filter((asset) => mediaAssetUrl(asset))
     .sort((a, b) => {
       const score = (asset = {}) => [
+        directIds.includes(asset.id) ? "5" : "0",
+        asset.target_collection === collection && asset.target_id === item.id && (!field || !asset.target_field || asset.target_field === field) ? "4" : "0",
+        asset.linked_collection === collection && asset.linked_record_id === item.id && (!field || !asset.linked_field || asset.linked_field === field) ? "3" : "0",
+        asset.source_type === "edited" ? "2" : "0",
         asset.status === "active" ? "2" : "1",
         asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
         asset.id || ""
@@ -339,8 +345,8 @@ function isPastCmsEvent(event) {
   return Boolean(event.date && event.date < todayString());
 }
 
-function eventTable(events) {
-  return `<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Event</th><th>Datum</th><th>Ablauf</th><th>Zugang</th><th>Lifecycle</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${events.map((event) => `<tr><td><a class="link" href="#/cms/event/${event.id}">${escapeHtml(event.title)}</a></td><td>${formatDate(event.date)}</td><td>${event.expiresAt ? formatDateTime(event.expiresAt) : "-"}</td><td>${accessLabels[event.accessType]}</td><td>${lifecycleLabels[event.lifecyclePhase]}</td><td>${status(event.status)}</td><td><div class="table-actions"><a class="button button--secondary button--small" href="#/cms/event/${event.id}">Bearbeiten</a><button class="link-button" data-event-status="${event.id}" data-status="published">Aktiv</button><button class="link-button" data-event-status="${event.id}" data-status="inactive">Inaktiv</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
+function eventTable(events, { showThumb = false, mediaAssets = [] } = {}) {
+  return `<section class="panel"><div class="table-wrap"><table class="table ${showThumb ? "table--event-followup" : ""}"><thead><tr>${showThumb ? "<th>Bild</th>" : ""}<th>Event</th><th>Datum</th><th>Ablauf</th><th>Zugang</th><th>Lifecycle</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${events.map((event) => `<tr>${showThumb ? `<td><div class="topic-thumb topic-thumb--table editorial-thumb--table event-thumb--table">${eventThumb(event, mediaAssets)}</div></td>` : ""}<td><a class="link" href="#/cms/event/${event.id}">${escapeHtml(event.title)}</a></td><td>${formatDate(event.date)}</td><td>${event.expiresAt ? formatDateTime(event.expiresAt) : "-"}</td><td>${accessLabels[event.accessType]}</td><td>${lifecycleLabels[event.lifecyclePhase]}</td><td>${status(event.status)}</td><td><div class="table-actions"><a class="button button--secondary button--small" href="#/cms/event/${event.id}">Bearbeiten</a><button class="link-button" data-event-status="${event.id}" data-status="published">Aktiv</button><button class="link-button" data-event-status="${event.id}" data-status="inactive">Inaktiv</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
 }
 
 function settingValue(settings, id, fallback = []) {
@@ -359,11 +365,12 @@ export async function eventsAdminPage() {
 
 export async function eventFollowUpPage() {
   if (!hasCmsAccess()) return denied();
-  const events = (await list("events"))
+  const [allEvents, mediaAssets] = await Promise.all([list("events"), list("media_assets").catch(() => [])]);
+  const events = allEvents
     .filter((event) => isPastCmsEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
   return protect(cmsShell("cms/followup", `${cmsTitle("Event-Management", "Event-Nachlauf")}
-  ${eventTable(events)}`));
+  ${eventTable(events, { showThumb: true, mediaAssets })}`));
 }
 
 function eventTabs(id, active) {
@@ -421,6 +428,28 @@ function editorialThumb(item = {}, { collection = "editorialContent", section = 
   const asset = recordMediaAsset(item, mediaAssets, collection, field);
   const targetItem = asset?.id ? { ...item, thumbnail_media_asset_id: asset.id } : item;
   return `<a class="cms-thumb-action" href="${cmsThumbTarget(collection, targetItem, section, field, altField)}" title="${url ? "Bild bearbeiten" : "Thumb mit KI erstellen"}" aria-label="${url ? "Bild bearbeiten" : "Thumb mit KI erstellen"}">${content}</a>`;
+}
+
+function eventThumb(event = {}, mediaAssets = []) {
+  const asset = recordMediaAsset(event, mediaAssets, "events", "imageUrl");
+  const url = eventImageUrl(event, mediaAssets);
+  const content = url ? `<img src="${escapeHtml(url)}" alt="">` : `<span>Bild</span>`;
+  const params = new URLSearchParams({
+    targetCollection: "events",
+    targetId: event.id || "",
+    targetField: "imageUrl",
+    targetAltField: "thumbnail_alt",
+    returnTo: "#/cms/followup"
+  });
+  const href = asset?.id || event.thumbnail_media_asset_id || event.mediaAssetId
+    ? `#/cms/media/edit?id=${encodeURIComponent(asset?.id || event.thumbnail_media_asset_id || event.mediaAssetId)}&${params.toString()}`
+    : `#/cms/media/library?${params.toString()}`;
+  return `<a class="cms-thumb-action" href="${href}" title="${url ? "Eventbild bearbeiten" : "Eventbild aus Mediathek waehlen"}" aria-label="${url ? "Eventbild bearbeiten" : "Eventbild aus Mediathek waehlen"}">${content}</a>`;
+}
+
+function eventImageUrl(event = {}, mediaAssets = []) {
+  const asset = recordMediaAsset(event, mediaAssets, "events", "imageUrl");
+  return mediaAssetUrl(asset || {}) || event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "";
 }
 
 function editorialSummaryThumb(item = {}) {
@@ -487,6 +516,16 @@ function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altF
   return `<div class="linked-media-actions">
     <a class="button button--secondary button--small" href="${editHref || `#/cms/media/library?${params.toString()}`}">${escapeHtml(label)} ${assetId ? "bearbeiten" : "aus Mediathek waehlen"}</a>
     <a class="button button--secondary button--small" href="#/cms/media/ai?${params.toString()}">${escapeHtml(label)} erstellen</a>
+  </div>`;
+}
+
+function eventImageEditor(event = {}, mediaAssets = [], returnTo = "") {
+  const asset = recordMediaAsset(event, mediaAssets, "events", "imageUrl");
+  const imageUrl = eventImageUrl(event, mediaAssets);
+  return `<div class="field"><label>Eventbild / Thumb</label>
+    ${imageDropzone({ inputName: "eventImage", removeName: "removeEventImage", imageUrl, label: "Eventbild", defaultSize: "1200x675" })}
+    ${linkedMediaActions({ collection: "events", id: event.id, field: "imageUrl", altField: "thumbnail_alt", returnTo, label: "Bild", assetId: event.thumbnail_media_asset_id || event.mediaAssetId || asset?.id || "" })}
+    <p class="muted">Bild aus der Mediathek waehlen, Thumb erstellen oder optional direkt eine neue Datei hochladen.</p>
   </div>`;
 }
 
@@ -663,7 +702,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     id: `event-${crypto.randomUUID()}`, title: "", subtitle: "", date: "2026-08-01", startTime: "10:00", endTime: "13:00", locationName: "", city: "", description: "", eventType: "Panel", accessType: "public", status: "draft", lifecyclePhase: "planning", registrationEnabled: false, maxParticipants: 50, expiresAt: "", address: "", phone: "", topicIds: [], speakerIds: [], sponsorIds: []
   } : await getOne("events", id);
   if (!event) return eventsAdminPage();
-  const [topics, speakers, sponsors, registrations, media, settings, allEvents, galleries, allEditorial] = await Promise.all([list("topics"), list("speakers"), list("sponsors"), list("registrations"), list("eventMedia"), list("settings"), list("events"), list("galleries"), list("editorialContent")]);
+  const [topics, speakers, sponsors, registrations, media, settings, allEvents, galleries, allEditorial, mediaAssets] = await Promise.all([list("topics"), list("speakers"), list("sponsors"), list("registrations"), list("eventMedia"), list("settings"), list("events"), list("galleries"), list("editorialContent"), list("media_assets").catch(() => [])]);
   const eventTypes = settingValue(settings, "eventTypes", ["Medienfruehstueck", "Summit", "Roundtable", "Panel", "Webinar", "Konferenz", "Workshop"]);
   const galleryOptions = [`<option value="">Keine Galerie verknuepfen</option>`, ...galleries
     .filter((gallery) => gallery.status !== "archived")
@@ -690,7 +729,14 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   </section>`;
   let content;
   if (tab === "base") {
-    content = `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid"><div class="form-grid--two"><div class="field"><label>Titel</label><input name="title" value="${escapeHtml(event.title)}" required>${aiFieldActions([{ action: "generateEventDescription", target: "title", label: "Ueberschrift vorschlagen", entityId: event.id, fieldName: "title" }])}</div><div class="field"><label>Untertitel</label><input name="subtitle" value="${escapeHtml(event.subtitle)}"></div></div><div class="field"><label>Beschreibung</label><textarea name="description">${escapeHtml(event.description)}</textarea>${aiFieldActions([{ action: "improveText", target: "description", label: "Mit ChatGPT bearbeiten", entityId: event.id, fieldName: "description" }, { action: "shortenText", target: "description", label: "Fuer Mobile kuerzen", entityId: event.id, fieldName: "description" }, { action: "generateSeoMeta", target: "description", label: "SEO erzeugen", entityId: event.id, fieldName: "description" }])}</div><div class="form-grid--two"><div class="field"><label>Datum</label><input type="date" name="date" value="${event.date}"></div><div class="field"><label>Eventtyp</label><select name="eventType">${eventTypes.map((value) => `<option ${value === event.eventType ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select></div><div class="field"><label>Neuen Eventtyp hinzufuegen</label><input name="newEventType" placeholder="z. B. Fachgespraech"></div><div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Bilder werden im Bereich Bildergalerien freigegeben und dieser Galerie zugeordnet.</p></div><div class="field"><label>Eventbild auswaehlen</label><input type="file" name="eventImage" accept="image/*">${event.imageUrl ? `<p class="muted">Aktuelles Eventbild ist zugeordnet. Neue Auswahl ersetzt es beim Speichern.</p>` : ""}</div><div class="field"><label>Aktiv / Inaktiv</label><select name="status"><option value="published" ${event.status === "published" ? "selected" : ""}>Aktiv</option><option value="inactive" ${event.status === "inactive" ? "selected" : ""}>Inaktiv</option><option value="draft" ${event.status === "draft" ? "selected" : ""}>Entwurf</option><option value="archived" ${event.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Beginn</label><input type="time" name="startTime" value="${event.startTime}"></div><div class="field"><label>Ende</label><input type="time" name="endTime" value="${event.endTime}"></div><div class="field"><label>Location</label><input name="locationName" value="${escapeHtml(event.locationName || "")}"></div><div class="field"><label>Adresse</label><input name="address" value="${escapeHtml(event.address || "")}"></div><div class="field"><label>Stadt</label><input name="city" value="${escapeHtml(event.city || "")}"></div><div class="field"><label>Telefon Location</label><input name="phone" value="${escapeHtml(event.phone || "")}"></div><div class="field"><label>Ablaufdatum / automatisch ausblenden</label><input type="datetime-local" name="expiresAt" value="${event.expiresAt ? event.expiresAt.slice(0, 16) : ""}"></div><div class="field"><label>Zugangsart</label><select name="accessType">${Object.entries(accessLabels).map(([key, value]) => `<option value="${key}" ${key === event.accessType ? "selected" : ""}>${value}</option>`).join("")}</select></div><div class="field"><label>Lifecycle</label><select name="lifecyclePhase">${Object.entries(lifecycleLabels).map(([key, value]) => `<option value="${key}" ${key === event.lifecyclePhase ? "selected" : ""}>${value}</option>`).join("")}</select></div></div><div class="actions"><button class="button button--primary">Event speichern</button>${id !== "new" ? `<button type="button" class="button button--secondary" data-delete-event="${event.id}">Event loeschen</button>` : ""}</div><div id="event-save-result"></div></form>`;
+    content = `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid is-save-aware"><div class="form-grid--two"><div class="field"><label>Titel</label><input name="title" value="${escapeHtml(event.title)}" required>${aiFieldActions([{ action: "generateEventDescription", target: "title", label: "Ueberschrift vorschlagen", entityId: event.id, fieldName: "title" }])}</div><div class="field"><label>Untertitel</label><input name="subtitle" value="${escapeHtml(event.subtitle)}"></div></div><div class="field"><label>Beschreibung</label><textarea name="description">${escapeHtml(event.description)}</textarea>${aiFieldActions([{ action: "improveText", target: "description", label: "Mit ChatGPT bearbeiten", entityId: event.id, fieldName: "description" }, { action: "shortenText", target: "description", label: "Fuer Mobile kuerzen", entityId: event.id, fieldName: "description" }, { action: "generateSeoMeta", target: "description", label: "SEO erzeugen", entityId: event.id, fieldName: "description" }])}</div><div class="form-grid--two"><div class="field"><label>Datum</label><input type="date" name="date" value="${event.date}"></div><div class="field"><label>Eventtyp</label><select name="eventType">${eventTypes.map((value) => `<option ${value === event.eventType ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select></div><div class="field"><label>Neuen Eventtyp hinzufuegen</label><input name="newEventType" placeholder="z. B. Fachgespraech"></div><div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Bilder werden im Bereich Bildergalerien freigegeben und dieser Galerie zugeordnet.</p></div>${eventImageEditor(event, mediaAssets, `#/cms/event/${event.id}?tab=base`)}<div class="field"><label>Aktiv / Inaktiv</label><select name="status"><option value="published" ${event.status === "published" ? "selected" : ""}>Aktiv</option><option value="inactive" ${event.status === "inactive" ? "selected" : ""}>Inaktiv</option><option value="draft" ${event.status === "draft" ? "selected" : ""}>Entwurf</option><option value="archived" ${event.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Beginn</label><input type="time" name="startTime" value="${event.startTime}"></div><div class="field"><label>Ende</label><input type="time" name="endTime" value="${event.endTime}"></div><div class="field"><label>Location</label><input name="locationName" value="${escapeHtml(event.locationName || "")}"></div><div class="field"><label>Adresse</label><input name="address" value="${escapeHtml(event.address || "")}"></div><div class="field"><label>Stadt</label><input name="city" value="${escapeHtml(event.city || "")}"></div><div class="field"><label>Telefon Location</label><input name="phone" value="${escapeHtml(event.phone || "")}"></div><div class="field"><label>Ablaufdatum / automatisch ausblenden</label><input type="datetime-local" name="expiresAt" value="${event.expiresAt ? event.expiresAt.slice(0, 16) : ""}"></div><div class="field"><label>Zugangsart</label><select name="accessType">${Object.entries(accessLabels).map(([key, value]) => `<option value="${key}" ${key === event.accessType ? "selected" : ""}>${value}</option>`).join("")}</select></div><div class="field"><label>Lifecycle</label><select name="lifecyclePhase">${Object.entries(lifecycleLabels).map(([key, value]) => `<option value="${key}" ${key === event.lifecyclePhase ? "selected" : ""}>${value}</option>`).join("")}</select></div></div><div class="actions"><button class="button button--primary">Event speichern</button>${id !== "new" ? `<button type="button" class="button button--secondary" data-delete-event="${event.id}">Event loeschen</button>` : ""}</div><div id="event-save-result"></div></form>`;
+    if (isPastCmsEvent(event)) {
+      content = content
+        .replace(`<div class="field"><label>Telefon Location</label><input name="phone" value="${escapeHtml(event.phone || "")}"></div>`, "")
+        .replace(`<div class="field"><label>Ablaufdatum / automatisch ausblenden</label><input type="datetime-local" name="expiresAt" value="${event.expiresAt ? event.expiresAt.slice(0, 16) : ""}"></div>`, "")
+        .replace(`<div class="field"><label>Zugangsart</label><select name="accessType">${Object.entries(accessLabels).map(([key, value]) => `<option value="${key}" ${key === event.accessType ? "selected" : ""}>${value}</option>`).join("")}</select></div>`, "")
+        .replace(`<div class="field"><label>Lifecycle</label><select name="lifecyclePhase">${Object.entries(lifecycleLabels).map(([key, value]) => `<option value="${key}" ${key === event.lifecyclePhase ? "selected" : ""}>${value}</option>`).join("")}</select></div>`, "");
+    }
   } else if (tab === "topics") {
     content = eventTopicsEditor(event, topics, speakers, allEvents, query);
   } else if (tab === "__old_topics") {
@@ -711,6 +757,12 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   } else {
     const assigned = media.filter((item) => item.eventId === event.id);
     content = `<h2>${tab === "post" ? "Event-Nacharbeit" : "Medien zum Event"}</h2>${tab === "post" ? `<section class="panel" style="background:var(--pdt-bg)"><h2>Event-Nachlauf mit KI</h2>${aiFieldActions([{ action: "generateEventSummary", target: "postEventSummary", label: "Nachbericht erzeugen", entityId: event.id, fieldName: "postEventSummary" }, { action: "generateArchiveText", target: "longDescription", label: "Archivtext erzeugen", entityId: event.id, fieldName: "archiveText" }])}</section>` : `<section class="panel" style="background:var(--pdt-bg)"><h2>Fotogalerie und Downloads mit KI</h2><p>Galerie und Downloads bleiben optional. Wenn keine Bilder oder Downloads vorhanden sind, entsteht kein Pflichtfehler.</p>${aiFieldActions([{ action: "generateGalleryIntro", target: "ai-media-context", label: "Galerie-Einleitung", entityId: event.id, fieldName: "galleryIntro" }, { action: "generateImageAltText", target: "ai-media-context", label: "Alt-Texte vorbereiten", entityId: event.id, fieldName: "altTexts" }, { action: "generateDownloadDescription", target: "ai-media-context", label: "Downloadbeschreibung", entityId: event.id, fieldName: "downloadDescription" }])}<div id="ai-media-context" hidden>${escapeHtml(JSON.stringify({ event, media: assigned }))}</div></section>`}${tab === "post" ? `${retrospectiveControl}<form id="event-edit-form" data-event-id="${event.id}" class="form-grid" style="margin-bottom:22px"><div class="field"><label>Nachbericht Kurztext</label><textarea name="postEventSummary">${escapeHtml(event.postEventSummary || event.postEventummary || "")}</textarea></div><div class="field"><label>Langtext / Rückblicktext</label><textarea name="longDescription">${escapeHtml(event.longDescription || event.bodyText || event.articleText || event.archiveText || "")}</textarea><p class="muted">Dieser Text wird auf der öffentlichen Rückblick-Unterseite als Langtext angezeigt.</p></div><div class="actions"><button class="button button--primary button--small">Rückblicktext speichern</button></div><div id="event-save-result"></div></form>` : ""}<form id="media-upload-form" data-event-id="${event.id}" class="upload"><p><strong>Fotos, PDFs oder Praesentationen hochladen</strong></p><p>Drag-and-drop oder Dateiauswahl; Inhalte bleiben bis zur Freigabe intern.</p><input type="file" name="files" multiple style="margin-top:17px"><button class="button button--primary button--small" type="submit" style="margin:15px auto 0">Upload starten</button><div id="upload-result"></div></form><div class="table-wrap"><table class="table"><thead><tr><th>Datei</th><th>Typ</th><th>Sichtbarkeit</th><th>Freigabe</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((item) => `<tr><td>${escapeHtml(item.title)}</td><td>${item.mediaType}</td><td>${item.visibility}</td><td>${status(item.status)}</td><td><div class="table-actions"><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="approved">Aktiv</button><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="archived">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="eventMedia" data-record-id="${item.id}">Loeschen</button></div></td></tr>`).join("")}</tbody></table></div>`;
+  }
+  if (tab === "post") {
+    content = content.replace(
+      `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid" style="margin-bottom:22px">`,
+      `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid is-save-aware" style="margin-bottom:22px">${eventImageEditor(event, mediaAssets, `#/cms/event/${event.id}?tab=post`)}`
+    );
   }
   const activeSection = isPastCmsEvent(event) ? "cms/followup" : "cms/events";
   return protect(cmsShell(activeSection, `${cmsTitle("Event bearbeiten", escapeHtml(event.title || "Neues Event"), `<a class="button button--secondary button--small" href="#/event/${event.id}">Vorschau</a>`)}<section class="panel">${eventTabs(event.id, tab)}${content}</section>`));

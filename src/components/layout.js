@@ -2,8 +2,10 @@ import { currentUser, canUseCms } from "../firebase/authService.js?v=464";
 
 const nav = [
   ["home", "Start"], ["events", "Events"], ["topics", "Themen"], ["news", "News"], ["about", "Ueber uns"],
-  ["board", "Vorstand"], ["members", "Mitglieder"], ["join", "Mitglied werden"], ["archive", "Rueckblicke"], ["webapp-qr", "WebApp QR"]
+  ["archive", "Rueckblicke"], ["webapp-qr", "WebApp QR"]
 ];
+
+const aboutSubnav = [["board", "Vorstand"], ["members", "Mitglieder"], ["join", "Mitglied werden"]];
 
 function navIcon(name = "home") {
   const icons = {
@@ -23,7 +25,9 @@ export function logo() {
 export function header(active) {
   const user = currentUser();
   const cmsLink = canUseCms(user) ? `<a class="button button--secondary button--small header-auth header-auth--cms" href="/cms.html#/cms">CMS</a>` : "";
-  const navLink = ([route, label]) => `<a class="${active === route ? "active" : ""}" href="#/${route}">${label}</a>`;
+  const navLink = ([route, label]) => route === "about"
+    ? `<div class="desktop-nav__item desktop-nav__item--has-submenu"><a class="${active === route || aboutSubnav.some(([subRoute]) => active === subRoute) ? "active" : ""}" href="#/${route}" aria-haspopup="true">${label}</a><div class="desktop-subnav">${aboutSubnav.map(([subRoute, subLabel]) => `<a class="${active === subRoute ? "active" : ""}" href="#/${subRoute}">${subLabel}</a>`).join("")}</div></div>`
+    : `<a class="${active === route ? "active" : ""}" href="#/${route}">${label}</a>`;
   const menuLink = ([route, label]) => `<a class="${active === route ? "active" : ""}" href="#/${route}" data-public-menu-close>${label}</a>`;
   return `<header class="topbar pdtv-mobile-header"><div class="container topbar__inner">
     ${logo()}
@@ -39,6 +43,7 @@ export function header(active) {
     </a>
   </div><nav class="public-mobile-menu" data-public-menu aria-label="Mobile Navigation">
     ${nav.map(menuLink).join("")}
+    <div class="public-mobile-submenu" aria-label="Ueber uns Untermenue">${aboutSubnav.map(([route, label]) => `<a class="${active === route ? "active" : ""}" href="#/${route}" data-public-menu-close>${label}</a>`).join("")}</div>
     ${canUseCms(user) ? `<a href="/cms.html#/cms" data-public-menu-close>CMS</a>` : ""}
     <a href="#/${user ? "portal" : "login"}" data-public-menu-close>${user ? "Profil" : "Login"}</a>
   </nav></header>`;
