@@ -5,7 +5,7 @@ const STORE_KEY = "prodigitaltv-demo-db-official-assets-v4";
 
 function canFallbackToLocal(error) {
   return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)
-    && ["permission-denied", "unauthenticated", "failed-precondition"].some((code) => String(error?.code || error?.message || "").includes(code));
+    && ["permission-denied", "unauthenticated", "failed-precondition", "login erforderlich"].some((code) => String(error?.code || error?.message || "").toLowerCase().includes(code));
 }
 
 function clone(value) {

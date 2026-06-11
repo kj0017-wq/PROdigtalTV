@@ -2,9 +2,9 @@ import { route, onRouteChange, go } from "./utils/router.js";
 import {
   homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
   newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, memberPortalPage, legalPage, notFoundPage, webappQrPage
-} from "./pages/publicPages.js?v=494";
+} from "./pages/publicPages.js?v=503";
 import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=464";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=465";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=466";
 import { escapeHtml, formatDate } from "./utils/format.js";
 
 const root = document.querySelector("#app");
@@ -12,14 +12,14 @@ const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 
 const lazy = {};
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=491");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=499");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=462");
-const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=49");
+const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=50");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=5");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
 const csvService = () => lazy.csvService ||= import("./utils/csv.js");
-const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=316");
+const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=317");
 const ttsService = () => lazy.ttsService ||= import("./ai/ttsService.js?v=2");
 const aiSourceCatalogService = () => lazy.aiSourceCatalog ||= import("./data/aiSourceCatalog.js");
 
@@ -122,7 +122,14 @@ async function viewForRoute(current) {
     } = await cmsPages();
     if (!current.id) return dashboardPage();
     if (current.id === "events") return eventsAdminPage();
-    if (current.id === "event") return eventEditPage(current.section, current.query.get("tab") || "base", current.query);
+    if (current.id === "event") {
+      try {
+        sessionStorage.setItem("pdt-last-event-editor-id", current.section || "");
+        sessionStorage.setItem("pdt-last-event-editor-tab", current.query.get("tab") || "base");
+        sessionStorage.setItem("pdt-last-event-editor-at", String(Date.now()));
+      } catch {}
+      return eventEditPage(current.section, current.query.get("tab") || "base", current.query);
+    }
     if (current.id === "registrations") return registrationsPage();
     if (current.id === "followup") return eventFollowUpPage();
     if (current.id === "topics") return moduleListPage("topics");
@@ -1824,26 +1831,71 @@ function mediaAiThumbTextFromResult(result = {}, description = "") {
 }
 
 function wireMediaCardLinks() {
+  const selectAssetForTarget = async (assetId = "", href = "", sourceNode = null) => {
+    if (!assetId || !href) return false;
+    const context = mediaContextFromHash(href);
+    if (!context.targetCollection || !context.targetId) return false;
+    const asset = await getOne("media_assets", assetId);
+    if (!asset) return false;
+    sourceNode?.classList?.add("is-saving");
+    await attachMediaAssetToTarget(asset, context);
+    if (context.returnTo) {
+      window.location.hash = context.returnTo.replace(/^#\/?/, "#/");
+      return true;
+    }
+    return false;
+  };
+  document.querySelectorAll("[data-media-select-button]").forEach((button) => {
+    if (button.dataset.mediaSelectButtonWired === "1") return;
+    button.dataset.mediaSelectButtonWired = "1";
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const card = button.closest("[data-media-card]");
+      const originalLabel = button.textContent;
+      try {
+        button.disabled = true;
+        button.textContent = "Uebernehme ...";
+        const jumped = await selectAssetForTarget(button.dataset.mediaSelectButton, button.dataset.mediaSelectHref, card || button);
+        if (!jumped) {
+          button.textContent = "Uebernommen";
+          window.location.hash = button.dataset.mediaSelectHref || card?.dataset.mediaEditLink || window.location.hash;
+        }
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = originalLabel;
+        card?.classList?.remove("is-saving");
+        console.error("Media asset selection failed", error);
+      }
+    });
+  });
   document.querySelectorAll("[data-media-edit-link]").forEach((card) => {
     if (card.dataset.mediaEditLinkWired === "1") return;
     card.dataset.mediaEditLinkWired = "1";
-    const open = () => {
+    const open = async () => {
       if (card.dataset.mediaEditLink) {
         try {
           const id = new URLSearchParams(card.dataset.mediaEditLink.split("?")[1] || "").get("id");
           if (id) localStorage.setItem("pdt-last-media-asset-id", id);
         } catch {}
+        if (card.dataset.mediaSelectAsset && await selectAssetForTarget(card.dataset.mediaSelectAsset, card.dataset.mediaEditLink, card)) return;
         window.location.hash = card.dataset.mediaEditLink;
       }
     };
     card.addEventListener("click", (event) => {
       if (event.target.closest("a, button, input, select, textarea, label, summary, details")) return;
-      open();
+      open().catch((error) => {
+        card.classList.remove("is-saving");
+        console.error("Media asset selection failed", error);
+      });
     });
     card.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.key !== " ") return;
       event.preventDefault();
-      open();
+      open().catch((error) => {
+        card.classList.remove("is-saving");
+        console.error("Media asset selection failed", error);
+      });
     });
   });
 }
@@ -3838,12 +3890,34 @@ function wireExistingThumbImport() {
 }
 
 function mediaContextFromNode(node) {
+  const selectedEventTargetId = node?.elements?.mediaEventTargetId?.value || "";
+  if (!node?.dataset.mediaTargetCollection && selectedEventTargetId) {
+    return {
+      targetCollection: "events",
+      targetId: selectedEventTargetId,
+      targetField: "imageUrl",
+      targetAltField: "thumbnail_alt",
+      returnTo: `#/cms/event/${selectedEventTargetId}?tab=base`
+    };
+  }
   return {
     targetCollection: node?.dataset.mediaTargetCollection || "",
     targetId: node?.dataset.mediaTargetId || "",
     targetField: node?.dataset.mediaTargetField || "imageUrl",
     targetAltField: node?.dataset.mediaTargetAltField || "",
     returnTo: node?.dataset.mediaReturnTo || ""
+  };
+}
+
+function mediaContextFromHash(hash = "") {
+  const queryText = String(hash || "").split("?")[1] || "";
+  const params = new URLSearchParams(queryText);
+  return {
+    targetCollection: params.get("targetCollection") || "",
+    targetId: params.get("targetId") || "",
+    targetField: params.get("targetField") || "imageUrl",
+    targetAltField: params.get("targetAltField") || "",
+    returnTo: params.get("returnTo") || ""
   };
 }
 
@@ -4074,6 +4148,12 @@ async function attachMediaAssetToTarget(asset = {}, context = {}) {
     assetType: "image",
     updatedAt: new Date().toISOString()
   };
+  if (context.targetCollection === "events") {
+    update.imageUrl = url;
+    update.thumbnail_url = url;
+    update.thumbnailUrl = url;
+    update.assetUrl = url;
+  }
   if (context.targetCollection === "members" && (context.targetField || "logoUrl") === "logoUrl") {
     update.logo_media_asset_id = asset.id;
     update.logoMediaAssetId = asset.id;
@@ -6847,7 +6927,12 @@ function wireActions() {
     go("home");
   });
 
-  document.querySelectorAll("[data-event-tab]").forEach((button) => button.addEventListener("click", () => {
+  document.querySelectorAll("[data-event-tab]").forEach((button) => button.addEventListener("click", async () => {
+    const form = document.querySelector("#event-edit-form");
+    if (form?.dataset.eventId === button.dataset.eventId && form.dataset.eventFormSection === "pre") {
+      const saved = await saveEventEditForm(form, { silent: true });
+      if (!saved) return;
+    }
     go(`cms/event/${button.dataset.eventId}?tab=${button.dataset.eventTab}`);
   }));
 
@@ -6938,70 +7023,104 @@ function wireActions() {
     }
   }));
 
-  document.querySelector("#event-edit-form")?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const existing = (await getOne("events", form.dataset.eventId)) || { id: form.dataset.eventId, topicIds: [], speakerIds: [], sponsorIds: [], status: "draft" };
-    const values = formObject(form);
-    const image = imageFileFromDropzone(form, "eventImage", form.dataset.eventId);
-    const removeEventImageRequested = values.removeEventImage === "1";
-    const newEventType = values.newEventType?.trim();
-    if (image) {
-      const asset = await uploadEntityImage("events", form.dataset.eventId, image);
-      values.imageUrl = asset.url;
-      values.assetStoragePath = asset.storagePath;
-      const mediaAsset = await createMediaAssetFromEntityImage({
-        collection: "events",
-        entity: { ...existing, ...values, id: form.dataset.eventId },
-        file: image,
-        uploaded: asset,
-        field: "imageUrl",
-        mediaType: "event"
-      });
-      if (mediaAsset?.id) {
-        values.thumbnail_media_asset_id = mediaAsset.id;
-        values.mediaAssetId = mediaAsset.id;
-        values.thumbnail_url = asset.url;
-        values.thumbnailUrl = asset.url;
-        values.assetUrl = asset.url;
-        values.assetType = "image";
+  async function saveEventEditForm(form, { silent = false } = {}) {
+    const result = form.querySelector("#event-save-result");
+    const submitButton = form.querySelector('button[type="submit"], button:not([type])');
+    const originalLabel = submitButton?.textContent || "";
+    if (submitButton && !silent) {
+      submitButton.disabled = true;
+      submitButton.textContent = "Speichert ...";
+    }
+    try {
+      const existing = (await getOne("events", form.dataset.eventId)) || { id: form.dataset.eventId, topicIds: [], speakerIds: [], sponsorIds: [], status: "draft" };
+      const values = formObject(form);
+      if (form.dataset.eventFormSection === "pre") {
+        const preStatus = values.preStatus || "save_the_date";
+        await upsert("events", {
+          ...existing,
+          preStatus,
+          registrationEnabled: preStatus === "invitation_published",
+          saveTheDateText: values.saveTheDateText || "",
+          invitationText: values.invitationText || "",
+          updatedAt: new Date().toISOString()
+        });
+        if (result && !silent) result.innerHTML = `<div class="alert alert--success">Vorlauf wurde gespeichert.</div>`;
+        return true;
+      }
+      const image = imageFileFromDropzone(form, "eventImage", form.dataset.eventId);
+      const removeEventImageRequested = values.removeEventImage === "1";
+      const newEventType = values.newEventType?.trim();
+      if (image) {
+        const asset = await uploadEntityImage("events", form.dataset.eventId, image);
+        values.imageUrl = asset.url;
+        values.assetStoragePath = asset.storagePath;
+        const mediaAsset = await createMediaAssetFromEntityImage({
+          collection: "events",
+          entity: { ...existing, ...values, id: form.dataset.eventId },
+          file: image,
+          uploaded: asset,
+          field: "imageUrl",
+          mediaType: "event"
+        });
+        if (mediaAsset?.id) {
+          values.thumbnail_media_asset_id = mediaAsset.id;
+          values.mediaAssetId = mediaAsset.id;
+          values.thumbnail_url = asset.url;
+          values.thumbnailUrl = asset.url;
+          values.assetUrl = asset.url;
+          values.assetType = "image";
+        }
+      }
+      if (removeEventImageRequested) {
+        values.imageUrl = "";
+        values.assetStoragePath = "";
+        values.thumbnail_media_asset_id = "";
+        values.mediaAssetId = "";
+      }
+      if (newEventType) {
+        const eventTypesSetting = (await getOne("settings", "eventTypes")) || {
+          id: "eventTypes",
+          key: "eventTypes",
+          group: "events",
+          value: []
+        };
+        const eventTypes = Array.isArray(eventTypesSetting.value) ? eventTypesSetting.value : [];
+        const nextEventTypes = Array.from(new Set([...eventTypes, newEventType])).sort((a, b) => a.localeCompare(b, "de"));
+        await upsert("settings", {
+          ...eventTypesSetting,
+          value: nextEventTypes,
+          description: "Eventtypen fuer CMS-Auswahl"
+        });
+        values.eventType = newEventType;
+      }
+      delete values.eventImage;
+      delete values.removeEventImage;
+      delete values.eventImageDataUrl;
+      delete values.eventImageFileName;
+      delete values.newEventType;
+      if (Object.prototype.hasOwnProperty.call(values, "longDescription")) {
+        values.bodyText = values.longDescription;
+        values.articleText = values.longDescription;
+        values.archiveText = values.longDescription;
+      }
+      const savedEvent = await upsert("events", { ...existing, ...values });
+      if (image || removeEventImageRequested) updateDropzoneSavedImage(form, savedEvent.imageUrl || "");
+      if (result && !silent) result.innerHTML = `<div class="alert alert--success">Event wurde gespeichert.</div>`;
+      return true;
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Event konnte nicht gespeichert werden: ${escapeHtml(error.message || String(error))}</div>`;
+      return false;
+    } finally {
+      if (submitButton && !silent) {
+        submitButton.disabled = false;
+        submitButton.textContent = originalLabel;
       }
     }
-    if (removeEventImageRequested) {
-      values.imageUrl = "";
-      values.assetStoragePath = "";
-      values.thumbnail_media_asset_id = "";
-      values.mediaAssetId = "";
-    }
-    if (newEventType) {
-      const eventTypesSetting = (await getOne("settings", "eventTypes")) || {
-        id: "eventTypes",
-        key: "eventTypes",
-        group: "events",
-        value: []
-      };
-      const eventTypes = Array.isArray(eventTypesSetting.value) ? eventTypesSetting.value : [];
-      const nextEventTypes = Array.from(new Set([...eventTypes, newEventType])).sort((a, b) => a.localeCompare(b, "de"));
-      await upsert("settings", {
-        ...eventTypesSetting,
-        value: nextEventTypes,
-        description: "Eventtypen fuer CMS-Auswahl"
-      });
-      values.eventType = newEventType;
-    }
-    delete values.eventImage;
-    delete values.removeEventImage;
-    delete values.eventImageDataUrl;
-    delete values.eventImageFileName;
-    delete values.newEventType;
-    if (Object.prototype.hasOwnProperty.call(values, "longDescription")) {
-      values.bodyText = values.longDescription;
-      values.articleText = values.longDescription;
-      values.archiveText = values.longDescription;
-    }
-    const savedEvent = await upsert("events", { ...existing, ...values });
-    if (image || removeEventImageRequested) updateDropzoneSavedImage(form, savedEvent.imageUrl || "");
-    form.querySelector("#event-save-result").innerHTML = `<div class="alert alert--success">Event wurde gespeichert.</div>`;
+  }
+
+  document.querySelector("#event-edit-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await saveEventEditForm(event.currentTarget);
   });
 
   document.querySelector("#event-speakers-form")?.addEventListener("submit", async (event) => {
@@ -7081,6 +7200,10 @@ function wireActions() {
     const existingEvent = await getOne("events", form.dataset.eventId);
     const topicId = form.dataset.topicId || `topics-${crypto.randomUUID()}`;
     const existingTopic = form.dataset.topicId ? await getOne("topics", topicId) : { id: topicId, status: "active", visibility: "public", createdAt: new Date().toISOString() };
+    if (!form.dataset.topicId && (existingEvent.topicIds || []).length >= 6) {
+      form.querySelector("#event-topic-editor-result").innerHTML = `<div class="alert alert--error">Maximal 6 Vortraege pro Medienfruehstueck sind moeglich.</div>`;
+      return;
+    }
     const topicIds = Array.from(new Set([...(existingEvent.topicIds || []), topicId]));
     const image = imageFileFromDropzone(form, "topicImage", topicId);
     const imageUpdate = {};
@@ -7118,6 +7241,10 @@ function wireActions() {
     event.preventDefault();
     const form = event.currentTarget;
     const existingEvent = await getOne("events", form.dataset.eventId);
+    if ((existingEvent.topicIds || []).length >= 6) {
+      form.querySelector("#event-topic-assign-result").innerHTML = `<div class="alert alert--error">Maximal 6 Vortraege pro Medienfruehstueck sind moeglich.</div>`;
+      return;
+    }
     const topicIds = Array.from(new Set([...(existingEvent.topicIds || []), form.elements.topicId.value]));
     await upsert("events", { ...existingEvent, topicIds, updatedAt: new Date().toISOString() });
     form.querySelector("#event-topic-assign-result").innerHTML = `<div class="alert alert--success">Vortrag wurde zugeordnet.</div>`;
@@ -7203,7 +7330,6 @@ function wireActions() {
     event.preventDefault();
     const form = event.currentTarget;
     const existing = await getOne("events", form.dataset.eventId);
-    const sponsorIds = Array.from(form.querySelectorAll('input[name="sponsorIds"]:checked')).map((input) => input.value);
     let hostId = form.elements.hostId?.value || "";
     const sponsors = await list("sponsors");
     for (const sponsor of sponsors) {
@@ -7211,7 +7337,7 @@ function wireActions() {
       await upsert("sponsors", {
         ...sponsor,
         name: form.elements[`edit-sponsor-${sponsor.id}-name`].value,
-        role: form.elements[`edit-sponsor-${sponsor.id}-role`].value,
+        role: "Co-Gastgeber",
         website: form.elements[`edit-sponsor-${sponsor.id}-website`].value,
         description: form.elements[`edit-sponsor-${sponsor.id}-description`].value,
         status: sponsor.status || "published",
@@ -7224,18 +7350,17 @@ function wireActions() {
       await upsert("sponsors", {
         id,
         name: newSponsorName,
-        role: form.elements.newSponsorRole.value,
+        role: "Co-Gastgeber",
         website: form.elements.newSponsorWebsite.value,
         description: form.elements.newSponsorDescription.value,
         status: "published",
         visibility: "public",
         createdAt: new Date().toISOString()
       });
-      sponsorIds.push(id);
-      if (form.elements.newSponsorIsHost.checked) hostId = id;
+      hostId = id;
     }
-    await upsert("events", { ...existing, sponsorIds, hostId, updatedAt: new Date().toISOString() });
-    form.querySelector("#event-partners-result").innerHTML = `<div class="alert alert--success">Sponsoren und Gastgeber wurden gespeichert.</div>`;
+    await upsert("events", { ...existing, sponsorIds: hostId ? [hostId] : [], hostId, updatedAt: new Date().toISOString() });
+    form.querySelector("#event-partners-result").innerHTML = `<div class="alert alert--success">Co-Gastgeber wurde gespeichert.</div>`;
     await render();
   });
 

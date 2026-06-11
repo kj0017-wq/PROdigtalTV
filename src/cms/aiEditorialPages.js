@@ -1,5 +1,5 @@
 import { cmsShell, cmsTitle } from "./cmsLayout.js";
-import { list, getOne, upsert, resetLocalCollection } from "../firebase/dataService.js?v=465";
+import { list, getOne, upsert, resetLocalCollection } from "../firebase/dataService.js?v=466";
 import { localPreviewMode } from "../firebase/firebaseClient.js";
 import { authDebugState, currentUser, canUseCms, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=464";
 import { verified_sources as defaultVerifiedSources } from "../data/demoData.js";

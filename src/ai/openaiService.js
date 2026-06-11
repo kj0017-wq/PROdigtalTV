@@ -1,6 +1,6 @@
 import { getFirebaseServices, localPreviewMode } from "../firebase/firebaseClient.js";
 import { currentUser } from "../firebase/authService.js?v=461";
-import { upsert } from "../firebase/dataService.js?v=465";
+import { upsert } from "../firebase/dataService.js?v=466";
 import { aiSourceCatalog } from "../data/aiSourceCatalog.js";
 
 const ACTION_FUNCTIONS = {
@@ -116,8 +116,18 @@ export async function callChatGptAction(action, payload = {}) {
   const firebase = await getFirebaseServices();
   if (!firebase) return localSuggestion(action, payload);
   const callable = firebase.functionsLib.httpsCallable(firebase.functions, functionName);
-  const result = await callable(payload);
-  return result.data;
+  try {
+    const result = await callable(payload);
+    return result.data;
+  } catch (error) {
+    const message = String(error?.message || "");
+    const authBlocked = ["functions/unauthenticated", "functions/permission-denied", "unauthenticated", "permission-denied"]
+      .some((code) => String(error?.code || message).includes(code)) || /login erforderlich/i.test(message);
+    if (isLocalHost() && authBlocked) {
+      return localSuggestion(action, payload);
+    }
+    throw error;
+  }
 }
 
 export async function runAiEditorialTask(mode = "manual") {
@@ -170,7 +180,7 @@ export async function generateAiTopicSuggestions(options = {}) {
       if (!["functions/not-found", "functions/unavailable", "functions/internal", "functions/unauthenticated", "functions/permission-denied"].includes(error?.code)) throw error;
     }
   }
-  const { list, upsert } = await import("../firebase/dataService.js?v=465");
+  const { list, upsert } = await import("../firebase/dataService.js?v=466");
   const now = new Date().toISOString();
   const [articles, existingSuggestions, verifiedSources] = await Promise.all([
     list("editorialContent"),
@@ -599,7 +609,7 @@ function localEditorialArticleBody(topic = {}, sources = []) {
 }
 
 async function runLocalAiEditorialTask(mode = "manual") {
-  const { list, upsert } = await import("../firebase/dataService.js?v=465");
+  const { list, upsert } = await import("../firebase/dataService.js?v=466");
   const { verified_sources: demoSources, ai_prompts: demoPrompts } = await import("../data/demoData.js");
   const now = new Date().toISOString();
   let [articles, sources, prompts, queuedTopics] = await Promise.all([

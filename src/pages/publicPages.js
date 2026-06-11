@@ -1,4 +1,4 @@
-import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=465";
+import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=466";
 import { currentUser, isMember } from "../firebase/authService.js?v=464";
 import { firebaseEnabled, localPreviewMode } from "../firebase/firebaseClient.js";
 import { publicShell, logo } from "../components/layout.js";
@@ -193,6 +193,38 @@ function publicMemberLogoAsset(member = {}, mediaAssets = []) {
     })[0];
 }
 
+function publicSponsorLogoAsset(sponsor = {}, mediaAssets = []) {
+  return mediaAssets
+    .filter((asset) => {
+      const logoUrl = sponsor.logoUrl || "";
+      const directIds = [sponsor.logo_media_asset_id, sponsor.logoMediaAssetId, sponsor.thumbnail_media_asset_id, sponsor.mediaAssetId, sponsor.media_asset_id].filter(Boolean);
+      const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
+      return directIds.includes(asset.id)
+        || (asset.target_collection === "sponsors" && asset.target_id === sponsor.id && (asset.target_field || "logoUrl") === "logoUrl")
+        || (asset.linked_collection === "sponsors" && asset.linked_record_id === sponsor.id && (asset.linked_field || "logoUrl") === "logoUrl")
+        || (logoUrl && urls.includes(logoUrl));
+    })
+    .filter((asset) => mediaAssetUrl(asset))
+    .sort((a, b) => {
+      const directIds = [sponsor.logo_media_asset_id, sponsor.logoMediaAssetId, sponsor.thumbnail_media_asset_id, sponsor.mediaAssetId, sponsor.media_asset_id].filter(Boolean);
+      const score = (asset = {}) => [
+        directIds.includes(asset.id) ? "5" : "0",
+        asset.target_collection === "sponsors" && asset.target_id === sponsor.id && (asset.target_field || "logoUrl") === "logoUrl" ? "4" : "0",
+        asset.linked_collection === "sponsors" && asset.linked_record_id === sponsor.id && (asset.linked_field || "logoUrl") === "logoUrl" ? "3" : "0",
+        asset.source_type === "edited" ? "2" : "0",
+        asset.status === "active" ? "2" : "1",
+        asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
+        asset.id || ""
+      ].join("|");
+      return score(b).localeCompare(score(a));
+    })[0];
+}
+
+function publicSponsorLogoUrl(sponsor = {}, mediaAssets = []) {
+  const asset = publicSponsorLogoAsset(sponsor, mediaAssets);
+  return mediaAssetUrl(asset || {}) || sponsor.logoUrl || "";
+}
+
 async function withPublicMemberLogos(members = []) {
   if (!members.length) return members;
   const mediaAssets = await list("media_assets").catch(() => []);
@@ -223,7 +255,7 @@ function archiveArticle(event, partners = []) {
     <div class="archive-article__body">
       <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` Â· ${escapeHtml(event.city)}` : ""}</p>
       <h2>${escapeHtml(event.title)}</h2>
-      <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` Â· Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
+      <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` Â· Co-Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
       <p>${escapeHtml(event.postEventSummary || event.description)}</p>
     </div>
   </article>`;
@@ -235,7 +267,7 @@ function archiveEditorialArticle(item, partners = []) {
   return `<article class="archive-article">
     ${item.imageUrl ? `<figure class="archive-article__image"><img src="${escapeHtml(item.imageUrl)}" alt="Rueckblick ${escapeHtml(item.title || "")}"></figure>` : `<div class="archive-article__placeholder"><span>Rueckblick</span></div>`}
     <div class="archive-article__body">
-      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Event-Nachlauf"}${sponsor ? ` Â· ${escapeHtml(sponsor.name)}` : ""}</p>
+      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Rückblick"}${sponsor ? ` Â· ${escapeHtml(sponsor.name)}` : ""}</p>
       <h2>${escapeHtml(item.title || "Rueckblick")}</h2>
       ${item.subtitle ? `<p class="archive-article__meta">${escapeHtml(item.subtitle)}</p>` : ""}
       <p>${escapeHtml(teaserText(item.longDescription || item.articleText || item.bodyText || item.mainText || item.fullText || item.longText || item.introText || "", 260))}</p>
@@ -271,6 +303,56 @@ function archiveEventImageUrl(event = {}, mediaAssets = []) {
   return event.id ? `/assets/official/events/${escapeHtml(event.id)}.svg` : "";
 }
 
+function eventFallbackImageUrl(event = {}) {
+  const fallbacks = {
+    "event-salzburg-red-bull-hangar7-2026": "https://firebasestorage.googleapis.com/v0/b/prodigitaltv-da47b.firebasestorage.app/o/Images%2FDSC06819.jpg?alt=media&token=89bb1cc0-0183-4813-adb5-7d577f56eab5"
+  };
+  return fallbacks[event.id] || "";
+}
+
+function eventDetailImageUrl(event = {}, mediaAssets = [], blockedUrls = []) {
+  const blocked = new Set(blockedUrls.filter(Boolean));
+  const candidate = archiveEventImageUrl(event, mediaAssets);
+  if (candidate && !blocked.has(candidate)) return candidate;
+  const direct = event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "";
+  if (direct && !blocked.has(direct)) return direct;
+  const fallback = eventFallbackImageUrl(event);
+  if (fallback && !blocked.has(fallback)) return fallback;
+  return "";
+}
+
+function eventTalkSpeakers(topic = {}, event = {}, speakers = []) {
+  const eventSpeakerIds = new Set(event.speakerIds || []);
+  return speakers.filter((speaker) => {
+    const topicLinked = speaker.topicId === topic.id || (speaker.topicIds || []).includes(topic.id);
+    const eventLinked = eventSpeakerIds.has(speaker.id) || (speaker.eventIds || []).includes(event.id);
+    return topicLinked && eventLinked;
+  });
+}
+
+function eventTalksMarkup(topics = [], speakers = [], event = {}) {
+  const assignedTopics = (event.topicIds || []).map((topicId) => topics.find((topic) => topic.id === topicId)).filter(Boolean).slice(0, 6);
+  if (!assignedTopics.length) return "";
+  return `<section class="event-talks"><div class="section-head"><div><p class="eyebrow">Themen & Referenten</p><h2>Agenda des Medienfruehstuecks</h2></div></div>
+    <div class="event-talk-list">${assignedTopics.map((topic) => {
+    const topicSpeakers = eventTalkSpeakers(topic, event, speakers);
+    const short = topic.shortDescription || topic.teaserText || topic.subtitle || "";
+    const text = topic.longDescription && topic.longDescription !== short ? topic.longDescription : "";
+    return `<article class="event-talk-card">
+      <div class="event-talk-card__body">
+        <h3>${escapeHtml(topic.title || "Thema")}</h3>
+        ${short ? `<p class="event-talk-card__short">${escapeHtml(short)}</p>` : ""}
+        ${text ? `<p>${escapeHtml(text)}</p>` : ""}
+        <div class="event-talk-speakers">${topicSpeakers.length ? topicSpeakers.map((speaker) => `<div class="event-talk-speaker">
+          <div class="event-talk-speaker__portrait">${speakerPortrait(speaker)}</div>
+          <div><strong>${escapeHtml(speaker.name || "Referent")}</strong><small>${escapeHtml([speaker.position, speaker.company].filter(Boolean).join(" - "))}</small>${speaker.shortBio ? `<p>${escapeHtml(speaker.shortBio)}</p>` : ""}</div>
+        </div>`).join("") : `<span class="event-talk-speaker event-talk-speaker--empty">Referent wird ergaenzt.</span>`}</div>
+      </div>
+    </article>`;
+  }).join("")}</div>
+  </section>`;
+}
+
 function retrospectiveLinkedEvent(item = {}, events = []) {
   const explicit = events.find((event) => event.id === item.linkedEventId || event.id === item.galleryEventId);
   if (explicit) return explicit;
@@ -298,7 +380,7 @@ function archiveListEvent(event, partners = [], mediaAssets = []) {
     <div class="archive-article__body">
       <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` Â· ${escapeHtml(event.city)}` : ""}</p>
       <h2><a href="${detailUrl}">${escapeHtml(event.title)}</a></h2>
-      <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` Â· Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
+      <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` Â· Co-Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
       <p>${escapeHtml(teaserText(event.postEventummary || event.description || "", 260))}</p>
       <a class="link" href="${detailUrl}">Rueckblick ansehen -></a>
     </div>
@@ -316,7 +398,7 @@ function archiveListEditorial(item, partners = [], events = [], mediaAssets = []
       ${thumbUrl ? `<img src="${escapeHtml(thumbUrl)}" alt="Rueckblick ${escapeHtml(item.title || "")}" loading="eager" decoding="async">` : `<span>Rueckblick</span>`}
     </a>
     <div class="archive-article__body">
-      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Event-Nachlauf"}${sponsor ? ` Â· ${escapeHtml(sponsor.name)}` : ""}</p>
+      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Rückblick"}${sponsor ? ` Â· ${escapeHtml(sponsor.name)}` : ""}</p>
       <h2><a href="${detailUrl}">${escapeHtml(item.title || "Rueckblick")}</a></h2>
       ${item.subtitle ? `<p class="archive-article__meta">${escapeHtml(item.subtitle)}</p>` : ""}
       <p>${escapeHtml(teaserText(item.longDescription || item.articleText || item.bodyText || item.mainText || item.fullText || item.longText || item.introText || "", 260))}</p>
@@ -764,7 +846,7 @@ function isPastEvent(event) {
 }
 
 export async function homePage() {
-  const [events, topics, rawMembers, editorial, sponsors] = await Promise.all([listPublicEvents(), listPublicContent("topics"), listPublicContent("members"), listPublicContent("editorialContent"), listPublicContent("sponsors")]);
+  const [events, topics, rawMembers, editorial, sponsors, mediaAssets] = await Promise.all([listPublicEvents(), listPublicContent("topics"), listPublicContent("members"), listPublicContent("editorialContent"), listPublicContent("sponsors"), list("media_assets").catch(() => [])]);
   const members = await withPublicMemberLogos(rawMembers);
   const upcoming = events.filter((event) => !isPastEvent(event) && event.visibility === "public").sort((a, b) => a.date.localeCompare(b.date));
   const next = upcoming[0];
@@ -803,7 +885,9 @@ export async function homePage() {
       </nav>
     </div>
   </section>`;
-  const nextEventCard = next ? `<article class="home-event-card">
+  const nextImageUrl = next ? archiveEventImageUrl(next, mediaAssets) : "";
+  const nextImageStyle = nextImageUrl ? ` style="--home-event-card-image:url(&quot;${escapeHtml(nextImageUrl)}&quot;)"` : "";
+  const nextEventCard = next ? `<article class="home-event-card ${nextImageUrl ? "home-event-card--with-image" : ""}"${nextImageStyle}>
     <div class="home-event-card__icon" aria-hidden="true"><span></span></div>
     <p class="eyebrow">Naechstes Medienfruehstueck</p>
     <h2>${escapeHtml(next.title || "Naechste Veranstaltung")}</h2>
@@ -870,10 +954,21 @@ export async function eventsPage() {
     ${upcoming.length ? `<div class="card-grid card-grid--three">${upcoming.map((event) => eventCard(event, false, sponsors)).join("")}</div>` : `<div class="alert">Aktuell sind keine neuen Termine veroeffentlicht. Im Eventarchiv finden Sie die letzten PROdigitalTV-Veranstaltungen.</div>`}</div></section>`);
 }
 
+async function getPublicRouteEvent(id, includeMemberEvents = false) {
+  try {
+    return await getOne("events", id);
+  } catch (error) {
+    const events = await listPublicEvents(includeMemberEvents);
+    const event = events.find((item) => item.id === id);
+    if (event) return event;
+    throw error;
+  }
+}
+
 export async function eventDetailPage(id) {
   let event;
   try {
-    event = await getOne("events", id);
+    event = await getPublicRouteEvent(id, isMember());
   } catch {
     return publicShell("events", `${subhero("Geschuetzter Bereich", "Login erforderlich", "Dieses Event ist nur fuer berechtigte Personen sichtbar.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
   }
@@ -881,32 +976,35 @@ export async function eventDetailPage(id) {
   const [speakers, sponsors, topics, galleries, mediaAssets] = await Promise.all([listPublicContent("speakers"), listPublicContent("sponsors"), listPublicContent("topics"), listPublicContent("galleries"), list("media_assets").catch(() => [])]);
   const restricted = event.accessType === "members_only" && !isMember();
   if (restricted && !event.showPublicTeaser) return publicShell("events", subhero("Geschuetzter Bereich", "Nur fuer Mitglieder", "Bitte melden Sie sich an, um dieses Event zu sehen."));
-  const assignedTopics = topics.filter((topic) => event.topicIds.includes(topic.id));
-  const assignedSpeakers = speakers.filter((speaker) => event.speakerIds.includes(speaker.id));
-  const eventPartners = sponsors.filter((sponsor) => event.sponsorIds.includes(sponsor.id) || event.hostId === sponsor.id);
+  const coHost = sponsors.find((sponsor) => sponsor.id === event.hostId) || null;
+  const coHostLogo = coHost ? publicSponsorLogoUrl(coHost, mediaAssets) : "";
   const assignedGallery = galleries.find((gallery) => gallery.id === event.galleryId) || galleries.find((gallery) => gallery.eventId === event.id && gallery.status === "published" && gallery.visibility === "public");
   const assignedGalleryImages = Array.isArray(assignedGallery?.images)
     ? [...assignedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 24)
     : [];
   const registrationAllowed = event.registrationEnabled && (!restricted || isMember());
-  const eventImageUrl = archiveEventImageUrl(event, mediaAssets);
+  const eventImageUrl = eventDetailImageUrl(event, mediaAssets, [coHostLogo]);
   const introText = event.description || event.shortDescription || event.subtitle || "";
   const longText = event.postEventummary || event.archiveText || event.longDescription || event.bodyText || event.articleText || "";
   const haseparateLongText = longText.trim() && longText.trim() !== introText.trim();
   return publicShell("events", `${subhero(event.eventType, event.title, event.subtitle)}
-    <section class="section"><div class="container detail-grid">
+    <section class="section event-detail-section"><div class="container detail-grid event-detail-grid">
       <article class="detail-main">
         ${eventImageUrl ? `<figure class="event-detail-image"><img src="${escapeHtml(eventImageUrl)}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy"></figure>` : ""}
         ${restricted ? `<div class="alert alert--warning">Details und Anmeldung dieses Mitglieder-Events stehen nach dem Login zur Verfuegung.</div>` : ""}
         <h2>Zum Event</h2>${introText ? `<p class="lead">${escapeHtml(introText)}</p>` : ""}
         ${haseparateLongText ? `<h2>RÃ¼ckblick</h2><div class="editorial-text">${articleParagraphs(longText)}</div>` : ""}
-        <h2>Themen</h2><div class="filters">${assignedTopics.map((topic) => `<a class="filter" href="#/topic/${topic.id}">${escapeHtml(topic.title)}</a>`).join("")}</div>
+        ${eventTalksMarkup(topics, speakers, event)}
         ${event.lunchNote ? `<div class="alert">${escapeHtml(event.lunchNote)}</div>` : ""}
-        ${restricted ? "" : `<section class="venue-stage"><div class="venue-stage__place"><p class="eyebrow">Veranstaltungsort</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Gastgeber und Sponsoren</p>${eventPartners.length ? eventPartners.map((partner) => `<article class="partner-spotlight"><span class="avatar">${initials(partner.name)}</span><div><span class="tag tag--red">${escapeHtml(partner.role)}</span><h3>${escapeHtml(partner.name)}</h3>${partner.description ? `<p>${escapeHtml(partner.description)}</p>` : ""}</div></article>`).join("") : `<p>Partner werden bei Bekanntgabe ergaenzt.</p>`}</div></section>
-        ${assignedSpeakers.length ? `<h2>Referentinnen und Referenten</h2><div class="speaker-grid">${assignedSpeakers.map((speaker) => `<article class="speaker-profile"><div class="speaker-profile__portrait">${speakerPortrait(speaker)}</div><div class="speaker-profile__body"><h3>${escapeHtml(speaker.name)}</h3><p class="speaker-profile__position">${escapeHtml(speaker.position)}${speaker.company ? ` Â· ${escapeHtml(speaker.company)}` : ""}</p>${speaker.shortBio ? `<p class="speaker-profile__intro">${escapeHtml(speaker.shortBio)}</p>` : ""}${speaker.longBio ? `<p>${escapeHtml(speaker.longBio)}</p>` : ""}</div></article>`).join("")}</div>` : ""}`}
+        ${restricted ? "" : `<section class="venue-stage"><div class="venue-stage__place"><p class="eyebrow">Veranstaltungsort</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}">` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><span class="tag tag--red">Co-Gastgeber</span><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`}
         ${assignedGalleryImages.length ? galleryPlayCta(assignedGallery, assignedGalleryImages) : ""}
       </article>
       <aside class="detail-aside">
+        <div class="event-host-card">
+          <p class="eyebrow">Gastgeber</p>
+          <strong>PROdigitalTV</strong>
+          ${coHost ? `<div class="event-host-card__cohost"><span>Co-Gastgeber</span>${coHostLogo ? `<img src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}">` : ""}<b>${escapeHtml(coHost.name || "")}</b></div>` : ""}
+        </div>
         <span class="tag ${event.accessType !== "public" ? "tag--red" : ""}">${accessLabels[event.accessType]}</span>
         <div class="fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>
         ${event.startTime ? `<div class="fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}
@@ -920,7 +1018,7 @@ export async function eventDetailPage(id) {
 export async function registrationPage(id) {
   let event;
   try {
-    event = await getOne("events", id);
+    event = await getPublicRouteEvent(id, true);
   } catch {
     return publicShell("events", `${subhero("Anmeldung", "Login erforderlich", "Bitte melden Sie sich an, um die Anmeldung fortzusetzen.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
   }
@@ -980,12 +1078,12 @@ export async function newsDetailPage(id) {
     : [];
   const leadMedia = attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "";
   const detailSection = isRetrospective ? "archive" : "news";
-  const detailTitle = isRetrospective ? "RÃ¼ckblicke" : "News";
-  const detailIntro = isRetrospective ? "Nachberichte, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen." : "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.";
+  const detailTitle = isRetrospective ? "Rückblick" : "News";
+  const detailIntro = isRetrospective ? "Nachbericht, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen." : "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.";
   const backHref = isRetrospective ? "#/archive" : "#/news";
-  const backText = isRetrospective ? "ZurÃ¼ck zu RÃ¼ckblicke" : "ZurÃ¼ck zu News";
-  const sectionLabel = isRetrospective ? "Event-Nachlauf" : item.category || "News";
-  const allText = isRetrospective ? "Alle RÃ¼ckblicke" : "Alle News";
+  const backText = isRetrospective ? "Zurück zu Rückblick" : "Zurück zu News";
+  const sectionLabel = isRetrospective ? "Rückblick" : item.category || "News";
+  const allText = isRetrospective ? "Alle Rückblicke" : "Alle News";
   return publicShell(detailSection, `${subhero("", detailTitle, detailIntro)}
     <section class="section"><div class="container detail-grid">
       <article class="detail-main news-detail">
@@ -1066,8 +1164,8 @@ export async function archivePage() {
   const items = retrospectives.length
     ? retrospectives.map((item) => archiveListEditorial(item, sponsors, events, mediaAssets)).join("")
     : events.map((event) => archiveListEvent(event, sponsors, mediaAssets)).join("");
-  return publicShell("archive", `${subhero("Event-Nachlauf", "Eventarchiv", "Nachberichte, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen.")}
-    <section class="section"><div class="container"><div class="section-head archive-list-head"><div><p class="eyebrow">Medienfruehstuecke</p><h2>RÃ¼ckblicke</h2><p>Vergangene Veranstaltungen mit Nachbericht, Ort, Gastgeber und Detailseite.</p></div></div><div class="archive-list archive-list--compact">${items || `<div class="alert">Rueckblicke werden aktuell vorbereitet.</div>`}</div></div></section>`);
+  return publicShell("archive", `${subhero("Rückblick", "Rückblick", "Nachbericht, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen.")}
+    <section class="section"><div class="container"><div class="section-head archive-list-head"><div><p class="eyebrow">Medienfruehstuecke</p><h2>Rückblick</h2><p>Vergangene Veranstaltungen mit Nachbericht, Ort, Co-Gastgeber und Detailseite.</p></div></div><div class="archive-list archive-list--compact">${items || `<div class="alert">Rückblicke werden aktuell vorbereitet.</div>`}</div></div></section>`);
 }
 
 export async function downloadsPage() {

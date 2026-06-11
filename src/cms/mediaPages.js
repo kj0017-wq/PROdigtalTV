@@ -1,5 +1,5 @@
 import { cmsShell, cmsTitle } from "./cmsLayout.js?v=461";
-import { list, getOne } from "../firebase/dataService.js?v=465";
+import { list, getOne } from "../firebase/dataService.js?v=466";
 import { currentUser, canUseCms } from "../firebase/authService.js?v=464";
 import { escapeHtml } from "../utils/format.js";
 
@@ -162,6 +162,38 @@ function mediaUrlValues(asset = {}) {
   return mediaUrlCandidates(asset);
 }
 
+function normalizedMediaUrl(value = "") {
+  const text = usableMediaUrl(value);
+  if (!text) return "";
+  const withoutHost = text.replace(/^https?:\/\/[^/]+/i, "");
+  const clean = withoutHost.split("?")[0];
+  try {
+    return decodeURIComponent(clean).replace(/\\/g, "/").toLowerCase();
+  } catch {
+    return clean.replace(/\\/g, "/").toLowerCase();
+  }
+}
+
+function mediaAssetLinkedEvent(asset = {}, events = []) {
+  if (!asset?.id) return null;
+  const assetUrls = mediaUrlValues(asset).map(normalizedMediaUrl).filter(Boolean);
+  return events.find((event) => {
+    const eventAssetIds = [
+      event.thumbnail_media_asset_id,
+      event.mediaAssetId,
+      event.media_asset_id
+    ].filter(Boolean);
+    if (eventAssetIds.includes(asset.id)) return true;
+    const eventUrls = [
+      event.imageUrl,
+      event.thumbnail_url,
+      event.thumbnailUrl,
+      event.assetUrl
+    ].map(normalizedMediaUrl).filter(Boolean);
+    return eventUrls.some((eventUrl) => assetUrls.includes(eventUrl));
+  }) || null;
+}
+
 function mediaAssetSourceGroup(asset = {}) {
   const values = mediaUrlValues(asset).join(" ");
   if (asset.source_type === "ai") return "ai";
@@ -237,6 +269,16 @@ function uniqueMediaAssets(assets = []) {
   });
 }
 
+function mediaAssetSortValue(asset = {}) {
+  return String(asset.created_at || asset.createdAt || asset.updated_at || asset.updatedAt || asset.file_last_modified || asset.id || "");
+}
+
+function newestMediaAssetsFirst(assets = []) {
+  return assets.slice().sort((a, b) =>
+    mediaAssetSortValue(b).localeCompare(mediaAssetSortValue(a)) || String(b.id || "").localeCompare(String(a.id || ""))
+  );
+}
+
 function mediaAspectStyle(format = "16x9") {
   const clean = String(format || "16x9").toLowerCase();
   if (clean === "1x1") return "1 / 1";
@@ -301,16 +343,17 @@ function mediaContextAttrs(query = new URLSearchParams()) {
   ].filter(([, value]) => value).map(([key, value]) => `${key}="${escapeHtml(value)}"`).join(" ");
 }
 
-function inferredMediaContext(asset = {}, query = new URLSearchParams()) {
-  const linkedCollection = asset.linked_collection || asset.target_collection || "";
-  const linkedId = asset.linked_record_id || asset.target_id || "";
+function inferredMediaContext(asset = {}, query = new URLSearchParams(), inferredTarget = null) {
+  const linkedCollection = inferredTarget?.collection || asset.linked_collection || asset.target_collection || "";
+  const linkedId = inferredTarget?.id || asset.linked_record_id || asset.target_id || "";
   const collection = query.get("targetCollection") || linkedCollection;
   const id = query.get("targetId") || linkedId;
   const field = collection === "members"
     ? "logoUrl"
-    : query.get("targetField") || asset.linked_field || asset.target_field || "imageUrl";
+    : query.get("targetField") || asset.linked_field || asset.target_field || inferredTarget?.field || "imageUrl";
   const returnTo = query.get("returnTo")
-    || (collection === "members" && id ? `#/cms/edit?module=members&id=${id}&section=all` : "");
+    || (collection === "members" && id ? `#/cms/edit?module=members&id=${id}&section=all` : "")
+    || (collection === "events" && id ? `#/cms/event/${id}?tab=base` : "");
   const params = new URLSearchParams(query);
   if (collection) params.set("targetCollection", collection);
   if (id) params.set("targetId", id);
@@ -561,9 +604,15 @@ function mediaAssetCard(asset, contextQuery = "", usageMap = new Map()) {
   const isUsed = usedIn.length > 0;
   const usageLabel = mediaUsageLabel(usedIn);
   const editHref = `#/cms/media/edit?id=${encodeURIComponent(asset.id)}${contextQuery}`;
+  const selectAttrs = contextQuery
+    ? ` data-media-select-asset="${escapeHtml(asset.id)}"`
+    : "";
+  const selectButton = contextQuery
+    ? `<button class="button button--primary button--small media-card-select-button" type="button" data-media-select-button="${escapeHtml(asset.id)}" data-media-select-href="${escapeHtml(editHref)}">Bild uebernehmen</button>`
+    : "";
   const sourceGroup = mediaAssetSourceGroup(asset);
   const displayType = inferredMediaType(asset, usedIn);
-  return `<article class="media-asset-card" data-media-card data-media-edit-link="${editHref}" data-search="${escapeHtml([asset.title, asset.filename_original, asset.filename_web, asset.filename_thumb, asset.tags, asset.description].flat().filter(Boolean).join(" ").toLowerCase())}" data-source="${escapeHtml(sourceGroup)}" data-type="${escapeHtml(displayType)}" data-format="${escapeHtml(asset.aspect_ratio || "")}" tabindex="0" role="button" aria-label="${escapeHtml(asset.title || asset.filename_original || "Bild")} bearbeiten">
+  return `<article class="media-asset-card" data-media-card data-media-edit-link="${editHref}"${selectAttrs} data-search="${escapeHtml([asset.title, asset.filename_original, asset.filename_web, asset.filename_thumb, asset.tags, asset.description].flat().filter(Boolean).join(" ").toLowerCase())}" data-source="${escapeHtml(sourceGroup)}" data-type="${escapeHtml(displayType)}" data-format="${escapeHtml(asset.aspect_ratio || "")}" tabindex="0" role="button" aria-label="${escapeHtml(asset.title || asset.filename_original || "Bild")} ${contextQuery ? "auswaehlen" : "bearbeiten"}">
       <figure style="--media-card-aspect:${mediaAspectStyle(mediaDisplayAspect(asset, usedIn))}">
         <a class="media-card-edit-picto" href="${editHref}" title="Bild bearbeiten" aria-label="Bild bearbeiten">${mediaEditIcon()}</a>
         ${mediaThumb(asset)}
@@ -588,12 +637,33 @@ function mediaAssetCard(asset, contextQuery = "", usageMap = new Map()) {
         </div>
         <label class="media-card-assignment media-card-assignment--inline"><span>Quelle</span><select data-media-source-update="${escapeHtml(asset.id)}">${mediaSourceOptions(sourceGroup)}</select></label>
         <label class="media-card-assignment media-card-assignment--inline"><span>Zuordnung</span><select data-media-type-update="${escapeHtml(asset.id)}">${mediaTypeOptions(displayType)}</select></label>
+        ${selectButton}
       </div>
     </article>`;
 }
 
+function lastEventEditorTarget(events = []) {
+  try {
+    const id = sessionStorage.getItem("pdt-last-event-editor-id") || "";
+    const at = Number(sessionStorage.getItem("pdt-last-event-editor-at") || 0);
+    if (!id || !at || Date.now() - at > 1000 * 60 * 60) return null;
+    const event = events.find((item) => item.id === id);
+    return event ? { collection: "events", id: event.id, field: "imageUrl" } : null;
+  } catch {
+    return null;
+  }
+}
+
+function eventTargetOptions(events = [], selectedId = "") {
+  return [`<option value="">Kein Event ausgewaehlt</option>`, ...events
+    .slice()
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
+    .map((event) => `<option value="${escapeHtml(event.id)}" ${event.id === selectedId ? "selected" : ""}>${escapeHtml([event.date, event.title].filter(Boolean).join(" - "))}</option>`)]
+    .join("");
+}
+
 function libraryPage(assets = [], query = new URLSearchParams(), usageMap = new Map()) {
-  const visibleAssets = uniqueMediaAssets(assets.filter((asset) => asset.status !== "archived" && !asset.parent_media_asset_id && asset.source_type !== "edited"));
+  const visibleAssets = newestMediaAssetsFirst(uniqueMediaAssets(assets.filter((asset) => asset.status !== "archived" && !asset.parent_media_asset_id && asset.source_type !== "edited")));
   const contextQuery = mediaContextQuery(query);
   return `<section class="panel media-library-panel">
     <div class="media-library-layout">
@@ -726,9 +796,10 @@ function aiPage(query = new URLSearchParams(), targetRecord = null) {
   </section>`;
 }
 
-function editPage(asset = null, query = new URLSearchParams(), variants = [], assets = []) {
-  const contextQuery = asset ? inferredMediaContext(asset, query) : query;
+function editPage(asset = null, query = new URLSearchParams(), variants = [], assets = [], inferredTarget = null, events = []) {
+  const contextQuery = asset ? inferredMediaContext(asset, query, inferredTarget) : query;
   const hasTarget = Boolean(contextQuery.get("targetCollection") && contextQuery.get("targetId"));
+  const selectedEventTargetId = contextQuery.get("targetCollection") === "events" ? contextQuery.get("targetId") : "";
   const editorUrl = asset ? mediaEditorUrl(asset) : "";
   const previewUrl = asset ? mediaPreviewUrl(asset) || editorUrl : "";
   return `<section class="panel media-work-panel">${asset ? `<form id="central-media-edit-form" class="form-grid" data-media-edit-form data-media-id="${escapeHtml(asset.id)}" data-media-aspect="${escapeHtml(asset.aspect_ratio || "16x9")}" ${mediaContextAttrs(contextQuery)}>
@@ -780,6 +851,7 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
             returnTo: contextQuery.get("returnTo") || ""
           }).toString()}` : ""}">Neues Bild waehlen</a>
         </div>
+        ${events.length ? `<div class="field"><label>Event zuordnen</label><select name="mediaEventTargetId">${eventTargetOptions(events, selectedEventTargetId)}</select><p class="muted">Wenn dieses Bild aus dem Event-Editor kommt, wird es beim Speichern als Eventbild gesetzt und danach zum Event zurueckgesprungen.</p></div>` : ""}
         <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(asset.title || "")}" required></div>
         <div class="field"><label>Alt-Text</label><input name="alt_text" value="${escapeHtml(asset.alt_text || "")}"></div>
         <div class="field"><label>Beschreibung</label><textarea name="description">${escapeHtml(asset.description || "")}</textarea><button class="button button--secondary button--small" type="button" data-media-description-ai>Bildbeschreibung mit KI erzeugen</button></div>
@@ -823,13 +895,26 @@ export async function mediaPage(section = "library", query = new URLSearchParams
     : null;
   const requestedAssetId = query.get("id") || (activeSection === "edit" ? lastMediaAssetId() : "");
   const selectedAsset = requestedAssetId ? assets.find((asset) => asset.id === requestedAssetId) : null;
+  const shouldLoadEventTargets = activeSection === "edit" && selectedAsset && !query.get("targetCollection") && !query.get("targetId");
+  const eventTargets = shouldLoadEventTargets ? await list("events").catch(() => []) : [];
+  const shouldInferEventTarget = activeSection === "edit"
+    && selectedAsset
+    && !query.get("targetCollection")
+    && !query.get("targetId")
+    && !selectedAsset.linked_collection
+    && !selectedAsset.target_collection;
+  const inferredEvent = shouldInferEventTarget
+    ? mediaAssetLinkedEvent(selectedAsset, eventTargets)
+    : null;
+  const inferredTarget = lastEventEditorTarget(eventTargets)
+    || (inferredEvent ? { collection: "events", id: inferredEvent.id, field: "imageUrl" } : null);
   const usage = activeSection === "library" ? await mediaUsageMap(assets) : new Map();
   const title = mediaSections.find(([key]) => key === activeSection)?.[1] || "Mediathek";
   const content = {
     library: libraryPage(assets, query, usage),
     upload: uploadPage(),
     ai: aiPage(query, targetRecord),
-    edit: editPage(selectedAsset, query, variants, assets),
+    edit: editPage(selectedAsset, query, variants, assets, inferredTarget, eventTargets),
     variants: variantsPage(assets, variants)
   }[activeSection];
   return protect(cmsShell(`cms/media/${activeSection}`, `${cmsTitle("Bilder", title)}${mediaTabs(activeSection)}${content}<p class="muted media-note">Einfaches Bildtool: hochladen, finden, bearbeiten und Varianten behalten.</p>`));
