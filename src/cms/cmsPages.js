@@ -923,8 +923,8 @@ export async function moduleListPage(module, section = "all") {
   }[module];
   const editorialConfig = module === "editorialContent" ? editorialSections[section] || editorialSections.all : null;
   const records = (await list(module))
-    .filter((item) => module !== "editorialContent" || !isAiGeneratedEditorialItem(item))
     .filter((item) => !editorialConfig || editorialConfig.filter(item))
+    .filter((item) => module !== "editorialContent" || section !== "interna" || !isAiGeneratedEditorialItem(item))
     .sort((a, b) => {
       const dateA = a.publishDate || a.date || a.validFrom || a.updatedAt || a.createdAt || "";
       const dateB = b.publishDate || b.date || b.validFrom || b.updatedAt || b.createdAt || "";
@@ -1084,8 +1084,8 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
         <button class="button button--primary">Galerie speichern</button><div id="gallery-save-result"></div>
       </form></section>`));
   }
-  if (module === "editorialContent" && ["press", "news"].includes(item.page || query.get("page"))) {
-    const sectionKey = item.page === "news" || query.get("page") === "news" ? "news" : "press";
+  if (module === "editorialContent" && ["press", "news", "pressRelease"].includes(item.page || item.section || query.get("page") || query.get("section"))) {
+    const sectionKey = item.page === "news" || item.section === "news" || query.get("page") === "news" || query.get("section") === "news" ? "news" : "press";
     const [allEditorial, events, sponsors, galleries] = await Promise.all([list("editorialContent"), list("events"), list("sponsors"), list("galleries")]);
     const categories = Array.from(new Set(allEditorial
       .filter((entry) => entry.page === sectionKey)
