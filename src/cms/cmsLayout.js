@@ -1,9 +1,11 @@
-import { currentUser, isAdmin } from "../firebase/authService.js?v=284";
+import { currentUser, isAdmin } from "../firebase/authService.js?v=464";
 import { logo } from "../components/layout.js";
 
 const sections = [
   ["cms", "Dashboard"], ["cms/events", "Events"], ["cms/registrations", "Anmeldungen"], ["cms/followup", "Event-Nachlauf"],
   ["cms/sponsors", "Sponsoren / Gastgeber"], ["cms/members", "Mitglieder"], ["cms/membership-applications", "Mitgliedsantraege"], ["cms/board", "Vorstand"],
+  ["cms/users", "User"],
+  ["cms/member-documents", "Mitglieder-Dokumente"], ["cms/member-directories", "Mitgliederverzeichnisse"],
   {
     route: "cms/editorial/press",
     title: "Redaktionelle Artikel",
@@ -20,9 +22,8 @@ const sections = [
     title: "Medien & Thumbnails",
     children: [
       ["cms/media/library", "Mediathek"],
-      ["cms/media/upload", "Bild hochladen"],
-      ["cms/media/ai", "KI-Grafik erstellen"],
       ["cms/media/edit", "Bild bearbeiten"],
+      ["cms/media/ai", "KI-Grafik erstellen"],
       ["cms/media/variants", "Varianten"]
     ]
   },

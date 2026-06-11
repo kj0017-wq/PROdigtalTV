@@ -27,6 +27,7 @@ const ACTIONS = {
   generateEventSummary: { label: "Nachbericht erzeugen", mode: "text", instruction: "Erzeuge einen Nachbericht aus belegten Stichpunkten und melde fehlende Informationen." },
   generateArchiveText: { label: "Archivtext erzeugen", mode: "text", instruction: "Formuliere einen Rueckblicktext fuer Archiv oder Eventnachlauf." },
   generateEventRetrospective: { label: "Rueckblick aus Redaktionstext erzeugen", mode: "text", instruction: "Erzeuge aus Pressemitteilung, Einladung, Agenda oder vorhandenen Stichpunkten einen zusammenhaengenden Rueckblick als Fliesstext. Nutze den im Feld retrospectivePrompt uebergebenen Redaktionsprompt als vorrangige Arbeitsanweisung. Formuliere konsequent in der Vergangenheit, bevorzugt mit Praeteritum oder Perfekt. Beginne nach Moeglichkeit konkret: 'Am [Datum] fand das [Event] bei [Gastgeber] im [Ort/Location] statt. Im Mittelpunkt standen [Themen].' Keine Einladung, keine Anmeldung, keine Zukunftsform, keine Bulletpoints und keine nicht belegten Fakten erfinden." },
+  rewritePressRetrospective: { label: "Rueckblick aus Pressemitteilung", mode: "text", instruction: "" },
   generateGalleryIntro: { label: "Galerie-Einleitung erzeugen", mode: "text", instruction: "Erzeuge eine kurze Einleitung fuer eine Event-Fotogalerie." },
   generateImageAltText: { label: "Bildinhalt beschreiben", mode: "json", instruction: "Beschreibe den Bildinhalt und die visuelle Wirkung. Fuer Bilder darf die KI visuelle Motive, Stimmung, Stil und plausible Bildaussage redaktionell einordnen. Nutze die Bilddatei, sofern imageUrl uebergeben wurde. Antworte als JSON mit description, alt_text, thumbnail_alt, thumbnail_description und optional images[0].beschreibung." },
   generateDownloadDescription: { label: "Downloadbeschreibung erzeugen", mode: "text", instruction: "Erzeuge eine sachliche Beschreibung fuer einen Download." },
@@ -78,6 +79,15 @@ async function requireAiAccess(request) {
 function buildPrompt(action, payload) {
   const actionConfig = ACTIONS[action];
   if (!actionConfig) throw new HttpsError("invalid-argument", "Unbekannte ChatGPT-Aktion.");
+  if (action === "rewritePressRetrospective") {
+    const manualPrompt = String(payload.prompt || payload.context?.retrospectivePrompt || "").trim();
+    const originalText = compactText(payload.originalText || "", 12000);
+    return [
+      manualPrompt,
+      "",
+      originalText ? `Pressemitteilung:\n${originalText}` : "Pressemitteilung:\n"
+    ].filter(Boolean).join("\n\n");
+  }
   const fieldName = payload.fieldName || "";
   const context = payload.context || {};
   const isRetrospective = Boolean(context.isRetrospective) || action === "generateEventRetrospective";
@@ -153,22 +163,23 @@ async function callOpenAi(action, payload, settings) {
   const actionConfig = ACTIONS[action];
   const imageUrl = String(payload.imageUrl || payload.context?.imageUrl || "").trim();
   const isImageAltText = action === "generateImageAltText" && imageUrl;
+  const input = [
+    action === "rewritePressRetrospective" ? null : { role: "system", content: SYSTEM_PROMPT },
+    {
+      role: "user",
+      content: isImageAltText
+        ? [
+            { type: "input_text", text: buildImageAltTextPrompt(payload) },
+            { type: "input_image", image_url: imageUrl }
+          ]
+        : buildPrompt(action, payload)
+    }
+  ].filter(Boolean);
   const body = {
     model: settings.model || "gpt-4.1-mini",
     temperature: Number(settings.temperature ?? 0.3),
     max_output_tokens: Number(settings.maxTokens ?? 900),
-    input: [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: isImageAltText
-          ? [
-              { type: "input_text", text: buildImageAltTextPrompt(payload) },
-              { type: "input_image", image_url: imageUrl }
-            ]
-          : buildPrompt(action, payload)
-      }
-    ]
+    input
   };
   if (actionConfig.mode === "json") {
     body.text = { format: { type: "json_object" } };
@@ -2049,6 +2060,7 @@ exports.generateRegistrationMailText = callable("generateRegistrationMailText");
 exports.generateEventSummary = callable("generateEventSummary");
 exports.generateArchiveText = callable("generateArchiveText");
 exports.generateEventRetrospective = callable("generateEventRetrospective");
+exports.rewritePressRetrospective = callable("rewritePressRetrospective");
 exports.generateGalleryIntro = callable("generateGalleryIntro");
 exports.generateImageAltText = callable("generateImageAltText");
 exports.generateDownloadDescription = callable("generateDownloadDescription");

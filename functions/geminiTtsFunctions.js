@@ -193,7 +193,7 @@ async function createSpeechBuffer({ title, text, variant = "accessible" }) {
   return { buffer: wavBufferFromPcmBuffer(pcmBuffer), pcmBuffer, truncated: String(text || "").length > maxCharacters, textLength: cleanBody.length };
 }
 
-exports.generateArticleSpeech = onCall({ region, secrets: [geminiApiKey], timeoutSeconds: 120, memory: "512MiB" }, async (request) => {
+exports.generateArticleSpeech = onCall({ region, secrets: [geminiApiKey], timeoutSeconds: 240, memory: "512MiB" }, async (request) => {
   const speech = await createSpeechBuffer({ title: request.data?.title || "", text: request.data?.text || "", variant: request.data?.variant || "accessible" });
   return {
     audioBase64: speech.buffer.toString("base64"),
@@ -203,7 +203,7 @@ exports.generateArticleSpeech = onCall({ region, secrets: [geminiApiKey], timeou
   };
 });
 
-exports.generateArticleSpeechAsset = onCall({ region, secrets: [geminiApiKey], timeoutSeconds: 180, memory: "512MiB" }, async (request) => {
+exports.generateArticleSpeechAsset = onCall({ region, secrets: [geminiApiKey], timeoutSeconds: 360, memory: "1GiB" }, async (request) => {
   try {
     await requireEditor(request);
     const collection = request.data?.collection;

@@ -1,5 +1,5 @@
-import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=460";
-import { currentUser, isMember } from "../firebase/authService.js?v=460";
+import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=465";
+import { currentUser, isMember } from "../firebase/authService.js?v=464";
 import { firebaseEnabled, localPreviewMode } from "../firebase/firebaseClient.js";
 import { publicShell, logo } from "../components/layout.js";
 import { eventCard, topicCard } from "../components/cards.js";
@@ -129,9 +129,51 @@ function articleHeader({ eyebrow = "", title = "", intro = "", logoUrl = "", log
 
 function memberLogo(member) {
   const logoClass = `member-logo member-logo--${String(member.id || "").replace(/[^a-z0-9-]/gi, "").toLowerCase()}`;
-  return member.logoUrl
-    ? `<img class="${logoClass}" src="${escapeHtml(member.logoUrl)}" alt="Logo ${escapeHtml(member.name)}">`
+  const logoUrl = member.logoDisplayUrl || member.logoUrl || "";
+  return logoUrl
+    ? `<img class="${logoClass}" src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(member.name)}">`
     : escapeHtml(member.name);
+}
+
+function mediaAssetUrl(asset = {}) {
+  return asset.file_path_web_url || asset.file_path_thumb_url || asset.file_path_original_url || asset.imageUrl || asset.assetUrl || "";
+}
+
+function publicMemberLogoAsset(member = {}, mediaAssets = []) {
+  return mediaAssets
+    .filter((asset) => {
+      const logoUrl = member.logoUrl || "";
+      const directIds = [member.logo_media_asset_id, member.logoMediaAssetId, member.thumbnail_media_asset_id, member.mediaAssetId, member.media_asset_id].filter(Boolean);
+      const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
+      return directIds.includes(asset.id)
+        || (asset.target_collection === "members" && asset.target_id === member.id && (asset.target_field || "logoUrl") === "logoUrl")
+        || (asset.linked_collection === "members" && asset.linked_record_id === member.id && (asset.linked_field || "logoUrl") === "logoUrl")
+        || (logoUrl && urls.includes(logoUrl));
+    })
+    .filter((asset) => mediaAssetUrl(asset))
+    .sort((a, b) => {
+      const directIds = [member.logo_media_asset_id, member.logoMediaAssetId, member.thumbnail_media_asset_id, member.mediaAssetId, member.media_asset_id].filter(Boolean);
+      const score = (asset = {}) => [
+        directIds.includes(asset.id) ? "5" : "0",
+        asset.target_collection === "members" && asset.target_id === member.id && (asset.target_field || "logoUrl") === "logoUrl" ? "4" : "0",
+        asset.linked_collection === "members" && asset.linked_record_id === member.id && (asset.linked_field || "logoUrl") === "logoUrl" ? "3" : "0",
+        asset.source_type === "edited" ? "2" : "0",
+        asset.status === "active" ? "2" : "1",
+        asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
+        asset.id || ""
+      ].join("|");
+      return score(b).localeCompare(score(a));
+    })[0];
+}
+
+async function withPublicMemberLogos(members = []) {
+  if (!members.length) return members;
+  const mediaAssets = await list("media_assets").catch(() => []);
+  return members.map((member) => {
+    const asset = publicMemberLogoAsset(member, mediaAssets);
+    const logoDisplayUrl = asset ? mediaAssetUrl(asset) || member.logoUrl || "" : member.logoUrl || "";
+    return { ...member, logoDisplayUrl };
+  });
 }
 
 function boardPortrait(person) {
@@ -169,7 +211,7 @@ function archiveEditorialArticle(item, partners = []) {
       <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Event-Nachlauf"}${sponsor ? ` · ${escapeHtml(sponsor.name)}` : ""}</p>
       <h2>${escapeHtml(item.title || "Rueckblick")}</h2>
       ${item.subtitle ? `<p class="archive-article__meta">${escapeHtml(item.subtitle)}</p>` : ""}
-      <p>${escapeHtml(teaserText(item.introText || item.bodyText || "", 260))}</p>
+      <p>${escapeHtml(teaserText(item.longDescription || item.articleText || item.bodyText || item.mainText || item.fullText || item.longText || item.introText || "", 260))}</p>
       <a class="link" href="#/retrospective/${item.id}">Rueckblick lesen →</a>
     </div>
   </article>`;
@@ -177,6 +219,81 @@ function archiveEditorialArticle(item, partners = []) {
 
 function articleParagraphs(text = "") {
   return text.split(/\n+/).filter(Boolean).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("");
+}
+
+function archiveEventImageUrl(event = {}) {
+  const archivePhotoExtensions = {
+    32: "jpg",
+    33: "jpg",
+    37: "jpg",
+    45: "jpg",
+    48: "png",
+    61: "jpg",
+    62: "jpg",
+    69: "jpg",
+    70: "jpg",
+    76: "jpg"
+  };
+  const archiveUrl = (id) => `/assets/official/events/archive-${id}.${archivePhotoExtensions[id] || "svg"}`;
+  if (event.officialId) return archiveUrl(event.officialId);
+  const match = String(event.id || "").match(/event-archive-(\d+)/);
+  if (match) return archiveUrl(match[1]);
+  if (event.imageUrl) return event.imageUrl;
+  return event.id ? `/assets/official/events/${escapeHtml(event.id)}.svg` : "";
+}
+
+function retrospectiveLinkedEvent(item = {}, events = []) {
+  const explicit = events.find((event) => event.id === item.linkedEventId || event.id === item.galleryEventId);
+  if (explicit) return explicit;
+  const haystack = `${item.title || ""} ${item.subtitle || ""} ${item.introText || ""} ${item.bodyText || ""} ${item.longDescription || ""} ${item.articleText || ""}`.toLowerCase();
+  const knownEventId = haystack.includes("leica") || haystack.includes("wetzlar")
+    ? "event-leica-welt-2026"
+    : haystack.includes("berlinale") || haystack.includes("heussen")
+      ? "event-berlinale-2026"
+      : haystack.includes("salzburg") || haystack.includes("red bull")
+        ? "event-salzburg-2025"
+        : "";
+  if (knownEventId) return events.find((event) => event.id === knownEventId) || null;
+  return null;
+}
+
+function archiveListEvent(event, partners = []) {
+  const host = partners.find((partner) => partner.id === event.hostId);
+  const dateLabel = event.displayDate || formatDate(event.date);
+  const detailUrl = `#/event/${escapeHtml(event.id)}`;
+  const imageUrl = archiveEventImageUrl(event);
+  return `<article class="archive-article archive-article--list">
+    <a class="archive-article__thumb" href="${detailUrl}" aria-label="Rueckblick ${escapeHtml(event.title)} ansehen">
+      ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="Rueckblick ${escapeHtml(event.title)}" loading="eager" decoding="async">` : `<span>${escapeHtml(event.eventType || "Archiv")}</span>`}
+    </a>
+    <div class="archive-article__body">
+      <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` · ${escapeHtml(event.city)}` : ""}</p>
+      <h2><a href="${detailUrl}">${escapeHtml(event.title)}</a></h2>
+      <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` · Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
+      <p>${escapeHtml(teaserText(event.postEventummary || event.description || "", 260))}</p>
+      <a class="link" href="${detailUrl}">Rueckblick ansehen -></a>
+    </div>
+  </article>`;
+}
+
+function archiveListEditorial(item, partners = [], events = []) {
+  const sponsor = item.sponsorId ? partners.find((partner) => partner.id === item.sponsorId) : null;
+  const linkedEvent = retrospectiveLinkedEvent(item, events);
+  const thumbUrl = item.imageUrl || (linkedEvent ? archiveEventImageUrl(linkedEvent) : "");
+  const dateLabel = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
+  const detailUrl = `#/retrospective/${escapeHtml(item.id)}`;
+  return `<article class="archive-article archive-article--list">
+    <a class="archive-article__thumb" href="${detailUrl}" aria-label="Rueckblick ${escapeHtml(item.title || "Rueckblick")} lesen">
+      ${thumbUrl ? `<img src="${escapeHtml(thumbUrl)}" alt="Rueckblick ${escapeHtml(item.title || "")}" loading="eager" decoding="async">` : `<span>Rueckblick</span>`}
+    </a>
+    <div class="archive-article__body">
+      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Event-Nachlauf"}${sponsor ? ` · ${escapeHtml(sponsor.name)}` : ""}</p>
+      <h2><a href="${detailUrl}">${escapeHtml(item.title || "Rueckblick")}</a></h2>
+      ${item.subtitle ? `<p class="archive-article__meta">${escapeHtml(item.subtitle)}</p>` : ""}
+      <p>${escapeHtml(teaserText(item.longDescription || item.articleText || item.bodyText || item.mainText || item.fullText || item.longText || item.introText || "", 260))}</p>
+      <a class="link" href="${detailUrl}">Rueckblick lesen -></a>
+    </div>
+  </article>`;
 }
 
 const internalPageMeta = {
@@ -308,17 +425,25 @@ function aboutInternalCard(block, meta, options = {}) {
   const summary = options.summary === "long"
     ? teaserText(block.langtext || block.kurztext, 190)
     : block.kurztext;
+  if (options.joinCta) {
+    return `<article class="internal-card internal-card--about internal-card--join internal-card--${escapeHtml(block.typ)}">
+    <span class="internal-about-thumb internal-about-thumb--${escapeHtml(block.icon || "modules")}" aria-hidden="true">${aboutPicto(block.icon)}<strong>${escapeHtml(aboutThumbLabel(block.icon))}</strong></span>
+    <span class="internal-about-copy"><strong>${escapeHtml(block.titel)}</strong><small>${escapeHtml(summary)}</small></span>
+    <button class="join-text-link internal-card__join-cta" type="button" data-join-scroll>Mitgliedsantrag -></button>
+  </article>`;
+  }
   return `<button class="internal-card internal-card--about internal-card--${escapeHtml(block.typ)}" type="button" data-about-jump="${escapeHtml(block.slug)}">
     <span class="internal-about-thumb internal-about-thumb--${escapeHtml(block.icon || "modules")}" aria-hidden="true">${aboutPicto(block.icon)}<strong>${escapeHtml(aboutThumbLabel(block.icon))}</strong></span>
     <span class="internal-about-copy"><strong>${escapeHtml(block.titel)}</strong><small>${escapeHtml(summary)}</small></span>
   </button>`;
 }
 
-function aboutLongTextSection(block) {
+function aboutLongTextSection(block, options = {}) {
   return `<article class="internal-about-text" id="about-text-${escapeHtml(block.slug)}">
     <div class="internal-about-text__head">${aboutPicto(block.icon)}<div><p class="eyebrow">${escapeHtml(block.titel)}</p><h2>${escapeHtml(block.titel)}</h2><p>${escapeHtml(block.kurztext)}</p></div></div>
     ${ttsReader({ title: block.titel || "", text: block.langtext || "", audioUrl: block.audioUrl || "", audioAccessibleUrl: block.audioAccessibleUrl || "", audioNaturalUrl: block.audioNaturalUrl || "", audioStatus: block.audioStatus || "", audioAccessibleStatus: block.audioAccessibleStatus || "", audioNaturalStatus: block.audioNaturalStatus || "" })}
     <div class="editorial-text">${articleParagraphs(block.langtext)}</div>
+    ${options.joinCta ? `<button class="join-text-link internal-text-join-cta" type="button" data-join-scroll>Mitgliedsantrag -></button>` : ""}
     <button class="internal-about-top-button" type="button" data-internal-scroll-top aria-label="Nach oben">↑</button>
   </article>`;
 }
@@ -396,9 +521,10 @@ function internalDesktopSection(block, meta) {
 function internalOverviewPage(bereich) {
   return async function renderInternalOverview() {
     const meta = internalPageMeta[bereich];
-    const [blocks, events, board, members, topics] = bereich === "ueber_uns"
+    const [blocks, events, board, rawMembers, topics] = bereich === "ueber_uns"
       ? await Promise.all([internalBlocks(bereich), listPublicEvents(), listPublicContent("boardMembers"), listPublicContent("members"), listPublicContent("topics")])
       : [await internalBlocks(bereich), [], [], [], []];
+    const members = await withPublicMemberLogos(rawMembers);
     const hero = blocks.find((block) => block.typ === "hero") || blocks[0];
     const cards = blocks.map((block) => internalCard(block, meta)).join("");
     const aboutCards = aboutCardGroups(blocks, meta);
@@ -515,6 +641,14 @@ function mergeNewsWithFallback(cmsNews = [], fallbackNews = []) {
   return Array.from(byKey.values());
 }
 
+function isRetrospectiveArticle(item = {}) {
+  const category = String(item.category || "").toLowerCase();
+  const inPress = item.page === "press" || item.section === "pressRelease";
+  const isRetrospective = item.isRetrospective || category.includes("rückblick") || category.includes("rueckblick") || category.includes("rückblick") || category.includes("rückblick");
+  const isHidden = item.status === "archived" || item.status === "draft" || item.visibility === "internal";
+  return inPress && isRetrospective && !isHidden;
+}
+
 function isAiGeneratedArticle(item = {}) {
   return item.author_type === "ai" || item.authorType === "ai" || item.aiGenerated === true;
 }
@@ -594,7 +728,8 @@ function isPastEvent(event) {
 }
 
 export async function homePage() {
-  const [events, topics, members, editorial, sponsors] = await Promise.all([listPublicEvents(), listPublicContent("topics"), listPublicContent("members"), list("editorialContent"), listPublicContent("sponsors")]);
+  const [events, topics, rawMembers, editorial, sponsors] = await Promise.all([listPublicEvents(), listPublicContent("topics"), listPublicContent("members"), listPublicContent("editorialContent"), listPublicContent("sponsors")]);
+  const members = await withPublicMemberLogos(rawMembers);
   const upcoming = events.filter((event) => !isPastEvent(event) && event.visibility === "public").sort((a, b) => a.date.localeCompare(b.date));
   const next = upcoming[0];
   const hero = editorial.find((content) => content.key === "home.hero") || {
@@ -622,7 +757,32 @@ export async function homePage() {
     url: `#/news/${item.id}`,
     link: "News lesen"
   }));
+  const mobileCards = [
+    ["#/events", "events", "Events", "Medienfruehstuecke, Veranstaltungen und Rueckblicke"],
+    ["#/topics", "topics", "Themen", "Aktuelle Entwicklungen, Positionen und Expertise"],
+    ["#/members", "members", "Mitglieder", "Unser Netzwerk, Vorteile und Mitglied werden"],
+    ["#/about", "about", "Ueber uns", "Der Verband, Vorstand und Ziele"]
+  ];
+  const mobileHome = `<section class="pdtv-mobile-home" aria-label="Mobile tartseite">
+    <div class="container">
+      <div class="pdtv-mobile-hero">
+        <h1>Digitaler Content.<br>Starke Verbindungen.<br>Gemeinsam fuer die <span>Medienzukunft.</span></h1>
+        <p>PROdigitalTV ist das Netzwerk fuer digitale Medien, Streaming, Smart-TV, Plattformen und regionale Anbieter.</p>
+        <article class="pdtv-mobile-next-event">
+          <span class="pdtv-mobile-icon" aria-hidden="true">□</span>
+          <div>
+            <p>Naechstes Medienfruehstueck</p>
+            ${next ? `<h2>${escapeHtml(formatDate(next.date))}${next.city ? ` · ${escapeHtml(next.city)}` : ""}</h2><span>${escapeHtml(next.subtitle || next.title || "")}</span><div class="pdtv-mobile-next-actions"><a class="button button--primary button--small" href="#/register/${next.id}">Anmelden</a><a href="#/event/${next.id}">Details ansehen -></a></div>` : `<h2>Neue Termine in Vorbereitung</h2><span>Die naechsten Formate werden in Kuerze veroeffentlicht.</span><div class="pdtv-mobile-next-actions"><a href="#/events">Events ansehen -></a></div>`}
+          </div>
+        </article>
+      </div>
+      <nav class="pdtv-mobile-card-grid" aria-label="Hauptbereiche">
+        ${mobileCards.map(([href, type, title, text], index) => `<a class="pdtv-mobile-card pdtv-mobile-card--${type} ${index === 0 || index === 3 ? "pdtv-mobile-card--dark" : ""}" href="${href}"><span class="pdtv-mobile-card__icon" aria-hidden="true"></span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(text)}</small></a>`).join("")}
+      </nav>
+    </div>
+  </section>`;
   return publicShell("home", `
+    ${mobileHome}
     <section class="hero"><div class="container hero__grid">
       <div><p class="eyebrow">${escapeHtml(hero.teaserText || "PROdigitalTV")}</p><h1>${escapeHtml(hero.title)}</h1><p class="lead">${escapeHtml(hero.subtitle)}</p>
         <div class="hero__buttons"><a class="button button--primary" href="${escapeHtml(primaryButtonUrl)}">${escapeHtml(primaryButtonText)}</a><a class="button button--secondary" href="${escapeHtml(secondaryButtonUrl)}">${escapeHtml(secondaryButtonText)}</a></div>
@@ -676,17 +836,21 @@ export async function eventDetailPage(id) {
     ? [...assignedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 24)
     : [];
   const registrationAllowed = event.registrationEnabled && (!restricted || isMember());
+  const eventImageUrl = archiveEventImageUrl(event);
+  const introText = event.description || event.shortDescription || event.subtitle || "";
+  const longText = event.postEventummary || event.archiveText || event.longDescription || event.bodyText || event.articleText || "";
+  const haseparateLongText = longText.trim() && longText.trim() !== introText.trim();
   return publicShell("events", `${subhero(event.eventType, event.title, event.subtitle)}
     <section class="section"><div class="container detail-grid">
       <article class="detail-main">
-        ${event.imageUrl ? `<figure class="event-detail-image"><img src="${escapeHtml(event.imageUrl)}" alt="Eventbild ${escapeHtml(event.title)}"></figure>` : ""}
+        ${eventImageUrl ? `<figure class="event-detail-image"><img src="${escapeHtml(eventImageUrl)}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy"></figure>` : ""}
         ${restricted ? `<div class="alert alert--warning">Details und Anmeldung dieses Mitglieder-Events stehen nach dem Login zur Verfuegung.</div>` : ""}
-        <h2>Zum Event</h2><p class="lead">${escapeHtml(event.description)}</p>
+        <h2>Zum Event</h2>${introText ? `<p class="lead">${escapeHtml(introText)}</p>` : ""}
+        ${haseparateLongText ? `<h2>Rückblick</h2><div class="editorial-text">${articleParagraphs(longText)}</div>` : ""}
         <h2>Themen</h2><div class="filters">${assignedTopics.map((topic) => `<a class="filter" href="#/topic/${topic.id}">${escapeHtml(topic.title)}</a>`).join("")}</div>
         ${event.lunchNote ? `<div class="alert">${escapeHtml(event.lunchNote)}</div>` : ""}
         ${restricted ? "" : `<section class="venue-stage"><div class="venue-stage__place"><p class="eyebrow">Veranstaltungsort</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Gastgeber und Sponsoren</p>${eventPartners.length ? eventPartners.map((partner) => `<article class="partner-spotlight"><span class="avatar">${initials(partner.name)}</span><div><span class="tag tag--red">${escapeHtml(partner.role)}</span><h3>${escapeHtml(partner.name)}</h3>${partner.description ? `<p>${escapeHtml(partner.description)}</p>` : ""}</div></article>`).join("") : `<p>Partner werden bei Bekanntgabe ergaenzt.</p>`}</div></section>
         ${assignedSpeakers.length ? `<h2>Referentinnen und Referenten</h2><div class="speaker-grid">${assignedSpeakers.map((speaker) => `<article class="speaker-profile"><div class="speaker-profile__portrait">${speakerPortrait(speaker)}</div><div class="speaker-profile__body"><h3>${escapeHtml(speaker.name)}</h3><p class="speaker-profile__position">${escapeHtml(speaker.position)}${speaker.company ? ` · ${escapeHtml(speaker.company)}` : ""}</p>${speaker.shortBio ? `<p class="speaker-profile__intro">${escapeHtml(speaker.shortBio)}</p>` : ""}${speaker.longBio ? `<p>${escapeHtml(speaker.longBio)}</p>` : ""}</div></article>`).join("")}</div>` : ""}`}
-        ${event.postEventSummary ? `<h2>Nachbericht</h2><p>${escapeHtml(event.postEventSummary)}</p>` : ""}
         ${assignedGalleryImages.length ? galleryPlayCta(assignedGallery, assignedGalleryImages) : ""}
       </article>
       <aside class="detail-aside">
@@ -742,27 +906,31 @@ export async function newsPage() {
 }
 
 export async function newsDetailPage(id) {
-  const item = await getOne("editorialContent", id) || editorialFallbackNews.find((entry) => entry.id === id);
-  if (!item || (item.page !== "news" && item.section !== "news" && !item.isRetrospective)) return notFoundPage();
-  const isPublishedPublic = item.status === "published" && item.visibility === "public";
-  const isVisibleNews = item.visible === true || (isPublishedPublic && item.visible !== false);
-  if (!item.isRetrospective && (!isVisibleNews || item.status === "archived" || item.visibility === "internal")) return notFoundPage();
-  const [sponsors, galleries] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries")]);
+  const publicEditorialContent = await listPublicContent("editorialContent").catch(() => []);
+  const item = publicEditorialContent.find((entry) => [entry.id, entry.slug, entry.key].filter(Boolean).includes(id))
+    || await getOne("editorialContent", id).catch(() => null)
+    || editorialFallbackNews.find((entry) => entry.id === id);
+  const isRetrospective = isRetrospectiveArticle(item);
+  if (!item || (item.page !== "news" && item.section !== "news" && !isRetrospective)) return notFoundPage();
+  if (!isRetrospective && !publicNewsItems([item]).length) return notFoundPage();
+  const [sponsors, galleries, events] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries"), listPublicEvents()]);
   const date = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
-  const text = item.bodyText || item.mainText || item.text || item.shortText || item.teaserText || "";
+  const text = item.longDescription || item.articleText || item.bodyText || item.mainText || item.text || item.fullText || item.longText || item.shortText || item.teaserText || "";
   const sponsor = item.sponsorId ? sponsors.find((entry) => entry.id === item.sponsorId) : null;
+  const linkedEvent = retrospectiveLinkedEvent(item, events);
+  const articleImageUrl = item.imageUrl || (linkedEvent ? archiveEventImageUrl(linkedEvent) : "");
   const selectedGallery = item.galleryId ? galleries.find((gallery) => gallery.id === item.galleryId) : null;
   const attachedGalleryImages = Array.isArray(selectedGallery?.images)
     ? [...selectedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 12)
     : [];
   const leadMedia = attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "";
-  const detailSection = item.isRetrospective ? "archive" : "news";
-  const detailTitle = item.isRetrospective ? "Rückblicke" : "News";
-  const detailIntro = item.isRetrospective ? "Nachberichte, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen." : "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.";
-  const backHref = item.isRetrospective ? "#/archive" : "#/news";
-  const backText = item.isRetrospective ? "Zurueck zu Rückblicke" : "Zurueck zu News";
-  const sectionLabel = item.isRetrospective ? "Event-Nachlauf" : item.category || "News";
-  const allText = item.isRetrospective ? "Alle Rückblicke" : "Alle News";
+  const detailSection = isRetrospective ? "archive" : "news";
+  const detailTitle = isRetrospective ? "Rückblicke" : "News";
+  const detailIntro = isRetrospective ? "Nachberichte, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen." : "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.";
+  const backHref = isRetrospective ? "#/archive" : "#/news";
+  const backText = isRetrospective ? "Zurück zu Rückblicke" : "Zurück zu News";
+  const sectionLabel = isRetrospective ? "Event-Nachlauf" : item.category || "News";
+  const allText = isRetrospective ? "Alle Rückblicke" : "Alle News";
   return publicShell(detailSection, `${subhero("", detailTitle, detailIntro)}
     <section class="section"><div class="container detail-grid">
       <article class="detail-main news-detail">
@@ -770,10 +938,9 @@ export async function newsDetailPage(id) {
         <p class="eyebrow">${escapeHtml(item.category || "News")}${date ? ` · ${formatDate(date)}` : ""}</p>
         ${articleHeader({
           title: item.title || "",
-          intro: item.subtitle || "",
-          logoUrl: item.imageUrl || "",
-          logoAlt: `Artikelmotiv ${item.title || "News"}`
+          intro: item.subtitle || ""
         })}
+        ${articleImageUrl ? `<figure class="news-detail__thumb news-detail__hero-image"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${item.title || "News"}`)}" loading="eager" decoding="async"></figure>` : ""}
         ${ttsReader({ title: item.title || "", text, audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
         <div class="editorial-text">${leadMedia}${articleParagraphs(text)}</div>
         ${articleSourcesList(item)}
@@ -823,7 +990,7 @@ export async function topicDetailPage(id) {
 export const aboutPage = internalOverviewPage("ueber_uns");
 
 export async function membersPage() {
-  const members = await listPublicContent("members");
+  const members = await withPublicMemberLogos(await listPublicContent("members"));
   return publicShell("members", `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform fuer Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
     <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input placeholder="Mitglieder suchen"></div></div><div class="card-grid card-grid--three">${members.map((member) => `<article class="card card__body"><div class="member-tile" style="margin-bottom:16px">${memberLogo(member)}</div><h3 style="margin:15px 0 8px">${escapeHtml(member.name)}</h3><p>${escapeHtml(member.description || "")}</p><p style="margin-top:12px">${escapeHtml(member.city)}${member.country ? ` · ${escapeHtml(member.country)}` : ""}</p>${member.website ? `<a class="link" style="display:inline-block;margin-top:14px" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Zur Website →</a>` : ""}</article>`).join("")}</div></div></section>`);
 }
@@ -839,10 +1006,11 @@ export async function archivePage() {
   const events = allEvents.filter((event) => isPastEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
   const retrospectives = editorial
-    .filter((item) => item.isRetrospective)
+    .filter(isRetrospectiveArticle)
     .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")));
+  const items = retrospectives.map((item) => archiveListEditorial(item, sponsors, events)).join("");
   return publicShell("archive", `${subhero("Event-Nachlauf", "Eventarchiv", "Nachberichte, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen.")}
-    <section class="section"><div class="container archive-list">${retrospectives.map((item) => archiveEditorialArticle(item, sponsors)).join("")}${events.map((event) => archiveArticle(event, sponsors)).join("")}</div></section>`);
+    <section class="section"><div class="container"><div class="section-head archive-list-head"><div><p class="eyebrow">Medienfruehstuecke</p><h2>Rückblicke</h2><p>Vergangene Veranstaltungen mit Nachbericht, Ort, Gastgeber und Detailseite.</p></div></div><div class="archive-list archive-list--compact">${items || `<div class="alert">Rueckblicke werden aktuell vorbereitet.</div>`}</div></div></section>`);
 }
 
 export async function downloadsPage() {
@@ -850,6 +1018,24 @@ export async function downloadsPage() {
     .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   return publicShell("downloads", `${subhero("Downloads", "Oeffentliche Downloads.", "Vereinssatzung, Beitraege und weitere oeffentliche Dokumente von PROdigitalTV.")}
     <section class="section"><div class="container">${downloads.length ? `<div class="card-grid card-grid--three">${downloads.map(downloadCard).join("")}</div>` : `<div class="alert">Oeffentliche Downloads werden aktuell vorbereitet.</div>`}</div></section>`);
+}
+
+export function webappQrPage() {
+  const webappUrl = "https://prodigitaltv-da47b.web.app/#/home";
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=720x720&margin=2&data=${encodeURIComponent(webappUrl)}`;
+  return publicShell("webapp-qr", `${subhero("WebApp", "QR-Code zur mobilen WebApp.", "Direkt scannen und PROdigitalTV auf dem Smartphone oeffnen.")}
+    <section class="section"><div class="container webapp-qr-page">
+      <article class="webapp-qr-card">
+        <figure class="webapp-qr-card__code"><img src="${escapeHtml(qrUrl)}" alt="QR-Code zur PROdigitalTV WebApp" loading="lazy"></figure>
+        <div class="webapp-qr-card__copy">
+          <p class="eyebrow">PROdigitalTV WebApp</p>
+          <h2>QR-Code scannen</h2>
+          <p>Der Code fuehrt direkt zur mobilen PROdigitalTV-WebApp.</p>
+          <p class="webapp-qr-card__url">${escapeHtml(webappUrl)}</p>
+          <div class="actions"><a class="button button--primary" href="${escapeHtml(webappUrl)}" target="_blank" rel="noreferrer">WebApp oeffnen</a><a class="button button--secondary" href="#/home">Zur Website</a></div>
+        </div>
+      </article>
+    </div></section>`);
 }
 
 function joinAside(downloads, editorial) {
@@ -895,10 +1081,16 @@ export async function joinPage() {
   const [blocks, downloads, editorial] = await Promise.all([internalBlocks("mitglied_werden"), listPublicContent("downloads"), listPublicContent("editorialContent")]);
   const hero = blocks.find((block) => block.typ === "hero") || blocks[0];
   const cardBlocks = blocks.filter((block) => block.typ !== "hero");
-  const joinCards = aboutCardGroups(cardBlocks, meta, { summary: "long", all: true });
-  const joinTexts = blocks.map((block) => aboutLongTextSection(block)).join("");
+  const joinCards = aboutCardGroups(cardBlocks, meta, { summary: "long", all: true, joinCta: true });
+  const joinTexts = blocks.map((block) => aboutLongTextSection(block, { joinCta: block.typ !== "hero" })).join("");
+  const joinIntroCard = `<article class="join-intro-card">
+    ${aboutPicto(hero?.icon || "membership")}
+    <div><p class="eyebrow">Mitglied werden</p><h2>${escapeHtml(hero?.titel || meta.title)}</h2><p>${escapeHtml(hero?.langtext || hero?.kurztext || meta.intro)}</p></div>
+    <button class="button button--primary" type="button" data-join-scroll>Mitgliedsantrag</button>
+  </article>`;
   return publicShell("join", `<section class="section internal-overview internal-overview--join"><div class="container"><div class="internal-about-layout"><div class="internal-about-main">
     <div class="internal-page-heading"><p class="eyebrow">${escapeHtml(meta.eyebrow)}</p><h1>${escapeHtml(hero?.titel || meta.title)}</h1><p>${escapeHtml(hero?.kurztext || meta.intro)}</p></div>
+    ${joinIntroCard}
     <div class="internal-mobile-list internal-mobile-list--about">${joinCards || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
     <div class="internal-about-texts">${joinTexts}</div>
   </div>${joinAside(downloads, editorial)}</div></div></section>${membershipFormSection()}`);
@@ -923,6 +1115,85 @@ export async function portalPage() {
   const events = allEvents.filter((event) => event.accessType === "members_only");
   return publicShell("login", `${subhero("Mitgliederbereich", `Willkommen, ${escapeHtml(user.displayName)}.`, "Exklusive Inhalte und Ihre Veranstaltungen auf einen Blick.")}
     <section class="section"><div class="container"><div class="section-head"><div><h2>Mitglieder-Events</h2><p class="muted">Angemeldet als ${escapeHtml(user.email || "")} · Rolle: ${escapeHtml(user.role || "guest")} · Token bis: ${escapeHtml(user.tokenExpiresAt || "Demo")}</p></div><button id="logout-button" class="button button--secondary">Abmelden</button></div><div class="card-grid card-grid--three">${events.map((event) => eventCard(event, false, sponsors)).join("")}</div></div></section>`);
+}
+
+function memberDirectoryCard(member = {}) {
+  return `<article class="card card__body">
+    <div class="member-tile" style="margin-bottom:16px">${memberLogo(member)}</div>
+    <h3 style="margin:15px 0 8px">${escapeHtml(member.name || "Mitglied")}</h3>
+    ${member.description ? `<p>${escapeHtml(member.description)}</p>` : ""}
+    <p style="margin-top:12px">${escapeHtml(member.category || "Mitglied")}${member.city ? ` / ${escapeHtml(member.city)}` : ""}${member.country ? ` / ${escapeHtml(member.country)}` : ""}</p>
+    ${member.website ? `<a class="link" style="display:inline-block;margin-top:14px" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Zur Website -></a>` : ""}
+  </article>`;
+}
+
+function memberProfileForm(member = {}, user = {}) {
+  if (!user.memberId) {
+    return `<div class="alert">Ihr Login ist noch keinem Mitgliedsprofil zugeordnet. Bitte im CMS beim Benutzer <code>${escapeHtml(user.uid || user.email || "")}</code> das Feld <code>memberId</code> setzen.</div>`;
+  }
+  if (!member?.id) {
+    return `<div class="alert">Das verknuepfte Mitgliedsprofil <code>${escapeHtml(user.memberId)}</code> wurde noch nicht gefunden.</div>`;
+  }
+  return `<form id="member-profile-form" class="form-card form-grid" data-member-id="${escapeHtml(member.id)}">
+    <p class="eyebrow">Eigenes Mitgliedsprofil</p>
+    <h2 style="margin-bottom:6px">Profil bearbeiten</h2>
+    <p class="muted">Diese Angaben werden direkt im Mitglieder-Datensatz gespeichert und im Mitgliederverzeichnis verwendet.</p>
+    <div class="form-grid--two">
+      <div class="field"><label>Name / Unternehmen</label><input name="name" value="${escapeHtml(member.name || "")}" required></div>
+      <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(member.category || "")}" placeholder="z. B. Streaming, Produktion, Beratung"></div>
+    </div>
+    <div class="field"><label>Kurzbeschreibung</label><textarea name="description" rows="5">${escapeHtml(member.description || "")}</textarea></div>
+    <div class="form-grid--two">
+      <div class="field"><label>Website</label><input name="website" type="url" value="${escapeHtml(member.website || "")}" placeholder="https://"></div>
+      <div class="field"><label>Kontakt-E-Mail</label><input name="contactEmail" type="email" value="${escapeHtml(member.contactEmail || member.email || "")}"></div>
+    </div>
+    <div class="form-grid--two">
+      <div class="field"><label>Telefon</label><input name="phone" type="tel" value="${escapeHtml(member.phone || "")}"></div>
+      <div class="field"><label>Ansprechpartner</label><input name="profileContactName" value="${escapeHtml(member.profileContactName || member.contactName || "")}"></div>
+    </div>
+    <div class="form-grid--two">
+      <div class="field"><label>Ort</label><input name="city" value="${escapeHtml(member.city || "")}"></div>
+      <div class="field"><label>Land</label><input name="country" value="${escapeHtml(member.country || "")}"></div>
+    </div>
+    <button class="button button--primary" type="submit">Eigenes Profil speichern</button>
+    <div id="member-profile-result"></div>
+  </form>`;
+}
+
+export async function memberPortalPage() {
+  const user = currentUser();
+  if (!user) return loginPage();
+  if (!isMember(user)) return portalPage();
+  const [allEvents, sponsors, memberDocuments, members, ownMember] = await Promise.all([
+    listPublicEvents(true),
+    listPublicContent("sponsors"),
+    list("memberDocuments").catch(() => []),
+    listPublicContent("members").then(withPublicMemberLogos).catch(() => []),
+    user.memberId ? getOne("members", user.memberId).catch(() => null) : Promise.resolve(null)
+  ]);
+  const events = allEvents.filter((event) => event.accessType === "members_only");
+  const visibleDocuments = memberDocuments
+    .filter((item) => item.status === "published" && (item.visibility || "members") === "members")
+    .sort((a, b) => String(b.meetingDate || b.publishDate || b.year || b.updatedAt || "").localeCompare(String(a.meetingDate || a.publishDate || a.year || a.updatedAt || "")));
+  const visibleMembers = members
+    .filter((member) => (member.status || "active") === "active" && (member.visibility || "public") === "public" && member.isLive !== false)
+    .sort((a, b) => Number(a.sortOrder || 9999) - Number(b.sortOrder || 9999) || String(a.name || "").localeCompare(String(b.name || "")));
+  const documentUrl = (item) => item.documentUrl || item.assetUrl || item.fileUrl || item.url || "";
+  const documentCard = (item) => {
+    const url = documentUrl(item);
+    return `<article class="card card__body">
+      <p class="eyebrow">${escapeHtml([item.category || "Dokument", item.year].filter(Boolean).join(" / "))}</p>
+      <h3>${escapeHtml(item.title || item.fileName || "Dokument")}</h3>
+      ${item.description ? `<p>${escapeHtml(item.description)}</p>` : ""}
+      ${item.meetingDate ? `<p class="muted">${formatDate(item.meetingDate)}</p>` : ""}
+      ${url ? `<a class="button button--secondary button--small" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">Datei oeffnen</a>` : `<p class="muted">Datei ist noch nicht hinterlegt.</p>`}
+    </article>`;
+  };
+  return publicShell("login", `${subhero("Mitgliederbereich", `Willkommen, ${escapeHtml(user.displayName)}.`, "Dokumente, Mitgliederverzeichnis und eigenes Profil.")}
+    <section class="section"><div class="container"><div class="section-head"><div><h2>Mitglieder-Dokumente</h2><p class="muted">Angemeldet als ${escapeHtml(user.email || "")} / Rolle: ${escapeHtml(user.role || "guest")}${user.memberId ? ` / Mitglied: ${escapeHtml(user.memberId)}` : ""}</p></div><button id="logout-button" class="button button--secondary">Abmelden</button></div><div class="card-grid card-grid--three">${visibleDocuments.length ? visibleDocuments.map(documentCard).join("") : `<div class="alert">Noch keine freigegebenen Mitgliederdokumente.</div>`}</div></div></section>
+    <section class="section section--white"><div class="container"><div class="section-head"><h2>Mein Profil</h2></div>${memberProfileForm(ownMember, user)}</div></section>
+    <section class="section"><div class="container"><div class="section-head"><h2>Mitgliederverzeichnis</h2></div><div class="card-grid card-grid--three">${visibleMembers.length ? visibleMembers.map(memberDirectoryCard).join("") : `<div class="alert">Noch keine freigegebenen Mitglieder.</div>`}</div></div></section>
+    <section class="section"><div class="container"><div class="section-head"><h2>Mitglieder-Events</h2></div><div class="card-grid card-grid--three">${events.length ? events.map((event) => eventCard(event, false, sponsors)).join("") : `<div class="alert">Aktuell keine Mitglieder-Events.</div>`}</div></div></section>`);
 }
 
 export async function legalPage(type) {

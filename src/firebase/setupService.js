@@ -3,7 +3,7 @@ import { getFirebaseServices } from "./firebaseClient.js";
 import { getOne, list, remove, upsert, isDemoMode, resetDemoDatabase } from "./dataService.js";
 
 const requiredCollections = [
-  "events", "topics", "speakers", "sponsors", "members", "boardMembers", "registrations", "membershipApplications", "downloads",
+  "events", "topics", "speakers", "sponsors", "members", "boardMembers", "memberDocuments", "memberDirectories", "registrations", "membershipApplications", "downloads",
   "users", "media", "eventMedia", "editorialContent", "mailQueue", "settings", "system", "auditLog"
 ];
 

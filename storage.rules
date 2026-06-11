@@ -84,6 +84,24 @@ service firebase.storage {
       allow write: if editor() && request.resource.size < 10 * 1024 * 1024;
     }
 
+    match /member-documents/{documentId}/{fileName} {
+      allow read: if editor()
+        || (
+          member()
+          && firestore.get(/databases/(default)/documents/memberDocuments/$(documentId)).data.status == "published"
+        );
+      allow write: if editor() && request.resource.size < 30 * 1024 * 1024;
+    }
+
+    match /member-directories/{directoryId}/{fileName} {
+      allow read: if editor()
+        || (
+          member()
+          && firestore.get(/databases/(default)/documents/memberDirectories/$(directoryId)).data.status == "published"
+        );
+      allow write: if editor() && request.resource.size < 30 * 1024 * 1024;
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

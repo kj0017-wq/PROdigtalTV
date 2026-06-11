@@ -15,6 +15,7 @@ function localDemoUser(email = "admin@prodigitaltv.de", demoRole = "admin", prov
     email,
     displayName: email.split("@")[0] || "Demo",
     role,
+    memberId: role === "member" ? "3q" : "",
     status: "active",
     providerId,
     idToken: "demo-token",
@@ -44,9 +45,6 @@ export function currentUser() {
   try {
     const storedUser = JSON.parse(sessionStorage.getItem(USER_KEY) || "null");
     if (storedUser) return storedUser;
-    if (!realDataMode() && isLocalHost() && String(window.location.hash || "").startsWith("#/cms")) {
-      return localDemoUser("admin@prodigitaltv.de", "admin");
-    }
     return null;
   } catch {
     sessionStorage.removeItem(USER_KEY);
@@ -85,6 +83,9 @@ async function userFromCredential(firebase, firebaseUser, fallbackRole = "guest"
     displayName: profileData.displayName || firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "Benutzer",
     photoURL: firebaseUser.photoURL || "",
     role,
+    memberId: profileData.memberId || "",
+    committeeRole: profileData.committeeRole || "",
+    permissions: Array.isArray(profileData.permissions) ? profileData.permissions : [],
     status: profileData.status || "active",
     providerId: firebaseUser.providerData?.[0]?.providerId || "password",
     idToken: tokenResult.token,
@@ -173,12 +174,10 @@ export async function logout() {
 }
 
 export function canUseCms(user = currentUser()) {
-  if (isLocalHost() && String(window.location.hash || "").startsWith("#/cms")) return true;
   return ["admin", "editor"].includes(normalizeRole(user?.role));
 }
 
 export function isAdmin(user = currentUser()) {
-  if (isLocalHost() && String(window.location.hash || "").startsWith("#/cms")) return true;
   return normalizeRole(user?.role) === "admin";
 }
 
