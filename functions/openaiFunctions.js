@@ -1928,10 +1928,10 @@ exports.generateAiEditorialTopicSuggestions = onCall({ region, secrets: [openAiA
     `Quellen fuer diese Recherche (${researchSources.length} geplant, ${crawlResult.researchedSources} abgearbeitet): ${JSON.stringify(researchSourceSummary)}`,
     `Gefundene Quellenveroeffentlichungen mit Datum: ${JSON.stringify(sourcePublications)}`,
     "Keine konkreten Zahlen, Studien, URLs, Zitate oder tagesaktuellen Fakten erfinden. Wenn ein Thema Quellenrecherche braucht, markiere source_status als 'Recherche erforderlich'.",
-    "Nenne pro Thema genau eine Hauptquelle als primary_source_id und 2 bis 4 plausible Quellenkandidaten als source_candidates mit id, name, publisher, url falls sicher bekannt, und kurzer note. Erfinde keine URLs. Wenn keine sichere URL bekannt ist, lasse url leer.",
+    "Nenne pro Thema mindestens eine Hauptquelle als primary_source_id und bis zu 4 plausible Quellenkandidaten als source_candidates mit id, name, publisher, url falls sicher bekannt, und kurzer note. Eine valide Quelle reicht fuer die Themenliste. Erfinde keine URLs. Wenn keine sichere URL bekannt ist, lasse url leer.",
     "Wenn ein Vorschlag auf einer konkreten Veroeffentlichung der Quelle basiert, gib source_publication_date an. Wenn das Datum unbekannt ist, lasse source_publication_date leer und setze source_date_status auf 'Datum nicht ermittelt'.",
     "Bewerte Aktualitaet, Branchenrelevanz und Gesamt-Relevanz jeweils von 0 bis 100.",
-    `Antworte ausschliesslich als valides JSON-Objekt mit dem Feld suggestions. suggestions ist ein Array mit maximal ${limit} Objekten mit: title, headline, subline, teaser, category, keywords, thumbnail_idea, actuality_score, industry_score, relevance_score, source_status, duplicate_status, reason, possible_sources, source_candidates, primary_source_id, source_ids, source_names, source_publication_date, source_date_status.`
+    `Antworte ausschliesslich als valides JSON-Objekt mit dem Feld suggestions. suggestions ist ein Array mit maximal ${limit} Objekten mit: title, headline, subline, teaser, category, keywords, thumbnail_idea, actuality_score, industry_score, relevance_score, source_status, reason, possible_sources, source_candidates, primary_source_id, source_ids, source_names, source_publication_date, source_date_status.`
   ].filter(Boolean).join("\n\n");
   let rawSuggestions = [];
   let fallbackReason = "";

@@ -118,6 +118,10 @@ service cloud.firestore {
       allow read, write: if editor();
     }
 
+    match /media_assets/{id} {
+      allow read, write: if editor();
+    }
+
     match /downloads/{id} {
       allow read: if publicPublished()
         || (member() && resource.data.visibility == "members")

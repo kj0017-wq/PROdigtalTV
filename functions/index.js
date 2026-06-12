@@ -419,7 +419,7 @@ async function aiEditorialSettings() {
   return {
     automationEnabled: false,
     publicationMode: "draft_only",
-    minimumSources: 2,
+    minimumSources: 1,
     minimumTrustScore: 70,
     scheduleLabel: "Taeglich 06:00 Uhr",
     allowAutoPublish: false,
@@ -510,26 +510,18 @@ async function runAiEditorialPipeline({ manual = false, actor = "scheduler" } = 
 
   const topic = chooseTopic(existingArticles);
   const duplicate = existingArticles.find((article) => normalizeStatus(article.title || article.headline).includes(normalizeStatus(topic.title).slice(0, 18)));
-  if (duplicate) {
-    await writeAiEditorialLog({
-      status: "blocked",
-      message: "Thema bereits vorhanden - kein neuer Beitrag erzeugt.",
-      found_topics_json: [topic],
-      duplicate_check_json: { duplicate_status: "Dublette", duplicateArticleId: duplicate.id }
-    });
-    return { ok: false, status: "blocked", message: "Thema bereits vorhanden - kein neuer Beitrag erzeugt." };
-  }
 
-  if (sources.length < Number(settings.minimumSources || 2)) {
+  if (sources.length < Number(settings.minimumSources || 1)) {
     await writeAiEditorialLog({
       status: "blocked",
-      message: "Quellenlage unzureichend - redaktionelle Pruefung erforderlich.",
+      message: "Keine valide Quelle vorhanden - redaktionelle Pruefung erforderlich.",
       found_topics_json: [topic],
       used_sources_json: sources,
-      source_check_json: { source_status: "unzureichend", trustedSources: sources.length, required: Number(settings.minimumSources || 2) },
+      source_check_json: { source_status: "unzureichend", trustedSources: sources.length, required: Number(settings.minimumSources || 1) },
+      duplicate_check_json: duplicate ? { duplicate_status: "Hinweis", duplicateArticleId: duplicate.id } : {},
       ai_check_json: { status: "nicht bestanden", blockers: ["insufficient_sources"] }
     });
-    return { ok: false, status: "blocked", message: "Quellenlage unzureichend - kein Beitrag wurde erzeugt." };
+    return { ok: false, status: "blocked", message: "Keine valide Quelle vorhanden - kein Beitrag wurde erzeugt." };
   }
 
   const articleRef = db.collection("editorialContent").doc();
@@ -556,7 +548,7 @@ async function runAiEditorialPipeline({ manual = false, actor = "scheduler" } = 
     thumbnail_idea: "Serioeses redaktionelles Vorschaubild zur digitalen Medienwirtschaft.",
     thumbnail_prompt: "Professionelles redaktionelles Vorschaubild fuer ein Medienbranchen-Portal, klare moderne Komposition, TV-, Streaming- und Regulierungskontext, 16:9, keine Logos, keine realen Personen.",
     source_status: "teilweise geprueft",
-    duplicate_status: "neu",
+    duplicate_status: duplicate ? "Hinweis: aehnliches Thema vorhanden" : "nicht blockierend",
     ai_check_status: "Warnung",
     legal_check_status: "offen",
     publication_status: "pruefpflichtig",
@@ -567,7 +559,7 @@ async function runAiEditorialPipeline({ manual = false, actor = "scheduler" } = 
     author_name: "KI-Redaktion",
     source_snapshot_json: sourceSnapshot,
     ai_log_json: { actor, rule: "safe_topic_proposal_only" },
-    duplicate_check_json: { duplicate_status: "neu" },
+    duplicate_check_json: duplicate ? { duplicate_status: "Hinweis", duplicateArticleId: duplicate.id } : { duplicate_status: "nicht blockierend" },
     final_check_json: { status: "Warnung", blockers: ["manual_article_text_required", "claim_level_source_mapping_required"] },
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp()
@@ -616,7 +608,7 @@ async function runAiEditorialPipeline({ manual = false, actor = "scheduler" } = 
     found_topics_json: [topic],
     used_sources_json: sourceSnapshot,
     source_check_json: { source_status: "teilweise geprueft" },
-    duplicate_check_json: { duplicate_status: "neu" },
+    duplicate_check_json: duplicate ? { duplicate_status: "Hinweis", duplicateArticleId: duplicate.id } : { duplicate_status: "nicht blockierend" },
     keyword_result_json: topic.keywords,
     ai_check_json: { status: "Warnung", publication_status: "pruefpflichtig" }
   });
@@ -634,7 +626,7 @@ exports.saveAiEditorialSettings = onCall({ region }, async (request) => {
   const settings = {
     automationEnabled: Boolean(data.automationEnabled),
     publicationMode: ["draft_only", "review_release", "auto_publish"].includes(data.publicationMode) ? data.publicationMode : "draft_only",
-    minimumSources: Math.max(2, Number(data.minimumSources || 2)),
+    minimumSources: Math.max(1, Number(data.minimumSources || 1)),
     minimumTrustScore: Math.min(100, Math.max(0, Number(data.minimumTrustScore || 70))),
     scheduleLabel: data.scheduleLabel || "Taeglich 06:00 Uhr",
     allowAutoPublish: Boolean(data.allowAutoPublish),

@@ -1,5 +1,5 @@
 import { getFirebaseServices, localPreviewMode } from "../firebase/firebaseClient.js";
-import { currentUser } from "../firebase/authService.js?v=461";
+import { currentUser, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=464";
 import { upsert } from "../firebase/dataService.js?v=466";
 import { aiSourceCatalog } from "../data/aiSourceCatalog.js";
 
@@ -27,6 +27,15 @@ const ACTION_FUNCTIONS = {
 };
 
 const DEFAULT_AI_EDITORIAL_THUMBNAIL_PROMPT = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
+
+async function ensureCallableLogin(label = "KI-Aktion") {
+  await waitForAuthReady();
+  const user = await refreshAuthToken(true);
+  if (!user?.uid || user.idToken === "demo-token") {
+    throw new Error(`${label}: Login erforderlich. Bitte im CMS neu anmelden und danach erneut starten.`);
+  }
+  return user;
+}
 
 function isLocalHost() {
   return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
@@ -143,6 +152,7 @@ export async function runAiEditorialTask(mode = "manual") {
       publicationStatus: "gesperrt wegen Quellenlage"
     };
   }
+  await ensureCallableLogin("KI-Redaktion");
   const callable = firebase.functionsLib.httpsCallable(firebase.functions, "runAiEditorialTask");
   try {
     const result = await callable({ mode });
@@ -219,7 +229,7 @@ export async function generateAiTopicSuggestions(options = {}) {
       industry_score: Number(topic.industry_score || 75),
       relevance_score: Math.round((Number(topic.actuality_score || 75) + Number(topic.industry_score || 75)) / 2),
       duplicate_status: duplicateRisk,
-      source_status: "Recherche erforderlich",
+      source_status: "Quelle vorhanden",
       status: "vorgeschlagen",
       queue_status: "nicht uebernommen",
       rank: index + 1,
@@ -231,7 +241,6 @@ export async function generateAiTopicSuggestions(options = {}) {
       origin: "local_topic_research"
     };
   }).filter((topic) => {
-    if (topic.duplicate_status !== "neu") return false;
     if (Number(topic.industry_score || 0) < 78 || Number(topic.relevance_score || 0) < 76) return false;
     if (!categoryFilter) return true;
     const haystack = `${topic.title} ${topic.headline} ${topic.subline} ${topic.category} ${(topic.keywords || []).join(" ")}`.toLowerCase();
@@ -270,7 +279,7 @@ export async function generateAiTopicSuggestions(options = {}) {
     found_topics_json: suggestions,
     rejected_topics_json: [],
     used_sources_json: [],
-    source_check_json: { source_status: "Recherche nach Queue-Uebernahme erforderlich" },
+      source_check_json: { source_status: "Eine valide Quelle reicht fuer die Themenliste" },
     duplicate_check_json: {},
     keyword_result_json: {},
     ai_check_json: { status: "Vorschlag", publication_status: "nicht freigegeben" },
@@ -362,6 +371,7 @@ export async function importGermanPressReleases(options = {}) {
       message: "Presseimport laeuft nur ueber die deployte Cloud Function mit echten Quellen."
     };
   }
+  await ensureCallableLogin("Presseimport");
   const callable = firebase.functionsLib.httpsCallable(firebase.functions, "importGermanPressReleases", { timeout: 600000 });
   const result = await callable({
     runId: options.runId || "",
@@ -598,13 +608,14 @@ function localEditorialArticleBody(topic = {}, sources = []) {
   const teaser = cleanAiEditorialSentence(topic.teaser || topic.reason || topic.subline || "");
   const sourceNames = sources.slice(0, 3).map((source) => source.publisher || source.title || source.name || source.domain).filter(Boolean);
   const sourceSentence = sourceNames.length
-    ? `Als Quellenbasis dienen unter anderem Veroeffentlichungen von ${sourceNames.join(", ")}.`
-    : "Die belastbare Quellenbasis wird im Editor ergaenzt.";
+    ? `Vorhandene Quellenhinweise: ${sourceNames.join(", ")}.`
+    : "Es ist noch keine belastbare Quellenbasis mit inhaltlichem Auszug hinterlegt.";
   return [
-    teaser || `${headline} rueckt eine aktuelle Entwicklung der digitalen Medienbranche in den Fokus.`,
-    `Fuer Sender, Produzenten, Plattformbetreiber und digitale Medienangebote ist das Thema im Bereich ${category} relevant. Im Mittelpunkt steht ${keyword}. Entscheidend ist, welche Folgen sich fuer Reichweite, Technik, Rechte, Vermarktung, Produktion oder Nutzerfuehrung ergeben.`,
-    `${sourceSentence} Der Beitrag soll knapp erklaeren, was passiert ist, warum die Entwicklung fuer die Branche wichtig ist und welche Konsequenz Medienanbieter daraus ableiten koennen.`,
-    "Die fertige Fassung bleibt sachlich, leicht verstaendlich und frei von Spekulationen. Aussagen werden nur verwendet, wenn sie durch die hinterlegten Quellen belegbar sind."
+    "Quelleninhalt fehlt fuer fertigen Beitrag.",
+    teaser || headline,
+    `${sourceSentence} Dieser Text ist ein redaktioneller Arbeitsentwurf und kein veroeffentlichungsfaehiger Beitrag.`,
+    `Fuer einen echten Beitrag zu ${category} muessen aus der Quelle konkret ermittelt werden: Was ist passiert, wer ist beteiligt, wann oder wo passiert es, welche Zahlen oder Entscheidungen sind belegt und welche Folge ergibt sich fuer ${keyword}?`,
+    "Erst danach kann daraus ein journalistischer Lead, ein Faktenabsatz und eine belastbare Einordnung entstehen."
   ].join("\n\n");
 }
 
@@ -671,45 +682,24 @@ async function runLocalAiEditorialTask(mode = "manual") {
   const topic = topicPool.find((candidate) => !articles.some((article) => topicCoveredByArticle(candidate, article)))
     || topicPool[(articles.filter((article) => article.author_type === "ai" || article.aiGenerated).length) % topicPool.length];
   const duplicate = articles.find((article) => topicCoveredByArticle(topic, article));
-  if (duplicate) {
-    const manualDuplicate = isManualEditorialArticle(duplicate);
-    await upsert("ai_editorial_logs", {
-      id: `ai-editorial-log-${crypto.randomUUID()}`,
-      article_id: duplicate.id,
-      task_name: "KI_Redaktion_Taeglicher_Beitrag",
-      status: "blocked",
-      message: manualDuplicate ? "Manueller Beitrag hat Vorrang - kein KI-Beitrag erzeugt." : "Thema bereits vorhanden - kein neuer Beitrag erzeugt.",
-      found_topics_json: [topic],
-      rejected_topics_json: [{ ...topic, reason: manualDuplicate ? "manueller Beitrag hat Vorrang" : "Dublette" }],
-      used_sources_json: trustedSources,
-      source_check_json: { source_status: trustedSources.length >= 2 ? "geprueft" : "unzureichend" },
-      duplicate_check_json: { duplicate_status: "Dublette", duplicateArticleId: duplicate.id },
-      keyword_result_json: {},
-      ai_check_json: { status: "nicht bestanden" },
-      error_json: {},
-      created_at: now
-    });
-    return { ok: false, status: "blocked", message: manualDuplicate ? "Manueller Beitrag hat Vorrang - kein KI-Beitrag erzeugt." : "Thema bereits vorhanden - kein neuer Beitrag erzeugt." };
-  }
-
-  if (trustedSources.length < 2) {
+  if (trustedSources.length < 1) {
     await upsert("ai_editorial_logs", {
       id: `ai-editorial-log-${crypto.randomUUID()}`,
       article_id: "",
       task_name: "KI_Redaktion_Taeglicher_Beitrag",
       status: "blocked",
-      message: "Quellenlage unzureichend - redaktionelle Pruefung erforderlich.",
+      message: "Keine valide Quelle vorhanden - redaktionelle Pruefung erforderlich.",
       found_topics_json: [topic],
-      rejected_topics_json: [{ ...topic, reason: "zu wenige gepruefte Quellen" }],
+      rejected_topics_json: [{ ...topic, reason: "keine valide Quelle" }],
       used_sources_json: trustedSources,
-      source_check_json: { source_status: "unzureichend", trustedSources: trustedSources.length, required: 2 },
-      duplicate_check_json: { duplicate_status: "neu" },
+      source_check_json: { source_status: "unzureichend", trustedSources: trustedSources.length, required: 1 },
+      duplicate_check_json: duplicate ? { duplicate_status: "Hinweis", duplicateArticleId: duplicate.id } : {},
       keyword_result_json: {},
       ai_check_json: { status: "nicht bestanden", blockers: ["insufficient_sources"] },
       error_json: {},
       created_at: now
     });
-    return { ok: false, status: "blocked", message: "Quellenlage unzureichend - kein Beitrag wurde erzeugt." };
+    return { ok: false, status: "blocked", message: "Keine valide Quelle vorhanden - kein Beitrag wurde erzeugt." };
   }
 
   const articleId = `ai-article-${crypto.randomUUID()}`;
@@ -738,7 +728,7 @@ async function runLocalAiEditorialTask(mode = "manual") {
     thumbnail_idea: topic.thumbnailIdea,
     thumbnail_prompt: `Fotorealistisches redaktionelles Vorschaubild fuer ein Medienbranchen-Portal: ${topic.thumbnailIdea}, serioeser moderner Business-Look, natuerliches Licht, 16:9, keine Logos, keine realen Personen, keine Comic-Optik.`,
     source_status: "geprueft",
-    duplicate_status: "neu",
+    duplicate_status: duplicate ? "Hinweis: aehnliches Thema vorhanden" : "nicht blockierend",
     ai_check_status: "Warnung",
     legal_check_status: "offen",
     publication_status: "pruefpflichtig",
@@ -757,7 +747,7 @@ async function runLocalAiEditorialTask(mode = "manual") {
       research_mode: "local_demo",
       note: "Lokale Vorschau: Themen stammen aus einem festen Demo-Pool, nicht aus Live-Recherche."
     },
-    duplicate_check_json: { duplicate_status: "neu" },
+    duplicate_check_json: duplicate ? { duplicate_status: "Hinweis", duplicateArticleId: duplicate.id } : { duplicate_status: "nicht blockierend" },
     final_check_json: { status: "Warnung", blockers: ["claim_level_source_mapping_required", "manual_review_required"] },
     createdAt: now,
     updatedAt: now

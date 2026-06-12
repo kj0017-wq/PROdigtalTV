@@ -2,24 +2,25 @@ import { route, onRouteChange, go } from "./utils/router.js";
 import {
   homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
   newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, memberPortalPage, legalPage, notFoundPage, webappQrPage
-} from "./pages/publicPages.js?v=503";
-import { currentUser, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=464";
+} from "./pages/publicPages.js?v=507";
+import { currentUser, canUseCms, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=464";
 import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=466";
 import { escapeHtml, formatDate } from "./utils/format.js";
 
 const root = document.querySelector("#app");
 const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
+const localCodexStoreKey = "prodigitaltv-demo-db-official-assets-v4";
 
 const lazy = {};
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=500");
-const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=462");
-const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=50");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=512");
+const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=465");
+const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=55");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=5");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
 const csvService = () => lazy.csvService ||= import("./utils/csv.js");
-const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=317");
+const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=321");
 const ttsService = () => lazy.ttsService ||= import("./ai/ttsService.js?v=2");
 const aiSourceCatalogService = () => lazy.aiSourceCatalog ||= import("./data/aiSourceCatalog.js");
 
@@ -169,6 +170,15 @@ async function render() {
   } catch (error) {
     console.error(error);
     root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Seite konnte nicht geladen werden</p><h1>Bitte neu laden</h1><p style="margin:14px 0 24px">${escapeHtml(error.message || String(error))}</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
+  }
+}
+
+async function goOrRefresh(path) {
+  const targetHash = `#/${path}`;
+  if (window.location.hash === targetHash) {
+    await render();
+  } else {
+    go(path);
   }
 }
 
@@ -1051,7 +1061,6 @@ function evaluatePromptSafety(values = {}, testInput = {}) {
   [
     ["quellen", "Quellenpflicht fehlt"],
     ["halluzination", "Halluzinationsschutz fehlt"],
-    ["dubletten", "Dublettenpruefung fehlt"],
     ["beleg", "Belegstellenpflicht fehlt"]
   ].forEach(([needle, warning]) => {
     if (!combined.includes(needle)) warnings.push(warning);
@@ -1066,23 +1075,18 @@ function promptTemplateChat(template = "") {
   const templates = {
     article_text: [
       "Redaktion: Wir brauchen einen Prompt fuer den Beitragstext.",
-      "Der Text soll 250 bis 350 Woerter haben, sachlich sein und nur belegte Aussagen verwenden.",
-      "Die KI muss Quellen, Belegstellen und Dublettenstatus beachten.",
-      "Bitte Headline, Subline und klare Branchen-Einordnung vorbereiten."
+      "Der Text soll wie ein echter redaktioneller Nachrichtenbeitrag aufgebaut sein: Lead mit konkreter Nachricht, danach Quellenfakten und Einordnung.",
+      "Die KI darf nur Akteure, Zahlen, Termine, Zitate und Folgen verwenden, die in Quellen oder Belegstellen stehen.",
+      "Wenn nur Titel, URL oder Quellenname vorhanden sind, soll sie keinen fertigen Artikel vortaeuschen, sondern Recherchebedarf ausgeben."
     ].join("\n"),
     source_check: [
       "Redaktion: Erstelle einen Prompt fuer die Quellenpruefung.",
       "Der Prompt soll Domain, Herausgeber, Trust-Score, Quellentyp und belegte Aussage pruefen.",
       "Gesperrte oder ungepruefte Quellen duerfen keine automatische Veroeffentlichung erlauben."
     ].join("\n"),
-    duplicate_check: [
-      "Redaktion: Wir brauchen einen Prompt fuer die Dublettenpruefung.",
-      "Vergleiche Headline, Subline, Kategorie, Tags, Kernthema, zentrale Aussagen, Quellen und Slug.",
-      "Nur ein neuer belegbarer Blickwinkel darf als neuer Beitrag weiterlaufen."
-    ].join("\n"),
     final_check: [
       "Redaktion: Erstelle einen Prompt fuer die Endpruefung.",
-      "Der Prompt muss Halluzinationen, Quellenpflicht, Dubletten, Belegstellen, Rechtsrisiken und Pflichtfelder pruefen.",
+      "Der Prompt muss Halluzinationen, Quellenpflicht, Belegstellen, Rechtsrisiken und Pflichtfelder pruefen.",
       "Ausgabe bitte als JSON mit Status, Warnungen, Sperrgruenden und Freigabeempfehlung."
     ].join("\n"),
     thumbnail: [
@@ -1114,7 +1118,6 @@ function promptTemplateChat(template = "") {
 function inferPromptTypeFromText(text = "") {
   const clean = String(text || "").toLowerCase();
   if (clean.includes("quelle")) return "Quellenpruefung";
-  if (clean.includes("dublette") || clean.includes("doppelt")) return "Dublettenpruefung";
   if (clean.includes("headline")) return "Headline";
   if (clean.includes("subline") || clean.includes("thubline")) return "Subline / Thubline";
   if (clean.includes("thumbnail") && (clean.includes("erstell") || clean.includes("generier") || clean.includes("bild-ki") || clean.includes("bild ki"))) return "Thumbnail-Erstellung";
@@ -1137,7 +1140,7 @@ function buildPromptFromSource(values = {}) {
     "Du arbeitest fuer die KI-Redaktion von PROdigitalTV.",
     "Erfinde keine Fakten, Zahlen, Zitate, Quellen, URLs, Personen, Organisationen, Studien oder Rechtsstaende.",
     "Jede zentrale Aussage muss durch belastbare Quellen und Belegstellen gedeckt sein.",
-    "Keine Veroeffentlichung bei Dubletten, ungeprueften Quellen, gesperrten Quellen oder unklarer Faktenlage.",
+    "Keine Veroeffentlichung bei ungeprueften Quellen, gesperrten Quellen oder unklarer Faktenlage.",
     "Schreibe sachlich, klar, journalistisch und leicht verstaendlich."
   ].join("\n");
   const promptText = [
@@ -1147,7 +1150,7 @@ function buildPromptFromSource(values = {}) {
     "- Thema: {{THEMA}}",
     "- Kategorie: {{KATEGORIE}}",
     "- Quellen: {{QUELLEN}}",
-    "- Bestehende Beitraege / Dublettenliste: {{DUBLETTENLISTE}}",
+    "- Bestehende Beitraege: {{BESTEHENDE_BEITRAEGE}}",
     "- Quellenstatus: {{QUELLENSTATUS}}",
     "- Beitragstext: {{BEITRAGSTEXT}}",
     "- Headline: {{HEADLINE}}",
@@ -1206,13 +1209,14 @@ function safeLocalArticleDraft(article = {}, sources = [], keywords = []) {
   const subline = cleanEditorialSentence(article.subline || article.subtitle || article.introText || "");
   const category = article.category || "Medienbranche";
   const sourceSentence = sourceLabels.length
-    ? `Grundlage fuer die weitere redaktionelle Bearbeitung sind unter anderem Veroeffentlichungen von ${sourceLabels.join(", ")}.`
-    : "Die konkrete Quellenbasis muss im Editor ergaenzt und belegt werden.";
+    ? `Vorhandene Quellenhinweise: ${sourceLabels.join(", ")}.`
+    : "Es ist noch keine belastbare Quellenbasis mit inhaltlichem Auszug hinterlegt.";
   return [
-    subline || `${headline} rueckt ein aktuelles Thema der digitalen Medienbranche in den Fokus.`,
-    `Fuer ProDigitalTV ist das Thema vor allem im Bereich ${category} relevant. Im Mittelpunkt steht ${mainKeyword}: Medienanbieter, Produzenten, Plattformbetreiber und Vermarkter muessen einordnen, welche Folgen sich fuer Angebote, Technik, Rechte, Nutzung oder Refinanzierung ergeben.`,
-    `${sourceSentence} Entscheidend ist, dass aus dem Fund ein klarer Branchenbezug entsteht: Was hat sich konkret veraendert, welche Akteure sind betroffen und welche Konsequenz ergibt sich fuer TV, Streaming, Produktion oder digitale Distribution?`,
-    "Der Beitrag sollte diese Entwicklung knapp, sachlich und leicht verstaendlich erklaeren. Fachbegriffe werden nur verwendet, wenn sie notwendig sind, und dann kurz eingeordnet."
+    "Quelleninhalt fehlt fuer fertigen Beitrag.",
+    subline || headline,
+    `${sourceSentence} Dieser Text ist deshalb nur ein redaktioneller Arbeitsentwurf und kein veroeffentlichungsfaehiger Beitrag.`,
+    `Fuer einen echten Beitrag zu ${category} muessen aus der Quelle konkret ermittelt werden: Was ist passiert, wer ist beteiligt, wann oder wo passiert es, welche Zahlen oder Entscheidungen sind belegt und welche Folge ergibt sich fuer ${mainKeyword}?`,
+    "Erst danach kann daraus ein journalistischer Lead, ein Faktenabsatz und eine belastbare Einordnung entstehen."
   ].join("\n\n");
 }
 
@@ -1241,13 +1245,14 @@ function draftArticleTextFromTopic(topic = {}) {
   ].map((item) => String(item || "").trim()).filter(Boolean);
   const uniqueSourceNames = [...new Set(sourceNames)].slice(0, 3);
   const sourceSentence = uniqueSourceNames.length
-    ? `Als Quellenbasis dienen aktuelle Fundstellen von ${uniqueSourceNames.join(", ")}.`
-    : "Die belastbare Quellenbasis wird im Quellenbereich des Editors ergaenzt.";
+    ? `Vorhandene Quellenhinweise: ${uniqueSourceNames.join(", ")}.`
+    : "Es ist noch keine belastbare Quellenbasis mit inhaltlichem Auszug hinterlegt.";
   return [
-    teaser || subline || `${title} beschreibt eine aktuelle Entwicklung mit Relevanz fuer die Medienbranche.`,
-    `Fuer Sender, Produzenten, Plattformbetreiber und digitale Medienangebote ist das Thema im Bereich ${category} relevant. Im Mittelpunkt steht ${mainKeyword}. Entscheidend ist, wie sich die Entwicklung auf Reichweite, Technik, Rechte, Vermarktung, Produktion oder Nutzerfuehrung auswirkt.`,
-    `${sourceSentence} Der redaktionelle Beitrag sollte daraus eine klare Einordnung ableiten: Was ist passiert, warum ist es aktuell und welche Bedeutung hat es fuer TV, Streaming, Plattformen, regionale Medien oder die digitale Distribution?`,
-    "Die fertige Fassung bleibt sachlich, kurz und gut verstaendlich. Sie verzichtet auf Spekulationen und beschreibt nur Aussagen, die durch die hinterlegten Quellen belegbar sind."
+    "Quelleninhalt fehlt fuer fertigen Beitrag.",
+    teaser || subline || title,
+    `${sourceSentence} Dieser Eintrag ist nur die Themenbasis. Er darf nicht wie ein fertiger redaktioneller Beitrag behandelt werden.`,
+    `Fuer einen echten Beitrag muessen konkrete Quellenfakten erfasst werden: Akteure, Entscheidung oder Ereignis, Datum, betroffene Angebote oder Maerkte und belegbare Folgen fuer ${category}.`,
+    "Sobald diese Informationen im Editor hinterlegt sind, kann die KI daraus einen journalistischen Beitrag mit Nachricht, Faktenabsatz und Einordnung formulieren."
   ].join("\n\n");
 }
 
@@ -1393,6 +1398,10 @@ function eventRetrospectiveBody(event = {}) {
 
 function eventRetrospectiveIntro(event = {}) {
   return event.postEventSummary || event.postEventummary || event.description || event.subtitle || "Redaktioneller Rückblick auf ein PROdigitalTV-Event.";
+}
+
+function eventRetrospectiveImageUrl(event = {}) {
+  return event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "";
 }
 
 function normalizeMediaSlug(value = "") {
@@ -3841,22 +3850,22 @@ function wireMediaLibraryFilters() {
   const search = document.querySelector("[data-media-search]");
   const filters = Array.from(document.querySelectorAll("[data-media-filter]"));
   const sourceButtons = Array.from(document.querySelectorAll("[data-media-source-switch]"));
-  let activeource = sourceButtons.find((button) => button.classList.contains("is-active"))?.dataset.mediaourcewitch || "";
+  let activeSource = sourceButtons.find((button) => button.classList.contains("is-active"))?.dataset.mediaSourceSwitch || "";
   const apply = () => {
     const term = String(search?.value || "").trim().toLowerCase();
     const activeFilters = filters.map((filter) => [filter.dataset.mediaFilter, filter.value]).filter(([, value]) => value);
     cards.forEach((card) => {
       const matchesTerm = !term || String(card.dataset.search || "").includes(term);
-      const matchesource = !activeource || card.dataset.source === activeource;
+      const matchesSource = !activeSource || card.dataset.source === activeSource;
       const matchesFilters = activeFilters.every(([key, value]) => card.dataset[key] === value);
-      card.hidden = !(matchesTerm && matchesource && matchesFilters);
+      card.hidden = !(matchesTerm && matchesSource && matchesFilters);
     });
   };
   search?.addEventListener("input", apply);
   filters.forEach((filter) => filter.addEventListener("change", apply));
   sourceButtons.forEach((button) => {
     button.addEventListener("click", () => {
-      activeource = button.dataset.mediaourcewitch || "";
+      activeSource = button.dataset.mediaSourceSwitch || "";
       sourceButtons.forEach((item) => item.classList.toggle("is-active", item === button));
       apply();
     });
@@ -3889,9 +3898,55 @@ function wireExistingThumbImport() {
   });
 }
 
+function wireLocalMediaAssetSync() {
+  const button = document.querySelector("[data-sync-local-media-assets]");
+  if (!button || button.dataset.localMediaSyncWired === "1") return;
+  button.dataset.localMediaSyncWired = "1";
+  button.addEventListener("click", async () => {
+    const result = document.querySelector("#local-media-sync-result");
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Uebertrage ...";
+    try {
+      if (!currentUser() || !canUseCms()) throw new Error("Bitte zuerst im CMS einloggen, damit Firestore beschrieben werden kann.");
+      const localDb = readLocalCodexStore();
+      if (!localDb) throw new Error("Keine lokalen Codex-Bilder im Browser-Speicher gefunden.");
+      const localAssets = Array.isArray(localDb.media_assets) ? localDb.media_assets.filter((asset) => asset?.id && mediaAssetUrl(asset)) : [];
+      if (!localAssets.length) throw new Error("Keine lokalen Medien-Assets zum Uebertragen gefunden.");
+      if (result) result.innerHTML = `<div class="alert">${progressMarkup(`${localAssets.length} lokale Medien werden nach Firestore uebertragen ...`, 20)}</div>`;
+      let synced = 0;
+      let targetUpdated = 0;
+      for (const asset of localAssets) {
+        const summary = await syncLocalMediaAssetToFirestore(asset);
+        if (summary.synced) synced += 1;
+        if (summary.targetUpdated) targetUpdated += 1;
+        if (result && synced % 4 === 0) {
+          const progress = Math.min(84, 20 + Math.round((synced / localAssets.length) * 60));
+          result.innerHTML = `<div class="alert">${progressMarkup(`${synced} von ${localAssets.length} Medien uebertragen ...`, progress)}</div>`;
+        }
+      }
+      const records = await syncLocalRecordImagesToFirestore(localDb);
+      if (result) {
+        result.innerHTML = `<div class="alert alert--success">Codex-Bilder synchronisiert: ${synced} Medien, ${targetUpdated + records.updated} verknuepfte Bildfelder aktualisiert, ${records.uploaded} lokale Bilder in Storage hochgeladen.</div>`;
+      }
+      button.textContent = "Synchronisiert";
+      window.setTimeout(() => render(), 900);
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Codex-Bilder konnten nicht uebertragen werden: ${escapeHtml(error.message || String(error))}</div>`;
+      button.textContent = originalLabel;
+    } finally {
+      window.setTimeout(() => {
+        button.disabled = false;
+        button.textContent = originalLabel;
+      }, 1200);
+    }
+  });
+}
+
 function mediaContextFromNode(node) {
   const selectedEventTargetId = node?.elements?.mediaEventTargetId?.value || "";
-  if (!node?.dataset.mediaTargetCollection && selectedEventTargetId) {
+  const canUseEventFallback = selectedEventTargetId && !node?.dataset.mediaTargetCollection && Boolean(node?.querySelector?.('[name="mediaEventTargetId"]'));
+  if (canUseEventFallback) {
     return {
       targetCollection: "events",
       targetId: selectedEventTargetId,
@@ -3963,6 +4018,206 @@ function mediaAssetUrl(asset = {}) {
     asset.file_path_web,
     asset.file_path_original
   ].map(usableMediaAssetUrl).find(Boolean) || "";
+}
+
+function readLocalCodexStore() {
+  try {
+    const raw = localStorage.getItem(localCodexStoreKey);
+    if (!raw) return null;
+    const db = JSON.parse(raw);
+    return db && typeof db === "object" ? db : null;
+  } catch {
+    return null;
+  }
+}
+
+function localImageFieldMap(collectionName = "") {
+  return {
+    events: ["imageUrl", "thumbnail_url", "thumbnailUrl"],
+    editorialContent: ["imageUrl", "thumbnail_url", "thumbnailUrl", "assetUrl"],
+    topics: ["imageUrl", "thumbnail_url", "thumbnailUrl", "assetUrl"],
+    members: ["logoUrl", "imageUrl"],
+    boardMembers: ["photoUrl", "imageUrl"],
+    speakers: ["photoUrl", "imageUrl"],
+    sponsors: ["logoUrl", "imageUrl", "assetUrl"]
+  }[collectionName] || [];
+}
+
+function mediaTypeForCollection(collectionName = "", record = {}) {
+  if (collectionName === "events") return "event";
+  if (collectionName === "topics") return "topic";
+  if (collectionName === "editorialContent") return record.page === "news" ? "news" : "article";
+  if (collectionName === "sponsors" || collectionName === "members") return "logo";
+  if (collectionName === "boardMembers" || collectionName === "speakers") return "person";
+  return "upload";
+}
+
+function firstLocalImageUrl(record = {}, fields = []) {
+  return fields.map((field) => [field, usableMediaAssetUrl(record[field])]).find(([, url]) => url) || ["", ""];
+}
+
+function replaceInlineImageUrls(record = {}, url = "") {
+  if (!url) return record;
+  const next = { ...record };
+  [
+    "file_path_original_url",
+    "file_path_web_url",
+    "file_path_thumb_url",
+    "imageUrl",
+    "assetUrl",
+    "fileUrl",
+    "url",
+    "downloadUrl",
+    "thumbnail_url",
+    "thumbnailUrl",
+    "file_url",
+    "original_url",
+    "web_url",
+    "thumb_url"
+  ].forEach((field) => {
+    if (typeof next[field] === "string" && next[field].startsWith("data:image/")) next[field] = url;
+  });
+  return next;
+}
+
+async function uploadLocalImageForFirestore(sourceUrl = "", { title = "PROdigitalTV Bild", mediaType = "upload", aspectRatio = "16x9", mediaCode = "" } = {}) {
+  const url = usableMediaAssetUrl(sourceUrl);
+  if (!url || !url.startsWith("data:image/")) return { url, uploaded: false, storagePath: "" };
+  const code = /^[A-Z0-9]{4}$/.test(String(mediaCode || "")) ? mediaCode : mediaShortCode();
+  const extension = mediaUrlExtension(url);
+  const file = dataUrlToFile(url, `${normalizeMediaSlug(title)}.${extension}`);
+  if (!file) return { url: "", uploaded: false, storagePath: "" };
+  const type = normalizedMediaType(mediaType);
+  const preset = mediaUsagePreset(type);
+  const filename = buildMediaFileName({ title, mediaType: type, format: aspectRatio || preset.aspect || "16x9", version: "v1", extension: mediaFileExtension(file, extension), code });
+  const path = mediaStoragePath(filename, type, code);
+  const optimizedUploads = await createOptimizedMediaUploads(file, { filename, path, mediaType: type, preset });
+  const uploadedOriginal = await uploadMediaAsset(optimizedUploads.original.file, optimizedUploads.original.path);
+  const [uploadedWeb, uploadedThumb] = await Promise.all([
+    optimizedUploads.web.path === optimizedUploads.original.path ? Promise.resolve(uploadedOriginal) : uploadMediaAsset(optimizedUploads.web.file, optimizedUploads.web.path),
+    optimizedUploads.thumb.path === optimizedUploads.original.path ? Promise.resolve(uploadedOriginal) : uploadMediaAsset(optimizedUploads.thumb.file, optimizedUploads.thumb.path)
+  ]);
+  const publicUrl = uploadedWeb?.url || uploadedOriginal?.url || uploadedThumb?.url || "";
+  return {
+    url: publicUrl,
+    uploaded: true,
+    mediaCode: code,
+    filenameOriginal: filename,
+    filenameWeb: optimizedUploads.web.filename,
+    filenameThumb: optimizedUploads.thumb.filename,
+    original: uploadedOriginal,
+    web: uploadedWeb,
+    thumb: uploadedThumb,
+    originalPath: optimizedUploads.original.path,
+    webPath: optimizedUploads.web.path,
+    thumbPath: optimizedUploads.thumb.path,
+    webWidth: optimizedUploads.web.width || 0,
+    webHeight: optimizedUploads.web.height || 0,
+    thumbWidth: optimizedUploads.thumb.width || 0,
+    thumbHeight: optimizedUploads.thumb.height || 0,
+    webSize: optimizedUploads.web.file.size,
+    thumbSize: optimizedUploads.thumb.file.size,
+    webType: optimizedUploads.web.file.type,
+    thumbType: optimizedUploads.thumb.file.type
+  };
+}
+
+async function syncLocalMediaAssetToFirestore(asset = {}) {
+  const assetUrl = mediaAssetUrl(asset);
+  if (!asset.id || !assetUrl) return { synced: false, targetUpdated: false };
+  const mediaType = normalizedMediaType(asset.media_type || asset.usage_preset || "upload");
+  const title = asset.title || asset.alt_text || asset.original_filename || asset.id;
+  const upload = await uploadLocalImageForFirestore(assetUrl, {
+    title,
+    mediaType,
+    aspectRatio: asset.aspect_ratio || asset.usage_preset_ratio || "16x9",
+    mediaCode: asset.media_code || ""
+  });
+  const finalUrl = upload.url || assetUrl;
+  const now = new Date().toISOString();
+  const syncedAsset = replaceInlineImageUrls({
+    ...asset,
+    media_type: mediaType,
+    status: asset.status || "active",
+    file_path_original_url: upload.original?.url || asset.file_path_original_url || finalUrl,
+    file_path_web_url: upload.web?.url || asset.file_path_web_url || finalUrl,
+    file_path_thumb_url: upload.thumb?.url || asset.file_path_thumb_url || finalUrl,
+    imageUrl: asset.imageUrl && !String(asset.imageUrl).startsWith("data:image/") ? asset.imageUrl : finalUrl,
+    assetUrl: asset.assetUrl && !String(asset.assetUrl).startsWith("data:image/") ? asset.assetUrl : finalUrl,
+    url: asset.url && !String(asset.url).startsWith("data:image/") ? asset.url : finalUrl,
+    media_code: upload.mediaCode || asset.media_code || "",
+    filename_original: upload.filenameOriginal || asset.filename_original || "",
+    filename_web: upload.filenameWeb || asset.filename_web || "",
+    filename_thumb: upload.filenameThumb || asset.filename_thumb || "",
+    file_path_original: upload.originalPath || asset.file_path_original || "",
+    file_path_web: upload.webPath || asset.file_path_web || "",
+    file_path_thumb: upload.thumbPath || asset.file_path_thumb || "",
+    storage_path_original: upload.original?.storagePath || asset.storage_path_original || "",
+    storage_path_web: upload.web?.storagePath || asset.storage_path_web || "",
+    storage_path_thumb: upload.thumb?.storagePath || asset.storage_path_thumb || "",
+    web_image_width: upload.webWidth || asset.web_image_width || 0,
+    web_image_height: upload.webHeight || asset.web_image_height || 0,
+    thumb_image_width: upload.thumbWidth || asset.thumb_image_width || 0,
+    thumb_image_height: upload.thumbHeight || asset.thumb_image_height || 0,
+    web_file_size: upload.webSize || asset.web_file_size || 0,
+    thumb_file_size: upload.thumbSize || asset.thumb_file_size || 0,
+    web_mime_type: upload.webType || asset.web_mime_type || "",
+    thumb_mime_type: upload.thumbType || asset.thumb_mime_type || "",
+    synced_from_local_codex: true,
+    synced_at: now,
+    updated_at: now
+  }, finalUrl);
+  await upsert("media_assets", syncedAsset);
+
+  const targetCollection = asset.target_collection || asset.linked_collection || "";
+  const targetId = asset.target_id || asset.linked_record_id || "";
+  const targetField = asset.target_field || asset.linked_field || "";
+  if (targetCollection && targetId && targetField) {
+    const update = {
+      id: targetId,
+      [targetField]: finalUrl,
+      thumbnail_media_asset_id: asset.id,
+      selected_media_asset_id: asset.id,
+      updated_at: now
+    };
+    if (asset.target_alt_field || asset.thumbnail_alt) update[asset.target_alt_field || "thumbnail_alt"] = asset.thumbnail_alt || asset.alt_text || title;
+    if (targetField === "imageUrl") {
+      update.thumbnail_url = finalUrl;
+      update.thumbnailUrl = finalUrl;
+    }
+    await upsert(targetCollection, update);
+    return { synced: true, targetUpdated: true };
+  }
+  return { synced: true, targetUpdated: false };
+}
+
+async function syncLocalRecordImagesToFirestore(localDb = {}) {
+  let updated = 0;
+  let uploaded = 0;
+  for (const collectionName of ["events", "editorialContent", "topics", "members", "boardMembers", "speakers", "sponsors"]) {
+    const fields = localImageFieldMap(collectionName);
+    for (const record of localDb[collectionName] || []) {
+      const [field, localUrl] = firstLocalImageUrl(record, fields);
+      if (!record.id || !field || !localUrl) continue;
+      const type = mediaTypeForCollection(collectionName, record);
+      const upload = await uploadLocalImageForFirestore(localUrl, {
+        title: record.title || record.headline || record.name || record.company || record.id,
+        mediaType: type,
+        aspectRatio: type === "logo" ? "logo" : "16x9"
+      });
+      const finalUrl = upload.url || localUrl;
+      const update = { id: record.id, [field]: finalUrl, updated_at: new Date().toISOString() };
+      if (fields.includes("thumbnail_url") || collectionName === "events") {
+        update.thumbnail_url = finalUrl;
+        update.thumbnailUrl = finalUrl;
+      }
+      if (field === "logoUrl") update.logoUrl = finalUrl;
+      await upsert(collectionName, update);
+      updated += 1;
+      if (upload.uploaded) uploaded += 1;
+    }
+  }
+  return { updated, uploaded };
 }
 
 function imageDimensionsFromUrl(url = "") {
@@ -4599,12 +4854,16 @@ function wireMediaCropMask() {
   const yInput = document.querySelector("[data-media-crop-y]");
   const reset = document.querySelector("[data-media-crop-reset]");
   const apply = document.querySelector("[data-media-crop-apply]");
+  const fitButton = document.querySelector("[data-media-crop-fit]");
+  const coverButton = document.querySelector("[data-media-crop-cover]");
+  const zoomLabel = document.querySelector("[data-media-zoom-label]");
   const form = document.querySelector("[data-media-edit-form]");
   if (!stage || !image || !scaleInput || !scaleValue || !xInput || !yInput || stage.dataset.mediaCropWired === "1") return;
   stage.dataset.mediaCropWired = "1";
   const variantButtons = Array.from(document.querySelectorAll("[data-media-variant-button]"));
   const result = form?.querySelector("#media-edit-result");
   const neutralValues = { brightness: 0, contrast: 0, saturation: 0, sharpness: 0, black_white: false };
+  const minCropScale = Number(scaleInput.min || 0.2) || 0.2;
   const state = {
     x: 0,
     y: 0,
@@ -4617,7 +4876,7 @@ function wireMediaCropMask() {
     originY: 0
   };
   const render = () => {
-    state.scale = Math.max(1, Number(state.scale || 1));
+    state.scale = Math.max(minCropScale, Number(state.scale || 1));
     image.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
     const brightness = 1 + (Number(form?.elements.brightness?.value || 0) / 100);
     const contrast = 1 + (Number(form?.elements.contrast?.value || 0) / 100);
@@ -4630,6 +4889,7 @@ function wireMediaCropMask() {
     scaleValue.value = String(state.scale);
     xInput.value = String(Math.round(state.x));
     yInput.value = String(Math.round(state.y));
+    if (zoomLabel) zoomLabel.textContent = `${Math.round(state.scale * 100)}%`;
   };
   const applyCrop = () => {
     xInput.value = String(Math.round(state.x));
@@ -4646,21 +4906,48 @@ function wireMediaCropMask() {
   const activeFormat = () => {
     return form?.dataset.activeVariantFormat || state.format || "16x9";
   };
+  const stageSize = () => {
+    const rect = stage.getBoundingClientRect();
+    return { width: Math.max(1, rect.width), height: Math.max(1, rect.height) };
+  };
+  const imageAspect = () => Math.max(1, image.naturalWidth || 1) / Math.max(1, image.naturalHeight || 1);
+  const stageAspect = () => {
+    const size = stageSize();
+    return size.width / size.height;
+  };
+  const coverScaleForStage = () => {
+    const currentImageAspect = imageAspect();
+    const currentStageAspect = stageAspect();
+    if (!currentImageAspect || !currentStageAspect) return 1;
+    return currentImageAspect > currentStageAspect
+      ? currentImageAspect / currentStageAspect
+      : currentStageAspect / currentImageAspect;
+  };
+  const fitOriginal = ({ dirty = true } = {}) => {
+    state.x = 0;
+    state.y = 0;
+    state.scale = 1;
+    if (dirty) markDirty();
+    render();
+  };
+  const fillCropFrame = ({ dirty = true } = {}) => {
+    state.x = 0;
+    state.y = 0;
+    state.scale = Math.max(1, coverScaleForStage());
+    if (dirty) markDirty();
+    render();
+  };
   const setAspect = (control) => {
     if (!control) return;
     state.format = control.dataset.mediaVariantFormat || "16x9";
     form.dataset.activeVariantFormat = state.format;
     stage.style.setProperty("--media-crop-aspect", control.dataset.mediaVariantAspect || "16 / 9");
-    state.x = 0;
-    state.y = 0;
-    state.scale = Math.max(1, Number(scaleInput.value || 1));
     variantButtons.forEach((button) => {
       const active = button === control;
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-pressed", active ? "true" : "false");
     });
-    markDirty();
-    render();
+    fitOriginal();
   };
   const loadVariantPreview = (control) => {
     if (!control?.dataset.mediaVariantSrc) return;
@@ -4671,16 +4958,12 @@ function wireMediaCropMask() {
     state.format = format;
     form.dataset.activeVariantFormat = format;
     stage.style.setProperty("--media-crop-aspect", mediaAspectCss(format));
-    state.x = 0;
-    state.y = 0;
-    state.scale = 1;
     document.querySelectorAll("[data-media-load-variant]").forEach((button) => {
       const active = button === control;
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-pressed", active ? "true" : "false");
     });
-    render();
-    markDirty();
+    fitOriginal();
   };
   const saveEditedAsset = async () => {
     applyCrop();
@@ -4713,7 +4996,7 @@ function wireMediaCropMask() {
       canvas.height = size.height;
       const context = canvas.getContext("2d");
       const stageRect = stage.getBoundingClientRect();
-      const baseScale = Math.max(stageRect.width / Math.max(1, image.naturalWidth), stageRect.height / Math.max(1, image.naturalHeight));
+      const baseScale = Math.min(stageRect.width / Math.max(1, image.naturalWidth), stageRect.height / Math.max(1, image.naturalHeight));
       const outputScale = canvas.width / Math.max(1, stageRect.width);
       const drawWidth = image.naturalWidth * baseScale * state.scale * outputScale;
       const drawHeight = image.naturalHeight * baseScale * state.scale * outputScale;
@@ -4833,10 +5116,19 @@ function wireMediaCropMask() {
   stage.addEventListener("pointerup", stop);
   stage.addEventListener("pointerleave", stop);
   scaleInput.addEventListener("input", () => {
-    state.scale = Math.max(1, Number(scaleInput.value || 1));
+    state.scale = Math.max(minCropScale, Number(scaleInput.value || 1));
     markDirty();
     render();
   });
+  document.querySelectorAll("[data-media-zoom-step]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.scale = Math.max(minCropScale, Math.min(Number(scaleInput.max || 4), state.scale + Number(button.dataset.mediaZoomStep || 0)));
+      markDirty();
+      render();
+    });
+  });
+  fitButton?.addEventListener("click", () => fitOriginal());
+  coverButton?.addEventListener("click", () => fillCropFrame());
   stage.addEventListener("pointermove", () => {
     markDirty();
   });
@@ -4858,9 +5150,7 @@ function wireMediaCropMask() {
     }
   });
   reset?.addEventListener("click", () => {
-    state.x = 0;
-    state.y = 0;
-    state.scale = 1;
+    fitOriginal({ dirty: false });
     ["brightness", "contrast", "saturation", "sharpness"].forEach((name) => {
       if (form?.elements[name]) form.elements[name].value = neutralValues[name];
     });
@@ -4889,6 +5179,10 @@ function wireMediaCropMask() {
     form.dataset.activeVariantFormat = state.format;
     stage.style.setProperty("--media-crop-aspect", mediaAspectCss(state.format));
   }
+  image.addEventListener("load", () => {
+    fitOriginal({ dirty: false });
+    applyCrop();
+  });
   render();
   applyCrop();
 }
@@ -5120,6 +5414,7 @@ function wireActions() {
   wireStickyBoxWheel();
   wireMediaLibraryFilters();
   wireExistingThumbImport();
+  wireLocalMediaAssetSync();
   wireMediaCardLinks();
   wireCentralMediaUpload();
   wireMediaAiDraft();
@@ -5369,7 +5664,11 @@ function wireActions() {
         window.setTimeout(render, 700);
       }
     } catch (error) {
-      if (output) output.innerHTML = `<div class="alert alert--error">KI-Redaktion konnte nicht ausgefuehrt werden: ${escapeHtml(error.message || String(error))}</div>`;
+      const message = String(error.message || error || "");
+      const authHint = /login erforderlich|unauthenticated|permission-denied/i.test(message)
+        ? `<br><small>Gemeint ist dein CMS-/Firebase-Login fuer diese Website, nicht OpenAI. Bitte oben im CMS abmelden/anmelden oder direkt <a class="link" href="#/login">zum Login</a> gehen und danach die KI-Aktion erneut starten.</small>`
+        : "";
+      if (output) output.innerHTML = `<div class="alert alert--error">KI-Redaktion konnte nicht ausgefuehrt werden: ${escapeHtml(message)}${authHint}</div>`;
     } finally {
       button.disabled = false;
       button.textContent = originalLabel;
@@ -5388,7 +5687,7 @@ function wireActions() {
     button.textContent = "Recherchiere ...";
     const contextLabel = [category, sourceId ? sourceLabel : "", keywords].filter(Boolean).join(" / ");
     const startedAt = Date.now();
-    const sourcePool = await topicResearchSourcePool(category, keywords, sourceId);
+    let sourcePool = [];
     let progressTimer = null;
     const renderResearchStatus = () => {
       if (!output) return;
@@ -5407,9 +5706,10 @@ function wireActions() {
       const sourceIndex = Math.max(0, Math.floor(elapsedSeconds / 3));
       output.innerHTML = `<div class="alert">${topicResearchStatusMarkup({ contextLabel, startedAt, stepIndex, sourcePool, sourceIndex })}</div>`;
     };
-    renderResearchStatus();
-    progressTimer = window.setInterval(renderResearchStatus, 2500);
     try {
+      sourcePool = await topicResearchSourcePool(category, keywords, sourceId);
+      renderResearchStatus();
+      progressTimer = window.setInterval(renderResearchStatus, 2500);
       const result = await generateAiTopicSuggestions({ category, keywords, sourceId });
       if (progressTimer) window.clearInterval(progressTimer);
       const alertTone = result?.ok === false ? "alert--warning" : "alert--success";
@@ -5797,8 +6097,8 @@ function wireActions() {
           thumbnail_prompt: thumbnailPrompt,
           thumbnail_url: thumbnailUrl,
           imageUrl: thumbnailUrl,
-          source_status: "Recherche erforderlich",
-          duplicate_status: suggestion.duplicate_status || "neu",
+          source_status: (suggestion.source_candidates || []).length || (suggestion.source_ids || []).length ? "Quelle vorhanden" : "Recherche erforderlich",
+          duplicate_status: suggestion.duplicate_status ? `Hinweis: ${suggestion.duplicate_status}` : "nicht blockierend",
           ai_check_status: "Warnung",
           legal_check_status: "offen",
           publication_status: "Entwurf",
@@ -5811,8 +6111,8 @@ function wireActions() {
           topic_suggestion_id: id,
           ai_log_json: {
             manual_flow: true,
-            source_note: "Quellen muessen im Editor mit echten URLs erfasst werden. Keine automatische Freigabe ohne mindestens zwei gepruefte Quellen.",
-            note: "Aus redaktionell ausgewaehltem Themenvorschlag angelegt. Text, Quellen, Thumbnail, Audio, Keywords und Rubrik im Editor ausarbeiten."
+            source_note: "Eine valide Quelle reicht fuer die Themenliste. Weitere Quellen koennen im Editor ergaenzt werden.",
+            note: "Aus redaktionell ausgewaehltem Themenvorschlag angelegt. Text, Quellen, Thumbnail, Audio, Keywords und Rubrik im Editor ausarbeiten. Dublettenhinweise blockieren die Themenliste nicht."
           },
           createdAt: now,
           updatedAt: now
@@ -5923,7 +6223,7 @@ function wireActions() {
       allowAutoPublish: Boolean(values.allowAutoPublish),
       scheduleLabel: values.scheduleLabel || "Taeglich 06:00 Uhr",
       publicationMode: values.publicationMode || "draft_only",
-      minimumSources: Number(values.minimumSources || 2),
+      minimumSources: Math.max(1, Number(values.minimumSources || 1)),
       minimumTrustScore: Number(values.minimumTrustScore || 70),
       updatedAt: new Date().toISOString()
     };
@@ -6092,7 +6392,7 @@ function wireActions() {
     const seedText = [
       `Die KI soll den Systemschritt "${name}" fuer die KI-Redaktion ausfuehren.`,
       "Sie soll nur mit CMS-Daten, geprueften Quellen und belegbaren Aussagen arbeiten.",
-      "Wenn Quellen, Belege oder Dublettenstatus unklar sind, soll sie Warnungen ausgeben und keine Freigabe empfehlen."
+      "Wenn Quellen oder Belege unklar sind, soll sie Warnungen ausgeben und keine Freigabe empfehlen."
     ].join(" ");
     const generated = buildPromptFromSource({
       prompt_type: type,
@@ -6979,7 +7279,11 @@ function wireActions() {
       const articleId = document.querySelector("[data-retrospective-article-id]")?.value || eventRetrospectiveArticleId(eventId);
       const existingArticle = await getOne("editorialContent", articleId).catch(() => null);
       const title = existingArticle?.title || `Rückblick: ${sourceEvent.title || "PROdigitalTV Event"}`;
-      const bodyText = existingArticle?.longDescription || existingArticle?.articleText || existingArticle?.bodyText || eventRetrospectiveBody(sourceEvent);
+      const eventBodyText = sourceEvent.longDescription || sourceEvent.bodyText || sourceEvent.articleText || sourceEvent.archiveText || "";
+      const bodyText = eventBodyText || existingArticle?.longDescription || existingArticle?.articleText || existingArticle?.bodyText || eventRetrospectiveBody(sourceEvent);
+      const eventImage = eventRetrospectiveImageUrl(sourceEvent);
+      const articleImage = existingArticle?.imageUrl || eventImage;
+      const articleAssetId = existingArticle?.thumbnail_media_asset_id || existingArticle?.mediaAssetId || sourceEvent.thumbnail_media_asset_id || sourceEvent.mediaAssetId || "";
       const now = new Date().toISOString();
       const article = {
         ...(existingArticle || { id: articleId, createdAt: now }),
@@ -6992,7 +7296,10 @@ function wireActions() {
         headline: title,
         subtitle: existingArticle?.subtitle || sourceEvent.subtitle || "",
         introText: existingArticle?.introText || eventRetrospectiveIntro(sourceEvent),
+        longDescription: bodyText,
         bodyText,
+        articleText: bodyText,
+        archiveText: bodyText,
         body: bodyText,
         status: existingArticle?.status || "published",
         visible: existingArticle?.visible !== false,
@@ -7003,7 +7310,13 @@ function wireActions() {
         galleryEventId: sourceEvent.id,
         galleryId: existingArticle?.galleryId || sourceEvent.galleryId || "",
         sponsorId: existingArticle?.sponsorId || sourceEvent.hostId || "",
-        imageUrl: existingArticle?.imageUrl || sourceEvent.imageUrl || "",
+        imageUrl: articleImage,
+        thumbnail_url: existingArticle?.thumbnail_url || existingArticle?.thumbnailUrl || articleImage,
+        thumbnailUrl: existingArticle?.thumbnailUrl || existingArticle?.thumbnail_url || articleImage,
+        assetUrl: existingArticle?.assetUrl || articleImage,
+        thumbnail_media_asset_id: articleAssetId,
+        mediaAssetId: articleAssetId,
+        thumbnail_alt: existingArticle?.thumbnail_alt || sourceEvent.thumbnail_alt || sourceEvent.thumbnailAlt || `Eventbild ${sourceEvent.title || ""}`.trim(),
         isRetrospective: true,
         showGallery: existingArticle?.showGallery ?? true,
         updatedAt: now
@@ -7913,11 +8226,12 @@ function wireActions() {
     await render();
   }));
 
-  document.querySelector("[data-delete-event]")?.addEventListener("click", async (event) => {
+  document.querySelectorAll("[data-delete-event]").forEach((button) => button.addEventListener("click", async (event) => {
     if (!window.confirm("Dieses Event wirklich loeschen? Zugeordnete Daten muessen separat geprueft werden.")) return;
     await remove("events", event.currentTarget.dataset.deleteEvent);
-    go("cms/events");
-  });
+    event.currentTarget.closest("tr")?.remove();
+    await goOrRefresh(event.currentTarget.dataset.deleteReturn || "cms/events");
+  }));
 
   document.querySelector("#media-upload-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -7976,7 +8290,9 @@ function wireActions() {
 
   document.querySelectorAll("[data-event-status]").forEach((button) => button.addEventListener("click", async () => {
     const existing = await getOne("events", button.dataset.eventStatus);
-    await upsert("events", { ...existing, status: button.dataset.status });
+    const updates = { ...existing, status: button.dataset.status };
+    if (button.dataset.lifecyclePhase) updates.lifecyclePhase = button.dataset.lifecyclePhase;
+    await upsert("events", updates);
     await render();
   }));
 
@@ -7990,6 +8306,7 @@ function wireActions() {
     if (!window.confirm(`${record?.name || record?.title || "Eintrag"} wirklich loeschen?`)) return;
     await deleteStoredAsset(record);
     await remove(collection, button.dataset.recordId);
+    button.closest("tr")?.remove();
     await render();
   }));
 

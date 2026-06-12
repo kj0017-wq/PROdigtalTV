@@ -72,7 +72,7 @@ function lastMediaAssetId() {
 function protect(content) {
   const user = currentUser();
   if (!canUseCms(user)) {
-    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Zugriff geschuetzt</p><h1>CMS-Login erforderlich</h1><p style="margin:14px 0 24px">Dieser Bereich steht Administratoren und Redakteuren zur Verfuegung.</p><a class="button button--primary" href="#/login">Anmelden</a></div></section>`;
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Zugriff geschuetzt</p><h1>CMS-Login erforderlich</h1><p style="margin:14px 0 24px">Dieser Bereich steht Administratoren und Redakteuren zur Verfuegung.</p><div class="actions"><a class="button button--primary" href="#/login">Anmelden</a>${user ? `<button id="logout-button" class="button button--secondary" type="button">Abmelden</button>` : ""}</div></div></section>`;
   }
   return content;
 }
@@ -142,8 +142,8 @@ function mediaPreviewUrl(asset = {}) {
 
 function mediaEditorUrl(asset = {}) {
   return [
-    asset.file_path_web_url,
     asset.file_path_original_url,
+    asset.file_path_web_url,
     asset.imageUrl,
     asset.assetUrl,
     asset.fileUrl,
@@ -662,6 +662,20 @@ function eventTargetOptions(events = [], selectedId = "") {
     .join("");
 }
 
+function mediaTypeFilterOptions(assets = [], usageMap = new Map()) {
+  const types = [...new Set(assets
+    .map((asset) => inferredMediaType(asset, usageMap.get(asset.id) || []))
+    .filter(Boolean))]
+    .sort((a, b) => String(mediaTypeLabels[a] || a).localeCompare(String(mediaTypeLabels[b] || b), "de"));
+  return [`<option value="">Alle</option>`, ...types.map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(mediaTypeLabels[type] || type)}</option>`)].join("");
+}
+
+function mediaSourceFilterOptions(assets = []) {
+  const sources = [...new Set(assets.map(mediaAssetSourceGroup).filter(Boolean))]
+    .sort((a, b) => String(mediaSourceLabels[a] || a).localeCompare(String(mediaSourceLabels[b] || b), "de"));
+  return [`<option value="">Alle</option>`, ...sources.map((source) => `<option value="${escapeHtml(source)}">${escapeHtml(mediaSourceLabels[source] || source)}</option>`)].join("");
+}
+
 function libraryPage(assets = [], query = new URLSearchParams(), usageMap = new Map()) {
   const visibleAssets = newestMediaAssetsFirst(uniqueMediaAssets(assets.filter((asset) => asset.status !== "archived" && !asset.parent_media_asset_id && asset.source_type !== "edited")));
   const contextQuery = mediaContextQuery(query);
@@ -692,20 +706,21 @@ function libraryPage(assets = [], query = new URLSearchParams(), usageMap = new 
           <div class="media-file-meta" data-media-file-meta hidden></div>
           <div id="central-media-upload-result"></div>
         </form>
+        <div class="media-library-upload media-library-sync">
+          <button class="button button--secondary button--small" type="button" data-sync-local-media-assets>Codex-Bilder nach Firestore uebertragen</button>
+          <p class="muted media-paste-hint">Gleicht lokale Browser-Bilder mit Firestore und Storage ab, damit Codex und externer Browser dieselben Bilder sehen.</p>
+          <div id="local-media-sync-result"></div>
+        </div>
       </aside>
       <div class="media-library-main">
         <div class="media-toolbar">
           <div class="field"><label>Suche</label><input data-media-search placeholder="Titel, Datei, Schlagwort"></div>
           <div class="field media-source-switch-field">
             <label>Quelle</label>
-            <div class="media-source-switch" role="group" aria-label="Bildquelle filtern">
-              <button type="button" class="is-active" data-media-source-switch="">Alle</button>
-              <button type="button" data-media-source-switch="upload">Hochgeladen</button>
-              <button type="button" data-media-source-switch="ai">KI-Bilder</button>
-            </div>
+            <select data-media-filter="source">${mediaSourceFilterOptions(visibleAssets)}</select>
           </div>
           <div class="field"><label>Format</label><select data-media-filter="format"><option value="">Alle</option><option value="16x9">16x9</option><option value="4x3">4x3</option><option value="1x1">1x1</option><option value="4x5">4x5</option><option value="9x16">9x16</option></select></div>
-          <div class="field"><label>Zuordnung</label><select data-media-filter="type"><option value="">Alle</option>${Object.entries(mediaTypeLabels).map(([key, label]) => `<option value="${key}">${escapeHtml(label)}</option>`).join("")}</select></div>
+          <div class="field"><label>Zuordnung</label><select data-media-filter="type">${mediaTypeFilterOptions(visibleAssets, usageMap)}</select></div>
         </div>
         <div class="media-library-grid">${visibleAssets.length ? visibleAssets.map((asset) => mediaAssetCard(asset, contextQuery, usageMap)).join("") : `<div class="alert">Noch keine Bilder gespeichert.</div>`}</div>
       </div>
@@ -800,6 +815,7 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
   const contextQuery = asset ? inferredMediaContext(asset, query, inferredTarget) : query;
   const hasTarget = Boolean(contextQuery.get("targetCollection") && contextQuery.get("targetId"));
   const selectedEventTargetId = contextQuery.get("targetCollection") === "events" ? contextQuery.get("targetId") : "";
+  const showEventAssignment = events.length && (!hasTarget || contextQuery.get("targetCollection") === "events");
   const editorUrl = asset ? mediaEditorUrl(asset) : "";
   const previewUrl = asset ? mediaPreviewUrl(asset) || editorUrl : "";
   return `<section class="panel media-work-panel">${asset ? `<form id="central-media-edit-form" class="form-grid" data-media-edit-form data-media-id="${escapeHtml(asset.id)}" data-media-aspect="${escapeHtml(asset.aspect_ratio || "16x9")}" ${mediaContextAttrs(contextQuery)}>
@@ -813,8 +829,15 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
         <div class="field media-editor-assignment"><label>Bildzuordnung</label><select name="media_type" data-media-editor-type-update>${mediaTypeOptions(asset.media_type || "upload")}</select><p class="media-preset-hint" data-media-preset-hint>${escapeHtml(mediaPresetSummary(asset.media_type || "upload"))}</p></div>
         ${mediaVariantChooser(asset, variants, assets)}
         <div class="media-crop-tools">
-          <label><span>Zoom</span><input data-media-crop-scale type="range" min="1" max="3" step="0.01" value="${escapeHtml(asset.crop_scale ?? asset.crop_data?.scale ?? 1)}"></label>
+          <div class="media-zoom-row">
+            <button class="icon-button" type="button" data-media-zoom-step="-0.1" aria-label="Herauszoomen">-</button>
+            <label><span>Zoom</span><input data-media-crop-scale type="range" min="0.2" max="4" step="0.01" value="${escapeHtml(asset.crop_scale ?? asset.crop_data?.scale ?? 1)}"></label>
+            <button class="icon-button" type="button" data-media-zoom-step="0.1" aria-label="Hineinzoomen">+</button>
+            <output data-media-zoom-label>${Math.round(Number(asset.crop_scale ?? asset.crop_data?.scale ?? 1) * 100)}%</output>
+          </div>
           <div class="media-crop-actions">
+            <button class="button button--secondary button--small" type="button" data-media-crop-fit>Original einpassen</button>
+            <button class="button button--secondary button--small" type="button" data-media-crop-cover>Rahmen fuellen</button>
             <button class="button button--primary button--small" type="button" data-media-crop-apply>OK uebernehmen</button>
             <button class="button button--secondary button--small" type="button" data-media-crop-reset>Zuruecksetzen</button>
           </div>
@@ -851,7 +874,7 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
             returnTo: contextQuery.get("returnTo") || ""
           }).toString()}` : ""}">Neues Bild waehlen</a>
         </div>
-        ${events.length ? `<div class="field"><label>Event zuordnen</label><select name="mediaEventTargetId">${eventTargetOptions(events, selectedEventTargetId)}</select><p class="muted">Wenn dieses Bild aus dem Event-Editor kommt, wird es beim Speichern als Eventbild gesetzt und danach zum Event zurueckgesprungen.</p></div>` : ""}
+        ${showEventAssignment ? `<div class="field"><label>Event zuordnen</label><select name="mediaEventTargetId">${eventTargetOptions(events, selectedEventTargetId)}</select><p class="muted">Wenn dieses Bild aus dem Event-Editor kommt, wird es beim Speichern als Eventbild gesetzt und danach zum Event zurueckgesprungen.</p></div>` : ""}
         <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(asset.title || "")}" required></div>
         <div class="field"><label>Alt-Text</label><input name="alt_text" value="${escapeHtml(asset.alt_text || "")}"></div>
         <div class="field"><label>Beschreibung</label><textarea name="description">${escapeHtml(asset.description || "")}</textarea><button class="button button--secondary button--small" type="button" data-media-description-ai>Bildbeschreibung mit KI erzeugen</button></div>

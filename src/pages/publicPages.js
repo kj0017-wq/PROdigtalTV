@@ -310,6 +310,10 @@ function eventFallbackImageUrl(event = {}) {
   return fallbacks[event.id] || "";
 }
 
+function blockedHomeEventImageUrl(url = "") {
+  return /DSC06819\.jpg|Images%2FDSC06819\.jpg|Images\/DSC06819\.jpg/i.test(String(url || ""));
+}
+
 function eventDetailImageUrl(event = {}, mediaAssets = [], blockedUrls = []) {
   const blocked = new Set(blockedUrls.filter(Boolean));
   const candidate = archiveEventImageUrl(event, mediaAssets);
@@ -565,6 +569,15 @@ function chunkItems(items, size) {
     chunks.push(items.slice(index, index + size));
   }
   return chunks;
+}
+
+function shuffledItems(items = []) {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
 }
 
 function rubricRotator(items, renderItem, emptyHtml = "") {
@@ -853,7 +866,7 @@ export async function homePage() {
   const latestNewsItems = publicNewsItems(editorial)
     .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")))
     .slice(0, 3);
-  const featuredMembers = members.filter((member) => member.featured).slice(0, 8);
+  const featuredMembers = shuffledItems(members.filter((member) => member.featured || member.logoDisplayUrl || member.logoUrl)).slice(0, 8);
   const memberCount = members.length ? `${members.length}+` : "35+";
   const quickCards = [
     ["#/events", "events", "Events", "Medienfruehstuecke, Veranstaltungen und Rueckblicke", "Alle Events ansehen"],
@@ -885,7 +898,8 @@ export async function homePage() {
       </nav>
     </div>
   </section>`;
-  const nextImageUrl = next ? archiveEventImageUrl(next, mediaAssets) : "";
+  const nextImageCandidates = next ? [next.imageUrl, next.thumbnail_url, next.thumbnailUrl, next.assetUrl, archiveEventImageUrl(next, mediaAssets)].filter(Boolean) : [];
+  const nextImageUrl = nextImageCandidates.find((url) => !blockedHomeEventImageUrl(url)) || "";
   const nextImageStyle = nextImageUrl ? ` style="--home-event-card-image:url(&quot;${escapeHtml(nextImageUrl)}&quot;)"` : "";
   const nextEventCard = next ? `<article class="home-event-card ${nextImageUrl ? "home-event-card--with-image" : ""}"${nextImageStyle}>
     <div class="home-event-card__icon" aria-hidden="true"><span></span></div>
@@ -1248,10 +1262,12 @@ export async function joinPage() {
 export async function loginPage() {
   const localHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
   const demoAvailable = !firebaseEnabled() || localPreviewMode() || localHost;
+  const user = currentUser();
   const demoControls = demoAvailable ? `<div class="field"><label>Demo-Rolle fuer lokale Vorschau</label><select name="role"><option value="admin">Admin</option><option value="editor">Redakteur</option><option value="member">Mitglied</option></select></div>` : "";
   const emailValue = demoAvailable ? "admin@prodigitaltv.de" : "";
   const passwordValue = demoAvailable ? "demo" : "";
-  return publicShell("login", `<section class="login-wrap"><div class="container"><form id="login-form" class="form-card login-card">${logo()}<p class="eyebrow">Mitgliederbereich</p><h1 style="margin-bottom:10px">Anmelden</h1><p style="margin-bottom:25px">Zugriff auf exklusive Events, Downloads und CMS-Funktionen. Nach erfolgreichem Login wird ein Firebase-ID-Token fuer die aktuelle Sitzung gespeichert.</p><div class="form-grid"><button id="google-login-button" class="button button--secondary" type="button">Mit Google anmelden</button><div class="login-divider"><span>oder mit E-Mail</span></div><div class="field"><label>E-Mail</label><input name="email" type="email" value="${emailValue}" required></div><div class="field"><label>Passwort</label><input name="password" type="password" value="${passwordValue}" required></div>${demoControls}<button class="button button--primary">Einloggen</button><p class="muted">Produktiv zaehlt die Rolle aus Firestore unter <code>users/{uid}</code>. Der Token wird automatisch erneuert und beim Logout geloescht.</p><div id="login-result"></div></div></form></div></section>`);
+  const activeSession = user ? `<div class="alert" style="margin-bottom:18px">Aktuell angemeldet als ${escapeHtml(user.email || user.displayName || user.uid || "Benutzer")} mit Rolle ${escapeHtml(user.role || "guest")}.</div><button id="logout-button" class="button button--secondary" type="button">Abmelden / Session loeschen</button>` : "";
+  return publicShell("login", `<section class="login-wrap"><div class="container"><form id="login-form" class="form-card login-card">${logo()}<p class="eyebrow">Mitgliederbereich</p><h1 style="margin-bottom:10px">Anmelden</h1><p style="margin-bottom:25px">Zugriff auf exklusive Events, Downloads und CMS-Funktionen. Nach erfolgreichem Login wird ein Firebase-ID-Token fuer die aktuelle Sitzung gespeichert.</p>${activeSession}<div class="form-grid"><button id="google-login-button" class="button button--secondary" type="button">Mit Google anmelden</button><div class="login-divider"><span>oder mit E-Mail</span></div><div class="field"><label>E-Mail</label><input name="email" type="email" value="${emailValue}" required></div><div class="field"><label>Passwort</label><input name="password" type="password" value="${passwordValue}" required></div>${demoControls}<button class="button button--primary">Einloggen</button><p class="muted">Produktiv zaehlt die Rolle aus Firestore unter <code>users/{uid}</code>. Der Token wird automatisch erneuert und beim Logout geloescht.</p><div id="login-result"></div></div></form></div></section>`);
 }
 
 export async function portalPage() {
