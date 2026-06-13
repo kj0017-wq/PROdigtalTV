@@ -1,8 +1,8 @@
-import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=466";
+import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=467";
 import { currentUser, isMember } from "../firebase/authService.js?v=464";
 import { firebaseEnabled, localPreviewMode } from "../firebase/firebaseClient.js";
-import { publicShell, logo } from "../components/layout.js";
-import { eventCard, topicCard } from "../components/cards.js";
+import { publicShell, logo } from "../components/layout.js?v=3";
+import { eventCard, topicCard } from "../components/cards.js?v=2";
 import { accessLabels, lifecycleLabels } from "../data/demoData.js";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
 
@@ -135,8 +135,21 @@ function memberLogo(member) {
     : escapeHtml(member.name);
 }
 
+function cacheVersionFrom(record = {}) {
+  return record.updatedAt || record.updated_at || record.createdAt || record.created_at || record.version || "";
+}
+
+function versionedAssetUrl(url = "", record = {}) {
+  const value = String(url || "");
+  const version = cacheVersionFrom(record);
+  if (!value || !version || value.startsWith("data:") || value.includes("pdtv_v=")) return value;
+  const separator = value.includes("?") ? "&" : "?";
+  return `${value}${separator}pdtv_v=${encodeURIComponent(version)}`;
+}
+
 function mediaAssetUrl(asset = {}) {
-  return asset.file_path_web_url || asset.file_path_thumb_url || asset.file_path_original_url || asset.imageUrl || asset.assetUrl || "";
+  const url = asset.file_path_web_url || asset.file_path_thumb_url || asset.file_path_original_url || asset.imageUrl || asset.assetUrl || "";
+  return versionedAssetUrl(url, asset);
 }
 
 function publicEventMediaAsset(event = {}, mediaAssets = []) {
@@ -282,7 +295,7 @@ function articleParagraphs(text = "") {
 
 function archiveEventImageUrl(event = {}, mediaAssets = []) {
   const asset = publicEventMediaAsset(event, mediaAssets);
-  const currentUrl = mediaAssetUrl(asset || {}) || event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "";
+  const currentUrl = mediaAssetUrl(asset || {}) || versionedAssetUrl(event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "", event);
   if (currentUrl) return currentUrl;
   const archivePhotoExtensions = {
     32: "jpg",
@@ -866,7 +879,7 @@ export async function homePage() {
   const latestNewsItems = publicNewsItems(editorial)
     .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")))
     .slice(0, 3);
-  const featuredMembers = shuffledItems(members.filter((member) => member.featured || member.logoDisplayUrl || member.logoUrl)).slice(0, 8);
+  const featuredMembers = shuffledItems(members.filter((member) => member.featured || member.logoDisplayUrl || member.logoUrl)).slice(0, 3);
   const memberCount = members.length ? `${members.length}+` : "35+";
   const quickCards = [
     ["#/events", "events", "Events", "Medienfruehstuecke, Veranstaltungen und Rueckblicke", "Alle Events ansehen"],
@@ -880,12 +893,22 @@ export async function homePage() {
     ["#/members", "members", "Mitglieder", "Unser Netzwerk, Vorteile und Mitglied werden"],
     ["#/about", "about", "Ueber uns", "Der Verband, Vorstand und Ziele"]
   ];
+  const nextImageCandidates = next ? [
+    archiveEventImageUrl(next, mediaAssets),
+    versionedAssetUrl(next.imageUrl || "", next),
+    versionedAssetUrl(next.thumbnail_url || "", next),
+    versionedAssetUrl(next.thumbnailUrl || "", next),
+    versionedAssetUrl(next.assetUrl || "", next)
+  ].filter(Boolean) : [];
+  const nextImageUrl = nextImageCandidates.find((url) => !blockedHomeEventImageUrl(url)) || "";
+  const nextImageStyle = nextImageUrl ? ` style="--home-event-card-image:url(&quot;${escapeHtml(nextImageUrl)}&quot;)"` : "";
+  const mobileNextImageStyle = nextImageUrl ? ` style="--mobile-event-card-image:url(&quot;${escapeHtml(nextImageUrl)}&quot;)"` : "";
   const mobileHome = `<section class="pdtv-mobile-home" aria-label="Mobile Startseite">
     <div class="container">
       <div class="pdtv-mobile-hero">
         <h1>Digitaler Content.<br>Starke Verbindungen.<br>Gemeinsam fuer die <span>Medienzukunft.</span></h1>
         <p>PROdigitalTV ist das Netzwerk fuer digitale Medien, Streaming, Smart-TV, Plattformen und regionale Anbieter.</p>
-        <article class="pdtv-mobile-next-event">
+        <article class="pdtv-mobile-next-event ${nextImageUrl ? "pdtv-mobile-next-event--with-image" : ""}"${mobileNextImageStyle}>
           <span class="pdtv-mobile-icon" aria-hidden="true">□</span>
           <div>
             <p>Naechstes Medienfruehstueck</p>
@@ -898,9 +921,6 @@ export async function homePage() {
       </nav>
     </div>
   </section>`;
-  const nextImageCandidates = next ? [next.imageUrl, next.thumbnail_url, next.thumbnailUrl, next.assetUrl, archiveEventImageUrl(next, mediaAssets)].filter(Boolean) : [];
-  const nextImageUrl = nextImageCandidates.find((url) => !blockedHomeEventImageUrl(url)) || "";
-  const nextImageStyle = nextImageUrl ? ` style="--home-event-card-image:url(&quot;${escapeHtml(nextImageUrl)}&quot;)"` : "";
   const nextEventCard = next ? `<article class="home-event-card ${nextImageUrl ? "home-event-card--with-image" : ""}"${nextImageStyle}>
     <div class="home-event-card__icon" aria-hidden="true"><span></span></div>
     <p class="eyebrow">Naechstes Medienfruehstueck</p>
@@ -957,10 +977,12 @@ export async function homePage() {
   `);
 }
 export async function eventsPage() {
-  const [events, sponsors] = await Promise.all([listPublicEvents(isMember()), listPublicContent("sponsors")]);
+  const [events, sponsors, mediaAssets] = await Promise.all([listPublicEvents(isMember()), listPublicContent("sponsors"), list("media_assets").catch(() => [])]);
   const user = currentUser();
   const visible = events.filter((event) => event.accessType !== "invitation_only" && (event.visibility === "public" || isMember(user) || event.showPublicTeaser));
-  const upcoming = visible.filter((event) => !isPastEvent(event));
+  const upcoming = visible
+    .filter((event) => !isPastEvent(event))
+    .map((event) => ({ ...event, imageDisplayUrl: archiveEventImageUrl(event, mediaAssets) }));
   if (upcoming.length === 1) return eventDetailPage(upcoming[0].id);
   if (upcoming.length === 0) return archivePage();
   return publicShell("events", `${subhero("Veranstaltungen", "Events", "Kuratierte Formate fuer Wissenstransfer, Partnerschaften und relevante Branchenkontakte.")}
@@ -1001,17 +1023,23 @@ export async function eventDetailPage(id) {
   const introText = event.description || event.shortDescription || event.subtitle || "";
   const longText = event.postEventummary || event.archiveText || event.longDescription || event.bodyText || event.articleText || "";
   const haseparateLongText = longText.trim() && longText.trim() !== introText.trim();
+  const registrationCta = registrationAllowed
+    ? `<div class="event-registration-cta"><a class="button button--primary" href="#/register/${escapeHtml(event.id)}">Zum Event anmelden</a></div>`
+    : `<div class="alert event-registration-cta">${event.accessType === "invitation_only" ? "Teilnahme nur auf Einladung." : "Anmeldung derzeit nicht verfuegbar."}</div>`;
+  const eventInfoBlock = restricted ? "" : `<section class="venue-stage event-info-stage"><div class="event-info-stage__facts"><p class="eyebrow">Daten</p><div class="event-info-facts"><div class="event-info-fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>${event.startTime ? `<div class="event-info-fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}<div class="event-info-fact"><label>Status</label><strong>${escapeHtml(lifecycleLabels[event.lifecyclePhase] || event.lifecyclePhase || "Anmeldung")}</strong></div></div></div><div class="venue-stage__place"><p class="eyebrow">Adresse</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}">` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><span class="tag tag--red">Co-Gastgeber</span><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`;
   return publicShell("events", `${subhero(event.eventType, event.title, event.subtitle)}
     <section class="section event-detail-section"><div class="container detail-grid event-detail-grid">
       <article class="detail-main">
         ${eventImageUrl ? `<figure class="event-detail-image"><img src="${escapeHtml(eventImageUrl)}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy"></figure>` : ""}
         ${restricted ? `<div class="alert alert--warning">Details und Anmeldung dieses Mitglieder-Events stehen nach dem Login zur Verfuegung.</div>` : ""}
         <h2>Zum Event</h2>${introText ? `<p class="lead">${escapeHtml(introText)}</p>` : ""}
+        ${restricted ? "" : registrationCta}
         ${haseparateLongText ? `<h2>RÃ¼ckblick</h2><div class="editorial-text">${articleParagraphs(longText)}</div>` : ""}
         ${eventTalksMarkup(topics, speakers, event)}
         ${event.lunchNote ? `<div class="alert">${escapeHtml(event.lunchNote)}</div>` : ""}
         ${restricted ? "" : `<section class="venue-stage"><div class="venue-stage__place"><p class="eyebrow">Veranstaltungsort</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}">` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><span class="tag tag--red">Co-Gastgeber</span><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`}
         ${assignedGalleryImages.length ? galleryPlayCta(assignedGallery, assignedGalleryImages) : ""}
+        ${restricted ? "" : registrationCta}
       </article>
       <aside class="detail-aside">
         <div class="event-host-card">

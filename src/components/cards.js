@@ -6,9 +6,10 @@ export function eventCard(event, archive = false, partners = []) {
   const host = partners.find((partner) => partner.id === event.hostId);
   const eventSponsors = partners.filter((partner) => event.sponsorIds?.includes(partner.id));
   const promotedPartners = [host, ...eventSponsors].filter(Boolean);
+  const imageUrl = event.imageDisplayUrl || event.imageUrl || "";
   return `<article class="card event-card">
     <div class="event-card__visual ${archive ? "event-card__visual--archive" : ""}">
-      ${event.imageUrl ? `<img src="${escapeHtml(event.imageUrl)}" alt="Eventbild ${escapeHtml(event.title)}">` : ""}
+      ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="Eventbild ${escapeHtml(event.title)}">` : ""}
       <div class="next-event__date"><strong>${date.day}</strong><span>${date.month}</span></div>
       <span class="tag tag--light">${escapeHtml(event.eventType)}</span>
     </div>

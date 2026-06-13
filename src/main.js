@@ -2,7 +2,7 @@ import { route, onRouteChange, go } from "./utils/router.js";
 import {
   homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
   newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, memberPortalPage, legalPage, notFoundPage, webappQrPage
-} from "./pages/publicPages.js?v=507";
+} from "./pages/publicPages.js?v=514";
 import { currentUser, canUseCms, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=464";
 import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=466";
 import { escapeHtml, formatDate } from "./utils/format.js";
@@ -8331,8 +8331,23 @@ function wireActions() {
   }));
 }
 
-if ("serviceWorker" in navigator && ["localhost", "127.0.0.1"].includes(location.hostname)) {
-  navigator.serviceWorker.getRegistrations?.().then((registrations) => registrations.forEach((registration) => registration.unregister())).catch(() => {});
+async function clearPreviewCaches() {
+  if ("serviceWorker" in navigator) {
+    await navigator.serviceWorker.getRegistrations?.()
+      .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+      .catch(() => {});
+  }
+  if ("caches" in window) {
+    await caches.keys()
+      .then((keys) => Promise.all(keys
+        .filter((key) => key.startsWith("pdt-platform-") || key.startsWith("prodigitaltv-pwa-"))
+        .map((key) => caches.delete(key))))
+      .catch(() => {});
+  }
+}
+
+if (["localhost", "127.0.0.1"].includes(location.hostname)) {
+  clearPreviewCaches();
 } else if ("serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }

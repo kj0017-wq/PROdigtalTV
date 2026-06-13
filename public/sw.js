@@ -1,5 +1,5 @@
-const CACHE = "pdt-platform-v635";
-const SHELL = ["/", "/index.html", "/manifest.json", "/assets/icon.svg", "/src/styles/main.css?v=588", "/src/main.js?v=633"];
+const CACHE = "pdt-platform-v650";
+const SHELL = ["/", "/index.html", "/manifest.json", "/assets/icon.svg", "/src/styles/main.css?v=598", "/src/main.js?v=641"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
@@ -13,6 +13,13 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  const isOwnOrigin = url.origin === self.location.origin;
+  const isShellAsset = isOwnOrigin && SHELL.some((path) => url.pathname + url.search === path || url.pathname === path);
+  if (!isShellAsset) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
   event.respondWith(
     fetch(event.request).then((response) => {
       const copy = response.clone();

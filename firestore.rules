@@ -119,7 +119,9 @@ service cloud.firestore {
     }
 
     match /media_assets/{id} {
-      allow read, write: if editor();
+      allow read: if editor()
+        || (resource.data.visibility == "public" && resource.data.status == "active");
+      allow write: if editor();
     }
 
     match /downloads/{id} {

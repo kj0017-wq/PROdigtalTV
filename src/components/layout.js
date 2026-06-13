@@ -65,7 +65,7 @@ export function footer() {
     <div>${logo()}<p style="margin-top:17px;max-width:360px">Das Branchennetzwerk der digitalen Medienwirtschaft. Austausch, Orientierung und relevante Verbindungen.</p></div>
     <div><h3>Verein</h3><div class="footer__links"><a href="#/join">Mitglied werden</a><a href="#/downloads">Downloads</a><a href="#/login">Log-In</a></div></div>
     <div><h3>Kontakt</h3><div class="footer__links"><a href="mailto:post@prodigitaltv.de">post@prodigitaltv.de</a><a href="tel:+494044506617">+49 40 44506617</a></div></div>
-    <div><h3>Rechtliches</h3><div class="footer__links"><a href="#/privacy">Datenschutz</a><a href="#/imprint">Impressum</a><a href="#/privacy">Cookie Einstellungen</a></div></div>
+    <div><h3>Rechtliches</h3><div class="footer__links"><a href="#/imprint">Impressum</a><a href="#/privacy">Datenschutz</a><a href="#/privacy">Cookie Einstellungen</a></div></div>
   </div><div class="container footer__meta">ProDigitalTV e.V. 2026</div></footer>`;
 }
 

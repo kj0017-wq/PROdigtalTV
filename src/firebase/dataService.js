@@ -4,6 +4,7 @@ import { getFirebaseServices, firebaseEnabled, realDataMode } from "./firebaseCl
 const STORE_KEY = "prodigitaltv-demo-db-official-assets-v4";
 
 function canFallbackToLocal(error) {
+  if (realDataMode()) return false;
   return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)
     && ["permission-denied", "unauthenticated", "failed-precondition", "login erforderlich"].some((code) => String(error?.code || error?.message || "").toLowerCase().includes(code));
 }
@@ -130,7 +131,10 @@ function scrubOversizedInlineImages(record = {}) {
 
 export async function list(collectionName) {
   const firebase = await getFirebaseServices();
-  if (!firebase) return localDb()[collectionName] || [];
+  if (!firebase) {
+    if (realDataMode()) throw new Error("Firebase ist im Real-Modus nicht erreichbar.");
+    return localDb()[collectionName] || [];
+  }
   try {
     const result = await firebase.firestore.getDocs(firebase.firestore.collection(firebase.db, collectionName));
     return result.docs.map((item) => ({ id: item.id, ...item.data() }));
@@ -143,6 +147,7 @@ export async function list(collectionName) {
 async function constrainedList(collectionName, predicates) {
   const firebase = await getFirebaseServices();
   if (!firebase) {
+    if (realDataMode()) throw new Error("Firebase ist im Real-Modus nicht erreichbar.");
     return (localDb()[collectionName] || []).filter((record) => predicates.every(([field, operator, value]) => {
       if (operator === "==") return record[field] === value;
       return true;
@@ -202,7 +207,10 @@ export async function listPublicContent(collectionName) {
 
 export async function getOne(collectionName, id) {
   const firebase = await getFirebaseServices();
-  if (!firebase) return (localDb()[collectionName] || []).find((item) => item.id === id) || null;
+  if (!firebase) {
+    if (realDataMode()) throw new Error("Firebase ist im Real-Modus nicht erreichbar.");
+    return (localDb()[collectionName] || []).find((item) => item.id === id) || null;
+  }
   try {
     const snapshot = await firebase.firestore.getDoc(firebase.firestore.doc(firebase.db, collectionName, id));
     return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
