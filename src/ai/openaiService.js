@@ -1,5 +1,5 @@
 import { getFirebaseServices, localPreviewMode } from "../firebase/firebaseClient.js";
-import { currentUser, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=464";
+import { currentUser, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=466";
 import { upsert } from "../firebase/dataService.js?v=466";
 import { aiSourceCatalog } from "../data/aiSourceCatalog.js";
 

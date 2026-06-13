@@ -2,8 +2,8 @@ import { route, onRouteChange, go } from "./utils/router.js";
 import {
   homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
   newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, memberPortalPage, legalPage, notFoundPage, webappQrPage
-} from "./pages/publicPages.js?v=514";
-import { currentUser, canUseCms, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=464";
+} from "./pages/publicPages.js?v=516";
+import { currentUser, canUseCms, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=466";
 import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=466";
 import { escapeHtml, formatDate } from "./utils/format.js";
 
@@ -13,14 +13,14 @@ const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9
 const localCodexStoreKey = "prodigitaltv-demo-db-official-assets-v4";
 
 const lazy = {};
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=512");
-const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=465");
-const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=55");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=515");
+const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=466");
+const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=59");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=5");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
 const csvService = () => lazy.csvService ||= import("./utils/csv.js");
-const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=321");
+const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=322");
 const ttsService = () => lazy.ttsService ||= import("./ai/ttsService.js?v=2");
 const aiSourceCatalogService = () => lazy.aiSourceCatalog ||= import("./data/aiSourceCatalog.js");
 
@@ -1218,6 +1218,16 @@ function safeLocalArticleDraft(article = {}, sources = [], keywords = []) {
     `Fuer einen echten Beitrag zu ${category} muessen aus der Quelle konkret ermittelt werden: Was ist passiert, wer ist beteiligt, wann oder wo passiert es, welche Zahlen oder Entscheidungen sind belegt und welche Folge ergibt sich fuer ${mainKeyword}?`,
     "Erst danach kann daraus ein journalistischer Lead, ein Faktenabsatz und eine belastbare Einordnung entstehen."
   ].join("\n\n");
+}
+
+function loginReturnTarget() {
+  const target = route().query.get("returnTo") || "";
+  if (!target) return "";
+  try {
+    const decoded = decodeURIComponent(target);
+    if (/^#\/[a-z0-9/?=&._%-]+$/i.test(decoded)) return decoded.replace(/^#\/?/, "");
+  } catch {}
+  return "";
 }
 
 function cleanEditorialSentence(value = "") {
@@ -3005,11 +3015,29 @@ function showAiDialog({ button, originalText, result, sourceField }) {
   </div>`;
   document.body.append(wrapper);
   wrapper.querySelectorAll("[data-ai-close]").forEach((item) => item.addEventListener("click", () => wrapper.remove()));
-  wrapper.querySelector("[data-ai-accept]").addEventListener("click", () => {
+  wrapper.querySelector("[data-ai-accept]").addEventListener("click", async (event) => {
+    const acceptButton = event.currentTarget;
     const value = normalizeAiSuggestion(wrapper.querySelector("[data-ai-suggestion]").value, button, sourceField);
     if (sourceField && "value" in sourceField) sourceField.value = value;
+    sourceField?.dispatchEvent(new Event("input", { bubbles: true }));
+    sourceField?.dispatchEvent(new Event("change", { bubbles: true }));
     if (button.dataset.aiAction === "rewritePressRetrospective") {
       markPressRetrospectiveForm(button);
+    }
+    const postEventForm = sourceField?.closest?.('#event-edit-form[data-event-form-section="post"]');
+    if (postEventForm) {
+      const note = wrapper.querySelector(".muted");
+      acceptButton.disabled = true;
+      acceptButton.textContent = "Speichert ...";
+      if (note) note.textContent = "KI-Vorschlag wird übernommen und der Rückblicktext gespeichert.";
+      try {
+        await submitFormAndWait(postEventForm);
+      } catch (error) {
+        acceptButton.disabled = false;
+        acceptButton.textContent = "Uebernehmen";
+        if (note) note.textContent = `Speichern fehlgeschlagen: ${error.message || String(error)}`;
+        return;
+      }
     }
     wrapper.remove();
   });
@@ -7189,7 +7217,8 @@ function wireActions() {
     try {
       const values = formObject(form);
       const user = await login(values.email, values.password, values.role);
-      go(["admin", "editor"].includes(user.role) ? "cms" : "portal");
+      const returnTarget = loginReturnTarget();
+      go(returnTarget || (["admin", "editor"].includes(user.role) ? "cms" : "portal"));
     } catch (error) {
       form.querySelector("#login-result").innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message)}</div>`;
     }
@@ -7201,7 +7230,8 @@ function wireActions() {
     try {
       const values = formObject(form);
       const user = await loginWithGoogle(values.role);
-      go(["admin", "editor"].includes(user.role) ? "cms" : "portal");
+      const returnTarget = loginReturnTarget();
+      go(returnTarget || (["admin", "editor"].includes(user.role) ? "cms" : "portal"));
     } catch (error) {
       form.querySelector("#login-result").innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message)}</div>`;
     }
@@ -7265,6 +7295,65 @@ function wireActions() {
     });
     card.addEventListener("dragleave", () => card.classList.remove("is-drop-target"));
   });
+
+  async function upsertEventRetrospectiveArticle(sourceEvent = {}) {
+    if (!sourceEvent?.id) throw new Error("Event wurde nicht gefunden.");
+    const articleId = document.querySelector("[data-retrospective-article-id]")?.value
+      || sourceEvent.retrospectiveArticleId
+      || eventRetrospectiveArticleId(sourceEvent.id);
+    const existingArticle = await getOne("editorialContent", articleId).catch(() => null);
+    const title = existingArticle?.title || `Rückblick: ${sourceEvent.title || "PROdigitalTV Event"}`;
+    const eventBodyText = sourceEvent.longDescription || sourceEvent.bodyText || sourceEvent.articleText || sourceEvent.archiveText || "";
+    const bodyText = eventBodyText || existingArticle?.longDescription || existingArticle?.articleText || existingArticle?.bodyText || eventRetrospectiveBody(sourceEvent);
+    const eventImage = eventRetrospectiveImageUrl(sourceEvent);
+    const articleImage = existingArticle?.imageUrl || eventImage;
+    const articleAssetId = existingArticle?.thumbnail_media_asset_id || existingArticle?.mediaAssetId || sourceEvent.thumbnail_media_asset_id || sourceEvent.mediaAssetId || "";
+    const now = new Date().toISOString();
+    const article = {
+      ...(existingArticle || { id: articleId, createdAt: now }),
+      id: articleId,
+      page: "press",
+      section: "pressRelease",
+      key: existingArticle?.key || `press.${articleId}`,
+      category: "Rückblicke",
+      title,
+      headline: title,
+      subtitle: existingArticle?.subtitle || sourceEvent.subtitle || "",
+      introText: sourceEvent.postEventSummary || sourceEvent.postEventummary || existingArticle?.introText || eventRetrospectiveIntro(sourceEvent),
+      longDescription: bodyText,
+      bodyText,
+      articleText: bodyText,
+      archiveText: bodyText,
+      body: bodyText,
+      status: "published",
+      visible: existingArticle?.visible !== false,
+      visibility: "public",
+      publishDate: existingArticle?.publishDate || sourceEvent.date || new Date().toISOString().slice(0, 10),
+      validFrom: existingArticle?.validFrom || sourceEvent.date || new Date().toISOString().slice(0, 10),
+      linkedEventId: sourceEvent.id,
+      galleryEventId: sourceEvent.id,
+      galleryId: existingArticle?.galleryId || sourceEvent.galleryId || "",
+      sponsorId: existingArticle?.sponsorId || sourceEvent.hostId || "",
+      imageUrl: articleImage,
+      thumbnail_url: existingArticle?.thumbnail_url || existingArticle?.thumbnailUrl || articleImage,
+      thumbnailUrl: existingArticle?.thumbnailUrl || existingArticle?.thumbnail_url || articleImage,
+      assetUrl: existingArticle?.assetUrl || articleImage,
+      thumbnail_media_asset_id: articleAssetId,
+      mediaAssetId: articleAssetId,
+      thumbnail_alt: existingArticle?.thumbnail_alt || sourceEvent.thumbnail_alt || sourceEvent.thumbnailAlt || `Eventbild ${sourceEvent.title || ""}`.trim(),
+      isRetrospective: true,
+      showGallery: existingArticle?.showGallery ?? true,
+      updatedAt: now
+    };
+    await upsert("editorialContent", withContentVersionMetadata("editorialContent", existingArticle || {}, article));
+    await upsert("events", {
+      ...sourceEvent,
+      lifecyclePhase: sourceEvent.lifecyclePhase === "archived" ? "archive_published" : (sourceEvent.lifecyclePhase || "archive_published"),
+      retrospectiveArticleId: articleId,
+      updatedAt: now
+    });
+    return { articleId, article };
+  }
 
   document.querySelectorAll("[data-create-event-retrospective]").forEach((button) => button.addEventListener("click", async () => {
     const eventId = button.dataset.createEventRetrospective;
@@ -7358,6 +7447,7 @@ function wireActions() {
           updatedAt: new Date().toISOString()
         });
         if (result && !silent) result.innerHTML = `<div class="alert alert--success">Vorlauf wurde gespeichert.</div>`;
+        form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: { id: form.dataset.eventId, section: "pre" } }));
         return true;
       }
       const image = imageFileFromDropzone(form, "eventImage", form.dataset.eventId);
@@ -7417,11 +7507,20 @@ function wireActions() {
         values.archiveText = values.longDescription;
       }
       const savedEvent = await upsert("events", { ...existing, ...values });
+      let retrospectiveArticleId = "";
+      if (form.dataset.eventFormSection === "post") {
+        const retrospective = await upsertEventRetrospectiveArticle(savedEvent);
+        retrospectiveArticleId = retrospective.articleId;
+      }
       if (image || removeEventImageRequested) updateDropzoneSavedImage(form, savedEvent.imageUrl || "");
-      if (result && !silent) result.innerHTML = `<div class="alert alert--success">Event wurde gespeichert.</div>`;
+      if (result && !silent) result.innerHTML = retrospectiveArticleId
+        ? `<div class="alert alert--success">Rückblicktext und öffentlicher Rückblick wurden gespeichert. <a class="link" href="#/retrospective/${encodeURIComponent(retrospectiveArticleId)}">Rückblick ansehen</a></div>`
+        : `<div class="alert alert--success">Event wurde gespeichert.</div>`;
+      form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: { id: savedEvent.id || form.dataset.eventId, section: form.dataset.eventFormSection || "base", retrospectiveArticleId } }));
       return true;
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--error">Event konnte nicht gespeichert werden: ${escapeHtml(error.message || String(error))}</div>`;
+      form.dispatchEvent(new CustomEvent("cms-form-save-failed", { detail: { error } }));
       return false;
     } finally {
       if (submitButton && !silent) {

@@ -1,7 +1,7 @@
 import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=467";
-import { currentUser, isMember } from "../firebase/authService.js?v=464";
-import { firebaseEnabled, localPreviewMode } from "../firebase/firebaseClient.js";
-import { publicShell, logo } from "../components/layout.js?v=3";
+import { currentUser, isMember } from "../firebase/authService.js?v=466";
+import { firebaseEnabled, localPreviewMode, realDataMode } from "../firebase/firebaseClient.js";
+import { publicShell, logo } from "../components/layout.js?v=4";
 import { eventCard, topicCard } from "../components/cards.js?v=2";
 import { accessLabels, lifecycleLabels } from "../data/demoData.js";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
@@ -1289,7 +1289,8 @@ export async function joinPage() {
 
 export async function loginPage() {
   const localHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-  const demoAvailable = !firebaseEnabled() || localPreviewMode() || localHost;
+  const realMode = realDataMode();
+  const demoAvailable = !realMode && (!firebaseEnabled() || localPreviewMode() || localHost);
   const user = currentUser();
   const demoControls = demoAvailable ? `<div class="field"><label>Demo-Rolle fuer lokale Vorschau</label><select name="role"><option value="admin">Admin</option><option value="editor">Redakteur</option><option value="member">Mitglied</option></select></div>` : "";
   const emailValue = demoAvailable ? "admin@prodigitaltv.de" : "";

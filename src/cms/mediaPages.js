@@ -1,6 +1,6 @@
 import { cmsShell, cmsTitle } from "./cmsLayout.js?v=461";
 import { list, getOne } from "../firebase/dataService.js?v=466";
-import { currentUser, canUseCms } from "../firebase/authService.js?v=464";
+import { currentUser, canUseCms, waitForAuthReady } from "../firebase/authService.js?v=466";
 import { escapeHtml } from "../utils/format.js";
 
 const mediaSections = [
@@ -72,7 +72,11 @@ function lastMediaAssetId() {
 function protect(content) {
   const user = currentUser();
   if (!canUseCms(user)) {
-    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Zugriff geschuetzt</p><h1>CMS-Login erforderlich</h1><p style="margin:14px 0 24px">Dieser Bereich steht Administratoren und Redakteuren zur Verfuegung.</p><div class="actions"><a class="button button--primary" href="#/login">Anmelden</a>${user ? `<button id="logout-button" class="button button--secondary" type="button">Abmelden</button>` : ""}</div></div></section>`;
+    if (user) {
+      return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS-Zugriff fehlt</p><h1>Benutzer nicht freigeschaltet</h1><p style="margin:14px 0 18px">Sie sind angemeldet als <strong>${escapeHtml(user.email || user.displayName || user.uid || "Benutzer")}</strong>, erkannte Rolle: <strong>${escapeHtml(user.role || "guest")}</strong>.</p><p style="margin:0 0 24px">Fuer die Mediathek braucht der Firestore-Eintrag <code>users/${escapeHtml(user.uid || "")}</code> die Rolle <code>admin</code> oder <code>editor</code> und den Status <code>active</code>.</p><div class="actions"><button id="bootstrap-admin-button" class="button button--primary" type="button">Als ersten Admin freischalten</button><button id="logout-button" class="button button--secondary" type="button">Abmelden</button><a class="button button--secondary" href="#/portal">Freischaltung anzeigen</a></div><div id="bootstrap-admin-result"></div></div></section>`;
+    }
+    const returnTo = encodeURIComponent(window.location.hash || "#/cms/media/library");
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Zugriff geschuetzt</p><h1>CMS-Login erforderlich</h1><p style="margin:14px 0 24px">Dieser Bereich steht Administratoren und Redakteuren zur Verfuegung.</p><div class="actions"><a class="button button--primary" href="#/login?returnTo=${returnTo}">Anmelden</a>${user ? `<button id="logout-button" class="button button--secondary" type="button">Abmelden</button>` : ""}</div></div></section>`;
   }
   return content;
 }
@@ -909,9 +913,11 @@ function variantsPage(assets = [], variants = []) {
 
 export async function mediaPage(section = "library", query = new URLSearchParams()) {
   const activeSection = mediaSections.some(([key]) => key === section) ? section : "library";
+  await waitForAuthReady();
+  if (!canUseCms(currentUser())) return protect("");
   const [assets, variants] = await Promise.all([
     list("media_assets"),
-    list("media_variants")
+    list("media_variants").catch(() => [])
   ]);
   const targetRecord = query.get("targetCollection") && query.get("targetId")
     ? await getOne(query.get("targetCollection"), query.get("targetId")).catch(() => null)

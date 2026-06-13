@@ -1,7 +1,7 @@
 import { cmsShell, cmsTitle } from "./cmsLayout.js";
 import { list, getOne, upsert, resetLocalCollection } from "../firebase/dataService.js?v=466";
 import { localPreviewMode } from "../firebase/firebaseClient.js";
-import { authDebugState, currentUser, canUseCms, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=464";
+import { authDebugState, currentUser, canUseCms, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=466";
 import { verified_sources as defaultVerifiedSources } from "../data/demoData.js";
 import { aiSourceCatalog } from "../data/aiSourceCatalog.js";
 import { escapeHtml, formatDateTime, formatShortDate } from "../utils/format.js";

@@ -1,4 +1,4 @@
-import { currentUser, isAdmin } from "../firebase/authService.js?v=464";
+import { currentUser, isAdmin } from "../firebase/authService.js?v=466";
 import { logo } from "../components/layout.js";
 
 const sections = [

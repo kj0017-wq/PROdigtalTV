@@ -1,4 +1,4 @@
-import { currentUser, canUseCms } from "../firebase/authService.js?v=464";
+import { currentUser, canUseCms } from "../firebase/authService.js?v=466";
 
 const nav = [
   ["home", "Start"], ["events", "Events"], ["topics", "Themen"], ["news", "News"], ["about", "Ueber uns"],

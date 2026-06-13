@@ -3,8 +3,6 @@ const { defineSecret } = require("firebase-functions/params");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getStorage } = require("firebase-admin/storage");
 const { randomUUID } = require("node:crypto");
-const lamejs = require("lamejs");
-
 const region = "europe-west3";
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
 const ttsModel = "gemini-2.5-flash-preview-tts";
@@ -73,24 +71,6 @@ function wavBufferFromPcmBuffer(pcm) {
 
 function wavBufferFromPcm(pcmBase64) {
   return wavBufferFromPcmBuffer(Buffer.from(pcmBase64, "base64"));
-}
-
-function mp3BufferFromPcmBuffer(pcm) {
-  const samples = new Int16Array(pcm.length / 2);
-  for (let index = 0; index < samples.length; index += 1) {
-    samples[index] = pcm.readInt16LE(index * 2);
-  }
-  const encoder = new lamejs.Mp3Encoder(channels, sampleRate, 96);
-  const buffers = [];
-  const blockSize = 1152;
-  for (let index = 0; index < samples.length; index += blockSize) {
-    const chunk = samples.subarray(index, index + blockSize);
-    const encoded = encoder.encodeBuffer(chunk);
-    if (encoded.length) buffers.push(Buffer.from(encoded));
-  }
-  const flush = encoder.flush();
-  if (flush.length) buffers.push(Buffer.from(flush));
-  return Buffer.concat(buffers);
 }
 
 async function requireEditor(request) {
@@ -227,10 +207,9 @@ exports.generateArticleSpeechAsset = onCall({ region, secrets: [geminiApiKey], t
     const resultVariants = {};
     for (const variant of variants) {
       const speech = await createSpeechBuffer({ title: item.title || "", text, variant });
-      const isNatural = variant === "natural";
-      const audioBuffer = isNatural ? mp3BufferFromPcmBuffer(speech.pcmBuffer) : speech.buffer;
-      const mimeType = isNatural ? "audio/mpeg" : "audio/wav";
-      const extension = isNatural ? "mp3" : "wav";
+      const audioBuffer = speech.buffer;
+      const mimeType = "audio/wav";
+      const extension = "wav";
       const token = randomUUID();
       const storagePath = `article-audio/${collection}/${id}/${variant}-${Date.now()}-${id}.${extension}`;
       const file = bucket.file(storagePath);

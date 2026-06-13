@@ -1,6 +1,6 @@
 import { cmsShell, cmsTitle } from "./cmsLayout.js?v=461";
 import { list, getOne } from "../firebase/dataService.js?v=466";
-import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=464";
+import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=466";
 import { accessLabels, lifecycleLabels } from "../data/demoData.js";
 import { escapeHtml, formatDate, formatDateTime, formatShortDate } from "../utils/format.js";
 
@@ -260,12 +260,16 @@ function audioMetaLine(collection, item, variant) {
   return `<small>Version ${Number(item.contentVersion || item.audioContentVersion || 1)} · ${escapeHtml(voice)} · ${escapeHtml(mime)}${textLength ? ` · ${Number(textLength).toLocaleString("de-DE")} Zeichen` : ""}${generatedAt ? ` · ${formatDateTime(generatedAt)}` : ""}</small>`;
 }
 
-function audioGenerationPanel(collection, item) {
+function audioGenerationPanel(collection, item, options = {}) {
   const accessibleUrl = item.audioAccessibleUrl || item.audioUrl || "";
   const naturalUrl = item.audioNaturalUrl || "";
   const hasAudio = accessibleUrl || naturalUrl;
   const naturalState = audioVariantState(collection, item, "natural");
   const accessibleState = audioVariantState(collection, item, "accessible");
+  const requestedVariant = options.variant || "all";
+  const buttonLabel = requestedVariant === "accessible"
+    ? (accessibleUrl ? "Barrierefreie Audiodatei neu erzeugen" : "Barrierefreie Audiodatei erzeugen")
+    : (hasAudio ? "Audio-Varianten neu erzeugen" : "Audio-Varianten erzeugen");
   return `<div class="audio-generation-panel">
     <div><label>Audio & Barrierefreiheit</label><p class="muted">${hasAudio ? "Audio-Varianten sind gespeichert. Bei Textaenderungen werden sie automatisch als veraltet erkannt." : "Noch kein Audio gespeichert. Bitte Text speichern, dann Audio erzeugen."}</p></div>
     <div class="audio-generation-panel__track"><div class="audio-generation-panel__head"><strong>Natural Voice</strong>${audioStatusBadge(naturalState)}</div>${audioMetaLine(collection, item, "natural")}${naturalUrl ? `<audio controls preload="none" src="${escapeHtml(naturalUrl)}"></audio>` : `<p class="muted">Keine Natural-Voice-Datei vorhanden.</p>`}</div>
@@ -276,7 +280,7 @@ function audioGenerationPanel(collection, item) {
       <span>Pruefsumme: ${escapeHtml(audioTextSignature(collection, item))}</span>
     </div>
     <div class="tool-button-row">
-      <button type="button" class="button button--secondary button--small" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}" data-tts-variant="all">${hasAudio ? "Audio-Varianten neu erzeugen" : "Audio-Varianten erzeugen"}</button>
+      <button type="button" class="button button--secondary button--small" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}" data-tts-variant="${escapeHtml(requestedVariant)}">${escapeHtml(buttonLabel)}</button>
       ${hasAudio ? `<button type="button" class="icon-button icon-button--danger" data-clear-linked-media="audio" title="Audio-Verknuepfung loesen" aria-label="Audio-Verknuepfung loesen">${iconImage("trash")}</button>` : ""}
     </div>
     <div class="audio-generation-panel__result" data-speech-result></div>
@@ -809,14 +813,17 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     const selectedGallery = event.galleryId ? galleries.find((gallery) => gallery.id === event.galleryId) : null;
     const postSummaryValue = event.postEventSummary || event.postEventummary || retrospectiveArticle?.introText || retrospectiveArticle?.subtitle || "";
     const postLongValue = event.longDescription || event.bodyText || event.articleText || event.archiveText || retrospectiveArticle?.longDescription || retrospectiveArticle?.bodyText || retrospectiveArticle?.articleText || retrospectiveArticle?.archiveText || "";
+    const retrospectiveAudioTool = retrospectiveArticle
+      ? audioGenerationPanel("editorialContent", retrospectiveArticle, { variant: "accessible" })
+      : `<p class="muted">Bitte zuerst den Rückblicktext speichern. Danach wird der redaktionelle Rückblick-Beitrag angelegt und die Vorlesfunktion ist hier verfügbar.</p>`;
     content = `<h2>Event-Nacharbeit</h2>
       <section class="panel event-post-ai-panel" style="background:var(--pdt-bg)">
         ${aiFieldActions([{ action: "generateArchiveText", target: "longDescription", label: "Nachbericht erzeugen", entityId: event.id, fieldName: "archiveText" }, { action: "generateEventSummary", target: "postEventSummary", label: "Kurztext erzeugen", entityId: event.id, fieldName: "postEventSummary" }])}
       </section>
-      <form id="event-edit-form" data-event-id="${event.id}" class="form-grid is-save-aware event-post-workspace" style="margin-bottom:22px">
+      <form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="post" class="form-grid is-save-aware event-post-workspace" style="margin-bottom:22px">
         <div class="event-post-workspace__main">
           <div class="field"><label>Nachbericht Kurztext</label><textarea name="postEventSummary">${escapeHtml(postSummaryValue)}</textarea></div>
-          <div class="field"><label>Langtext / Rückblicktext</label><textarea name="longDescription">${escapeHtml(event.longDescription || event.bodyText || event.articleText || event.archiveText || "")}</textarea><p class="muted">Dieser Text wird als Langtext fuer den redaktionellen Rückblick verwendet.</p></div>
+          <div class="field"><label>Langtext / Rückblicktext</label><textarea name="longDescription">${escapeHtml(postLongValue)}</textarea><p class="muted">Dieser Text wird als Langtext fuer den redaktionellen Rückblick verwendet.</p></div>
           <div class="actions"><button class="button button--primary button--small">Rückblicktext speichern</button></div><div id="event-save-result"></div>
         </div>
         <aside class="event-post-toolbox">
@@ -826,7 +833,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
           </details>
           <details class="editorial-tool-details" open>
             <summary><span>Audio</span><strong>Vorlesen</strong></summary>
-            <div class="editor-tool-section editor-tool-section--audio"><p class="muted">Audio wird im redaktionellen Rückblick-Beitrag erzeugt und verwaltet.</p></div>
+            <div class="editor-tool-section editor-tool-section--audio">${retrospectiveAudioTool}</div>
           </details>
           <details class="editorial-tool-details" open>
             <summary><span>Medien</span><strong>Galerie</strong>${selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")}</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`}</summary>

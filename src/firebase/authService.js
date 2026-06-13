@@ -4,6 +4,16 @@ const USER_KEY = "prodigitaltv-user";
 let authReadyPromise;
 let lastFirebaseAuthUser = null;
 
+function storeUser(user) {
+  sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+function clearStoredUser() {
+  sessionStorage.removeItem(USER_KEY);
+  localStorage.removeItem(USER_KEY);
+}
+
 function isLocalHost() {
   return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
 }
@@ -21,7 +31,7 @@ function localDemoUser(email = "admin@prodigitaltv.de", demoRole = "admin", prov
     idToken: "demo-token",
     tokenExpiresAt: "Lokale Vorschau"
   };
-  sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+  storeUser(user);
   return user;
 }
 
@@ -43,11 +53,12 @@ function normalizeRole(role = "") {
 
 export function currentUser() {
   try {
-    const storedUser = JSON.parse(sessionStorage.getItem(USER_KEY) || "null");
+    const storedUser = JSON.parse(sessionStorage.getItem(USER_KEY) || localStorage.getItem(USER_KEY) || "null");
+    if (storedUser && !sessionStorage.getItem(USER_KEY)) sessionStorage.setItem(USER_KEY, JSON.stringify(storedUser));
     if (storedUser) return storedUser;
     return null;
   } catch {
-    sessionStorage.removeItem(USER_KEY);
+    clearStoredUser();
     return null;
   }
 }
@@ -92,7 +103,7 @@ async function userFromCredential(firebase, firebaseUser, fallbackRole = "guest"
     tokenExpiresAt: tokenResult.expirationTime,
     tokenIssuedAt: tokenResult.issuedAtTime
   };
-  sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+  storeUser(user);
   return user;
 }
 
@@ -103,7 +114,7 @@ export async function login(email, password, demoRole = "member") {
   const firebase = await getFirebaseServices();
   if (!firebase) {
     const user = { uid: `demo-${demoRole}`, email, displayName: email.split("@")[0], role: demoRole, idToken: "demo-token", tokenExpiresAt: "" };
-    sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+    storeUser(user);
     return user;
   }
   try {
@@ -112,6 +123,9 @@ export async function login(email, password, demoRole = "member") {
   } catch (error) {
     if (!realDataMode() && isLocalHost() && error?.code === "auth/invalid-credential") {
       return localDemoUser(email, demoRole || "admin");
+    }
+    if (error?.code === "auth/invalid-credential") {
+      throw new Error("Firebase kennt diese E-Mail/Passwort-Kombination nicht. Wenn das Konto ueber Google angelegt wurde, bitte 'Mit Google anmelden' nutzen.");
     }
     throw error;
   }
@@ -124,7 +138,7 @@ export async function loginWithGoogle(demoRole = "member") {
   const firebase = await getFirebaseServices();
   if (!firebase) {
     const user = { uid: `demo-google-${demoRole}`, email: "google-demo@prodigitaltv.de", displayName: "Google Demo", role: demoRole, providerId: "google.com", idToken: "demo-token", tokenExpiresAt: "" };
-    sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+    storeUser(user);
     return user;
   }
   const provider = new firebase.authLib.GoogleAuthProvider();
@@ -156,7 +170,7 @@ export async function waitForAuthReady() {
             resolve(existingUser);
             return;
           }
-          sessionStorage.removeItem(USER_KEY);
+          clearStoredUser();
           resolve(null);
           return;
         }
@@ -170,7 +184,7 @@ export async function waitForAuthReady() {
 export async function logout() {
   const firebase = await getFirebaseServices();
   if (firebase) await firebase.authLib.signOut(firebase.auth);
-  sessionStorage.removeItem(USER_KEY);
+  clearStoredUser();
 }
 
 export function canUseCms(user = currentUser()) {
