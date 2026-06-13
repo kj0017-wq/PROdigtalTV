@@ -1,5 +1,5 @@
-const CACHE = "pdt-platform-v650";
-const SHELL = ["/", "/index.html", "/manifest.json", "/assets/icon.svg", "/src/styles/main.css?v=598", "/src/main.js?v=641"];
+const CACHE = "pdt-platform-v651";
+const SHELL = ["/", "/index.html", "/manifest.json", "/assets/icon.svg", "/src/styles/main.css?v=599", "/src/main.js?v=641"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
