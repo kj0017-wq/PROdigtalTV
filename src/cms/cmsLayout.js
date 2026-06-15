@@ -41,7 +41,7 @@ const sections = [
     ]
   },
   ["cms/galleries", "Bildergalerien"],
-  ["cms/mail", "Mail-Queue"], ["cms/mail-admin", "Mail-Verwaltung"], ["cms/chatgpt", "ChatGPT"], ["cms/ai-settings", "ChatGPT-Einstellungen"], ["cms/setup", "System / Einrichtung"]
+  ["cms/mail", "Mail-Queue"], ["cms/mail-admin", "Mail-Verwaltung"], ["cms/chatgpt", "ChatGPT"], ["cms/ai-access", "KI-Zugaenge"], ["cms/ai-settings", "ChatGPT-Einstellungen"], ["cms/setup", "System / Einrichtung"]
 ];
 
 export function cmsShell(active, content) {

@@ -17,7 +17,7 @@ export const lifecycleLabels = {
   archived: "Archiviert"
 };
 
-const salzburgHangarImageUrl = "https://firebasestorage.googleapis.com/v0/b/prodigitaltv-da47b.firebasestorage.app/o/Images%2FDSC06819.jpg?alt=media&token=89bb1cc0-0183-4813-adb5-7d577f56eab5";
+const salzburgHangarImageUrl = "/assets/official/events/event-salzburg-red-bull-hangar7-2026.svg";
 
 export const events = [
   {
@@ -464,9 +464,9 @@ export const eventMedia = [
   {
     id: "event-media-salzburg-hangar7-2026-cover",
     eventId: "event-salzburg-red-bull-hangar7-2026",
-    fileName: "DSC06819.jpg",
+    fileName: "event-salzburg-red-bull-hangar7-2026.svg",
     fileUrl: salzburgHangarImageUrl,
-    storagePath: "Images/DSC06819.jpg",
+    storagePath: "assets/official/events/event-salzburg-red-bull-hangar7-2026.svg",
     mediaType: "image",
     title: "Red Bull Hangar-7 Salzburg",
     description: "Eventbild fuer das PROdigitalTV Medienfruehstueck im Hangar-7 Salzburg.",
@@ -495,8 +495,8 @@ export const galleries = [
       {
         id: "gallery-salzburg-hangar7-2026-1",
         url: salzburgHangarImageUrl,
-        fileName: "DSC06819.jpg",
-        storagePath: "Images/DSC06819.jpg",
+        fileName: "event-salzburg-red-bull-hangar7-2026.svg",
+        storagePath: "assets/official/events/event-salzburg-red-bull-hangar7-2026.svg",
         caption: "Red Bull Hangar-7 Salzburg",
         altText: "Eventbild Red Bull Hangar-7 Salzburg",
         sortOrder: 1

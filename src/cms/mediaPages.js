@@ -680,8 +680,15 @@ function mediaSourceFilterOptions(assets = []) {
   return [`<option value="">Alle</option>`, ...sources.map((source) => `<option value="${escapeHtml(source)}">${escapeHtml(mediaSourceLabels[source] || source)}</option>`)].join("");
 }
 
+function mediaAssetVisibleInLibrary(asset = {}, usageMap = new Map()) {
+  if (asset.status === "archived") return false;
+  if (!asset.parent_media_asset_id) return true;
+  const usedIn = usageMap.get(asset.id) || [];
+  return Boolean(usedIn.length || asset.target_collection || asset.linked_collection);
+}
+
 function libraryPage(assets = [], query = new URLSearchParams(), usageMap = new Map()) {
-  const visibleAssets = newestMediaAssetsFirst(uniqueMediaAssets(assets.filter((asset) => asset.status !== "archived" && !asset.parent_media_asset_id && asset.source_type !== "edited")));
+  const visibleAssets = newestMediaAssetsFirst(uniqueMediaAssets(assets.filter((asset) => mediaAssetVisibleInLibrary(asset, usageMap))));
   const contextQuery = mediaContextQuery(query);
   return `<section class="panel media-library-panel">
     <div class="media-library-layout">
@@ -830,8 +837,6 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
           <img src="${escapeHtml(editorUrl)}" alt="${escapeHtml(asset.alt_text || asset.title || "Medienbild")}" data-media-crop-image>
           <span class="media-crop-frame" aria-hidden="true"></span>` : `<div class="alert alert--warning media-crop-empty">Dieses Bild hat noch keine verwendbare URL. Bitte ein anderes Bild waehlen oder die Datei neu hochladen.</div>`}
         </div>
-        <div class="field media-editor-assignment"><label>Bildzuordnung</label><select name="media_type" data-media-editor-type-update>${mediaTypeOptions(asset.media_type || "upload")}</select><p class="media-preset-hint" data-media-preset-hint>${escapeHtml(mediaPresetSummary(asset.media_type || "upload"))}</p></div>
-        ${mediaVariantChooser(asset, variants, assets)}
         <div class="media-crop-tools">
           <div class="media-zoom-row">
             <button class="icon-button" type="button" data-media-zoom-step="-0.1" aria-label="Herauszoomen">-</button>
@@ -841,11 +846,12 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
           </div>
           <div class="media-crop-actions">
             <button class="button button--secondary button--small" type="button" data-media-crop-fit>Original einpassen</button>
-            <button class="button button--secondary button--small" type="button" data-media-crop-cover>Rahmen fuellen</button>
-            <button class="button button--primary button--small" type="button" data-media-crop-apply>OK uebernehmen</button>
-            <button class="button button--secondary button--small" type="button" data-media-crop-reset>Zuruecksetzen</button>
+            <button class="button button--secondary button--small" type="button" data-media-crop-cover>Rahmen füllen</button>
+            <button class="button button--primary button--small" type="button" data-media-crop-apply>OK übernehmen</button>
+            <button class="button button--secondary button--small" type="button" data-media-crop-reset>Zurücksetzen</button>
           </div>
         </div>
+        <div class="field media-editor-assignment"><label>Bildzuordnung</label><select name="media_type" data-media-editor-type-update>${mediaTypeOptions(asset.media_type || "upload")}</select><p class="media-preset-hint" data-media-preset-hint>${escapeHtml(mediaPresetSummary(asset.media_type || "upload"))}</p></div>
         ${mediaPortalVariantButtons(asset.aspect_ratio || "16x9")}
         <div class="media-adjust-tools">
           <label>Helligkeit <input name="brightness" type="range" min="-20" max="20" value="${escapeHtml(asset.brightness ?? 0)}"></label>
@@ -867,6 +873,7 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
         <input type="hidden" name="file_size_label">
         <input type="hidden" name="original_filename">
         <input type="hidden" name="file_last_modified">
+        ${mediaVariantChooser(asset, variants, assets)}
       </div>
       <div class="form-grid">
         <div class="media-editor-topbar">

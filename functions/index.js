@@ -22,6 +22,8 @@ const openaiFunctions = require("./openaiFunctions");
 Object.assign(exports, openaiFunctions);
 const geminiTtsFunctions = require("./geminiTtsFunctions");
 Object.assign(exports, geminiTtsFunctions);
+const audioServiceFunctions = require("./audioServiceFunctions");
+Object.assign(exports, audioServiceFunctions);
 
 function hashToken(token) {
   return createHash("sha256").update(token).digest("hex");

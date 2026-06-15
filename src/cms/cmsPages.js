@@ -222,7 +222,7 @@ function aiFieldActions(actions) {
 function audioSourceText(collection, item = {}) {
   return collection === "topics"
     ? [item.subtitle, item.longDescription, item.bodyText, item.shortDescription].filter(Boolean).join("\n\n")
-    : [item.subtitle, item.bodyText, item.introText, item.shortText, item.teaserText].filter(Boolean).join("\n\n");
+    : [item.subtitle, item.longDescription, item.bodyText, item.articleText, item.archiveText, item.introText, item.shortText, item.teaserText, item.postEventSummary].filter(Boolean).join("\n\n");
 }
 
 function audioTextSignature(collection, item = {}) {
@@ -251,6 +251,172 @@ function audioStatusBadge(state) {
   return `<span class="status ${className}">${escapeHtml(state)}</span>`;
 }
 
+function audioServiceStatusBadge(state = "missing") {
+  const normalized = String(state || "missing").toLowerCase();
+  const label = {
+    ready: "Bereit",
+    aktuell: "Bereit",
+    missing: "Nicht erzeugt",
+    fehlt: "Nicht erzeugt",
+    outdated: "Veraltet",
+    veraltet: "Veraltet",
+    error: "Fehler",
+    fehler: "Fehler",
+    generating: "In Erstellung",
+    in_erstellung: "In Erstellung"
+  }[normalized] || state;
+  const className = ["ready", "aktuell"].includes(normalized)
+    ? ""
+    : ["missing", "fehlt", "outdated", "veraltet", "generating", "in_erstellung"].includes(normalized)
+      ? "status--draft"
+      : "status--error";
+  return `<span class="status ${className}">${escapeHtml(label)}</span>`;
+}
+
+function timestampText(value) {
+  if (!value) return "";
+  if (value.seconds) return formatDateTime(new Date(value.seconds * 1000).toISOString());
+  return formatDateTime(value);
+}
+
+const audioAreaOrder = ["News", "Rückblicke", "Presse", "Themen", "Interna"];
+
+function audioAreaRank(area = "") {
+  const index = audioAreaOrder.indexOf(area);
+  return index === -1 ? 999 : index;
+}
+
+function audioAreaLabel(item = {}) {
+  if (item.audioArea && !["Presse / Rueckblick", "Presse / Rückblick", "Rückblicke / Presse"].includes(item.audioArea)) return item.audioArea;
+  if (item.audioCollection === "topics") return "Themen";
+  if (isNewsEditorialItem(item)) return "News";
+  if (item.publication_target === "archive" || isEventRetrospectiveAudioItem(item)) return "Rückblicke";
+  if (isPressEditorialItem(item)) return "Presse";
+  if (isInternalEditorialItem(item) || item.bereich || item.page || item.section || item.key) return "Interna";
+  return "Interna";
+}
+
+function audioSubareaLabel(item = {}) {
+  if (item.audioCollection === "topics") return "Themen";
+  if (item.bereich === "ueber_uns" || item.page === "about" || String(item.key || "").startsWith("ueber_uns.")) return "Über uns";
+  if (item.bereich === "mitglied_werden" || item.page === "join" || String(item.key || "").startsWith("mitglied_werden.")) return "Mitglied werden";
+  return "";
+}
+
+function hasLinkedAudio(item = {}) {
+  return Boolean(item.audio?.audioUrl || item.audioUrl || item.audioNaturalUrl || item.audioAccessibleUrl);
+}
+
+function isPublicAudioCandidate(item = {}) {
+  const statusValue = String(item.status || "").toLowerCase();
+  const visibilityValue = String(item.visibility || item.sichtbarkeit || "").toLowerCase();
+  const isPublished = ["published", "active", "aktiv", "approved"].includes(statusValue);
+  const isPublic = ["public", "oeffentlich", "öffentlich", ""].includes(visibilityValue);
+  return isPublished && isPublic;
+}
+
+function isRawPressImport(item = {}) {
+  return String(item.id || "").startsWith("ai-press-article-")
+    && (item.author_type === "ai" || item.authorType === "ai" || item.aiGenerated === true || Boolean(item.imported_press_release_id))
+    && !hasLinkedAudio(item);
+}
+
+function isEventRetrospectiveAudioItem(item = {}) {
+  const category = String(item.category || "").toLowerCase();
+  return item.isRetrospective === true
+    || Boolean(item.linkedEventId || item.galleryEventId)
+    || String(item.id || "").startsWith("retrospective-")
+    || String(item.key || "").includes("retrospective")
+    || String(item.key || "").includes("rueckblick")
+    || String(item.key || "").includes("rückblick")
+    || category.includes("rueckblick")
+    || category.includes("rückblick");
+}
+
+function normalizeRetrospectiveMatchText(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ue/g, "u")
+    .replace(/ae/g, "a")
+    .replace(/oe/g, "o")
+    .replace(/[^a-z0-9]+/gi, " ")
+    .toLowerCase()
+    .trim();
+}
+
+function retrospectiveMatchesEvent(item = {}, event = {}) {
+  if (item.linkedEventId === event.id || item.galleryEventId === event.id) return true;
+  if (!isEventRetrospectiveAudioItem(item)) return false;
+  const itemText = normalizeRetrospectiveMatchText([item.title, item.subtitle, item.introText].filter(Boolean).join(" "));
+  const eventTitle = normalizeRetrospectiveMatchText(event.title || "");
+  const eventLocation = normalizeRetrospectiveMatchText(event.locationName || "");
+  if (eventTitle && itemText.includes(eventTitle.slice(0, Math.min(28, eventTitle.length)))) return true;
+  return Boolean(eventLocation && eventLocation.length > 7 && itemText.includes(eventLocation));
+}
+
+function audioNeedsAttention(item = {}) {
+  const state = String(item.audio?.status || item.audioStatus || item.audioNaturalStatus || item.audioAccessibleStatus || "").toLowerCase();
+  return ["error", "fehler", "outdated", "veraltet", "in_erstellung", "generating"].includes(state);
+}
+
+function isManagedLongformAudioItem(item = {}) {
+  if (["ueber_uns", "mitglied_werden"].includes(item.bereich)) return true;
+  if (["about", "join"].includes(item.page) && ["internal", "intro", "hero"].includes(item.section)) return true;
+  return String(item.key || "").startsWith("ueber_uns.") || String(item.key || "").startsWith("mitglied_werden.");
+}
+
+function isAudioAdminEditorialItem(item = {}) {
+  if (!audioSourceText("editorialContent", item)) return false;
+  if (isRawPressImport(item) && !isPublicAudioCandidate(item) && !hasLinkedAudio(item) && !audioNeedsAttention(item)) return false;
+  if (isEventRetrospectiveAudioItem(item)) return isPublicAudioCandidate(item) || hasLinkedAudio(item) || audioNeedsAttention(item);
+  if (hasLinkedAudio(item) || audioNeedsAttention(item)) return true;
+  if (isNewsEditorialItem(item) || isPressEditorialItem(item)) return isPublicAudioCandidate(item);
+  return isManagedLongformAudioItem(item) && isPublicAudioCandidate(item);
+}
+
+function activeAudioInfo(collection, item = {}) {
+  const serviceAudio = item.audio || {};
+  const serviceUrl = serviceAudio.audioUrl || "";
+  const accessibleUrl = item.audioAccessibleUrl || item.audioUrl || "";
+  const naturalUrl = item.audioNaturalUrl || "";
+  const activeUrl = serviceUrl || accessibleUrl || naturalUrl;
+  const provider = serviceAudio.provider || item.audioProvider || (activeUrl ? "gemini" : "");
+  const serviceStatus = serviceAudio.status || item.audioStatus || "";
+  const legacyState = audioVariantState(collection, item, accessibleUrl ? "accessible" : "natural");
+  const state = serviceUrl
+    ? serviceStatus || "ready"
+    : activeUrl
+      ? legacyState
+      : "missing";
+  const version = serviceAudio.version || item.audioVersion || item.contentVersion || item.audioContentVersion || 1;
+  const voiceName = serviceAudio.voiceName || item.audioAccessibleVoice || item.audioNaturalVoice || (provider && provider !== "elevenlabs" ? "Gemini TTS" : "");
+  const modelId = serviceAudio.modelId || (provider === "elevenlabs" ? "eleven_multilingual_v2" : provider ? "gemini-2.5-flash-preview-tts" : "");
+  const generatedAt = serviceAudio.generatedAt || item.audioGeneratedAt || item.audioAccessibleGeneratedAt || item.audioNaturalGeneratedAt || "";
+  const timingUrl = serviceAudio.timingUrl || item.timingUrl || "";
+  return {
+    activeUrl,
+    provider,
+    state,
+    version,
+    voiceName,
+    modelId,
+    generatedAt,
+    timingUrl,
+    textHash: serviceAudio.textHash || item.audioTextHash || item.audioTextSignature || item.audioAccessibleTextSignature || audioTextSignature(collection, item),
+    serviceVersion: serviceAudio.serviceVersion || (provider ? (provider === "elevenlabs" ? "audio-service-v1" : "legacy-gemini") : ""),
+    karaokeEnabled: item.karaoke?.enabled === true || Boolean(timingUrl)
+  };
+}
+
+function audioPlayButtonState(state = "", hasAudio = false) {
+  const normalized = String(state || "").toLowerCase();
+  if (["error", "fehler"].includes(normalized)) return { className: "audio-play-button--error", label: "Audio hat einen Fehler" };
+  if (["outdated", "veraltet", "in_erstellung", "generating"].includes(normalized)) return { className: "audio-play-button--outdated", label: "Audio ist veraltet oder wird erzeugt" };
+  if (hasAudio) return { className: "audio-play-button--ready", label: "Audio abspielen" };
+  return { className: "audio-play-button--missing", label: "Audio erzeugen" };
+}
+
 function audioMetaLine(collection, item, variant) {
   const prefix = variant === "natural" ? "audioNatural" : "audioAccessible";
   const generatedAt = item[`${prefix}GeneratedAt`] || item.audioGeneratedAt || "";
@@ -264,38 +430,151 @@ function audioGenerationPanel(collection, item, options = {}) {
   const accessibleUrl = item.audioAccessibleUrl || item.audioUrl || "";
   const naturalUrl = item.audioNaturalUrl || "";
   const hasAudio = accessibleUrl || naturalUrl;
-  const naturalState = audioVariantState(collection, item, "natural");
-  const accessibleState = audioVariantState(collection, item, "accessible");
+  const info = activeAudioInfo(collection, item);
+  const providerConfig = options.providerConfig || {};
+  const defaultProviderLabel = providerConfig.elevenlabs?.enabled ? "ElevenLabs" : "Gemini";
+  const defaultModelLabel = providerConfig.elevenlabs?.enabled
+    ? (providerConfig.elevenlabs.modelId || "eleven_multilingual_v2")
+    : "gemini-2.5-flash-preview-tts";
+  const defaultVoiceLabel = providerConfig.elevenlabs?.enabled
+    ? (providerConfig.elevenlabs.voiceName || providerConfig.elevenlabs.voiceId || "Standardstimme")
+    : "Gemini TTS";
   const requestedVariant = options.variant || "all";
   const buttonLabel = requestedVariant === "accessible"
-    ? (accessibleUrl ? "Barrierefreie Audiodatei neu erzeugen" : "Barrierefreie Audiodatei erzeugen")
-    : (hasAudio ? "Audio-Varianten neu erzeugen" : "Audio-Varianten erzeugen");
-  return `<div class="audio-generation-panel">
-    <div><label>Audio & Barrierefreiheit</label><p class="muted">${hasAudio ? "Audio-Varianten sind gespeichert. Bei Textaenderungen werden sie automatisch als veraltet erkannt." : "Noch kein Audio gespeichert. Bitte Text speichern, dann Audio erzeugen."}</p></div>
-    <div class="audio-generation-panel__track"><div class="audio-generation-panel__head"><strong>Natural Voice</strong>${audioStatusBadge(naturalState)}</div>${audioMetaLine(collection, item, "natural")}${naturalUrl ? `<audio controls preload="none" src="${escapeHtml(naturalUrl)}"></audio>` : `<p class="muted">Keine Natural-Voice-Datei vorhanden.</p>`}</div>
-    <div class="audio-generation-panel__track"><div class="audio-generation-panel__head"><strong>Barrierefrei vorlesen</strong>${audioStatusBadge(accessibleState)}</div>${audioMetaLine(collection, item, "accessible")}${accessibleUrl ? `<audio controls preload="none" src="${escapeHtml(accessibleUrl)}"></audio>` : `<p class="muted">Keine barrierefreie Audiodatei vorhanden.</p>`}</div>
-    <div class="audio-generation-panel__meta">
-      <span>Content-ID: ${escapeHtml(`${collection}/${item.id || ""}`)}</span>
-      <span>Textversion: v${Number(item.contentVersion || 1)}</span>
-      <span>Pruefsumme: ${escapeHtml(audioTextSignature(collection, item))}</span>
-    </div>
-    <div class="tool-button-row">
-      <button type="button" class="button button--secondary button--small" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}" data-tts-variant="${escapeHtml(requestedVariant)}">${escapeHtml(buttonLabel)}</button>
-      ${hasAudio ? `<button type="button" class="icon-button icon-button--danger" data-clear-linked-media="audio" title="Audio-Verknuepfung loesen" aria-label="Audio-Verknuepfung loesen">${iconImage("trash")}</button>` : ""}
-    </div>
-    <div class="audio-generation-panel__result" data-speech-result></div>
+    ? (accessibleUrl ? "Barrierefrei neu erzeugen" : "Barrierefrei erzeugen") + " mit " + defaultProviderLabel
+    : (hasAudio ? "Audio neu erzeugen" : "Audio erzeugen") + " mit " + defaultProviderLabel;
+  const generatedAt = timestampText(info.generatedAt);
+  const previewUrl = naturalUrl || accessibleUrl || "";
+  return '<div class="audio-generation-panel audio-generation-panel--compact">'
+    + '<div class="audio-generation-panel__compact">'
+    + '<div class="audio-generation-panel__compact-main">'
+    + '<label>Vorlesen</label>'
+    + '<div class="audio-generation-panel__statusline">' + audioListCell(collection, item, { meta: "state" }) + '<span>' + (hasAudio ? 'Vorhanden' + (generatedAt ? ' / ' + escapeHtml(generatedAt) : '') : 'Noch kein Audio') + '</span></div>'
+    + '<small>' + escapeHtml(defaultProviderLabel) + ' / ' + escapeHtml(defaultVoiceLabel) + '</small>'
+    + '</div>'
+    + (previewUrl ? '<audio controls preload="none" src="' + escapeHtml(previewUrl) + '"></audio>' : '')
+    + '</div>'
+    + '<div class="tool-button-row">'
+    + '<button type="button" class="button button--secondary button--small" data-generate-article-speech data-collection="' + collection + '" data-record-id="' + item.id + '" data-tts-variant="' + escapeHtml(requestedVariant) + '" title="' + escapeHtml('Aktuelle Default-Konfiguration: ' + defaultModelLabel + ' / ' + defaultVoiceLabel) + '">' + escapeHtml(buttonLabel) + '</button>'
+    + (hasAudio ? '<button type="button" class="icon-button icon-button--danger" data-clear-linked-media="audio" title="Audio-Verknuepfung loesen" aria-label="Audio-Verknuepfung loesen">' + iconImage("trash") + '</button>' : '')
+    + '</div>'
+    + '<div class="audio-generation-panel__result" data-speech-result></div>'
+    + '</div>';
+}
+function audioListCell(collection, item, options = {}) {
+  const info = activeAudioInfo(collection, item);
+  const hasAudio = Boolean(info.activeUrl);
+  const buttonState = audioPlayButtonState(info.state, hasAudio);
+  const stateLabel = buttonState.label.replace(/^Audio /, "");
+  const meta = options.meta === "state"
+    ? stateLabel
+    : hasAudio
+      ? (info.provider || "Audio")
+      : "Audio fehlt";
+  return `<div class="audio-list-cell">
+    <button type="button" class="audio-play-button ${buttonState.className}" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}" data-tts-variant="all" data-audio-url="${escapeHtml(info.activeUrl)}" title="${escapeHtml(buttonState.label)}" aria-label="${escapeHtml(buttonState.label)}"><span></span></button>
+    <small>${escapeHtml(meta)}</small>
+    <div class="audio-list-cell__result" data-speech-result></div>
   </div>`;
 }
 
-function audioListCell(collection, item) {
-  const accessibleUrl = item.audioAccessibleUrl || item.audioUrl || "";
-  const naturalUrl = item.audioNaturalUrl || "";
-  const hasAudio = accessibleUrl || naturalUrl;
-  return `<div class="audio-list-cell">
-    <button type="button" class="audio-play-button ${hasAudio ? "audio-play-button--ready" : "audio-play-button--missing"}" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}" data-tts-variant="all" data-audio-url="${escapeHtml(accessibleUrl)}" title="${hasAudio ? "Audio abspielen" : "Audio-Varianten erzeugen"}" aria-label="${hasAudio ? "Audio abspielen" : "Audio-Varianten erzeugen"}"><span></span></button>
-    <small>${accessibleUrl ? "BF" : "-"} / ${naturalUrl ? "NV" : "-"}</small>
-    <div class="audio-list-cell__result" data-speech-result></div>
-  </div>`;
+function maskedSecretLabel(name = "") {
+  return name ? `************${String(name).slice(-4)}` : "Firebase Secret";
+}
+
+function aiProviderCard(provider = {}) {
+  const lastTest = provider.lastTestAt?.seconds
+    ? new Date(provider.lastTestAt.seconds * 1000).toISOString()
+    : provider.lastTestAt || "";
+  const lastSuccess = provider.lastSuccessAt?.seconds
+    ? new Date(provider.lastSuccessAt.seconds * 1000).toISOString()
+    : provider.lastSuccessAt || "";
+  const state = provider.enabled === false ? "inactive" : "active";
+  return `<article class="setup-step ai-provider-card">
+    <span>${escapeHtml(provider.name || provider.provider || "KI-Anbieter")}</span>
+    <strong>${status(state)}</strong>
+    <small>Modell: ${escapeHtml(provider.modelId || "-")}<br>API-Key: ${escapeHtml(maskedSecretLabel(provider.secretName || provider.apiKey || ""))}${provider.voiceName ? `<br>Stimme: ${escapeHtml(provider.voiceName)} (${escapeHtml(provider.voiceId || "")})` : ""}${lastTest ? `<br>Letzter Test: ${escapeHtml(formatDateTime(lastTest))}` : ""}${lastSuccess ? `<br>Letzter Erfolg: ${escapeHtml(formatDateTime(lastSuccess))}` : ""}${provider.lastError ? `<br>Fehler: ${escapeHtml(provider.lastError)}` : ""}</small>
+    ${provider.provider === "elevenlabs" ? `<button type="button" class="button button--secondary button--small" data-audio-provider-test="elevenlabs">Testen & aktivieren</button>` : ""}
+  </article>`;
+}
+
+export async function aiAccessPage() {
+  if (!hasCmsAccess(true)) return denied(true);
+  const [aiSettings, audioProviders] = await Promise.all([
+    getOne("settings", "ai").catch(() => null),
+    getOne("settings", "audioProviders").catch(() => null)
+  ]);
+  const elevenlabs = audioProviders?.elevenlabs || {};
+  const voices = Array.isArray(elevenlabs.voices) ? elevenlabs.voices : [];
+  const providerCards = [
+    {
+      provider: "openai",
+      name: "GPT / OpenAI",
+      enabled: aiSettings?.enabled !== false,
+      modelId: aiSettings?.model || "gpt-4.1-mini",
+      secretName: "OPENAI_API_KEY",
+      lastTestAt: aiSettings?.lastTestAt,
+      lastSuccessAt: aiSettings?.lastSuccessAt
+    },
+    {
+      provider: "gemini",
+      name: "Google Gemini",
+      enabled: true,
+      modelId: "gemini-2.5-flash-preview-tts",
+      secretName: "GEMINI_API_KEY"
+    },
+    {
+      provider: "elevenlabs",
+      name: "ElevenLabs",
+      enabled: Boolean(elevenlabs.enabled),
+      modelId: elevenlabs.modelId || "eleven_multilingual_v2",
+      voiceId: elevenlabs.voiceId || "",
+      voiceName: elevenlabs.voiceName || "",
+      secretName: "ELEVENLABS_API_KEY",
+      lastTestAt: elevenlabs.lastTestAt,
+      lastSuccessAt: elevenlabs.lastSuccessAt,
+      lastError: elevenlabs.lastError || ""
+    }
+  ];
+  return protect(cmsShell("cms/ai-access", `${cmsTitle("System", "KI-Zugaenge")}
+    <section class="panel">
+      <h2>Anbieterstatus</h2>
+      <p class="muted">API-Keys werden ausschliesslich serverseitig als Firebase Secrets verwendet und hier nicht gespeichert oder angezeigt.</p>
+      <div class="setup-steps">${providerCards.map(aiProviderCard).join("")}</div>
+      <div id="ai-access-test-result"></div>
+    </section>
+    <section class="panel">
+      <h2>ElevenLabs Audio-Service v1</h2>
+      <form id="audio-provider-config-form" class="form-grid">
+        <label class="checkbox"><input type="checkbox" name="enabled" ${elevenlabs.enabled ? "checked" : ""}> ElevenLabs aktivieren</label>
+        <div class="form-grid--two">
+          <div class="field"><label>Standardmodell</label><input name="modelId" value="${escapeHtml(elevenlabs.modelId || "eleven_multilingual_v2")}"></div>
+          <div class="field"><label>Voice ID</label><input name="voiceId" value="${escapeHtml(elevenlabs.voiceId || "")}" data-elevenlabs-voice-id></div>
+          <div class="field"><label>Voice Name</label><input name="voiceName" value="${escapeHtml(elevenlabs.voiceName || "")}" data-elevenlabs-voice-name></div>
+          <div class="field"><label>API-Key</label><input value="${escapeHtml(maskedSecretLabel("ELEVENLABS_API_KEY"))}" disabled></div>
+        </div>
+        <div class="field">
+          <label>Geladene Stimmen</label>
+          <select data-elevenlabs-voice-select>
+            <option value="">Stimme aus Cache waehlen</option>
+            ${voices.map((voice) => `<option value="${escapeHtml(voice.voiceId)}" data-voice-name="${escapeHtml(voice.voiceName)}" ${voice.voiceId === elevenlabs.voiceId ? "selected" : ""}>${escapeHtml(voice.voiceName)} (${escapeHtml(voice.voiceId)})</option>`).join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label>Leseprobe</label>
+          <textarea name="previewText" rows="3">Dies ist eine kurze Leseprobe fuer PROdigitalTV. So klingt diese Stimme in der Audio- und Barrierefreiheitsfunktion.</textarea>
+        </div>
+        <audio controls preload="none" hidden data-audio-provider-preview-player></audio>
+        <div class="alert">Das Firebase Secret <code>ELEVENLABS_API_KEY</code> muss serverseitig gesetzt sein. Ein hier eingegebener API-Key wird bewusst nicht in Firestore gespeichert.</div>
+        <div class="actions">
+          <button class="button button--primary">Konfiguration speichern</button>
+          <button type="button" class="button button--secondary" data-audio-provider-load-voices>Stimmen laden</button>
+          <button type="button" class="button button--secondary" data-audio-provider-preview>Leseprobe testen</button>
+          <button type="button" class="button button--secondary" data-audio-provider-test="elevenlabs">Testen & aktivieren</button>
+        </div>
+        <div id="ai-access-result"></div>
+      </form>
+    </section>`), true);
 }
 
 function chatGptHints(events, media, downloads = []) {
@@ -360,7 +639,7 @@ function settingValue(settings, id, fallback = []) {
 
 export async function eventsAdminPage() {
   if (!hasCmsAccess()) return denied();
-  const [allEvents, mediaAssets] = await Promise.all([list("events"), list("media_assets").catch(() => [])]);
+  const [allEvents, mediaAssets, allEditorial] = await Promise.all([list("events"), list("media_assets").catch(() => []), list("editorialContent").catch(() => [])]);
   const events = allEvents
     .filter((event) => !isPastCmsEvent(event))
     .sort((a, b) => (a.date || "9999-12-31").localeCompare(b.date || "9999-12-31"));
@@ -370,12 +649,12 @@ export async function eventsAdminPage() {
 
 export async function eventFollowUpPage() {
   if (!hasCmsAccess()) return denied();
-  const [allEvents, mediaAssets] = await Promise.all([list("events"), list("media_assets").catch(() => [])]);
+  const [allEvents, mediaAssets, allEditorial] = await Promise.all([list("events"), list("media_assets").catch(() => []), list("editorialContent").catch(() => [])]);
   const events = allEvents
     .filter((event) => isPastCmsEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
   return protect(cmsShell("cms/followup", `${cmsTitle("Event-Management", "Event Rückblick")}
-  ${eventFollowUpTable(events, mediaAssets)}`));
+  ${eventFollowUpTable(events, mediaAssets, allEditorial)}`));
 }
 
 function eventTabs(id, active) {
@@ -473,14 +752,23 @@ function eventImageUrl(event = {}, mediaAssets = []) {
   return mediaAssetUrl(asset || {}) || event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "";
 }
 
-function eventFollowUpTable(events = [], mediaAssets = []) {
-  return `<section class="panel"><div class="table-wrap"><table class="table table--editorial table--event-followup"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${events.length ? events.map((event) => `<tr>
+function eventFollowUpTable(events = [], mediaAssets = [], allEditorial = []) {
+  return `<section class="panel"><div class="table-wrap"><table class="table table--editorial table--event-followup table--with-audio"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Status</th><th>Audio</th><th>Aktionen</th></tr></thead><tbody>${events.length ? events.map((event) => {
+    const retrospectiveArticle = allEditorial.find((item) => {
+      const category = String(item.category || "").toLowerCase();
+      return retrospectiveMatchesEvent(item, event)
+        && (item.isRetrospective || category.includes("rückblick") || category.includes("rueckblick") || category.includes("rÃ¼ckblick"))
+        && (item.page === "press" || item.section === "pressRelease");
+    });
+    return `<tr>
     <td><div class="topic-thumb topic-thumb--table editorial-thumb--table event-thumb--table">${eventThumb(event, mediaAssets, "#/cms/followup")}</div></td>
     <td><a class="link editorial-title-link" href="#/cms/event/${event.id}?tab=post" title="${escapeHtml(event.title || "-")}">${escapeHtml(shortText(event.title || "-", 70))}</a>${event.subtitle ? `<small>${escapeHtml(shortText(event.subtitle, 95))}</small>` : ""}</td>
     <td>${escapeHtml(formatDate(event.date))}</td>
     <td>${status(event.lifecyclePhase === "archive_published" ? "published" : event.status || event.lifecyclePhase || "draft")}</td>
+    <td>${retrospectiveArticle ? audioListCell("editorialContent", retrospectiveArticle) : `<small class="muted">Rückblick-Beitrag fehlt</small>`}</td>
     <td>${eventFollowUpActionButtons(event)}</td>
-  </tr>`).join("") : `<tr><td colspan="5">Noch keine Rueckblicke vorhanden.</td></tr>`}</tbody></table></div></section>`;
+  </tr>`;
+  }).join("") : `<tr><td colspan="6">Noch keine Rueckblicke vorhanden.</td></tr>`}</tbody></table></div></section>`;
 }
 
 function editorialSummaryThumb(item = {}) {
@@ -742,7 +1030,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     id: `event-${crypto.randomUUID()}`, title: "", subtitle: "", date: "2026-08-01", startTime: "10:00", endTime: "13:00", locationName: "", city: "", description: "", eventType: "Panel", accessType: "public", status: "draft", lifecyclePhase: "planning", registrationEnabled: false, maxParticipants: 50, expiresAt: "", address: "", phone: "", topicIds: [], speakerIds: [], sponsorIds: []
   } : await getOne("events", id);
   if (!event) return eventsAdminPage();
-  const [topics, speakers, sponsors, registrations, media, settings, allEvents, galleries, allEditorial, mediaAssets] = await Promise.all([list("topics"), list("speakers"), list("sponsors"), list("registrations"), list("eventMedia"), list("settings"), list("events"), list("galleries"), list("editorialContent"), list("media_assets").catch(() => [])]);
+  const [topics, speakers, sponsors, registrations, media, settings, allEvents, galleries, allEditorial, mediaAssets, audioProviders] = await Promise.all([list("topics"), list("speakers"), list("sponsors"), list("registrations"), list("eventMedia"), list("settings"), list("events"), list("galleries"), list("editorialContent"), list("media_assets").catch(() => []), getOne("settings", "audioProviders").catch(() => null)]);
   const eventTypes = settingValue(settings, "eventTypes", ["Medienfruehstueck", "Summit", "Roundtable", "Panel", "Webinar", "Konferenz", "Workshop"]);
   const galleryOptions = [`<option value="">Keine Galerie verknuepfen</option>`, ...galleries
     .filter((gallery) => gallery.status !== "archived")
@@ -751,7 +1039,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   if (!["base", "pre", "topics", "partners", "registration", "post", "media", "ai"].includes(tab)) tab = "base";
   const retrospectiveArticle = allEditorial.find((item) => {
     const category = String(item.category || "").toLowerCase();
-    return (item.linkedEventId === event.id || item.galleryEventId === event.id)
+    return retrospectiveMatchesEvent(item, event)
       && (item.isRetrospective || category.includes("rückblick") || category.includes("rueckblick") || category.includes("rückblick"))
       && (item.page === "press" || item.section === "pressRelease");
   });
@@ -814,7 +1102,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     const postSummaryValue = event.postEventSummary || event.postEventummary || retrospectiveArticle?.introText || retrospectiveArticle?.subtitle || "";
     const postLongValue = event.longDescription || event.bodyText || event.articleText || event.archiveText || retrospectiveArticle?.longDescription || retrospectiveArticle?.bodyText || retrospectiveArticle?.articleText || retrospectiveArticle?.archiveText || "";
     const retrospectiveAudioTool = retrospectiveArticle
-      ? audioGenerationPanel("editorialContent", retrospectiveArticle, { variant: "accessible" })
+      ? audioGenerationPanel("editorialContent", retrospectiveArticle, { variant: "accessible", providerConfig: audioProviders })
       : `<p class="muted">Bitte zuerst den Rückblicktext speichern. Danach wird der redaktionelle Rückblick-Beitrag angelegt und die Vorlesfunktion ist hier verfügbar.</p>`;
     content = `<h2>Event-Nacharbeit</h2>
       <section class="panel event-post-ai-panel" style="background:var(--pdt-bg)">
@@ -1022,16 +1310,14 @@ export async function moduleListPage(module, section = "all") {
   const createParams = editorialConfig?.createParams || "";
   const emptyText = editorialConfig ? `Noch keine Inhalte in ${escapeHtml(title)}.` : "Noch keine Eintraege vorhanden.";
   if (module === "topics") {
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--topics"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table">${topicThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>Thema</td><td>${audioListCell("topics", item)}</td><td>${editorialListStatus(item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="7">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--topics table--with-audio"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table">${topicThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>Thema</td><td>${audioListCell("topics", item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "galleries") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--galleries"><thead><tr><th>Bild</th><th>Titel</th><th>Bilder</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table gallery-thumb--table">${galleryThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a><small>${escapeHtml(shortText(item.description || "-", 90))}</small></td><td>${(item.images || []).length}</td><td>${galleryListStatus(item)}</td><td>${galleryActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="5">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "editorialContent") {
-    const showAudio = section === "news";
     const actionButtons = section === "interna" ? lockedEditorialActionButtons : editorialVisibilityActionButtons;
-    const statusCell = section === "interna" ? editorialListStatus : editorialVisibilityListStatus;
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial${showAudio ? " table--with-audio" : ""}${section === "press" ? " table--press" : ""}${section === "news" ? " table--news" : ""}"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th>${showAudio ? "<th>Audio</th>" : ""}<th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td>${showAudio ? `<td>${audioListCell("editorialContent", item)}</td>` : ""}<td>${statusCell(item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${showAudio ? 7 : 6}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--with-audio${section === "press" ? " table--press" : ""}${section === "news" ? " table--news" : ""}"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td><td>${audioListCell("editorialContent", item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "members") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--members"><thead><tr><th>Logo</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table member-logo-thumb--table">${memberLogoThumb(item, memberMediaAssets, section)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a><small>${escapeHtml(shortText(item.description || "-", 90))}</small></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml([item.category, item.city].filter(Boolean).join(" / ") || "-")}</td><td>${memberListStatus(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
@@ -1107,6 +1393,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
   const topicSpeakers = module === "topics" ? await list("speakers") : [];
   const memberMediaAssets = module === "members" ? await list("media_assets").catch(() => []) : [];
   const editMediaAssets = ["editorialContent", "topics", "sponsors"].includes(module) ? await list("media_assets").catch(() => []) : [];
+  const audioProviders = ["editorialContent", "topics"].includes(module) ? await getOne("settings", "audioProviders").catch(() => null) : null;
   const memberOptions = module === "users"
     ? (await list("members"))
       .filter((member) => (member.status || "active") === "active")
@@ -1234,6 +1521,8 @@ Ausgangstext:
     const thumbState = `${editorialSummaryThumb(item)}${item.imageUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`}`;
     const audioState = item.audioUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
     const galleryState = selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
+    const publicArticlePath = isRetrospectiveEditor ? `retrospective/${item.id}` : sectionKey === "news" ? `news/${item.id}` : `retrospective/${item.id}`;
+    const publicArticleHref = `/?real=1#/${escapeHtml(publicArticlePath)}`;
     const sourceJsonValue = JSON.stringify(item.source_snapshot_json || item.sources || [], null, 2);
     const tagsValue = Array.isArray(item.tags) ? item.tags.join(", ") : item.tags || "";
     return protect(cmsShell(`cms/${backPath}`, `${cmsTitle("Redaktion", sectionKey === "press" ? "Pressemeldung bearbeiten" : "News bearbeiten", `<a class="button button--secondary button--small" href="#/cms/${backPath}">Zurueck</a>`)}
@@ -1244,11 +1533,17 @@ Ausgangstext:
         <input type="hidden" name="validFrom" value="${escapeHtml(item.validFrom || item.publishDate || "")}">
         <div class="editorial-workspace editorial-workspace--text-editor">
           <div class="editorial-workspace__main">
+            <div class="editorial-workflow-actions">
+              <button class="button button--secondary button--small" type="button" data-editorial-preview-layer>Vorschau</button>
+              <a class="button button--secondary button--small" href="${publicArticleHref}" target="_blank" rel="noopener">Artikel anzeigen</a>
+              <button class="button button--secondary button--small" type="button" data-editor-tool-open="audio">Audio</button>
+              <button class="button button--secondary button--small" type="button" data-editor-tool-open="gallery">Galerie</button>
+            </div>
             <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Titel / Headline</label>${aiFieldActions([{ action: "improveText", target: "title", label: "Headline erzeugen", entityType: module, entityId: item.id, fieldName: "title" }])}</div><textarea name="title" rows="2" required>${escapeHtml(item.title || "")}</textarea></div>
             <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Subline</label>${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Subline erzeugen", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div><textarea name="subtitle" rows="2">${escapeHtml(item.subtitle || "")}</textarea></div>
             <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Haupttext</label>${aiFieldActions(sectionKey === "press" ? [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }, { action: "rewritePressRetrospective", target: "bodyText", label: "Rückblick aus Pressemitteilung", entityType: module, entityId: item.id, fieldName: "bodyText", promptField: "retrospectivePrompt" }] : [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div><textarea name="bodyText" required>${escapeHtml(item.bodyText || "")}</textarea></div>
             <div class="field editorial-text-field"><div class="editorial-field-head"><label>Shorttext / Intro</label>${aiFieldActions([{ action: "shortenText", target: "introText", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "introText" }])}</div><textarea name="introText">${escapeHtml(item.introText || "")}</textarea></div>
-            <div class="actions editorial-save-inline"><button class="button button--primary">Speichern</button><button class="button button--secondary" type="button" data-editorial-preview-layer>Vorschau</button></div><div id="content-save-result"></div>
+            <div class="actions editorial-save-inline"><button class="button button--primary">Speichern</button></div><div id="content-save-result"></div>
           </div>
           <aside class="editorial-tools">
             <section class="editorial-meta-panel">
@@ -1262,11 +1557,11 @@ Ausgangstext:
               <summary><span>Medien</span><strong>Bild / Thumb</strong>${thumbState}</summary>
               <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultize: "1200x675", aiCollage: false })}${linkedMediaActions({ collection: module, id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=${module}&id=${item.id}&section=${sectionKey}`, assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, module, "imageUrl")?.id || "" })}</div>${sectionKey === "news" ? `<div class="field"><label>Thumbnail-Prompt</label><textarea name="thumbnail_prompt">${escapeHtml(item.thumbnail_prompt || item.thumbnailPrompt || "")}</textarea></div><div class="field"><label>Thumbnail-Alt-Text</label><input name="thumbnail_alt" value="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || "")}"></div>` : ""}</div>
             </details>
-            <details class="editorial-tool-details"${item.audioUrl || isRetrospectiveEditor ? " open" : ""}>
+            <details class="editorial-tool-details"${item.audioUrl || isRetrospectiveEditor ? " open" : ""} data-editor-tool-panel="audio">
               <summary><span>Audio</span><strong>Vorlesen</strong>${audioState}</summary>
-              <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("editorialContent", item)}</div>
+              <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("editorialContent", item, { providerConfig: audioProviders })}</div>
             </details>
-            <details class="editorial-tool-details"${selectedGallery || isRetrospectiveEditor ? " open" : ""}>
+            <details class="editorial-tool-details"${selectedGallery || isRetrospectiveEditor ? " open" : ""} data-editor-tool-panel="gallery">
               <summary><span>Medien</span><strong>Galerie</strong>${galleryState}</summary>
               <div class="editor-tool-section editor-tool-section--gallery">
                 <div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Eine ausgewaehlte Galerie wird im Artikel als Playbutton mit Slideshow-Layer eingebunden.</p></div>
@@ -1350,7 +1645,7 @@ Ausgangstext:
             </details>
             <details class="editorial-tool-details"${item.audioUrl ? " open" : ""}>
               <summary><span>Audio</span><strong>Vorlesen</strong>${audioState}</summary>
-              <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("topics", item)}</div>
+              <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("topics", item, { providerConfig: audioProviders })}</div>
             </details>
           </aside>
         </div>
@@ -1395,7 +1690,7 @@ Ausgangstext:
           <div class="field"><label>Langtext</label><textarea name="langtext">${escapeHtml(item.langtext || item.bodyText || "")}</textarea>${aiFieldActions([{ action: "improveText", target: "langtext", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "langtext" }])}</div>
           <details class="editorial-tool-details" open>
             <summary><span>Audio</span><strong>Audio & Barrierefreiheit</strong>${audioStatusBadge(audioVariantState("editorialContent", item, "accessible"))}</summary>
-            <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("editorialContent", item)}</div>
+            <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("editorialContent", item, { providerConfig: audioProviders })}</div>
           </details>
           <div class="form-grid--two"><div class="field"><label>Button-Text optional</label><input name="button_text" value="${escapeHtml(item.button_text || item.buttonText || "")}"></div><div class="field"><label>Button-Ziel optional</label><input name="button_ziel" value="${escapeHtml(item.button_ziel || item.buttonUrl || "")}"></div></div>
           <button class="button button--primary">Speichern</button><div id="content-save-result"></div>
@@ -1496,31 +1791,105 @@ Ausgangstext:
 
 export async function audioAdminPage() {
   if (!hasCmsAccess()) return denied();
-  const [editorial, topics] = await Promise.all([list("editorialContent"), list("topics")]);
-  const internalAbout = editorial
-    .filter((item) => item.bereich === "ueber_uns" || item.page === "about" || String(item.key || "").startsWith("ueber_uns."))
-    .map((item) => ({ ...item, audioCollection: "editorialContent", audioArea: "Ueber uns", editHref: `#/cms/edit?module=editorialContent&id=${item.id}` }));
+  const [editorial, topics, audioProviders] = await Promise.all([
+    list("editorialContent"),
+    list("topics"),
+    getOne("settings", "audioProviders").catch(() => null)
+  ]);
+  const editorialRows = editorial
+    .filter((item) => isAudioAdminEditorialItem(item))
+    .map((item) => ({
+      ...item,
+      audioCollection: "editorialContent",
+      audioArea: audioAreaLabel(item),
+      audioSubarea: audioSubareaLabel(item),
+      editHref: `#/cms/edit?module=editorialContent&id=${item.id}${item.section ? `&section=${item.section}` : ""}`
+    }));
   const topicRows = topics
-    .map((item) => ({ ...item, audioCollection: "topics", audioArea: "Thema", editHref: `#/cms/edit?module=topics&id=${item.id}` }));
-  const rows = [...internalAbout, ...topicRows].sort((a, b) => String(a.audioArea).localeCompare(String(b.audioArea)) || String(a.title || a.titel || "").localeCompare(String(b.title || b.titel || "")));
+    .filter((item) => audioSourceText("topics", item))
+    .map((item) => ({ ...item, audioCollection: "topics", audioArea: "Themen", audioSubarea: "Themen", editHref: `#/cms/edit?module=topics&id=${item.id}` }));
+  const rows = [...editorialRows, ...topicRows].sort((a, b) => {
+    const aInfo = activeAudioInfo(a.audioCollection, a);
+    const bInfo = activeAudioInfo(b.audioCollection, b);
+    const stateOrder = { error: 0, fehler: 0, outdated: 1, veraltet: 1, missing: 2, fehlt: 2, ready: 3, aktuell: 3 };
+    return audioAreaRank(a.audioArea) - audioAreaRank(b.audioArea)
+      || (stateOrder[String(aInfo.state).toLowerCase()] ?? 4) - (stateOrder[String(bInfo.state).toLowerCase()] ?? 4)
+      || String(a.audioArea).localeCompare(String(b.audioArea), "de")
+      || String(a.title || a.titel || "").localeCompare(String(b.title || b.titel || ""), "de");
+  });
+  const elevenlabs = audioProviders?.elevenlabs || {};
+  const summary = rows.reduce((acc, item) => {
+    const info = activeAudioInfo(item.audioCollection, item);
+    const state = String(info.state || "missing").toLowerCase();
+    acc.total += 1;
+    if (info.provider === "elevenlabs") acc.elevenlabs += 1;
+    if (info.activeUrl) acc.ready += 1;
+    if (["outdated", "veraltet"].includes(state)) acc.outdated += 1;
+    if (["error", "fehler"].includes(state)) acc.error += 1;
+    if (!info.activeUrl) acc.missing += 1;
+    return acc;
+  }, { total: 0, ready: 0, missing: 0, outdated: 0, error: 0, elevenlabs: 0 });
+  const defaultProviderLabel = elevenlabs.enabled ? "ElevenLabs" : "Gemini";
+  const defaultModelLabel = elevenlabs.enabled
+    ? (elevenlabs.modelId || "eleven_multilingual_v2")
+    : "gemini-2.5-flash-preview-tts";
+  const defaultVoiceLabel = elevenlabs.enabled
+    ? (elevenlabs.voiceName || elevenlabs.voiceId || "Standardstimme")
+    : "Gemini TTS";
+  const areaOptions = Array.from(new Set(rows.map((item) => item.audioArea).filter(Boolean)))
+    .sort((a, b) => {
+      const rankA = audioAreaRank(a);
+      const rankB = audioAreaRank(b);
+      if (rankA !== rankB) return rankA - rankB;
+      return String(a).localeCompare(String(b), "de");
+    });
+  const subareaOptions = Array.from(new Set(rows.map((item) => item.audioSubarea).filter((value) => ["Über uns", "Mitglied werden"].includes(value))))
+    .sort((a, b) => ["Über uns", "Mitglied werden"].indexOf(a) - ["Über uns", "Mitglied werden"].indexOf(b));
   const rowHtml = rows.map((item) => {
     const collection = item.audioCollection;
     const title = item.title || item.titel || item.slug || item.id;
-    return `<tr>
+    const info = activeAudioInfo(collection, item);
+    const generatedAt = timestampText(info.generatedAt);
+    const actionLabel = `${info.activeUrl ? "Neu erzeugen" : "Erzeugen"} mit ${defaultProviderLabel}`;
+    return `<tr data-audio-area="${escapeHtml(item.audioArea)}" data-audio-subarea="${escapeHtml(item.audioSubarea || "")}">
       <td><a class="link editorial-title-link" href="${escapeHtml(item.editHref)}">${escapeHtml(title)}</a><br><small>${escapeHtml(`${collection}/${item.id}`)}</small></td>
       <td>${escapeHtml(item.audioArea)}</td>
-      <td>v${Number(item.contentVersion || 1)}<br><small>${escapeHtml(audioTextSignature(collection, item))}</small></td>
-      <td>${audioStatusBadge(audioVariantState(collection, item, "natural"))}<br>${audioMetaLine(collection, item, "natural")}</td>
-      <td>${audioStatusBadge(audioVariantState(collection, item, "accessible"))}<br>${audioMetaLine(collection, item, "accessible")}</td>
-      <td>${audioListCell(collection, item)}</td>
+      <td>${audioListCell(collection, item, { meta: "state" })}</td>
+      <td>${escapeHtml(info.provider || defaultProviderLabel)}<br><small>${escapeHtml(info.modelId || defaultModelLabel)}</small></td>
+      <td>${escapeHtml(info.voiceName || defaultVoiceLabel)}${generatedAt ? `<br><small>${escapeHtml(generatedAt)}</small>` : ""}${info.karaokeEnabled ? "<br><small>Karaoke bereit</small>" : ""}</td>
+      <td><button type="button" class="button button--secondary button--small" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}" data-tts-variant="all" title="${escapeHtml(`Aktuelle Default-Konfiguration: ${defaultModelLabel} / ${defaultVoiceLabel}`)}">${escapeHtml(actionLabel)}</button></td>
     </tr>`;
   }).join("");
-  return protect(cmsShell("cms/audio", `${cmsTitle("Audio & Barrierefreiheit", "Vorlese- und Audioverwaltung")}
+  return protect(cmsShell("cms/audio", `${cmsTitle("Audio & Barrierefreiheit", "Audio-Service Verwaltung", `<a class="button button--secondary button--small" href="#/cms/ai-access">KI-Zugaenge</a>`)}
     <section class="panel audio-admin-intro">
-      <h2>Phase 1: Ueber uns</h2>
-      <p>Dieses Modul nutzt eine generische Content-ID, Textsignatur und Versionsnummer. Textaenderungen markieren vorhandene Audiofassungen als veraltet; Natural Voice und barrierefreie Vorlesefassung bleiben getrennt.</p>
+      <h2>Zentrale Audio-Pipeline</h2>
+      <p>Diese Uebersicht zeigt die aktive Audiofassung pro Inhalt. Alte Gemini-Audios bleiben erhalten; neue Generierungen laufen ueber den zentralen Audio-Service und nutzen ElevenLabs, wenn der Anbieter in den KI-Zugaengen aktiviert ist.</p>
+      <div class="setup-steps">
+        <div class="setup-step"><span>Audiofaehige Inhalte</span><strong>${summary.total}</strong></div>
+        <div class="setup-step"><span>Audio vorhanden</span><strong>${summary.ready}</strong></div>
+        <div class="setup-step"><span>Nicht erzeugt</span><strong>${summary.missing}</strong></div>
+        <div class="setup-step"><span>Fehler / veraltet</span><strong>${summary.error + summary.outdated}</strong></div>
+        <div class="setup-step"><span>ElevenLabs</span><strong>${elevenlabs.enabled ? "Aktiv" : "Inaktiv"}</strong><small>${escapeHtml(elevenlabs.voiceName || "Keine Standardstimme gespeichert")}</small></div>
+      </div>
     </section>
-    <section class="panel"><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Inhalt</th><th>Bereich</th><th>Version</th><th>Natural Voice</th><th>Barrierefrei</th><th>Aktion</th></tr></thead><tbody>${rowHtml || `<tr><td colspan="6">Noch keine audiofaehigen Inhalte vorhanden.</td></tr>`}</tbody></table></div></section>`));
+    <section class="panel">
+      <div class="audio-admin-toolbar">
+        <label>Bereich filtern
+          <select data-audio-area-filter>
+            <option value="">Alle Bereiche</option>
+            ${areaOptions.map((area) => `<option value="${escapeHtml(area)}">${escapeHtml(area)}</option>`).join("")}
+          </select>
+        </label>
+        <label>Interna filtern
+          <select data-audio-subarea-filter>
+            <option value="">Alle Interna</option>
+            ${subareaOptions.map((area) => `<option value="${escapeHtml(area)}">${escapeHtml(area)}</option>`).join("")}
+          </select>
+        </label>
+        <small data-audio-area-count>${rows.length} Inhalte</small>
+      </div>
+      <div class="table-wrap"><table class="table table--editorial table--audio-service"><thead><tr><th>Inhalt</th><th>Bereich</th><th>Audio</th><th>Modell</th><th>Stimme</th><th>Aktion</th></tr></thead><tbody>${rowHtml || `<tr><td colspan="6">Noch keine audiofähigen Inhalte vorhanden.</td></tr>`}</tbody></table></div>
+    </section>`));
 }
 
 export async function setupPage() {

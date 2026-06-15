@@ -1,7 +1,9 @@
 import { demoDatabase } from "../data/demoData.js";
-import { getFirebaseServices, firebaseEnabled, realDataMode } from "./firebaseClient.js";
+import { getFirebaseServices, getFirestoreServices, firebaseEnabled, realDataMode } from "./firebaseClient.js";
 
 const STORE_KEY = "prodigitaltv-demo-db-official-assets-v4";
+const PUBLIC_LIST_CACHE_MS = 45000;
+const publicListCache = new Map();
 
 function canFallbackToLocal(error) {
   if (realDataMode()) return false;
@@ -130,7 +132,7 @@ function scrubOversizedInlineImages(record = {}) {
 }
 
 export async function list(collectionName) {
-  const firebase = await getFirebaseServices();
+  const firebase = await getFirestoreServices();
   if (!firebase) {
     if (realDataMode()) throw new Error("Firebase ist im Real-Modus nicht erreichbar.");
     return localDb()[collectionName] || [];
@@ -145,7 +147,7 @@ export async function list(collectionName) {
 }
 
 async function constrainedList(collectionName, predicates) {
-  const firebase = await getFirebaseServices();
+  const firebase = await getFirestoreServices();
   if (!firebase) {
     if (realDataMode()) throw new Error("Firebase ist im Real-Modus nicht erreichbar.");
     return (localDb()[collectionName] || []).filter((record) => predicates.every(([field, operator, value]) => {
@@ -169,11 +171,29 @@ async function constrainedList(collectionName, predicates) {
   }
 }
 
+function publicCacheKey(collectionName, predicates) {
+  return `${collectionName}:${JSON.stringify(predicates || [])}`;
+}
+
+async function cachedConstrainedList(collectionName, predicates) {
+  const key = publicCacheKey(collectionName, predicates);
+  const cached = publicListCache.get(key);
+  if (cached && Date.now() - cached.createdAt < PUBLIC_LIST_CACHE_MS) return cached.promise;
+  const promise = constrainedList(collectionName, predicates);
+  publicListCache.set(key, { createdAt: Date.now(), promise });
+  try {
+    return await promise;
+  } catch (error) {
+    publicListCache.delete(key);
+    throw error;
+  }
+}
+
 export async function listPublicEvents(includeMemberEvents = false) {
-  const publicEvents = await constrainedList("events", [["status", "==", "published"], ["visibility", "==", "public"]]);
+  const publicEvents = await cachedConstrainedList("events", [["status", "==", "published"], ["visibility", "==", "public"]]);
   const activePublicEvents = publicEvents.filter(isEventVisible);
   if (!includeMemberEvents) return activePublicEvents;
-  const memberEvents = await constrainedList("events", [["accessType", "==", "members_only"]]);
+  const memberEvents = await cachedConstrainedList("events", [["accessType", "==", "members_only"]]);
   const activeMemberEvents = memberEvents.filter(isEventVisible);
   return [...activePublicEvents, ...activeMemberEvents.filter((event) => !activePublicEvents.some((publicEvent) => publicEvent.id === event.id))];
 }
@@ -200,13 +220,13 @@ export async function listPublicContent(collectionName) {
     galleries: [["status", "==", "published"], ["visibility", "==", "public"]],
     eventMedia: [["status", "==", "approved"], ["visibility", "==", "public"]]
   };
-  const records = await constrainedList(collectionName, filters[collectionName] || []);
+  const records = await cachedConstrainedList(collectionName, filters[collectionName] || []);
   if (collectionName === "members") return records.filter(isPublicLiveMember);
   return records;
 }
 
 export async function getOne(collectionName, id) {
-  const firebase = await getFirebaseServices();
+  const firebase = await getFirestoreServices();
   if (!firebase) {
     if (realDataMode()) throw new Error("Firebase ist im Real-Modus nicht erreichbar.");
     return (localDb()[collectionName] || []).find((item) => item.id === id) || null;

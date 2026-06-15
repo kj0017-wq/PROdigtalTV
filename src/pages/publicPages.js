@@ -179,6 +179,33 @@ function publicEventMediaAsset(event = {}, mediaAssets = []) {
     })[0];
 }
 
+function publicEditorialMediaAsset(item = {}, mediaAssets = []) {
+  return mediaAssets
+    .filter((asset) => {
+      const imageUrl = item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || "";
+      const directIds = [item.thumbnail_media_asset_id, item.mediaAssetId, item.media_asset_id].filter(Boolean);
+      const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
+      return directIds.includes(asset.id)
+        || (asset.target_collection === "editorialContent" && asset.target_id === item.id && ["imageUrl", "thumbnail_url", "thumbnailUrl"].includes(asset.target_field || "imageUrl"))
+        || (asset.linked_collection === "editorialContent" && asset.linked_record_id === item.id && ["imageUrl", "thumbnail_url", "thumbnailUrl"].includes(asset.linked_field || "imageUrl"))
+        || (imageUrl && urls.includes(imageUrl));
+    })
+    .filter((asset) => mediaAssetUrl(asset))
+    .sort((a, b) => {
+      const directIds = [item.thumbnail_media_asset_id, item.mediaAssetId, item.media_asset_id].filter(Boolean);
+      const score = (asset = {}) => [
+        directIds.includes(asset.id) ? "5" : "0",
+        asset.target_collection === "editorialContent" && asset.target_id === item.id ? "4" : "0",
+        asset.linked_collection === "editorialContent" && asset.linked_record_id === item.id ? "3" : "0",
+        asset.source_type === "edited" ? "2" : "0",
+        asset.status === "active" ? "2" : "1",
+        asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
+        asset.id || ""
+      ].join("|");
+      return score(b).localeCompare(score(a));
+    })[0];
+}
+
 function publicMemberLogoAsset(member = {}, mediaAssets = []) {
   return mediaAssets
     .filter((asset) => {
@@ -264,7 +291,7 @@ function archiveArticle(event, partners = []) {
   const host = partners.find((partner) => partner.id === event.hostId);
   const dateLabel = event.displayDate || formatDate(event.date);
   return `<article class="archive-article">
-    ${event.imageUrl ? `<figure class="archive-article__image"><img src="${escapeHtml(event.imageUrl)}" alt="Rueckblick ${escapeHtml(event.title)}"></figure>` : `<div class="archive-article__placeholder"><span>${escapeHtml(event.eventType || "Archiv")}</span></div>`}
+    ${event.imageUrl ? `<figure class="archive-article__image"><img src="${escapeHtml(event.imageUrl)}" alt="Rueckblick ${escapeHtml(event.title)}" loading="lazy" decoding="async"></figure>` : `<div class="archive-article__placeholder"><span>${escapeHtml(event.eventType || "Archiv")}</span></div>`}
     <div class="archive-article__body">
       <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` Â· ${escapeHtml(event.city)}` : ""}</p>
       <h2>${escapeHtml(event.title)}</h2>
@@ -278,7 +305,7 @@ function archiveEditorialArticle(item, partners = []) {
   const sponsor = item.sponsorId ? partners.find((partner) => partner.id === item.sponsorId) : null;
   const dateLabel = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   return `<article class="archive-article">
-    ${item.imageUrl ? `<figure class="archive-article__image"><img src="${escapeHtml(item.imageUrl)}" alt="Rueckblick ${escapeHtml(item.title || "")}"></figure>` : `<div class="archive-article__placeholder"><span>Rueckblick</span></div>`}
+    ${item.imageUrl ? `<figure class="archive-article__image"><img src="${escapeHtml(item.imageUrl)}" alt="Rueckblick ${escapeHtml(item.title || "")}" loading="lazy" decoding="async"></figure>` : `<div class="archive-article__placeholder"><span>Rueckblick</span></div>`}
     <div class="archive-article__body">
       <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Rückblick"}${sponsor ? ` Â· ${escapeHtml(sponsor.name)}` : ""}</p>
       <h2>${escapeHtml(item.title || "Rueckblick")}</h2>
@@ -296,7 +323,9 @@ function articleParagraphs(text = "") {
 function archiveEventImageUrl(event = {}, mediaAssets = []) {
   const asset = publicEventMediaAsset(event, mediaAssets);
   const currentUrl = mediaAssetUrl(asset || {}) || versionedAssetUrl(event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "", event);
-  if (currentUrl) return currentUrl;
+  if (currentUrl && !blockedLegacyEventImageUrl(currentUrl)) return currentUrl;
+  const fallback = eventFallbackImageUrl(event);
+  if (fallback) return fallback;
   const archivePhotoExtensions = {
     32: "jpg",
     33: "jpg",
@@ -318,13 +347,20 @@ function archiveEventImageUrl(event = {}, mediaAssets = []) {
 
 function eventFallbackImageUrl(event = {}) {
   const fallbacks = {
-    "event-salzburg-red-bull-hangar7-2026": "https://firebasestorage.googleapis.com/v0/b/prodigitaltv-da47b.firebasestorage.app/o/Images%2FDSC06819.jpg?alt=media&token=89bb1cc0-0183-4813-adb5-7d577f56eab5"
+    "event-salzburg-red-bull-hangar7-2026": "/assets/official/events/event-salzburg-red-bull-hangar7-2026.svg",
+    "event-salzburg-2025": "/assets/official/events/event-salzburg-2025.svg",
+    "event-berlinale-2026": "/assets/official/events/event-berlinale-2026.svg",
+    "event-leica-welt-2026": "/assets/official/events/event-leica-welt-2026.svg"
   };
   return fallbacks[event.id] || "";
 }
 
-function blockedHomeEventImageUrl(url = "") {
+function blockedLegacyEventImageUrl(url = "") {
   return /DSC06819\.jpg|Images%2FDSC06819\.jpg|Images\/DSC06819\.jpg/i.test(String(url || ""));
+}
+
+function blockedHomeEventImageUrl(url = "") {
+  return blockedLegacyEventImageUrl(url);
 }
 
 function eventDetailImageUrl(event = {}, mediaAssets = [], blockedUrls = []) {
@@ -407,7 +443,16 @@ function archiveListEvent(event, partners = [], mediaAssets = []) {
 function archiveListEditorial(item, partners = [], events = [], mediaAssets = []) {
   const sponsor = item.sponsorId ? partners.find((partner) => partner.id === item.sponsorId) : null;
   const linkedEvent = retrospectiveLinkedEvent(item, events);
-  const thumbUrl = linkedEvent ? archiveEventImageUrl(linkedEvent, mediaAssets) : (item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || "");
+  const directAssetIds = [item.thumbnail_media_asset_id, item.mediaAssetId, item.media_asset_id].filter(Boolean);
+  const articleAsset = publicEditorialMediaAsset(item, mediaAssets);
+  const hasBrokenDirectAssetReference = directAssetIds.length && !articleAsset;
+  const linkedEventThumb = linkedEvent ? archiveEventImageUrl(linkedEvent, mediaAssets) : "";
+  const articleThumb = mediaAssetUrl(articleAsset || {}) || versionedAssetUrl(item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || "", item);
+  const thumbUrl = hasBrokenDirectAssetReference && linkedEventThumb
+    ? linkedEventThumb
+    : articleThumb && !blockedLegacyEventImageUrl(articleThumb)
+    ? articleThumb
+    : linkedEventThumb;
   const dateLabel = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   const detailUrl = `#/retrospective/${escapeHtml(item.id)}`;
   return `<article class="archive-article archive-article--list">
@@ -569,7 +614,7 @@ function aboutInternalCard(block, meta, options = {}) {
 function aboutLongTextSection(block, options = {}) {
   return `<article class="internal-about-text" id="about-text-${escapeHtml(block.slug)}">
     <div class="internal-about-text__head">${aboutPicto(block.icon)}<div><p class="eyebrow">${escapeHtml(block.titel)}</p><h2>${escapeHtml(block.titel)}</h2><p>${escapeHtml(block.kurztext)}</p></div></div>
-    ${ttsReader({ title: block.titel || "", text: block.langtext || "", audioUrl: block.audioUrl || "", audioAccessibleUrl: block.audioAccessibleUrl || "", audioNaturalUrl: block.audioNaturalUrl || "", audioStatus: block.audioStatus || "", audioAccessibleStatus: block.audioAccessibleStatus || "", audioNaturalStatus: block.audioNaturalStatus || "" })}
+    ${ttsReader({ rubric: "Interna", title: block.titel || "", text: block.langtext || "", audio: block.audio || {}, audioProvider: block.audioProvider || "", audioUrl: block.audioUrl || "", audioAccessibleUrl: block.audioAccessibleUrl || "", audioNaturalUrl: block.audioNaturalUrl || "", timingUrl: block.timingUrl || "", audioStatus: block.audioStatus || "", audioAccessibleStatus: block.audioAccessibleStatus || "", audioNaturalStatus: block.audioNaturalStatus || "" })}
     <div class="editorial-text">${articleParagraphs(block.langtext)}</div>
     ${options.joinCta ? `<button class="join-text-link internal-text-join-cta" type="button" data-join-scroll>Mitgliedsantrag -></button>` : ""}
     <button class="internal-about-top-button" type="button" data-internal-scroll-top aria-label="Nach oben">â†‘</button>
@@ -814,22 +859,45 @@ function availableAudioUrl(url = "", status = "", fallbackStatus = "") {
   return isAudioAvailableStatus(effectiveStatus) ? url : "";
 }
 
-function ttsReader({ title = "", text = "", audioUrl = "", audioAccessibleUrl = "", audioNaturalUrl = "", audioStatus = "", audioAccessibleStatus = "", audioNaturalStatus = "" }) {
-  const fallbackUrl = availableAudioUrl(audioUrl, audioStatus);
-  const accessibleUrl = availableAudioUrl(audioAccessibleUrl, audioAccessibleStatus, audioStatus) || fallbackUrl;
-  const naturalUrl = availableAudioUrl(audioNaturalUrl, audioNaturalStatus, audioStatus) || accessibleUrl;
+function countTextWords(value = "") {
+  return String(value || "").trim().split(/\s+/).filter(Boolean).length;
+}
+
+function isElevenLabsAudioUrl(url = "") {
+  return /(?:elevenlabs|elevenlabs-v)/i.test(String(url || ""));
+}
+
+function isElevenLabsAudio({ audio = {}, audioProvider = "", audioUrl = "", audioAccessibleUrl = "", audioNaturalUrl = "" }) {
+  return String(audio.provider || audioProvider || "").toLowerCase() === "elevenlabs"
+    || isElevenLabsAudioUrl(audio.audioUrl || audioUrl || audioAccessibleUrl || audioNaturalUrl);
+}
+
+function ttsReader({ rubric = "Audio", title = "", text = "", audio = {}, audioProvider = "", audioUrl = "", audioAccessibleUrl = "", audioNaturalUrl = "", timingUrl = "", audioStatus = "", audioAccessibleStatus = "", audioNaturalStatus = "" }) {
+  const readerText = [title, text].filter(Boolean).join("\n\n");
+  const serviceStatus = audio.status || audioStatus;
+  const serviceUrl = isElevenLabsAudio({ audio, audioProvider, audioUrl, audioAccessibleUrl, audioNaturalUrl })
+    ? availableAudioUrl(audio.audioUrl || audioAccessibleUrl || audioUrl, serviceStatus, audioStatus)
+    : "";
+  const serviceTimingUrl = serviceUrl ? (audio.timingUrl || timingUrl || "") : "";
+  const fallbackUrl = serviceUrl || (isElevenLabsAudio({ audioProvider, audioUrl })
+    ? availableAudioUrl(audioUrl, audioStatus)
+    : "");
+  const accessibleUrl = serviceUrl || (isElevenLabsAudio({ audioProvider, audioUrl: audioAccessibleUrl })
+    ? availableAudioUrl(audioAccessibleUrl, audioAccessibleStatus, audioStatus)
+    : "") || fallbackUrl;
+  const naturalUrl = serviceUrl || (isElevenLabsAudio({ audioProvider, audioUrl: audioNaturalUrl })
+    ? availableAudioUrl(audioNaturalUrl, audioNaturalStatus, audioStatus)
+    : "") || accessibleUrl;
   if (!accessibleUrl && !naturalUrl) return "";
-  return `<div class="tts-reader" data-tts-reader>
-    <button type="button" class="tts-reader__toggle" data-tts-toggle aria-expanded="false" aria-label="Audio Ã¶ffnen"><span aria-hidden="true">â–¶</span></button>
-    <div class="tts-reader__meta"><p class="eyebrow">Audio</p><strong>${escapeHtml(title || "Vorlesen")}</strong></div>
-    <template data-tts-source>${escapeHtml(text)}</template>
-    <div class="tts-reader__actions" data-tts-actions hidden>
-      <button type="button" class="button button--primary button--small" data-tts-play data-tts-mode="natural" data-audio-url="${escapeHtml(naturalUrl)}" ${naturalUrl ? "" : "disabled"}><span aria-hidden="true">Audio</span> AnhÃ¶ren</button>
-      <button type="button" class="button button--secondary button--small" data-tts-play data-tts-mode="accessible" data-audio-url="${escapeHtml(accessibleUrl)}" ${accessibleUrl ? "" : "disabled"}><span aria-hidden="true">Aa</span> Barrierefrei vorlesen</button>
+  return `<div class="tts-reader" data-tts-reader data-timing-url="${escapeHtml(serviceTimingUrl)}" data-tts-inline-offset="${countTextWords(title)}">
+    <div class="tts-reader__meta"><p class="eyebrow">${escapeHtml(rubric || "Audio")}</p><strong>${escapeHtml(title || "Vorlesen")}</strong></div>
+    <template data-tts-source>${escapeHtml(readerText)}</template>
+    <div class="tts-reader__actions" data-tts-actions>
+      <button type="button" class="button button--primary button--small tts-reader__play" data-tts-play data-tts-mode="natural" data-audio-url="${escapeHtml(naturalUrl)}" aria-pressed="false" aria-label="Audio abspielen oder pausieren" ${naturalUrl ? "" : "disabled"}><span class="tts-control-icon tts-control-icon--play" aria-hidden="true"></span></button>
+      <button type="button" class="button button--secondary button--small tts-reader__large-text" data-tts-play data-tts-mode="accessible" data-audio-url="${escapeHtml(accessibleUrl)}" data-timing-url="${escapeHtml(serviceTimingUrl)}" aria-pressed="false" aria-label="Gro?en Text ?ffnen" ${accessibleUrl ? "" : "disabled"}><span class="tts-control-icon tts-control-icon--search" aria-hidden="true"></span></button>
     </div>
   </div>`;
 }
-
 function galleryPlayCta(gallery, images) {
   if (!gallery || !images.length) return "";
   const payload = escapeHtml(JSON.stringify({
@@ -871,9 +939,19 @@ function isPastEvent(event) {
   return event.lifecyclePhase === "archive_published" || event.lifecyclePhase === "post_processing" || eventExpires(event) || (event.date && event.date < "2026-05-26");
 }
 
+function mobileLeanStart() {
+  return Boolean(window.matchMedia?.("(max-width: 760px)").matches);
+}
+
 export async function homePage() {
-  const [events, topics, rawMembers, editorial, sponsors, mediaAssets] = await Promise.all([listPublicEvents(), listPublicContent("topics"), listPublicContent("members"), listPublicContent("editorialContent"), listPublicContent("sponsors"), list("media_assets").catch(() => [])]);
-  const members = await withPublicMemberLogos(rawMembers);
+  const leanMobile = mobileLeanStart();
+  const [events, rawMembers, editorial, mediaAssets] = await Promise.all([
+    listPublicEvents(),
+    leanMobile ? Promise.resolve([]) : listPublicContent("members"),
+    listPublicContent("editorialContent"),
+    leanMobile ? Promise.resolve([]) : list("media_assets").catch(() => [])
+  ]);
+  const members = leanMobile ? [] : await withPublicMemberLogos(rawMembers);
   const upcoming = events.filter((event) => !isPastEvent(event) && event.visibility === "public").sort((a, b) => a.date.localeCompare(b.date));
   const next = upcoming[0];
   const latestNewsItems = publicNewsItems(editorial)
@@ -940,7 +1018,7 @@ export async function homePage() {
     const thumb = newsThumbUrl(item);
     const date = item.publishDate || item.validFrom || item.updatedAt || "";
     return `<a class="home-news-card" href="#/news/${escapeHtml(item.id)}">
-      <figure class="home-news-card__thumb">${thumb ? `<img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}">` : `<span>${escapeHtml(item.category || "News")}</span>`}</figure>
+      <figure class="home-news-card__thumb">${thumb ? `<img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async">` : `<span>${escapeHtml(item.category || "News")}</span>`}</figure>
       <div class="home-news-card__body">
         <div class="home-news-card__meta"><span>${escapeHtml(item.category || "News")}</span>${date ? `<time>${escapeHtml(formatDate(date))}</time>` : ""}</div>
         <h3>${escapeHtml(item.title || "Aktuelles von PROdigitalTV")}</h3>
@@ -1090,19 +1168,65 @@ export async function topicsPage() {
     <section class="section"><div class="container"><div class="card-grid card-grid--three editorial-list editorial-list--topics">${topics.map(topicCard).join("")}</div></div></section>`);
 }
 
-export async function newsPage() {
+export async function newsPage(query = new URLSearchParams()) {
   const cmsNews = publicNewsItems(await list("editorialContent"));
-  const news = mergeNewsWithFallback(cmsNews, editorialFallbackNews)
+  const fallbackNews = realDataMode() ? [] : editorialFallbackNews;
+  const news = mergeNewsWithFallback(cmsNews, fallbackNews)
     .sort(editorialPrioritySort);
+  const selectedCategory = String(query?.get?.("category") || "").trim();
+  const categoryHref = (category) => `#/news?category=${encodeURIComponent(category || "News")}`;
+  const newsCategories = (item = {}) => {
+    const values = Array.isArray(item.category) ? item.category : [item.category || "News"];
+    const categories = values
+      .flatMap((value) => String(value || "").split(/\s*(?:\/|,|;|\|)\s*/))
+      .map((value) => value.trim())
+      .filter(Boolean);
+    return [...new Set(categories.length ? categories : ["News"])];
+  };
+  const categoryLinks = (item = {}) => newsCategories(item)
+    .map((category) => `<a class="news-category-link" href="${escapeHtml(categoryHref(category))}">${escapeHtml(category)}</a>`)
+    .join(`<span class="news-category-separator"> / </span>`);
+  const filteredNews = selectedCategory
+    ? news.filter((item) => newsCategories(item).includes(selectedCategory))
+    : news;
+  const featuredNews = filteredNews.slice(0, 6);
+  const listedNews = filteredNews.slice(6);
+  const newsCard = (item) => {
+    const thumb = newsThumbUrl(item);
+    const teaser = item.shortText || item.teaserText || item.introText || item.bodyText || "";
+    const category = newsCategories(item)[0] || "News";
+    const detailHref = `#/news/${escapeHtml(item.id)}`;
+    return `<article class="quick-card news-card">${thumb ? `<a class="news-card__thumb-link" href="${detailHref}"><figure class="news-card__thumb"><img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async"></figure></a>` : ""}<div class="news-card__body"><p class="eyebrow news-category-list">${categoryLinks(item)}</p><h3><a href="${detailHref}">${escapeHtml(item.title || "")}</a></h3>${item.subtitle ? `<p class="news-card__subtitle">${escapeHtml(item.subtitle)}</p>` : ""}<p class="news-card__teaser">${escapeHtml(teaser).slice(0, 320)}</p></div></article>`;
+  };
+  const newsListItem = (item) => {
+    const date = item.publishDate || item.validFrom || item.updatedAt || item.createdAt || "";
+    const teaser = item.shortText || item.teaserText || item.introText || item.subtitle || item.bodyText || "";
+    const category = newsCategories(item)[0] || "News";
+    const thumb = newsThumbUrl(item);
+    return `<article class="news-list-item">
+      <a class="news-list-item__thumb" href="#/news/${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "News")}">${thumb ? `<img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async">` : `<span>${escapeHtml(category)}</span>`}</a>
+      <div class="news-list-item__body">
+        <span class="news-list-item__meta">${categoryLinks(item)}${date ? ` / ${escapeHtml(formatDate(date))}` : ""}</span>
+        <strong><a href="#/news/${escapeHtml(item.id)}">${escapeHtml(item.title || "")}</a></strong>
+        ${teaser ? `<span>${escapeHtml(teaser).slice(0, 170)}</span>` : ""}
+      </div>
+    </article>`;
+  };
   return publicShell("news", `${subhero("News", "Aktuelles von PROdigitalTV.", "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.")}
-    <section class="section"><div class="container">${news.length ? `<div class="card-grid card-grid--three editorial-list editorial-list--news">${news.map((item) => { const thumb = newsThumbUrl(item); return `<a class="quick-card news-card" href="#/news/${item.id}">${thumb ? `<figure class="news-card__thumb"><img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}"></figure>` : ""}<p class="eyebrow">${escapeHtml(item.category || "News")}</p><h3>${escapeHtml(item.title || "")}</h3>${item.subtitle ? `<p class="news-card__subtitle">${escapeHtml(item.subtitle)}</p>` : ""}<p>${escapeHtml(item.shortText || item.teaserText || item.introText || item.bodyText || "").slice(0, 180)}</p></a>`; }).join("")}</div>` : `<div class="alert">Aktuell sind keine News veroeffentlicht.</div>`}</div></section>`);
+    <section class="section"><div class="container">${news.length ? `
+      ${selectedCategory ? `<div class="news-filter-state"><span>Rubrik: <strong>${escapeHtml(selectedCategory)}</strong></span><a class="button button--secondary button--small" href="#/news">Alle News</a></div>` : ""}
+      <div class="card-grid card-grid--three editorial-list editorial-list--news">${featuredNews.map(newsCard).join("")}</div>
+      ${listedNews.length ? `<div class="news-list-view"><div class="section-head"><div><p class="eyebrow">Weitere News</p><h2>${selectedCategory ? `Weitere Meldungen in ${escapeHtml(selectedCategory)}` : "Alle weiteren Meldungen"}</h2></div></div>${listedNews.map(newsListItem).join("")}</div>` : ""}
+      ${!filteredNews.length ? `<div class="alert">Zu dieser Rubrik sind aktuell keine News veröffentlicht.</div>` : ""}
+    ` : `<div class="alert">Aktuell sind keine News veröffentlicht.</div>`}</div></section>`);
 }
 
 export async function newsDetailPage(id) {
+  const fallbackNews = realDataMode() ? [] : editorialFallbackNews;
   const publicEditorialContent = await listPublicContent("editorialContent").catch(() => []);
   const item = publicEditorialContent.find((entry) => [entry.id, entry.slug, entry.key].filter(Boolean).includes(id))
     || await getOne("editorialContent", id).catch(() => null)
-    || editorialFallbackNews.find((entry) => entry.id === id);
+    || fallbackNews.find((entry) => entry.id === id);
   const isRetrospective = isRetrospectiveArticle(item);
   if (!item || (item.page !== "news" && item.section !== "news" && !isRetrospective)) return notFoundPage();
   if (!isRetrospective && !publicNewsItems([item]).length) return notFoundPage();
@@ -1136,8 +1260,8 @@ export async function newsDetailPage(id) {
           intro: item.subtitle || ""
         })}
         ${articleImageUrl ? `<figure class="news-detail__thumb news-detail__hero-image"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${item.title || "News"}`)}" loading="eager" decoding="async"></figure>` : ""}
-        ${ttsReader({ title: item.title || "", text, audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
-        <div class="editorial-text">${leadMedia}${articleParagraphs(text)}</div>
+        ${ttsReader({ rubric: isRetrospective ? "Rückblick" : item.category || "News", title: item.title || "", text: [item.subtitle, text].filter(Boolean).join("\n\n"), audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
+        <div class="editorial-text">${leadMedia}${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}${articleParagraphs(text)}</div>
         ${articleSourcesList(item)}
       </article>
       <aside class="detail-aside">
@@ -1154,22 +1278,24 @@ export async function topicDetailPage(id) {
   if (!topic) return notFoundPage();
   const linked = events.filter((event) => event.topicIds.includes(id) && event.visibility === "public" && !isPastEvent(event));
   const relatedTopics = allTopics.filter((entry) => entry.id !== topic.id).slice(0, 4);
-  const topicIntro = topic.shortDescription || topic.subtitle || topic.longDescription || topic.bodyText || "";
+  const topicIntro = "Einordnung, Hintergruende und Praxisbezug zu zentralen Begriffen der digitalen Medienwirtschaft.";
   const topicText = topic.longDescription || topic.bodyText || topic.shortDescription || "";
+  const topicAudioText = [topic.subtitle, topic.longDescription, topic.bodyText, topic.shortDescription].filter(Boolean).join("\n\n");
+  const topicVisibleText = `${topic.subtitle ? `<p class="article-subline">${escapeHtml(topic.subtitle)}</p>` : ""}${articleParagraphs(topicText)}`;
   const selectedGallery = topic.galleryId ? galleries.find((gallery) => gallery.id === topic.galleryId) : null;
   const attachedGalleryImages = Array.isArray(selectedGallery?.images)
     ? [...selectedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 12)
     : [];
   const leadMedia = attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "";
   const editorialBlock = topicText
-    ? `<section class="section section--white"><div class="container topic-article">${ttsReader({ title: topic.title || "", text: topicText, audioUrl: topic.audioUrl || "", audioAccessibleUrl: topic.audioAccessibleUrl || "", audioNaturalUrl: topic.audioNaturalUrl || "", audioStatus: topic.audioStatus || "", audioAccessibleStatus: topic.audioAccessibleStatus || "", audioNaturalStatus: topic.audioNaturalStatus || "" })}${articleParagraphs(topicText)}</div></section>`
+    ? `<section class="section section--white"><div class="container topic-article">${ttsReader({ rubric: "Thema", title: topic.title || "", text: topicAudioText || topicText, audio: topic.audio || {}, audioProvider: topic.audioProvider || "", audioUrl: topic.audioUrl || "", audioAccessibleUrl: topic.audioAccessibleUrl || "", audioNaturalUrl: topic.audioNaturalUrl || "", timingUrl: topic.timingUrl || "", audioStatus: topic.audioStatus || "", audioAccessibleStatus: topic.audioAccessibleStatus || "", audioNaturalStatus: topic.audioNaturalStatus || "" })}${topicVisibleText}</div></section>`
     : "";
   const relatedTopicsBlock = relatedTopics.length
     ? `<section class="section section--white section--related-topics"><div class="container"><div class="section-head"><div><p class="eyebrow">Weitere Themen</p><h2>Mehr aus der Rubrik</h2></div></div><div class="card-grid card-grid--four">${relatedTopics.map(topicCard).join("")}</div></div></section>`
     : "";
   return publicShell("topics", `<section class="section section--article-head"><div class="container">
       ${articleHeader({
-        eyebrow: "Thema",
+        eyebrow: "Unsere Themen",
         title: topic.title || "",
         intro: topicIntro,
         logoUrl: topic.imageUrl || "",

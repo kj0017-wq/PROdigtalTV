@@ -22,6 +22,7 @@ const setupService = () => lazy.setupService ||= import("./firebase/setupService
 const csvService = () => lazy.csvService ||= import("./utils/csv.js");
 const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=322");
 const ttsService = () => lazy.ttsService ||= import("./ai/ttsService.js?v=2");
+const audioService = () => lazy.audioService ||= import("./ai/audioService.js");
 const aiSourceCatalogService = () => lazy.aiSourceCatalog ||= import("./data/aiSourceCatalog.js");
 
 const createRegistration = async (...args) => (await registrationService()).createRegistration(...args);
@@ -46,6 +47,10 @@ const generateAiTopicSuggestions = async (...args) => (await openaiService()).ge
 const importGermanPressReleases = async (...args) => (await openaiService()).importGermanPressReleases(...args);
 const importNewsFromSources = async (...args) => (await openaiService()).importNewsFromSources(...args);
 const generateArticleSpeechAsset = async (...args) => (await ttsService()).generateArticleSpeechAsset(...args);
+const saveProviderConfig = async (...args) => (await audioService()).saveProviderConfig(...args);
+const testAudioProviderConnection = async (...args) => (await audioService()).testConnection(...args);
+const loadAudioProviderVoices = async (...args) => (await audioService()).loadVoices(...args);
+const previewAudioProviderVoice = async (...args) => (await audioService()).previewVoice(...args);
 const getAiSourceCatalog = async () => (await aiSourceCatalogService()).aiSourceCatalog;
 
 function storedTheme() {
@@ -88,7 +93,7 @@ async function viewForRoute(current) {
   if (current.path === "topics") return topicsPage();
   if (current.path === "topic") return topicDetailPage(current.id);
   if (current.path === "news" && current.id) return newsDetailPage(current.id);
-  if (current.path === "news") return newsPage();
+  if (current.path === "news") return newsPage(current.query);
   if (current.path === "retrospective" && current.id) return newsDetailPage(current.id);
   if (current.path === "about" && current.id) return internalDetailPage("ueber_uns", current.id);
   if (current.path === "ueber-uns" && current.id) return internalDetailPage("ueber_uns", current.id);
@@ -119,7 +124,7 @@ async function viewForRoute(current) {
   if (current.path === "cms") {
     const {
       dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage,
-      moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, mailAdminPage, audioAdminPage
+      moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, aiAccessPage, mailAdminPage, audioAdminPage
     } = await cmsPages();
     if (!current.id) return dashboardPage();
     if (current.id === "events") return eventsAdminPage();
@@ -148,6 +153,7 @@ async function viewForRoute(current) {
     if (current.id === "audio") return audioAdminPage();
     if (current.id === "mail-admin") return mailAdminPage();
     if (current.id === "chatgpt") return chatGptPage();
+    if (current.id === "ai-access") return aiAccessPage();
     if (current.id === "ai-settings") return aiSettingsPage();
     if (current.id === "edit") return contentEditPage(current.query.get("module"), current.query.get("id"), current.query);
     if (current.id === "setup") return setupPage();
@@ -158,7 +164,7 @@ async function viewForRoute(current) {
 async function render() {
   try {
     applyTheme();
-    closePublicTts();
+    stopAllAudioPlayback();
     if (root && !root.innerHTML) {
       root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS</p><h1>Lade Inhalte ...</h1></div></section>`;
     }
@@ -323,12 +329,45 @@ function normalizePublicGermanText() {
 
 let activePublicTts = null;
 
+function clearInlineTtsHighlight(state = activePublicTts) {
+  state?.inlineRestore?.forEach(({ node, html }) => {
+    if (node) node.innerHTML = html;
+  });
+  if (state) {
+    state.inlineRestore = [];
+    state.inlineWordNodes = [];
+  }
+}
+
 function closePublicTts() {
   if (!activePublicTts) return;
   activePublicTts.audio?.pause();
   activePublicTts.timer && clearInterval(activePublicTts.timer);
+  clearInlineTtsHighlight(activePublicTts);
   activePublicTts.node?.remove();
+  if (activePublicTts.button) {
+    activePublicTts.button.classList.remove("is-playing", "is-paused");
+    activePublicTts.button.setAttribute("aria-pressed", "false");
+    if (activePublicTts.originalLabel) activePublicTts.button.innerHTML = activePublicTts.originalLabel;
+  }
   activePublicTts = null;
+}
+
+function stopAllAudioPlayback() {
+  closePublicTts();
+  document.querySelectorAll("audio").forEach((audio) => {
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+    } catch {}
+    if (audio.dataset.listAudioPlayer === "1") audio.remove();
+  });
+  document.querySelectorAll(".audio-play-button.is-playing").forEach((button) => button.classList.remove("is-playing"));
+  document.querySelectorAll("[data-audio-provider-preview-player]").forEach((audio) => {
+    audio.hidden = true;
+    audio.removeAttribute("src");
+    audio.load?.();
+  });
 }
 
 function ttsWords(text = "") {
@@ -348,6 +387,12 @@ function ttsWordWeights(words = []) {
 }
 
 function ttsWordIndexForTime(state) {
+  if (state.timedWords?.length) {
+    const current = state.audio.currentTime || 0;
+    const index = state.timedWords.findIndex((slot) => current >= slot.start && current < slot.end);
+    if (index >= 0) return index;
+    return current >= state.timedWords[state.timedWords.length - 1].end ? state.timedWords.length - 1 : 0;
+  }
   const duration = Number.isFinite(state.audio.duration) && state.audio.duration > 0
     ? state.audio.duration
     : Math.max(1, state.words.length * 0.62);
@@ -373,6 +418,68 @@ function ttsSourceText(reader) {
   return template?.content?.textContent || template?.textContent || "";
 }
 
+function inlineTtsTokenMarkup(text = "") {
+  const parts = String(text || "").match(/\S+|\s+/g) || [];
+  return parts.map((part) => {
+    if (!part.trim()) return escapeHtml(part);
+    return `<span class="tts-inline-token" data-tts-inline-word>${escapeHtml(part)}</span>`;
+  }).join("");
+}
+
+function prepareInlineTtsHighlight(reader) {
+  const container = reader?.closest(".topic-article, .news-detail, .internal-about-text");
+  const article = container?.querySelector(".editorial-text") || container;
+  if (!article) return { restore: [], nodes: [] };
+  const paragraphs = Array.from(article.querySelectorAll("p"))
+    .filter((paragraph) => paragraph.textContent.trim() && !paragraph.closest("[data-tts-reader], .tts-natural-player, .tts-reading-layer"));
+  const restore = paragraphs.map((node) => ({ node, html: node.innerHTML }));
+  paragraphs.forEach((paragraph) => {
+    paragraph.innerHTML = inlineTtsTokenMarkup(paragraph.textContent || "");
+  });
+  return { restore, nodes: Array.from(article.querySelectorAll("[data-tts-inline-word]")) };
+}
+
+function timingToTimedWords(timing = {}) {
+  const characters = Array.isArray(timing.characters) ? timing.characters : [];
+  const starts = Array.isArray(timing.character_start_times_seconds) ? timing.character_start_times_seconds : [];
+  const ends = Array.isArray(timing.character_end_times_seconds) ? timing.character_end_times_seconds : [];
+  const words = [];
+  let current = "";
+  let start = null;
+  let end = null;
+  const pushWord = () => {
+    const text = current.trim();
+    if (text) words.push({ text, start: Number(start) || 0, end: Number(end ?? start) || 0 });
+    current = "";
+    start = null;
+    end = null;
+  };
+  characters.forEach((character, index) => {
+    const value = String(character || "");
+    if (!value.trim()) {
+      pushWord();
+      return;
+    }
+    if (start === null) start = starts[index] ?? ends[index] ?? 0;
+    end = ends[index] ?? starts[index] ?? start;
+    current += value;
+  });
+  pushWord();
+  return words.filter((word) => word.end >= word.start);
+}
+
+async function loadTtsTiming(url = "") {
+  if (!url) return [];
+  try {
+    const response = await fetch(url, { cache: "force-cache" });
+    if (!response.ok) return [];
+    return timingToTimedWords(await response.json());
+  } catch (error) {
+    console.warn("TTS-Timing konnte nicht geladen werden", error);
+    return [];
+  }
+}
+
 function updateAccessibleTtsWord(state) {
   if (!state?.words.length) return;
   const index = ttsWordIndexForTime(state);
@@ -381,6 +488,19 @@ function updateAccessibleTtsWord(state) {
     const wordNode = state.wordNodes[index];
     state.wordNodes.forEach((node, nodeIndex) => node.classList.toggle("is-active", nodeIndex === index));
     wordNode?.scrollIntoView({ block: "center", inline: "nearest" });
+  }
+  if (state.inlineWordNodes?.length) {
+    const inlineIndex = Math.max(0, index - Number(state.inlineWordOffset || 0));
+    state.inlineWordNodes.forEach((node, nodeIndex) => node.classList.toggle("is-active", nodeIndex === inlineIndex));
+    const inlineNode = state.inlineWordNodes[inlineIndex];
+    if (inlineNode) {
+      const rect = inlineNode.getBoundingClientRect();
+      const topLimit = 92;
+      const bottomLimit = window.innerHeight - 92;
+      if (rect.top < topLimit || rect.bottom > bottomLimit) {
+        inlineNode.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      }
+    }
   }
 }
 
@@ -392,74 +512,109 @@ async function startPublicTts(button) {
     audioUrl = reader?.querySelector('[data-tts-mode="accessible"]')?.dataset.audioUrl || "";
   }
   if (!reader || !audioUrl) throw new Error("Keine Audiodatei fuer diesen Inhalt vorhanden.");
-  closePublicTts();
+  if (activePublicTts && (button.classList.contains("is-playing") || button.classList.contains("is-paused"))) {
+    if (button.classList.contains("is-paused")) {
+      await activePublicTts.audio.play();
+      button.classList.add("is-playing");
+      button.classList.remove("is-paused");
+      button.setAttribute("aria-pressed", "true");
+      button.innerHTML = activePublicTts.activeLabel || activePublicTts.originalLabel || button.innerHTML;
+      return;
+    }
+    activePublicTts.audio?.pause();
+    button.classList.remove("is-playing");
+    button.classList.add("is-paused");
+    button.setAttribute("aria-pressed", "false");
+    button.innerHTML = activePublicTts.pausedLabel || activePublicTts.originalLabel || button.innerHTML;
+    return;
+  }
+
+  stopAllAudioPlayback();
+  const originalLabel = button.dataset.ttsOriginalLabel || button.innerHTML;
+  const isAccessible = mode === "accessible";
+  const activeLabel = isAccessible
+    ? '<span class="tts-control-icon tts-control-icon--search" aria-hidden="true"></span>'
+    : '<span class="tts-control-icon tts-control-icon--pause" aria-hidden="true"></span>';
+  const pausedLabel = isAccessible
+    ? originalLabel
+    : '<span class="tts-control-icon tts-control-icon--play" aria-hidden="true"></span>';
+  button.dataset.ttsOriginalLabel = originalLabel;
+  button.classList.add("is-playing");
+  button.classList.remove("is-paused");
+  button.setAttribute("aria-pressed", "true");
+  button.innerHTML = activeLabel;
+
   const audio = new Audio(audioUrl);
   audio.preload = "metadata";
-  const isAccessible = mode === "accessible";
-  const words = isAccessible ? ttsWords(ttsSourceText(reader)) : [];
+  const timedWords = await loadTtsTiming(button.dataset.timingUrl || reader?.dataset.timingUrl || "");
+  const sourceWords = ttsWords(ttsSourceText(reader));
+  const words = timedWords.length ? timedWords.map((word) => word.text) : sourceWords;
+  const inlineHighlight = !isAccessible ? prepareInlineTtsHighlight(reader) : { restore: [], nodes: [] };
+  const inlineWordOffset = Number(reader?.dataset.ttsInlineOffset || 0) || 0;
   const readingText = words.map((word, index) => `<span class="tts-reading-layer__token" data-tts-word-index="${index}">${escapeHtml(word)}</span>`).join(" ");
   const node = document.createElement("div");
   node.className = isAccessible ? "tts-reading-layer" : "tts-natural-player";
   node.setAttribute("role", isAccessible ? "dialog" : "status");
   node.innerHTML = isAccessible
     ? `<div class="tts-reading-layer__box" aria-modal="false">
-        <div class="tts-reading-layer__head"><div><p class="eyebrow">Barrierefrei vorlesen</p><strong>Lesedisplay</strong></div><button type="button" class="button button--secondary button--small" data-tts-close>Schliessen</button></div>
+        <div class="tts-reading-layer__head"><div><p class="eyebrow">Gro?er Text</p><strong>Lesedisplay</strong></div></div>
         <div class="tts-reading-layer__word" data-tts-current-word>${escapeHtml(words[0] || "Bereit")}</div>
         <div class="tts-reading-layer__text" data-tts-text>${readingText}</div>
-        <div class="tts-reading-layer__controls">
-          <button type="button" class="button button--secondary button--small" data-tts-pause>Pause</button>
-          <button type="button" class="button button--secondary button--small" data-tts-close>Stop</button>
-        </div>
       </div>`
-    : `<div class="tts-natural-player__box">
-        <strong>Natural Voice</strong>
-        <button type="button" class="button button--secondary button--small" data-tts-pause>Pause</button>
-        <button type="button" class="button button--secondary button--small" data-tts-close>Stop</button>
-      </div>`;
-  reader.after(node);
+    : "";
+  if (node.innerHTML) reader.after(node);
+
   activePublicTts = {
     audio,
-    node,
+    node: node.innerHTML ? node : null,
+    reader,
+    mode,
+    button,
+    originalLabel,
+    activeLabel,
+    pausedLabel,
     words,
+    timedWords,
+    inlineRestore: inlineHighlight.restore,
+    inlineWordNodes: inlineHighlight.nodes,
+    inlineWordOffset,
     wordNode: node.querySelector("[data-tts-current-word]"),
     wordNodes: Array.from(node.querySelectorAll("[data-tts-word-index]")),
     timer: null
   };
-  const pauseButton = node.querySelector("[data-tts-pause]");
-  node.querySelector("[data-tts-close]")?.addEventListener("click", closePublicTts);
-  pauseButton?.addEventListener("click", async () => {
-    if (audio.paused) {
-      await audio.play();
-      pauseButton.textContent = "Pause";
-      return;
-    }
-    audio.pause();
-    pauseButton.textContent = "Fortsetzen";
-  });
+
   audio.addEventListener("ended", closePublicTts, { once: true });
   audio.addEventListener("error", () => {
-    node.innerHTML = `<div class="alert alert--warning">Audio ist fuer diesen Text noch nicht verfuegbar. Bitte im CMS neu erzeugen.</div>`;
+    if (activePublicTts?.node) activePublicTts.node.innerHTML = `<div class="alert alert--warning">Audio ist fuer diesen Text noch nicht verfuegbar. Bitte im CMS neu erzeugen.</div>`;
   }, { once: true });
-  if (isAccessible) {
+  if (isAccessible || inlineHighlight.nodes.length) {
     activePublicTts.timer = setInterval(() => updateAccessibleTtsWord(activePublicTts), 140);
     audio.addEventListener("timeupdate", () => updateAccessibleTtsWord(activePublicTts));
   }
   await audio.play();
 }
-
 document.addEventListener("click", (event) => {
   const link = clickedAnchor(event);
   if (!link || !isExternalPortalLink(link)) return;
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   event.preventDefault();
   event.stopPropagation();
+  stopAllAudioPlayback();
   window.open(link.href, link.target || "_blank", "noopener,noreferrer");
 }, true);
 
 document.addEventListener("click", (event) => {
   const link = clickedAnchor(event);
   if (!link || !link.matches('a[href^="#/"]')) return;
+  stopAllAudioPlayback();
   window.setTimeout(render, 0);
+});
+
+window.addEventListener("hashchange", stopAllAudioPlayback, true);
+window.addEventListener("pagehide", stopAllAudioPlayback);
+window.addEventListener("beforeunload", stopAllAudioPlayback);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") stopAllAudioPlayback();
 });
 
 function formObject(form) {
@@ -760,7 +915,7 @@ async function loadMailAdminData() {
 function speechSourceText(collection, item = {}) {
   return collection === "topics"
     ? [item.subtitle, item.longDescription, item.bodyText, item.shortDescription].filter(Boolean).join("\n\n")
-    : [item.subtitle, item.bodyText, item.introText, item.shortText, item.teaserText].filter(Boolean).join("\n\n");
+    : [item.subtitle, item.longDescription, item.bodyText, item.articleText, item.archiveText, item.introText, item.shortText, item.teaserText, item.postEventSummary].filter(Boolean).join("\n\n");
 }
 
 function speechTextSignature(collection, item = {}) {
@@ -2804,6 +2959,36 @@ function progressMarkup(label, width = 45) {
   return `<span class="cms-progress"><span>${escapeHtml(label)}</span><span class="progress progress--indeterminate"><i style="width:${width}%"></i></span></span>`;
 }
 
+function setAudioGenerationProgress(scope, result, label, width = 45) {
+  scope?.classList.add("is-generating");
+  scope?.setAttribute("aria-busy", "true");
+  if (result) result.innerHTML = `<div class="alert">${progressMarkup(label, width)}</div>`;
+}
+
+function clearAudioGenerationProgress(scope) {
+  scope?.classList.remove("is-generating");
+  scope?.removeAttribute("aria-busy");
+}
+
+function applyAudioAreaFilter(control) {
+  const panel = control?.closest(".panel");
+  const areaValue = panel?.querySelector("[data-audio-area-filter]")?.value || "";
+  const subareaValue = panel?.querySelector("[data-audio-subarea-filter]")?.value || "";
+  const table = panel?.querySelector(".table--audio-service");
+  if (!table) return;
+  const rows = Array.from(table.querySelectorAll("tbody tr[data-audio-area]"));
+  let visibleCount = 0;
+  rows.forEach((row) => {
+    const visible = (!areaValue || row.dataset.audioArea === areaValue)
+      && (!subareaValue || row.dataset.audioSubarea === subareaValue);
+    row.hidden = !visible;
+    if (visible) visibleCount += 1;
+  });
+  const count = panel?.querySelector("[data-audio-area-count]");
+  const label = subareaValue || areaValue;
+  if (count) count.textContent = label ? `${visibleCount} Inhalte in ${label}` : `${visibleCount} Inhalte`;
+}
+
 const TOPIC_RESEARCH_STEPS = [
   "CMS-Kontext und Eingaben vorbereiten",
   "Quellenliste laden und nach Kategorie priorisieren",
@@ -4581,7 +4766,7 @@ function wireMediaAiDraft() {
         size: "1536x1024",
         quality: "medium"
       });
-      const normalized = await generatedThumbToJpeg(generated.imageDataUrl, generated.fileName || `${mediaContext.targetId || values.title || "ki-thumb"}-v${variantNumber}.png`, mediaVariantCanvasize(values.aspect_ratio || "16x9"));
+      const normalized = await generatedThumbToJpeg(generated.imageDataUrl, generated.fileName || `${mediaContext.targetId || values.title || "ki-thumb"}-v${variantNumber}.png`, mediaVariantCanvasSize(values.aspect_ratio || "16x9"));
       if (result) result.innerHTML = `<div class="alert">${progressMarkup("KI-Bild wurde erzeugt und wird gespeichert ...", 72)}</div>`;
       const asset = await saveGeneratedThumbMediaAsset(form, normalized.file, {
         dataUrl: normalized.dataUrl,
@@ -5405,6 +5590,21 @@ function wireEditorialPreviewLayer() {
   });
 }
 
+function wireEditorialToolJumps() {
+  document.querySelectorAll("[data-editor-tool-open]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = button.dataset.editorToolOpen || "";
+      const panel = document.querySelector(`[data-editor-tool-panel="${target}"]`);
+      if (!panel) return;
+      panel.open = true;
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+      window.setTimeout(() => {
+        panel.querySelector("button, a, select, input, textarea")?.focus({ preventScroll: true });
+      }, 180);
+    });
+  });
+}
+
 function wireStickyBoxWheel() {
   document.querySelectorAll(".internal-about-sticky, .join-aside").forEach((box) => {
     if (box.dataset.stickyWheelWired === "1") return;
@@ -5433,6 +5633,8 @@ function wireActions() {
     localStorage.setItem("pdtTheme", next);
     applyTheme(next);
   });
+  document.querySelector("[data-audio-area-filter]")?.addEventListener("change", (event) => applyAudioAreaFilter(event.currentTarget));
+  document.querySelector("[data-audio-subarea-filter]")?.addEventListener("change", (event) => applyAudioAreaFilter(event.currentTarget));
   applyTheme();
   wirePublicMenu();
   wireAboutJumps();
@@ -5452,6 +5654,7 @@ function wireActions() {
   wireMediaourceUpdates();
   wireMediaFullscreenViewer();
   wireEditorialPreviewLayer();
+  wireEditorialToolJumps();
   wireCmsMenu();
   wireImageDropzones();
   wireGalleryEditor();
@@ -5571,7 +5774,8 @@ function wireActions() {
     });
   });
   document.querySelectorAll("[data-generate-article-speech]").forEach((button) => button.addEventListener("click", async () => {
-    const result = button.closest(".audio-list-cell, .audio-generation-panel")?.querySelector("[data-speech-result]");
+    const scope = button.closest(".audio-list-cell, .audio-generation-panel");
+    const result = scope?.querySelector("[data-speech-result]");
     const audioUrl = button.dataset.audioUrl || "";
     if (audioUrl && button.classList.contains("audio-play-button")) {
       const activeAudio = document.querySelector("audio[data-list-audio-player]");
@@ -5582,8 +5786,7 @@ function wireActions() {
         button.classList.remove("is-playing");
         return;
       }
-      if (activeAudio) activeAudio.remove();
-      if (activeButton) activeButton.classList.remove("is-playing");
+      stopAllAudioPlayback();
       const audio = document.createElement("audio");
       audio.dataset.listAudioPlayer = "1";
       audio.src = audioUrl;
@@ -5608,16 +5811,20 @@ function wireActions() {
     if (isIconAudioButton) button.setAttribute("aria-label", "Audio wird erzeugt");
     else button.textContent = "Audio wird erzeugt ...";
     const form = button.closest("form");
-    if (result) result.innerHTML = `<div class="alert">${progressMarkup(form ? "Aktuelle Texte werden zuerst gespeichert ..." : "Gemini erzeugt und speichert die Audiodatei ...", 30)}</div>`;
+    setAudioGenerationProgress(scope, result, form ? "Aktuelle Texte werden zuerst gespeichert ..." : "Audio-Auftrag wird vorbereitet ...", 30);
     let generationItem = null;
     try {
       if (form?.matches("#topic-editor-form, #content-edit-form, #ai-article-edit-form")) {
         await submitFormAndWait(form);
-        if (result) result.innerHTML = `<div class="alert">${progressMarkup("Gemini erzeugt und speichert die Audiodatei ...", 72)}</div>`;
+        setAudioGenerationProgress(scope, result, "Texte gespeichert. Audio-Service startet ...", 45);
       }
       generationItem = await getOne(button.dataset.collection, button.dataset.recordId);
-      if (generationItem) await upsert(button.dataset.collection, { id: generationItem.id, ...audioStatusUpdate(button.dataset.collection, generationItem, "in_erstellung") });
+      if (generationItem) {
+        await upsert(button.dataset.collection, { id: generationItem.id, ...audioStatusUpdate(button.dataset.collection, generationItem, "in_erstellung") });
+        setAudioGenerationProgress(scope, result, "Audio wird serverseitig erzeugt. Bitte warten ...", 68);
+      }
       const speech = await generateArticleSpeechAsset({ collection: button.dataset.collection, id: button.dataset.recordId, variant: button.dataset.ttsVariant || "all" });
+      setAudioGenerationProgress(scope, result, "Audiodatei wurde erzeugt. Status wird aktualisiert ...", 88);
       const generatedItem = await getOne(button.dataset.collection, button.dataset.recordId);
       if (generatedItem) await upsert(button.dataset.collection, { id: generatedItem.id, ...audioStatusUpdate(button.dataset.collection, generatedItem, "aktuell"), audioGeneratedAt: new Date().toISOString() });
       const truncated = speech.truncated || Object.values(speech.variants || {}).some((item) => item.truncated);
@@ -5627,6 +5834,7 @@ function wireActions() {
       if (generationItem) await upsert(button.dataset.collection, { id: generationItem.id, ...audioStatusUpdate(button.dataset.collection, generationItem, "fehler"), audioErrorMessage: error.message || String(error), audioErrorAt: new Date().toISOString() });
       if (result) result.innerHTML = `<div class="alert alert--error">Audio konnte nicht erzeugt werden: ${escapeHtml(error.message || String(error))}</div>`;
     } finally {
+      clearAudioGenerationProgress(scope);
       button.disabled = false;
       button.classList.remove("is-generating");
       if (isIconAudioButton) button.setAttribute("aria-label", originalAriaLabel);
@@ -7196,6 +7404,116 @@ function wireActions() {
     } catch (error) {
       output.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div>`;
     }
+  });
+
+  document.querySelector("#audio-provider-config-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const output = form.querySelector("#ai-access-result");
+    try {
+      const values = formObject(form);
+      await saveProviderConfig({
+        enabled: Boolean(values.enabled),
+        modelId: values.modelId,
+        voiceId: values.voiceId,
+        voiceName: values.voiceName
+      });
+      if (output) output.innerHTML = `<div class="alert alert--success">ElevenLabs-Konfiguration gespeichert. API-Keys bleiben serverseitige Firebase Secrets.</div>`;
+      window.setTimeout(render, 700);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div>`;
+    }
+  });
+
+  document.querySelectorAll("[data-audio-provider-test]").forEach((button) => button.addEventListener("click", async () => {
+    const output = document.querySelector("#ai-access-result") || document.querySelector("#ai-access-test-result");
+    const form = document.querySelector("#audio-provider-config-form");
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Teste ...";
+    try {
+      await testAudioProviderConnection(button.dataset.audioProviderTest || "elevenlabs");
+      if (form) {
+        const enabled = form.querySelector('input[name="enabled"]');
+        if (enabled) enabled.checked = true;
+        const values = formObject(form);
+        await saveProviderConfig({
+          enabled: true,
+          modelId: values.modelId,
+          voiceId: values.voiceId,
+          voiceName: values.voiceName
+        });
+      }
+      if (output) output.innerHTML = `<div class="alert alert--success">ElevenLabs-Verbindung erfolgreich. Anbieter wurde aktiviert und gespeichert.</div>`;
+      window.setTimeout(render, 900);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
+
+  document.querySelector("[data-audio-provider-load-voices]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const form = button.closest("form");
+    const output = form?.querySelector("#ai-access-result");
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Lade Stimmen ...";
+    try {
+      const result = await loadAudioProviderVoices("elevenlabs", true);
+      const select = form?.querySelector("[data-elevenlabs-voice-select]");
+      if (select) {
+        select.innerHTML = `<option value="">Stimme waehlen</option>${(result.voices || []).map((voice) => `<option value="${escapeHtml(voice.voiceId)}" data-voice-name="${escapeHtml(voice.voiceName)}">${escapeHtml(voice.voiceName)} (${escapeHtml(voice.voiceId)})</option>`).join("")}`;
+      }
+      if (output) output.innerHTML = `<div class="alert alert--success">${Number(result.voices?.length || 0)} ElevenLabs-Stimmen geladen.</div>`;
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  });
+
+  document.querySelector("[data-audio-provider-preview]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const form = button.closest("form");
+    const output = form?.querySelector("#ai-access-result");
+    const preview = form?.querySelector("[data-audio-provider-preview-player]");
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Erzeuge Leseprobe ...";
+    try {
+      const values = formObject(form);
+      const result = await previewAudioProviderVoice({
+        modelId: values.modelId,
+        voiceId: values.voiceId,
+        voiceName: values.voiceName,
+        text: values.previewText
+      });
+      const src = `data:${result.mimeType || "audio/mpeg"};base64,${result.audioBase64}`;
+      if (preview) {
+        preview.src = src;
+        preview.hidden = false;
+        await preview.play().catch(() => {});
+      }
+      if (output) output.innerHTML = `<div class="alert alert--success">Leseprobe erzeugt: ${escapeHtml(result.voiceName || values.voiceName || "Stimme")}</div>`;
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  });
+
+  document.querySelector("[data-elevenlabs-voice-select]")?.addEventListener("change", (event) => {
+    const option = event.currentTarget.selectedOptions?.[0];
+    const form = event.currentTarget.closest("form");
+    const voiceId = form?.querySelector("[data-elevenlabs-voice-id]");
+    const voiceName = form?.querySelector("[data-elevenlabs-voice-name]");
+    if (voiceId) voiceId.value = option?.value || "";
+    if (voiceName) voiceName.value = option?.dataset.voiceName || "";
   });
 
   const registrationForm = document.querySelector("#registration-form");

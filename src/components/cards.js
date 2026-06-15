@@ -9,7 +9,7 @@ export function eventCard(event, archive = false, partners = []) {
   const imageUrl = event.imageDisplayUrl || event.imageUrl || "";
   return `<article class="card event-card">
     <div class="event-card__visual ${archive ? "event-card__visual--archive" : ""}">
-      ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="Eventbild ${escapeHtml(event.title)}">` : ""}
+      ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy" decoding="async">` : ""}
       <div class="next-event__date"><strong>${date.day}</strong><span>${date.month}</span></div>
       <span class="tag tag--light">${escapeHtml(event.eventType)}</span>
     </div>
@@ -29,7 +29,7 @@ export function eventCard(event, archive = false, partners = []) {
 
 export function topicCard(topic) {
   return `<a class="card topic-card" href="#/topic/${topic.id}">
-    ${topic.imageUrl ? `<figure class="topic-card__image"><img src="${escapeHtml(topic.imageUrl)}" alt="Themenbild ${escapeHtml(topic.title)}"></figure>` : `<span class="quick-card__icon">${escapeHtml(topic.icon)}</span>`}
+    ${topic.imageUrl ? `<figure class="topic-card__image"><img src="${escapeHtml(topic.imageUrl)}" alt="Themenbild ${escapeHtml(topic.title)}" loading="lazy" decoding="async"></figure>` : `<span class="quick-card__icon">${escapeHtml(topic.icon)}</span>`}
     <h3>${escapeHtml(topic.title)}</h3><div class="topic-card__line"></div>
     <p>${escapeHtml(topic.shortDescription)}</p>
   </a>`;
