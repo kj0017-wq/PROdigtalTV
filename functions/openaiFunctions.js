@@ -34,6 +34,21 @@ const ACTIONS = {
   analyzeEventPipelineQuality: { label: "Pipeline-KI-Pruefung", mode: "json", instruction: "Pruefe die Event-Pipeline als JSON mit blockers, warnings, recommendations, optionalNotes und summary. KI-Hinweise duerfen Statuswechsel nicht blockieren." }
 };
 
+function normalizeRole(role = "") {
+  const normalized = String(role || "").trim().toLowerCase();
+  const aliases = {
+    administrator: "admin",
+    admin: "admin",
+    owner: "admin",
+    redakteur: "editor",
+    redaktion: "editor",
+    editor: "editor",
+    mitglied: "member",
+    member: "member"
+  };
+  return aliases[normalized] || normalized;
+}
+
 function preview(value) {
   return typeof value === "string" ? value.slice(0, 600) : JSON.stringify(value).slice(0, 600);
 }
@@ -49,8 +64,8 @@ function compactText(value = "", maxLength = 10000) {
 async function profileFor(request) {
   if (!request.auth) throw new HttpsError("unauthenticated", "Login erforderlich.");
   const profile = (await db.collection("users").doc(request.auth.uid).get()).data();
-  if (!profile || profile.status !== "active") throw new HttpsError("permission-denied", "Benutzer ist nicht aktiv.");
-  return { ...profile, uid: request.auth.uid, email: request.auth.token.email || profile.email || "" };
+  if (!profile || profile.status === "inactive") throw new HttpsError("permission-denied", "Benutzer ist nicht aktiv.");
+  return { ...profile, role: normalizeRole(profile.role || request.auth.token.role || ""), uid: request.auth.uid, email: request.auth.token.email || profile.email || "" };
 }
 
 async function aiSettings() {
@@ -72,7 +87,15 @@ async function aiSettings() {
 async function requireAiAccess(request) {
   const [profile, settings] = await Promise.all([profileFor(request), aiSettings()]);
   if (!settings.enabled) throw new HttpsError("failed-precondition", "ChatGPT ist deaktiviert.");
-  if (!settings.allowedRoles?.includes(profile.role)) throw new HttpsError("permission-denied", "Keine ChatGPT-Berechtigung.");
+  const allowedRoles = Array.isArray(settings.allowedRoles) ? settings.allowedRoles.map(normalizeRole) : [];
+  console.info("AI access check", {
+    uid: profile.uid,
+    role: profile.role,
+    status: profile.status || "",
+    allowedRoles
+  });
+  const roleAllowed = ["admin", "editor"].includes(profile.role) || allowedRoles.includes(profile.role);
+  if (!roleAllowed) throw new HttpsError("permission-denied", "Keine ChatGPT-Berechtigung.");
   return { profile, settings };
 }
 

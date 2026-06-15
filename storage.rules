@@ -10,27 +10,33 @@ service firebase.storage {
     function userProfileExists() {
       return signedIn() && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
     }
+    function roleMatches(storedRole, role) {
+      return storedRole == role
+        || (role == "admin" && (storedRole == "Admin" || storedRole == "administrator" || storedRole == "owner"))
+        || (role == "editor" && (storedRole == "Editor" || storedRole == "redakteur" || storedRole == "redaktion"))
+        || (role == "member" && (storedRole == "Mitglied" || storedRole == "mitglied"));
+    }
     function editor() {
       return signedIn() && (
         (
           userProfileExists()
-          && (user().role == "admin" || user().role == "editor")
+          && (roleMatches(user().role, "admin") || roleMatches(user().role, "editor"))
           && user().status != "inactive"
         )
-        || request.auth.token.role == "admin"
-        || request.auth.token.role == "editor"
+        || roleMatches(request.auth.token.role, "admin")
+        || roleMatches(request.auth.token.role, "editor")
       );
     }
     function member() {
       return signedIn() && (
         (
           userProfileExists()
-          && (user().role == "member" || user().role == "admin" || user().role == "editor")
+          && (roleMatches(user().role, "member") || roleMatches(user().role, "admin") || roleMatches(user().role, "editor"))
           && user().status != "inactive"
         )
-        || request.auth.token.role == "member"
-        || request.auth.token.role == "admin"
-        || request.auth.token.role == "editor"
+        || roleMatches(request.auth.token.role, "member")
+        || roleMatches(request.auth.token.role, "admin")
+        || roleMatches(request.auth.token.role, "editor")
       );
     }
 
@@ -70,6 +76,11 @@ service firebase.storage {
     match /galleries/{galleryId}/{fileName} {
       allow read: if true;
       allow write: if editor() && request.resource.size < 15 * 1024 * 1024;
+    }
+
+    match /images/{allPaths=**} {
+      allow read: if true;
+      allow write: if editor() && request.resource.size < 30 * 1024 * 1024;
     }
 
     match /speakers/{speakerId}/{fileName} {

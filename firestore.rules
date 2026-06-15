@@ -7,16 +7,53 @@ service cloud.firestore {
     function profile() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
+    function profileExists() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    function roleMatches(storedRole, role) {
+      return storedRole == role
+        || (role == "admin" && (storedRole == "Admin" || storedRole == "administrator" || storedRole == "owner"))
+        || (role == "editor" && (storedRole == "Editor" || storedRole == "redakteur" || storedRole == "redaktion"))
+        || (role == "member" && (storedRole == "Mitglied" || storedRole == "mitglied"));
+    }
     function roleIs(role) {
-      return signedIn() && profile().role == role && profile().status == "active";
+      return signedIn() && (
+        (
+          profileExists()
+          && roleMatches(profile().role, role)
+          && profile().status != "inactive"
+        )
+        || roleMatches(request.auth.token.role, role)
+      );
     }
     function member() {
-      return roleIs("member") || editor();
+      return editor() || (roleIs("member") && activeLinkedMember());
+    }
+    function memberAccessBlocked(memberData) {
+      return (memberData.membershipAccessStatus == "inactive" || memberData.membershipAccessStatus == "cancelled")
+        && (
+          !memberData.keys().hasAny(["membershipAccessEffectiveAt"])
+          || memberData.membershipAccessEffectiveAt <= request.time
+        );
+    }
+    function memberRecordActive(memberId) {
+      return exists(/databases/$(database)/documents/members/$(memberId))
+        && get(/databases/$(database)/documents/members/$(memberId)).data.status == "active"
+        && !memberAccessBlocked(get(/databases/$(database)/documents/members/$(memberId)).data);
+    }
+    function activeLinkedMember() {
+      return profileExists()
+        && profile().status != "inactive"
+        && profile().memberId is string
+        && profile().memberId != ""
+        && memberRecordActive(profile().memberId);
     }
     function ownMember(memberId) {
       return signedIn()
-        && profile().status == "active"
-        && profile().memberId == memberId;
+        && profileExists()
+        && profile().status != "inactive"
+        && profile().memberId == memberId
+        && memberRecordActive(memberId);
     }
     function memberProfileUpdateFields() {
       return [
@@ -25,11 +62,20 @@ service cloud.firestore {
         "description",
         "website",
         "category",
+        "street",
+        "postalCode",
         "city",
         "country",
         "contactEmail",
+        "email",
         "phone",
+        "contactPhone",
+        "mobile",
+        "contactMobile",
         "profileContactName",
+        "contactName",
+        "eventContacts",
+        "personalSalutation",
         "profileUpdatedAt",
         "profileUpdatedBy",
         "updatedAt"
@@ -215,6 +261,12 @@ service cloud.firestore {
 
     match /ai_prompts/{id} {
       allow read, write: if editor();
+    }
+
+    match /ai_image_generations/{id} {
+      allow read: if editor();
+      allow create: if editor();
+      allow update, delete: if false;
     }
 
     match /ai_prompt_versions/{id} {

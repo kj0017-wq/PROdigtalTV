@@ -3,7 +3,7 @@ import {
   homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
   newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, memberPortalPage, legalPage, notFoundPage, webappQrPage
 } from "./pages/publicPages.js?v=516";
-import { currentUser, canUseCms, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=466";
+import { currentUser, canUseCms, isAdmin, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=466";
 import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=466";
 import { escapeHtml, formatDate } from "./utils/format.js";
 
@@ -169,10 +169,10 @@ async function render() {
       root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS</p><h1>Lade Inhalte ...</h1></div></section>`;
     }
     root.innerHTML = await viewForRoute(route());
-    normalizePublicGermanText();
     wireActions();
     updateMobileQrCode();
     window.scrollTo({ top: 0 });
+    schedulePublicGermanTextNormalization();
   } catch (error) {
     console.error(error);
     root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Seite konnte nicht geladen werden</p><h1>Bitte neu laden</h1><p style="margin:14px 0 24px">${escapeHtml(error.message || String(error))}</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
@@ -216,6 +216,7 @@ function updateMobileQrCode() {
   const link = document.querySelector("[data-mobile-qr-link]");
   const image = document.querySelector("[data-mobile-qr-code]");
   if (!link || !image) return;
+  if (window.matchMedia?.("(max-width: 899px)").matches) return;
   const mobileUrl = mobileUrlForCurrentRoute();
   link.href = mobileUrl;
   link.title = mobileUrl;
@@ -368,6 +369,16 @@ function stopAllAudioPlayback() {
     audio.removeAttribute("src");
     audio.load?.();
   });
+}
+
+function schedulePublicGermanTextNormalization() {
+  if (!root || route().path === "cms") return;
+  const run = () => normalizePublicGermanText();
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(run, { timeout: 800 });
+  } else {
+    window.setTimeout(run, 0);
+  }
 }
 
 function ttsWords(text = "") {
@@ -986,10 +997,62 @@ function normalizeMemberContactValues(values = {}) {
     normalized.contactPhone = phone;
     normalized.phone = phone;
   }
+  if (Object.prototype.hasOwnProperty.call(normalized, "contactMobile") || Object.prototype.hasOwnProperty.call(normalized, "mobile")) {
+    const mobile = normalized.contactMobile || normalized.mobile || "";
+    normalized.contactMobile = mobile;
+    normalized.mobile = mobile;
+  }
   if (Object.prototype.hasOwnProperty.call(normalized, "contactEmail") || Object.prototype.hasOwnProperty.call(normalized, "email")) {
     const email = normalized.contactEmail || normalized.email || "";
     normalized.contactEmail = email;
     normalized.email = email;
+  }
+  return normalized;
+}
+
+function memberEventContactLimit(membershipType = "") {
+  return membershipType === "company" ? 5 : 1;
+}
+
+function collectMemberEventContacts(form, membershipType = "") {
+  const limit = memberEventContactLimit(membershipType);
+  const contacts = [];
+  for (let index = 0; index < limit; index += 1) {
+    const name = String(form.querySelector(`[name="eventContactName${index}"]`)?.value || "").trim();
+    const email = String(form.querySelector(`[name="eventContactEmail${index}"]`)?.value || "").trim();
+    const phone = String(form.querySelector(`[name="eventContactPhone${index}"]`)?.value || "").trim();
+    if (!name && !email && !phone) continue;
+    if (!name || !email || !phone) {
+      throw new Error(`Eventkontakt ${index + 1} bitte mit Name, E-Mail und Telefon vollständig ausfüllen.`);
+    }
+    contacts.push({ name, email, phone });
+  }
+  if (!contacts.length) throw new Error("Bitte mindestens einen eventberechtigten Kontakt mit Name, E-Mail und Telefon eintragen.");
+  return contacts;
+}
+
+function removeMemberEventContactFormFields(values = {}) {
+  const normalized = { ...values };
+  Object.keys(normalized).forEach((key) => {
+    if (/^eventContact(?:Name|Email|Phone)\d+$/.test(key)) delete normalized[key];
+  });
+  return normalized;
+}
+
+function normalizeMembershipAccessValues(values = {}) {
+  const normalized = { ...values };
+  const accessStatus = normalized.membershipAccessStatus || "active";
+  normalized.membershipAccessStatus = accessStatus;
+  if (accessStatus === "active") {
+    normalized.membershipAccessEffectiveAt = "";
+    return normalized;
+  }
+  if (normalized.membershipAccessEffectiveAt) {
+    const effectiveDate = new Date(`${normalized.membershipAccessEffectiveAt}T00:00:00`);
+    if (Number.isNaN(effectiveDate.getTime())) throw new Error("Bitte ein gueltiges Wirksamkeitsdatum fuer den Mitgliedschaftsstatus eintragen.");
+    normalized.membershipAccessEffectiveAt = effectiveDate;
+  } else {
+    normalized.membershipAccessEffectiveAt = new Date();
   }
   return normalized;
 }
@@ -2352,22 +2415,31 @@ async function saveGeneratedThumbMediaAsset(form, file, { dataUrl = "", prompt =
   const path = mediaStoragePath(filename, mediaType, mediaCode);
   if (result) result.innerHTML = `<div class="alert">${progressMarkup("KI-Thumb wird in der Mediathek gespeichert ...", 64)}</div>`;
   const optimizedUploads = await createOptimizedMediaUploads(file, { filename, path, mediaType, preset });
-  const uploadedOriginal = await uploadMediaAsset(optimizedUploads.original.file, optimizedUploads.original.path);
-  const [uploadedWeb, uploadedThumb] = await Promise.all([
-    optimizedUploads.web.path === optimizedUploads.original.path ? Promise.resolve(uploadedOriginal) : uploadMediaAsset(optimizedUploads.web.file, optimizedUploads.web.path),
-    optimizedUploads.thumb.path === optimizedUploads.original.path ? Promise.resolve(uploadedOriginal) : uploadMediaAsset(optimizedUploads.thumb.file, optimizedUploads.thumb.path)
-  ]);
+  let uploadedOriginal;
+  let uploadedWeb;
+  let uploadedThumb;
+  try {
+    uploadedOriginal = await uploadMediaAsset(optimizedUploads.original.file, optimizedUploads.original.path);
+    [uploadedWeb, uploadedThumb] = await Promise.all([
+      optimizedUploads.web.path === optimizedUploads.original.path ? Promise.resolve(uploadedOriginal) : uploadMediaAsset(optimizedUploads.web.file, optimizedUploads.web.path),
+      optimizedUploads.thumb.path === optimizedUploads.original.path ? Promise.resolve(uploadedOriginal) : uploadMediaAsset(optimizedUploads.thumb.file, optimizedUploads.thumb.path)
+    ]);
+  } catch (error) {
+    throw new Error(`Storage-Upload fuer KI-Thumb fehlgeschlagen: ${error.message || String(error)}`);
+  }
   const now = new Date().toISOString();
   const description = [
     `KI-Thumbnail-Variante ${variantNumber} fuer ${context.title || targetContext.targetId}.`,
     context.subtitle || "",
     context.category ? `Rubrik: ${context.category}` : ""
   ].filter(Boolean).join(" ");
-  const asset = await upsert("media_assets", {
+  let asset;
+  try {
+    asset = await upsert("media_assets", {
     id: `media-asset-${crypto.randomUUID()}`,
     media_code: mediaCode,
     title,
-    slug: normalizeMedialug(title),
+    slug: normalizeMediaSlug(title),
     media_type: mediaType,
     ...mediaPresetFields(mediaType),
     filename_original: filename,
@@ -2386,7 +2458,7 @@ async function saveGeneratedThumbMediaAsset(form, file, { dataUrl = "", prompt =
     aspect_ratio: aspectRatio,
     detected_aspect_ratio: aspectRatio,
     file_size: optimizedUploads.web.file.size,
-    file_size_label: mediaizeLabel(optimizedUploads.web.file.size),
+    file_size_label: mediaSizeLabel(optimizedUploads.web.file.size),
     image_width: optimizedUploads.web.width || 1600,
     image_height: optimizedUploads.web.height || 900,
     image_format: mediaFormatLabel(optimizedUploads.web.file),
@@ -2413,44 +2485,55 @@ async function saveGeneratedThumbMediaAsset(form, file, { dataUrl = "", prompt =
     updated_at: now,
     updatedAt: now,
     status: "active"
-  });
-  await Promise.all([
-    upsert("media_variants", {
-      id: `media-variant-${asset.id}-web`,
-      media_asset_id: asset.id,
-      variant_type: "web",
-      variant_label: "Web optimiert",
-      format: aspectRatio,
-      file_path: optimizedUploads.web.path,
-      file_url: uploadedWeb?.url || uploadedOriginal?.url || dataUrl || "",
-      filename: optimizedUploads.web.filename,
-      width: optimizedUploads.web.width || 0,
-      height: optimizedUploads.web.height || 0,
-      file_size: optimizedUploads.web.file.size,
-      codec: optimizedUploads.web.codec || optimizedUploads.web.file.type,
-      version: `v${variantNumber}`,
-      created_at: now,
-      created_by: currentUser()?.email || currentUser()?.uid || "cms"
-    }),
-    upsert("media_variants", {
-      id: `media-variant-${asset.id}-thumb`,
-      media_asset_id: asset.id,
-      variant_type: "thumb",
-      variant_label: "Thumbnail optimiert",
-      format: "thumb",
-      file_path: optimizedUploads.thumb.path,
-      file_url: uploadedThumb?.url || uploadedWeb?.url || uploadedOriginal?.url || dataUrl || "",
-      filename: optimizedUploads.thumb.filename,
-      width: optimizedUploads.thumb.width || 0,
-      height: optimizedUploads.thumb.height || 0,
-      file_size: optimizedUploads.thumb.file.size,
-      codec: optimizedUploads.thumb.codec || optimizedUploads.thumb.file.type,
-      version: `v${variantNumber}`,
-      created_at: now,
-      created_by: currentUser()?.email || currentUser()?.uid || "cms"
-    })
-  ]);
-  await attachMediaAssetToTarget(asset, targetContext);
+    });
+  } catch (error) {
+    throw new Error(`Mediathek-Asset konnte nicht gespeichert werden: ${error.message || String(error)}`);
+  }
+  try {
+    await Promise.all([
+      upsert("media_variants", {
+        id: `media-variant-${asset.id}-web`,
+        media_asset_id: asset.id,
+        variant_type: "web",
+        variant_label: "Web optimiert",
+        format: aspectRatio,
+        file_path: optimizedUploads.web.path,
+        file_url: uploadedWeb?.url || uploadedOriginal?.url || dataUrl || "",
+        filename: optimizedUploads.web.filename,
+        width: optimizedUploads.web.width || 0,
+        height: optimizedUploads.web.height || 0,
+        file_size: optimizedUploads.web.file.size,
+        codec: optimizedUploads.web.codec || optimizedUploads.web.file.type,
+        version: `v${variantNumber}`,
+        created_at: now,
+        created_by: currentUser()?.email || currentUser()?.uid || "cms"
+      }),
+      upsert("media_variants", {
+        id: `media-variant-${asset.id}-thumb`,
+        media_asset_id: asset.id,
+        variant_type: "thumb",
+        variant_label: "Thumbnail optimiert",
+        format: "thumb",
+        file_path: optimizedUploads.thumb.path,
+        file_url: uploadedThumb?.url || uploadedWeb?.url || uploadedOriginal?.url || dataUrl || "",
+        filename: optimizedUploads.thumb.filename,
+        width: optimizedUploads.thumb.width || 0,
+        height: optimizedUploads.thumb.height || 0,
+        file_size: optimizedUploads.thumb.file.size,
+        codec: optimizedUploads.thumb.codec || optimizedUploads.thumb.file.type,
+        version: `v${variantNumber}`,
+        created_at: now,
+        created_by: currentUser()?.email || currentUser()?.uid || "cms"
+      })
+    ]);
+  } catch (error) {
+    throw new Error(`Mediathek-Varianten konnten nicht gespeichert werden: ${error.message || String(error)}`);
+  }
+  try {
+    await attachMediaAssetToTarget(asset, targetContext);
+  } catch (error) {
+    throw new Error(`Thumb konnte nicht mit dem Beitrag verknuepft werden: ${error.message || String(error)}`);
+  }
   return asset;
 }
 
@@ -3980,12 +4063,26 @@ function wirePublicMenu() {
   const closeTargets = document.querySelectorAll("[data-public-menu-close]");
   if (!topbar || !toggle) return;
   const setOpen = (open) => {
-    topbar.classList.toggle("is-public-menu-open", open);
-    toggle.setAttribute("aria-expanded", open ? "true" : "false");
-    toggle.setAttribute("aria-label", open ? "Menue schliessen" : "Menue oeffnen");
+    window.requestAnimationFrame(() => {
+      topbar.classList.toggle("is-public-menu-open", open);
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      toggle.setAttribute("aria-label", open ? "Menue schliessen" : "Menue oeffnen");
+    });
   };
   toggle.addEventListener("click", () => setOpen(!topbar.classList.contains("is-public-menu-open")));
   closeTargets.forEach((target) => target.addEventListener("click", () => setOpen(false)));
+}
+
+function wireFastMobileNavFeedback() {
+  const navLinks = document.querySelectorAll(".pdtv-mobile-bottom-nav a, .public-mobile-menu a");
+  navLinks.forEach((link) => {
+    link.addEventListener("pointerdown", () => {
+      if (!window.matchMedia?.("(max-width: 899px)").matches) return;
+      const nav = link.closest("nav");
+      nav?.querySelectorAll("a.active").forEach((item) => item.classList.remove("active"));
+      link.classList.add("active");
+    }, { passive: true });
+  });
 }
 
 function wireAboutJumps() {
@@ -4521,7 +4618,7 @@ async function importExistingThumbsToMediaLibrary(result) {
       id: `media-asset-${crypto.randomUUID()}`,
       media_code: mediaCode,
       title: candidate.title || "PROdigitalTV Bild",
-      slug: normalizeMedialug(`${candidate.title || candidate.id}-${mediaCode}`),
+      slug: normalizeMediaSlug(`${candidate.title || candidate.id}-${mediaCode}`),
       media_type: candidate.sourceType === "ai" ? "ai" : "upload",
       ...mediaPresetFields(candidate.sourceType === "ai" ? "ai" : "upload"),
       filename_original: filename,
@@ -4733,8 +4830,11 @@ function wireMediaAiDraft() {
       submitButton.disabled = true;
       submitButton.textContent = mediaContext.targetId ? "KI-Thumb wird erstellt ..." : "KI-Grafik wird erstellt ...";
     }
+    let step = "Vorbereitung";
     try {
+      step = "Zieldatensatz lesen";
       const target = mediaContext.targetCollection && mediaContext.targetId ? await getOne(mediaContext.targetCollection, mediaContext.targetId) : null;
+      step = "Kontext vorbereiten";
       const targetContext = target
         ? imageGenerationContextFromRecord(target, mediaContext.targetCollection)
         : {
@@ -4752,6 +4852,7 @@ function wireMediaAiDraft() {
         bodyText: [targetContext.bodyText, values.source_text].filter(Boolean).join("\n\n")
       }, values.generated_prompt || "", variantNumber);
       if (result) result.innerHTML = `<div class="alert">${progressMarkup("KI erzeugt ein redaktionelles Thumbnail mit Beitragsbezug ...", 35)}</div>`;
+      step = "KI-Thumb erzeugen";
       const generated = await generateCmsThumbCollage({
         entityType: mediaContext.targetCollection || "media_assets",
         entityId: mediaContext.targetId || "",
@@ -4766,8 +4867,10 @@ function wireMediaAiDraft() {
         size: "1536x1024",
         quality: "medium"
       });
+      step = "Bild normalisieren";
       const normalized = await generatedThumbToJpeg(generated.imageDataUrl, generated.fileName || `${mediaContext.targetId || values.title || "ki-thumb"}-v${variantNumber}.png`, mediaVariantCanvasSize(values.aspect_ratio || "16x9"));
       if (result) result.innerHTML = `<div class="alert">${progressMarkup("KI-Bild wurde erzeugt und wird gespeichert ...", 72)}</div>`;
+      step = "Mediathek speichern";
       const asset = await saveGeneratedThumbMediaAsset(form, normalized.file, {
         dataUrl: normalized.dataUrl,
         prompt: generated.prompt || prompt,
@@ -4776,6 +4879,7 @@ function wireMediaAiDraft() {
         contextOverride: { ...targetContext, title: values.title || targetContext.title },
         targetContextOverride: mediaContext.targetCollection && mediaContext.targetId ? mediaContext : null
       });
+      step = "KI-Generierung protokollieren";
       await upsert("ai_image_generations", {
         id: `ai-image-generation-${crypto.randomUUID()}`,
         media_asset_id: asset.id,
@@ -4796,7 +4900,8 @@ function wireMediaAiDraft() {
         window.setTimeout(() => { window.location.hash = mediaEditHash(asset.id, form); }, 900);
       }
     } catch (error) {
-      if (result) result.innerHTML = `<div class="alert alert--error">KI-Thumb konnte nicht erstellt werden: ${escapeHtml(error.message || String(error))}</div>`;
+      const code = error?.code ? ` (${error.code})` : "";
+      if (result) result.innerHTML = `<div class="alert alert--error">KI-Thumb konnte nicht erstellt werden: ${escapeHtml(step)}${escapeHtml(code)} - ${escapeHtml(error.message || String(error))}</div>`;
     } finally {
       if (submitButton) {
         submitButton.disabled = false;
@@ -5637,6 +5742,7 @@ function wireActions() {
   document.querySelector("[data-audio-subarea-filter]")?.addEventListener("change", (event) => applyAudioAreaFilter(event.currentTarget));
   applyTheme();
   wirePublicMenu();
+  wireFastMobileNavFeedback();
   wireAboutJumps();
   wireInternalScrollTop();
   wireJoinScroll();
@@ -8297,7 +8403,11 @@ function wireActions() {
       delete values.assetFileDataUrl;
       delete values.removeAssetFile;
       delete values.source_snapshot_json_text;
-      if (form.dataset.module === "members") values = normalizeMemberContactValues(values);
+      if (form.dataset.module === "members") {
+        const membershipType = values.membershipType || existing.membershipType || "";
+        values.eventContacts = collectMemberEventContacts(form, membershipType);
+        values = normalizeMembershipAccessValues(normalizeMemberContactValues(removeMemberEventContactFormFields(values)));
+      }
       const savedValues = withContentVersionMetadata(form.dataset.module, existing, { ...existing, ...values });
       await upsert(form.dataset.module, savedValues);
       if (image || removeAssetRequested) {
@@ -8404,22 +8514,30 @@ function wireActions() {
     }
   }));
 
+  document.querySelector("[data-admin-member-select]")?.addEventListener("change", (event) => {
+    const memberId = event.currentTarget.value || "";
+    if (!memberId) return;
+    window.location.hash = `#/portal?memberId=${encodeURIComponent(memberId)}`;
+  });
+
   document.querySelector("#member-profile-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     const result = form.querySelector("#member-profile-result");
     const submitButton = form.querySelector('button[type="submit"]');
     const user = currentUser();
+    const adminMode = isAdmin(user);
     const memberId = form.dataset.memberId || user?.memberId || "";
     if (submitButton) submitButton.disabled = true;
     if (result) result.innerHTML = `<div class="alert">Profil wird gespeichert...</div>`;
     try {
-      if (!user?.memberId) throw new Error("Ihr Login ist keinem Mitgliedsprofil zugeordnet.");
-      if (user.memberId !== memberId) throw new Error("Sie koennen nur Ihr eigenes Mitgliedsprofil bearbeiten.");
+      if (!adminMode && !user?.memberId) throw new Error("Ihr Login ist keinem Mitgliedsprofil zugeordnet.");
+      if (!adminMode && user.memberId !== memberId) throw new Error("Sie koennen nur Ihr eigenes Mitgliedsprofil bearbeiten.");
       const existing = await getOne("members", memberId);
       if (!existing) throw new Error("Das verknuepfte Mitgliedsprofil wurde nicht gefunden.");
-      const values = normalizeMemberContactValues(formObject(form));
-      const allowedFields = ["name", "description", "website", "category", "city", "country", "contactEmail", "email", "phone", "contactPhone", "profileContactName", "contactName"];
+      const values = normalizeMemberContactValues(removeMemberEventContactFormFields(formObject(form)));
+      values.eventContacts = collectMemberEventContacts(form, existing.membershipType || "");
+      const allowedFields = ["name", "description", "website", "category", "street", "postalCode", "city", "country", "contactEmail", "email", "phone", "contactPhone", "mobile", "contactMobile", "profileContactName", "contactName", "eventContacts", "personalSalutation"];
       const update = {
         id: memberId,
         profileUpdatedAt: new Date().toISOString(),
@@ -8429,7 +8547,7 @@ function wireActions() {
         if (Object.prototype.hasOwnProperty.call(values, field)) update[field] = values[field] || "";
       });
       await upsert("members", update);
-      if (result) result.innerHTML = `<div class="alert alert--success">Ihr Mitgliedsprofil wurde gespeichert.</div>`;
+      if (result) result.innerHTML = `<div class="alert alert--success">${adminMode ? "Mitgliedsprofil wurde gespeichert." : "Ihr Mitgliedsprofil wurde gespeichert."}</div>`;
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--error">Speichern fehlgeschlagen: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
     } finally {

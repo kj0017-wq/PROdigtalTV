@@ -22,8 +22,8 @@ function denied(adminOnly = false) {
 }
 
 function status(value) {
-  const style = ["failed", "expired", "inactive", "archived"].includes(value) ? "status--error" : ["draft", "pending_email_confirmation", "queued", "in_review", "uploaded"].includes(value) ? "status--draft" : "";
-  const label = { active: "Aktiv", inactive: "Inaktiv", published: "Veroeffentlicht", draft: "Entwurf", archived: "Archiviert", approved: "Freigegeben", new: "Neu", queued: "Wartet", sent: "Gesendet", failed: "Fehler", in_review: "In Pruefung" }[value] || value;
+  const style = ["failed", "expired", "inactive", "cancelled", "archived"].includes(value) ? "status--error" : ["draft", "pending_email_confirmation", "queued", "in_review", "uploaded"].includes(value) ? "status--draft" : "";
+  const label = { active: "Aktiv", inactive: "Inaktiv", cancelled: "Gekuendigt", internal: "Intern", published: "Veroeffentlicht", draft: "Entwurf", archived: "Archiviert", approved: "Freigegeben", new: "Neu", queued: "Wartet", sent: "Gesendet", failed: "Fehler", in_review: "In Pruefung" }[value] || value;
   return `<span class="status ${style}">${escapeHtml(label)}</span>`;
 }
 
@@ -74,11 +74,46 @@ function editorialVisibilityListStatus(item) {
 }
 
 function memberIsLive(item) {
-  return item.status === "active" && (item.visibility || "public") === "public" && item.isLive !== false;
+  return item.status === "active" && (item.visibility || "public") === "public" && item.isLive !== false && !memberAccessBlocked(item);
+}
+
+function timestampInputDate(value) {
+  if (!value) return "";
+  if (value.seconds) return new Date(value.seconds * 1000).toISOString().slice(0, 10);
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? String(value).slice(0, 10) : parsed.toISOString().slice(0, 10);
+}
+
+function memberAccessBlocked(item = {}, now = new Date()) {
+  if (!["inactive", "cancelled"].includes(item.membershipAccessStatus)) return false;
+  const effective = item.membershipAccessEffectiveAt;
+  if (!effective) return true;
+  const effectiveDate = effective.seconds ? new Date(effective.seconds * 1000) : new Date(effective);
+  return !Number.isNaN(effectiveDate.getTime()) && effectiveDate <= now;
+}
+
+function memberAccessStatusCell(item = {}) {
+  const accessStatus = item.membershipAccessStatus || "active";
+  const effective = timestampInputDate(item.membershipAccessEffectiveAt);
+  const blocked = memberAccessBlocked(item);
+  if (accessStatus === "active") return status(memberIsLive(item) ? "active" : "inactive");
+  const suffix = effective ? ` ab ${escapeHtml(formatDate(effective))}` : " sofort";
+  return `${status(blocked ? accessStatus : "pending_email_confirmation")}<small>${escapeHtml(accessStatus === "cancelled" ? "Gekuendigt" : "Inaktiv")}${suffix}</small>`;
 }
 
 function memberListStatus(item) {
-  return status(memberIsLive(item) ? "active" : "inactive");
+  if ((item.visibility || "") === "internal" || item.isLive === false) return status("internal");
+  return memberAccessStatusCell(item);
+}
+
+function memberContactCell(item = {}) {
+  const email = item.contactEmail || item.email || "";
+  const phone = item.contactPhone || item.phone || "";
+  const mobile = item.contactMobile || item.mobile || "";
+  const phoneLine = phone ? `Tel. ${escapeHtml(phone)}` : "Tel. fehlt";
+  const mobileLine = mobile ? `Mobil ${escapeHtml(mobile)}` : "Mobil fehlt";
+  return `<div class="member-contact-cell"><span>${email ? escapeHtml(email) : "Mail fehlt"}</span><small>${phoneLine}</small><small>${mobileLine}</small></div>`;
 }
 
 function mediaAssetUrl(asset = {}) {
@@ -1320,7 +1355,7 @@ export async function moduleListPage(module, section = "all") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--with-audio${section === "press" ? " table--press" : ""}${section === "news" ? " table--news" : ""}"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td><td>${audioListCell("editorialContent", item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "members") {
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--members"><thead><tr><th>Logo</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table member-logo-thumb--table">${memberLogoThumb(item, memberMediaAssets, section)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a><small>${escapeHtml(shortText(item.description || "-", 90))}</small></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml([item.category, item.city].filter(Boolean).join(" / ") || "-")}</td><td>${memberListStatus(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--members"><thead><tr><th>Logo</th><th>Mitglied</th><th>Ansprechperson</th><th>Kontakt</th><th>Mitgliedsart</th><th>Ort</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table member-logo-thumb--table">${memberLogoThumb(item, memberMediaAssets, section)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a></td><td>${escapeHtml(shortText(item.contactName || [item.firstName, item.lastName].filter(Boolean).join(" ") || "-", 70))}</td><td>${memberContactCell(item)}</td><td>${escapeHtml(item.membershipLabel || item.category || "-")}</td><td>${escapeHtml([item.postalCode, item.city].filter(Boolean).join(" ") || "-")}</td><td>${memberListStatus(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (["boardMembers", "speakers", "sponsors"].includes(module)) {
     const imageField = module === "sponsors" ? "logoUrl" : "photoUrl";
@@ -1377,7 +1412,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
     topics: { title: "Redaktionelles Thema", fields: [["title", "Thema"], ["shortDescription", "Kurze Beschreibung"]] },
     speakers: { title: "Referent", fields: [["name", "Referent Name"], ["company", "Firma"]] },
     sponsors: { title: "Sponsor / Gastgeber", fields: [["name", "Name"], ["role", "Sponsor / Gastgeber"], ["address", "Adresse"], ["website", "Webseite"]] },
-    members: { title: "Mitglied", fields: [["membershipType", "Mitgliedstyp"], ["name", "Firma / Name"], ["description", "Beschreibung"], ["website", "Website"], ["category", "Kategorie"], ["city", "Ort"], ["contactName", "Kontaktperson"], ["contactEmail", "Kontakt E-Mail"], ["contactPhone", "Kontakt Telefon"]] },
+    members: { title: "Mitglied", fields: [["membershipType", "Mitgliedstyp"], ["name", "Firma / Name"], ["rgDate", "RG-Datum"], ["membershipFeeAnnual", "Mitgliedsbeitrag"], ["description", "Beschreibung"], ["website", "Website"], ["category", "Kategorie"], ["salutation", "Anrede"], ["firstName", "Vorname"], ["lastName", "Nachname"], ["department", "Abteilung"], ["street", "Strasse"], ["postalCode", "PLZ"], ["city", "Ort"], ["country", "Land"], ["contactName", "Kontaktperson"], ["contactEmail", "Kontakt E-Mail"], ["contactPhone", "Kontakt Telefon"], ["contactMobile", "Kontakt Mobil"], ["personalSalutation", "Briefanrede"]] },
     membershipApplications: { title: "Mitgliedsantrag", fields: [["company", "Unternehmen / Name"], ["legalForm", "Rechtsform"], ["street", "Strasse"], ["city", "PLZ / Ort"], ["country", "Land"], ["website", "Website"], ["firstName", "Vorname"], ["lastName", "Nachname"], ["position", "Position"], ["email", "E-Mail"], ["phone", "Telefon"], ["membershipType", "Mitgliedschaft: company oder individual"], ["companyDescription", "Kurzbeschreibung"], ["message", "Nachricht"], ["status", "Status"], ["submittedAt", "Eingegangen"]] },
     memberDocuments: { title: "Mitgliederdokument", fields: [["title", "Titel"], ["category", "Kategorie"], ["year", "Jahr"], ["meetingDate", "Datum"], ["description", "Beschreibung"]] },
     memberDirectories: { title: "Mitgliederverzeichnis", fields: [["title", "Titel"], ["year", "Jahr"], ["description", "Beschreibung"], ["documentUrl", "Datei-Link optional"]] },
@@ -1736,13 +1771,52 @@ Ausgangstext:
         ? item?.contactEmail || item?.email || ""
         : field === "contactPhone"
           ? item?.contactPhone || item?.phone || ""
-          : item?.[field] || "";
+          : field === "contactMobile"
+            ? item?.contactMobile || item?.mobile || ""
+            : item?.[field] || "";
     if (field === "membershipType") {
       const currentType = item?.membershipType || "";
       return `<div class="field"><label>${label}</label><select name="membershipType"><option value="" ${currentType ? "" : "selected"}>Nicht festgelegt</option><option value="company" ${currentType === "company" ? "selected" : ""}>Firmenmitglied</option><option value="individual" ${currentType === "individual" ? "selected" : ""}>Einzelmitglied</option></select></div>`;
     }
     return `<div class="field"><label>${label}</label>${long ? `<textarea name="${field}">${escapeHtml(value)}</textarea>` : `<input name="${field}" value="${escapeHtml(value)}">`}</div>`;
   };
+  const memberEventContactLimit = item?.membershipType === "company" ? 5 : 1;
+  const memberEventContacts = Array.isArray(item?.eventContacts) && item.eventContacts.length
+    ? item.eventContacts
+    : ([{
+        name: item?.profileContactName || item?.contactName || "",
+        email: item?.contactEmail || item?.email || "",
+        phone: item?.phone || item?.contactPhone || item?.mobile || item?.contactMobile || ""
+      }].filter((contact) => contact.name || contact.email || contact.phone));
+  const memberEventContactsHtml = module === "members"
+    ? `<div class="member-edit-form__event-contacts">
+        <p class="eyebrow">Eventberechtigte Kontakte</p>
+        <p class="muted">${memberEventContactLimit === 1 ? "Einzelmitglieder: 1 Kontakt." : "Firmenmitglieder: bis zu 5 Kontakte."}</p>
+        ${Array.from({ length: memberEventContactLimit }, (_, index) => {
+          const contact = memberEventContacts[index] || {};
+          return `<div class="form-grid form-grid--three member-event-contact-row">
+            <div class="field"><label>Kontakt ${index + 1} Name</label><input name="eventContactName${index}" value="${escapeHtml(contact.name || "")}"></div>
+            <div class="field"><label>E-Mail</label><input name="eventContactEmail${index}" type="email" value="${escapeHtml(contact.email || "")}"></div>
+            <div class="field"><label>Telefon</label><input name="eventContactPhone${index}" type="tel" value="${escapeHtml(contact.phone || "")}"></div>
+          </div>`;
+        }).join("")}
+      </div>`
+    : "";
+  const memberAccessStatus = item?.membershipAccessStatus || "active";
+  const memberAccessControls = module === "members"
+    ? `<div class="member-edit-form__access">
+        <p class="eyebrow">Zugang steuern</p>
+        <p class="muted">Ab dem Wirksamkeitsdatum hat das Mitglied keinen Portalzugang mehr und erscheint nicht mehr im Mitgliederverzeichnis.</p>
+        <div class="form-grid form-grid--two">
+          <div class="field"><label>Mitgliedschaftsstatus</label><select name="membershipAccessStatus">
+            <option value="active" ${memberAccessStatus === "active" ? "selected" : ""}>Aktiv</option>
+            <option value="inactive" ${memberAccessStatus === "inactive" ? "selected" : ""}>Inaktiv</option>
+            <option value="cancelled" ${memberAccessStatus === "cancelled" ? "selected" : ""}>Gekündigt</option>
+          </select></div>
+          <div class="field"><label>Wirksam ab</label><input name="membershipAccessEffectiveAt" type="date" value="${escapeHtml(timestampInputDate(item?.membershipAccessEffectiveAt))}"><p class="muted">Leer = sofort wirksam.</p></div>
+        </div>
+      </div>`
+    : "";
   const imageUpload = module === "topics"
     ? `<div class="field"><label>Themenbild hochladen</label><input type="file" name="assetFile" accept="image/*"><p class="muted">Das neue Bild ersetzt beim Speichern das zugeordnete Bild.</p></div>`
     : module === "members"
@@ -1774,10 +1848,23 @@ Ausgangstext:
     ? `<div class="member-edit-form__column member-edit-form__column--identity">
         ${memberField("membershipType", "Mitgliedstyp")}
         ${memberField("name", "Firma / Name")}
+        ${memberField("rgDate", "RG-Datum")}
+        ${memberField("membershipFeeAnnual", "Mitgliedsbeitrag")}
+        ${memberField("salutation", "Anrede")}
+        ${memberField("firstName", "Vorname")}
+        ${memberField("lastName", "Nachname")}
+        ${memberField("department", "Abteilung")}
+        ${memberField("street", "Strasse")}
+        ${memberField("postalCode", "PLZ")}
         ${memberField("city", "Ort")}
+        ${memberField("country", "Land")}
         ${memberField("contactName", "Kontaktperson")}
         ${memberField("contactEmail", "Kontakt E-Mail")}
         ${memberField("contactPhone", "Kontakt Telefon")}
+        ${memberField("contactMobile", "Kontakt Mobil")}
+        ${memberField("personalSalutation", "Briefanrede")}
+        ${memberAccessControls}
+        ${memberEventContactsHtml}
       </div>
       <div class="member-edit-form__column member-edit-form__column--content">
         ${memberField("description", "Beschreibung")}

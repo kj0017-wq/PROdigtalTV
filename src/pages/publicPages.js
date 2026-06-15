@@ -1,5 +1,5 @@
 import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=467";
-import { currentUser, isMember } from "../firebase/authService.js?v=466";
+import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=466";
 import { firebaseEnabled, localPreviewMode, realDataMode } from "../firebase/firebaseClient.js";
 import { publicShell, logo } from "../components/layout.js?v=4";
 import { eventCard, topicCard } from "../components/cards.js?v=2";
@@ -956,9 +956,9 @@ export async function homePage() {
   const next = upcoming[0];
   const latestNewsItems = publicNewsItems(editorial)
     .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")))
-    .slice(0, 3);
+    .slice(0, 6);
   const featuredMembers = shuffledItems(members.filter((member) => member.featured || member.logoDisplayUrl || member.logoUrl)).slice(0, 3);
-  const memberCount = members.length ? `${members.length}+` : "35+";
+  const memberCount = "30+";
   const quickCards = [
     ["#/events", "events", "Events", "Medienfruehstuecke, Veranstaltungen und Rueckblicke", "Alle Events ansehen"],
     ["#/topics", "topics", "Themen", "Aktuelle Entwicklungen, Positionen und Expertise", "Alle Themen ansehen"],
@@ -1022,7 +1022,7 @@ export async function homePage() {
       <div class="home-news-card__body">
         <div class="home-news-card__meta"><span>${escapeHtml(item.category || "News")}</span>${date ? `<time>${escapeHtml(formatDate(date))}</time>` : ""}</div>
         <h3>${escapeHtml(item.title || "Aktuelles von PROdigitalTV")}</h3>
-        <p>${escapeHtml(teaserText(item.subtitle || item.shortText || item.teaserText || item.introText || item.bodyText || "Meldungen aus dem Netzwerk.", 128))}</p>
+        <p class="home-news-card__teaser">${escapeHtml(teaserText(item.subtitle || item.shortText || item.teaserText || item.introText || item.bodyText || "Meldungen aus dem Netzwerk.", 260))}</p>
       </div>
     </a>`;
   }).join("");
@@ -1047,7 +1047,7 @@ export async function homePage() {
     <section class="section home-info-section"><div class="container"><div class="home-info-grid">
       <article class="home-info-card home-info-card--newsletter"><p class="eyebrow">Newsletter</p><h3>Bleiben Sie auf dem Laufenden</h3><p>Impulse, Termine und Nachrichten aus dem PROdigitalTV-Netzwerk.</p><form class="home-newsletter-form"><input type="email" placeholder="E-Mail-Adresse"><button class="button button--primary" type="submit">Abonnieren</button></form></article>
       <article class="home-info-card"><p class="eyebrow">Event</p><h3>${escapeHtml(next?.title || "Naechstes Medienfruehstueck")}</h3><p>${next ? `${escapeHtml(formatDate(next.date))}${next.city ? ` · ${escapeHtml(next.city)}` : ""}` : "Neue Termine in Vorbereitung"}</p><a class="home-text-link" href="${next ? `#/event/${escapeHtml(next.id)}` : "#/events"}">Event ansehen</a></article>
-      <article class="home-info-card"><p class="eyebrow">Social</p><h3>Mit uns vernetzen</h3><p>Folgen Sie PROdigitalTV auf den relevanten Branchenkanaelen.</p><div class="home-socials"><a href="#/news">RSS</a><a href="#/about">LinkedIn</a><a href="#/events">YouTube</a></div></article>
+      <article class="home-info-card"><p class="eyebrow">Social</p><h3>Mit uns vernetzen</h3><p>Folgen Sie PROdigitalTV auf den relevanten Branchenkanaelen.</p><div class="home-socials"><a href="#/news">RSS</a><a class="home-socials__linkedin" href="#/about" aria-label="LinkedIn"><span aria-hidden="true">in</span></a><a href="#/events">YouTube</a></div></article>
       <article class="home-info-card home-info-card--stat"><p class="eyebrow">Netzwerk</p><h3>${escapeHtml(memberCount)}</h3><p>Mitglieder und Partner im digitalen Mediennetzwerk.</p></article>
     </div></div></section>
     <section class="section section--white"><div class="container feature home-member-feature"><div><p class="eyebrow">Mitglieder</p><h2>Ein Netzwerk fuer digitale Medien.</h2><p class="lead">Mitglieder profitieren von Fachimpulsen, Medienfruehstuecken und relevanten Branchenkontakten.</p><a class="button button--secondary" href="#/members">Mitglieder entdecken</a></div><div class="member-logos">${featuredMembers.map((member) => `<div class="member-tile">${memberLogo(member)}</div>`).join("")}</div></div></section>
@@ -1447,17 +1447,65 @@ function memberDirectoryCard(member = {}) {
   </article>`;
 }
 
-function memberProfileForm(member = {}, user = {}) {
-  if (!user.memberId) {
+function memberEventContactLimit(member = {}) {
+  return member.membershipType === "company" ? 5 : 1;
+}
+
+function memberAccessBlocked(member = {}, now = new Date()) {
+  if (!["inactive", "cancelled"].includes(member.membershipAccessStatus)) return false;
+  const effective = member.membershipAccessEffectiveAt;
+  if (!effective) return true;
+  const effectiveDate = effective.seconds ? new Date(effective.seconds * 1000) : new Date(effective);
+  return !Number.isNaN(effectiveDate.getTime()) && effectiveDate <= now;
+}
+
+function memberHasPortalAccess(member = {}) {
+  return Boolean(member?.id)
+    && (member.status || "active") === "active"
+    && !memberAccessBlocked(member);
+}
+
+function normalizedMemberEventContacts(member = {}) {
+  const existing = Array.isArray(member.eventContacts) ? member.eventContacts : [];
+  const fallback = {
+    name: member.profileContactName || member.contactName || "",
+    email: member.contactEmail || member.email || "",
+    phone: member.phone || member.contactPhone || member.mobile || member.contactMobile || ""
+  };
+  return existing.length ? existing : (fallback.name || fallback.email || fallback.phone ? [fallback] : []);
+}
+
+function memberEventContactsFields(member = {}) {
+  const limit = memberEventContactLimit(member);
+  const contacts = normalizedMemberEventContacts(member);
+  return `<div class="form-card form-grid member-event-contacts">
+    <div>
+      <p class="eyebrow">Eventberechtigte Kontakte</p>
+      <p class="muted">${limit === 1 ? "Einzelmitglieder können eine eventberechtigte Person hinterlegen." : "Firmenmitglieder können bis zu 5 eventberechtigte Personen hinterlegen."}</p>
+    </div>
+    ${Array.from({ length: limit }, (_, index) => {
+      const contact = contacts[index] || {};
+      return `<div class="form-grid--three member-event-contact-row">
+        <div class="field"><label>Kontakt ${index + 1} Name</label><input name="eventContactName${index}" value="${escapeHtml(contact.name || "")}"></div>
+        <div class="field"><label>E-Mail</label><input name="eventContactEmail${index}" type="email" value="${escapeHtml(contact.email || "")}"></div>
+        <div class="field"><label>Telefon</label><input name="eventContactPhone${index}" type="tel" value="${escapeHtml(contact.phone || "")}"></div>
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+function memberProfileForm(member = {}, user = {}, options = {}) {
+  const adminMode = options.adminMode === true;
+  if (!adminMode && !user.memberId) {
     return `<div class="alert">Ihr Login ist noch keinem Mitgliedsprofil zugeordnet. Bitte im CMS beim Benutzer <code>${escapeHtml(user.uid || user.email || "")}</code> das Feld <code>memberId</code> setzen.</div>`;
   }
   if (!member?.id) {
-    return `<div class="alert">Das verknuepfte Mitgliedsprofil <code>${escapeHtml(user.memberId)}</code> wurde noch nicht gefunden.</div>`;
+    return `<div class="alert">${adminMode ? "Bitte ein Mitgliedsprofil auswählen." : `Das verknüpfte Mitgliedsprofil <code>${escapeHtml(user.memberId)}</code> wurde noch nicht gefunden.`}</div>`;
   }
   return `<form id="member-profile-form" class="form-card form-grid" data-member-id="${escapeHtml(member.id)}">
-    <p class="eyebrow">Eigenes Mitgliedsprofil</p>
-    <h2 style="margin-bottom:6px">Profil bearbeiten</h2>
-    <p class="muted">Diese Angaben werden direkt im Mitglieder-Datensatz gespeichert und im Mitgliederverzeichnis verwendet.</p>
+    <p class="eyebrow">${adminMode ? "Admin-Mitgliederpflege" : "Eigenes Mitgliedsprofil"}</p>
+    <h2 style="margin-bottom:6px">${adminMode ? escapeHtml(member.name || "Mitglied bearbeiten") : "Profil bearbeiten"}</h2>
+    <p class="muted">${adminMode ? "Als Admin können Sie den ausgewählten Mitgliedsdatensatz bearbeiten." : "Diese Angaben werden direkt im eigenen Mitglieder-Datensatz gespeichert."}</p>
     <div class="form-grid--two">
       <div class="field"><label>Name / Unternehmen</label><input name="name" value="${escapeHtml(member.name || "")}" required></div>
       <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(member.category || "")}" placeholder="z. B. Streaming, Produktion, Beratung"></div>
@@ -1468,14 +1516,23 @@ function memberProfileForm(member = {}, user = {}) {
       <div class="field"><label>Kontakt-E-Mail</label><input name="contactEmail" type="email" value="${escapeHtml(member.contactEmail || member.email || "")}"></div>
     </div>
     <div class="form-grid--two">
-      <div class="field"><label>Telefon</label><input name="phone" type="tel" value="${escapeHtml(member.phone || "")}"></div>
+      <div class="field"><label>Telefon</label><input name="phone" type="tel" value="${escapeHtml(member.phone || member.contactPhone || "")}"></div>
+      <div class="field"><label>Mobil</label><input name="mobile" type="tel" value="${escapeHtml(member.mobile || member.contactMobile || "")}"></div>
+    </div>
+    <div class="form-grid--two">
       <div class="field"><label>Ansprechpartner</label><input name="profileContactName" value="${escapeHtml(member.profileContactName || member.contactName || "")}"></div>
+      <div class="field"><label>Briefanrede</label><input name="personalSalutation" value="${escapeHtml(member.personalSalutation || "")}"></div>
+    </div>
+    <div class="form-grid--two">
+      <div class="field"><label>Straße</label><input name="street" value="${escapeHtml(member.street || "")}"></div>
+      <div class="field"><label>PLZ</label><input name="postalCode" value="${escapeHtml(member.postalCode || "")}"></div>
     </div>
     <div class="form-grid--two">
       <div class="field"><label>Ort</label><input name="city" value="${escapeHtml(member.city || "")}"></div>
       <div class="field"><label>Land</label><input name="country" value="${escapeHtml(member.country || "")}"></div>
     </div>
-    <button class="button button--primary" type="submit">Eigenes Profil speichern</button>
+    ${memberEventContactsFields(member)}
+    <button class="button button--primary" type="submit">${adminMode ? "Mitgliedsprofil speichern" : "Eigenes Profil speichern"}</button>
     <div id="member-profile-result"></div>
   </form>`;
 }
@@ -1484,19 +1541,47 @@ export async function memberPortalPage() {
   const user = currentUser();
   if (!user) return loginPage();
   if (!isMember(user)) return portalPage();
-  const [allEvents, sponsors, memberDocuments, members, ownMember] = await Promise.all([
+  const adminMode = isAdmin(user);
+  const selectedMemberId = (() => {
+    try {
+      return new URLSearchParams((window.location.hash.split("?")[1] || "")).get("memberId") || "";
+    } catch {
+      return "";
+    }
+  })();
+  const ownMember = adminMode
+    ? null
+    : user.memberId ? await getOne("members", user.memberId).catch(() => null) : null;
+  if (!adminMode && !memberHasPortalAccess(ownMember)) {
+    return publicShell("login", `${subhero("Mitgliederbereich", "Zugang nicht aktiv", "Dieser Mitgliederzugang ist nicht oder nicht mehr berechtigt.")}
+      <section class="section section--white"><div class="container"><div class="alert alert--warning">Ihr Mitgliedsprofil ist aktuell nicht fuer den Mitgliederbereich freigeschaltet. Bitte wenden Sie sich an die Administration, falls dies nicht korrekt ist.</div><button id="logout-button" class="button button--secondary" style="margin-top:18px">Abmelden</button></div></section>`);
+  }
+  const [allEvents, sponsors, memberDocuments, members] = await Promise.all([
     listPublicEvents(true),
     listPublicContent("sponsors"),
     list("memberDocuments").catch(() => []),
-    listPublicContent("members").then(withPublicMemberLogos).catch(() => []),
-    user.memberId ? getOne("members", user.memberId).catch(() => null) : Promise.resolve(null)
+    (adminMode ? list("members") : listPublicContent("members")).then(withPublicMemberLogos).catch(() => [])
   ]);
+  const sortedMembers = members
+    .slice()
+    .sort((a, b) => Number(a.sortOrder || 9999) - Number(b.sortOrder || 9999) || String(a.name || "").localeCompare(String(b.name || "")));
+  const adminSelectedId = adminMode ? selectedMemberId || user.memberId || sortedMembers[0]?.id || "" : "";
+  const adminSelectedMember = adminMode && adminSelectedId
+    ? sortedMembers.find((member) => member.id === adminSelectedId) || await getOne("members", adminSelectedId).catch(() => null)
+    : null;
+  const editableMember = adminMode ? adminSelectedMember : ownMember;
+  const adminDropdown = adminMode ? `<form class="form-card form-grid" data-admin-member-picker>
+    <p class="eyebrow">Admin</p>
+    <div class="field"><label>Mitglied auswählen</label><select name="memberId" data-admin-member-select>
+      ${sortedMembers.map((member) => `<option value="${escapeHtml(member.id)}" ${member.id === adminSelectedId ? "selected" : ""}>${escapeHtml([member.name || member.id, member.city].filter(Boolean).join(" / "))}</option>`).join("")}
+    </select></div>
+  </form>` : "";
   const events = allEvents.filter((event) => event.accessType === "members_only");
   const visibleDocuments = memberDocuments
     .filter((item) => item.status === "published" && (item.visibility || "members") === "members")
     .sort((a, b) => String(b.meetingDate || b.publishDate || b.year || b.updatedAt || "").localeCompare(String(a.meetingDate || a.publishDate || a.year || a.updatedAt || "")));
   const visibleMembers = members
-    .filter((member) => (member.status || "active") === "active" && (member.visibility || "public") === "public" && member.isLive !== false)
+    .filter((member) => (member.status || "active") === "active" && (member.visibility || "public") === "public" && member.isLive !== false && !memberAccessBlocked(member))
     .sort((a, b) => Number(a.sortOrder || 9999) - Number(b.sortOrder || 9999) || String(a.name || "").localeCompare(String(b.name || "")));
   const documentUrl = (item) => item.documentUrl || item.assetUrl || item.fileUrl || item.url || "";
   const documentCard = (item) => {
@@ -1511,7 +1596,7 @@ export async function memberPortalPage() {
   };
   return publicShell("login", `${subhero("Mitgliederbereich", `Willkommen, ${escapeHtml(user.displayName)}.`, "Dokumente, Mitgliederverzeichnis und eigenes Profil.")}
     <section class="section"><div class="container"><div class="section-head"><div><h2>Mitglieder-Dokumente</h2><p class="muted">Angemeldet als ${escapeHtml(user.email || "")} / Rolle: ${escapeHtml(user.role || "guest")}${user.memberId ? ` / Mitglied: ${escapeHtml(user.memberId)}` : ""}</p></div><button id="logout-button" class="button button--secondary">Abmelden</button></div><div class="card-grid card-grid--three">${visibleDocuments.length ? visibleDocuments.map(documentCard).join("") : `<div class="alert">Noch keine freigegebenen Mitgliederdokumente.</div>`}</div></div></section>
-    <section class="section section--white"><div class="container"><div class="section-head"><h2>Mein Profil</h2></div>${memberProfileForm(ownMember, user)}</div></section>
+    <section class="section section--white"><div class="container"><div class="section-head"><h2>${adminMode ? "Mitgliedsprofil bearbeiten" : "Mein Profil"}</h2></div>${adminDropdown}${memberProfileForm(editableMember, user, { adminMode })}</div></section>
     <section class="section"><div class="container"><div class="section-head"><h2>Mitgliederverzeichnis</h2></div><div class="card-grid card-grid--three">${visibleMembers.length ? visibleMembers.map(memberDirectoryCard).join("") : `<div class="alert">Noch keine freigegebenen Mitglieder.</div>`}</div></div></section>
     <section class="section"><div class="container"><div class="section-head"><h2>Mitglieder-Events</h2></div><div class="card-grid card-grid--three">${events.length ? events.map((event) => eventCard(event, false, sponsors)).join("") : `<div class="alert">Aktuell keine Mitglieder-Events.</div>`}</div></div></section>`);
 }

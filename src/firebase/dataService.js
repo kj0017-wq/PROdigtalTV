@@ -5,6 +5,31 @@ const STORE_KEY = "prodigitaltv-demo-db-official-assets-v4";
 const PUBLIC_LIST_CACHE_MS = 45000;
 const publicListCache = new Map();
 
+function cmsDataMode() {
+  return String(window.location.pathname || "").endsWith("/cms.html")
+    || String(window.location.hash || "").startsWith("#/cms");
+}
+
+async function waitForFirebaseAuth(firebase) {
+  if (!firebase?.auth || firebase.auth.currentUser || !realDataMode()) return;
+  await new Promise((resolve) => {
+    const timer = window.setTimeout(resolve, 2000);
+    const unsubscribe = firebase.authLib.onAuthStateChanged(firebase.auth, () => {
+      window.clearTimeout(timer);
+      unsubscribe();
+      resolve();
+    });
+  });
+}
+
+async function getDataFirebase({ write = false } = {}) {
+  const firebase = write || cmsDataMode()
+    ? await getFirebaseServices()
+    : await getFirestoreServices();
+  if (firebase && (write || cmsDataMode())) await waitForFirebaseAuth(firebase);
+  return firebase;
+}
+
 function canFallbackToLocal(error) {
   if (realDataMode()) return false;
   return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)
@@ -132,7 +157,7 @@ function scrubOversizedInlineImages(record = {}) {
 }
 
 export async function list(collectionName) {
-  const firebase = await getFirestoreServices();
+  const firebase = await getDataFirebase();
   if (!firebase) {
     if (realDataMode()) throw new Error("Firebase ist im Real-Modus nicht erreichbar.");
     return localDb()[collectionName] || [];
@@ -147,7 +172,7 @@ export async function list(collectionName) {
 }
 
 async function constrainedList(collectionName, predicates) {
-  const firebase = await getFirestoreServices();
+  const firebase = await getDataFirebase();
   if (!firebase) {
     if (realDataMode()) throw new Error("Firebase ist im Real-Modus nicht erreichbar.");
     return (localDb()[collectionName] || []).filter((record) => predicates.every(([field, operator, value]) => {
@@ -206,7 +231,16 @@ function isEventVisible(event) {
 function isPublicLiveMember(member) {
   return member.status === "active"
     && (member.visibility || "public") === "public"
-    && member.isLive !== false;
+    && member.isLive !== false
+    && !memberAccessBlocked(member);
+}
+
+function memberAccessBlocked(member = {}, now = new Date()) {
+  if (!["inactive", "cancelled"].includes(member.membershipAccessStatus)) return false;
+  const effective = member.membershipAccessEffectiveAt;
+  if (!effective) return true;
+  const effectiveDate = effective.seconds ? new Date(effective.seconds * 1000) : new Date(effective);
+  return !Number.isNaN(effectiveDate.getTime()) && effectiveDate <= now;
 }
 
 export async function listPublicContent(collectionName) {
@@ -226,7 +260,7 @@ export async function listPublicContent(collectionName) {
 }
 
 export async function getOne(collectionName, id) {
-  const firebase = await getFirestoreServices();
+  const firebase = await getDataFirebase();
   if (!firebase) {
     if (realDataMode()) throw new Error("Firebase ist im Real-Modus nicht erreichbar.");
     return (localDb()[collectionName] || []).find((item) => item.id === id) || null;
@@ -242,7 +276,7 @@ export async function getOne(collectionName, id) {
 
 export async function upsert(collectionName, entity) {
   const record = scrubOversizedInlineImages({ ...entity, updatedAt: new Date().toISOString() });
-  const firebase = await getFirebaseServices();
+  const firebase = await getDataFirebase({ write: true });
   if (firebase) {
     const id = record.id || crypto.randomUUID();
     try {
@@ -264,7 +298,7 @@ export async function upsert(collectionName, entity) {
 }
 
 export async function remove(collectionName, id) {
-  const firebase = await getFirebaseServices();
+  const firebase = await getDataFirebase({ write: true });
   if (firebase) {
     try {
       return await firebase.firestore.deleteDoc(firebase.firestore.doc(firebase.db, collectionName, id));
