@@ -283,6 +283,14 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    match /ai_topic_suggestions/{id} {
+      allow read, write: if editor();
+    }
+
+    match /ai_topic_queue/{id} {
+      allow read, write: if editor();
+    }
+
     match /ai_topic_raw_data/{id} {
       allow read, write: if editor();
     }

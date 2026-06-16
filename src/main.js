@@ -13,14 +13,14 @@ const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9
 const localCodexStoreKey = "prodigitaltv-demo-db-official-assets-v4";
 
 const lazy = {};
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=515");
-const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=466");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=531");
+const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=468");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=59");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=5");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
 const csvService = () => lazy.csvService ||= import("./utils/csv.js");
-const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=322");
+const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=324");
 const ttsService = () => lazy.ttsService ||= import("./ai/ttsService.js?v=2");
 const audioService = () => lazy.audioService ||= import("./ai/audioService.js");
 const aiSourceCatalogService = () => lazy.aiSourceCatalog ||= import("./data/aiSourceCatalog.js");
@@ -41,6 +41,7 @@ const callChatGptAction = async (...args) => (await openaiService()).callChatGpt
 const generateCmsThumbCollage = async (...args) => (await openaiService()).generateCmsThumbCollage(...args);
 const saveAiDraft = async (...args) => (await openaiService()).saveAiDraft(...args);
 const runAiEditorialTask = async (...args) => (await openaiService()).runAiEditorialTask(...args);
+const runMorningBriefingTask = async (...args) => (await openaiService()).runMorningBriefingTask(...args);
 const saveAiEditorialSettings = async (...args) => (await openaiService()).saveAiEditorialSettings(...args);
 const generateAiEditorialThumbnail = async (...args) => (await openaiService()).generateAiEditorialThumbnail(...args);
 const generateAiTopicSuggestions = async (...args) => (await openaiService()).generateAiTopicSuggestions(...args);
@@ -438,7 +439,7 @@ function inlineTtsTokenMarkup(text = "") {
 }
 
 function prepareInlineTtsHighlight(reader) {
-  const container = reader?.closest(".topic-article, .news-detail, .internal-about-text");
+  const container = reader?.closest(".topic-article, .news-detail, .news-detail-clean, .internal-about-text");
   const article = container?.querySelector(".editorial-text") || container;
   if (!article) return { restore: [], nodes: [] };
   const paragraphs = Array.from(article.querySelectorAll("p"))
@@ -568,7 +569,7 @@ async function startPublicTts(button) {
   node.setAttribute("role", isAccessible ? "dialog" : "status");
   node.innerHTML = isAccessible
     ? `<div class="tts-reading-layer__box" aria-modal="false">
-        <div class="tts-reading-layer__head"><div><p class="eyebrow">Gro?er Text</p><strong>Lesedisplay</strong></div></div>
+        <div class="tts-reading-layer__head"><div><p class="eyebrow">Gro&szlig;er Text</p><strong>Lesedisplay</strong></div><button type="button" class="tts-reading-layer__stop" data-tts-stop aria-label="Audio stoppen">Stop</button></div>
         <div class="tts-reading-layer__word" data-tts-current-word>${escapeHtml(words[0] || "Bereit")}</div>
         <div class="tts-reading-layer__text" data-tts-text>${readingText}</div>
       </div>`
@@ -604,6 +605,14 @@ async function startPublicTts(button) {
   }
   await audio.play();
 }
+
+document.addEventListener("click", (event) => {
+  const stopButton = event.target.closest?.("[data-tts-stop]");
+  if (!stopButton) return;
+  event.preventDefault();
+  closePublicTts();
+});
+
 document.addEventListener("click", (event) => {
   const link = clickedAnchor(event);
   if (!link || !isExternalPortalLink(link)) return;
@@ -992,15 +1001,12 @@ function normalizeMemberContactValues(values = {}) {
     normalized.contactName = name;
     normalized.profileContactName = name;
   }
-  if (Object.prototype.hasOwnProperty.call(normalized, "contactPhone") || Object.prototype.hasOwnProperty.call(normalized, "phone")) {
-    const phone = normalized.contactPhone || normalized.phone || "";
-    normalized.contactPhone = phone;
-    normalized.phone = phone;
-  }
-  if (Object.prototype.hasOwnProperty.call(normalized, "contactMobile") || Object.prototype.hasOwnProperty.call(normalized, "mobile")) {
-    const mobile = normalized.contactMobile || normalized.mobile || "";
-    normalized.contactMobile = mobile;
-    normalized.mobile = mobile;
+  if (Object.prototype.hasOwnProperty.call(normalized, "contactPhone") || Object.prototype.hasOwnProperty.call(normalized, "phone") || Object.prototype.hasOwnProperty.call(normalized, "contactMobile") || Object.prototype.hasOwnProperty.call(normalized, "mobile")) {
+    const split = splitPhoneAndMobile(normalized.contactPhone || normalized.phone || "", normalized.contactMobile || normalized.mobile || "");
+    normalized.contactPhone = split.phone;
+    normalized.phone = split.phone;
+    normalized.contactMobile = split.mobile;
+    normalized.mobile = split.mobile;
   }
   if (Object.prototype.hasOwnProperty.call(normalized, "contactEmail") || Object.prototype.hasOwnProperty.call(normalized, "email")) {
     const email = normalized.contactEmail || normalized.email || "";
@@ -1010,22 +1016,66 @@ function normalizeMemberContactValues(values = {}) {
   return normalized;
 }
 
+function normalizedPhoneDigits(value = "") {
+  let text = String(value || "").trim().replace(/[^\d+]/g, "");
+  text = text.replace(/^\++/, "+");
+  if (text.startsWith("00")) text = `+${text.slice(2)}`;
+  if (text.startsWith("0") && !text.startsWith("00")) text = `+49${text.slice(1)}`;
+  return text.replace(/[^\d+]/g, "");
+}
+
+function cleanPhoneDisplay(value = "") {
+  return String(value || "").trim().replace(/^\++/, "+");
+}
+
+function phoneLooksMobile(value = "") {
+  const phone = normalizedPhoneDigits(value);
+  const digits = phone.replace(/\D/g, "");
+  return phone.startsWith("+4915")
+    || phone.startsWith("+4916")
+    || phone.startsWith("+4917")
+    || phone.startsWith("+436")
+    || phone.startsWith("+447")
+    || /^491[567]/.test(digits)
+    || /^436/.test(digits)
+    || /^447/.test(digits);
+}
+
+function splitPhoneAndMobile(phone = "", mobile = "") {
+  const tel = cleanPhoneDisplay(phone);
+  const mob = cleanPhoneDisplay(mobile);
+  if (tel && !mob && phoneLooksMobile(tel)) return { phone: "", mobile: tel };
+  if (!tel && mob && !phoneLooksMobile(mob)) return { phone: mob, mobile: "" };
+  if (tel && mob && phoneLooksMobile(tel) && !phoneLooksMobile(mob)) return { phone: mob, mobile: tel };
+  return { phone: tel, mobile: mob };
+}
+
 function memberEventContactLimit(membershipType = "") {
   return membershipType === "company" ? 5 : 1;
+}
+
+function memberMembershipLabel(membershipType = "") {
+  if (membershipType === "company") return "Firmenmitglied";
+  if (membershipType === "individual") return "Einzelmitglied";
+  return "";
 }
 
 function collectMemberEventContacts(form, membershipType = "") {
   const limit = memberEventContactLimit(membershipType);
   const contacts = [];
   for (let index = 0; index < limit; index += 1) {
-    const name = String(form.querySelector(`[name="eventContactName${index}"]`)?.value || "").trim();
+    const legacyName = String(form.querySelector(`[name="eventContactName${index}"]`)?.value || "").trim();
+    const firstName = String(form.querySelector(`[name="eventContactFirstName${index}"]`)?.value || "").trim();
+    const lastName = String(form.querySelector(`[name="eventContactLastName${index}"]`)?.value || "").trim();
+    const name = [firstName, lastName].filter(Boolean).join(" ") || legacyName;
+    const role = String(form.querySelector(`[name="eventContactRole${index}"]`)?.value || "").trim();
     const email = String(form.querySelector(`[name="eventContactEmail${index}"]`)?.value || "").trim();
     const phone = String(form.querySelector(`[name="eventContactPhone${index}"]`)?.value || "").trim();
-    if (!name && !email && !phone) continue;
-    if (!name || !email || !phone) {
+    if (!firstName && !lastName && !legacyName && !role && !email && !phone) continue;
+    if (!firstName || !lastName || !email || !phone) {
       throw new Error(`Eventkontakt ${index + 1} bitte mit Name, E-Mail und Telefon vollständig ausfüllen.`);
     }
-    contacts.push({ name, email, phone });
+    contacts.push({ firstName, lastName, name, role, email, phone });
   }
   if (!contacts.length) throw new Error("Bitte mindestens einen eventberechtigten Kontakt mit Name, E-Mail und Telefon eintragen.");
   return contacts;
@@ -1034,8 +1084,27 @@ function collectMemberEventContacts(form, membershipType = "") {
 function removeMemberEventContactFormFields(values = {}) {
   const normalized = { ...values };
   Object.keys(normalized).forEach((key) => {
-    if (/^eventContact(?:Name|Email|Phone)\d+$/.test(key)) delete normalized[key];
+    if (/^eventContact(?:Name|FirstName|LastName|Role|Email|Phone)\d+$/.test(key)) delete normalized[key];
   });
+  return normalized;
+}
+
+function syncPrimaryMemberContact(values = {}) {
+  const normalized = { ...values };
+  const first = Array.isArray(normalized.eventContacts) ? normalized.eventContacts[0] || {} : {};
+  if (!first.name && !first.email && !first.phone) return normalized;
+  const split = splitPhoneAndMobile(first.phone || "", "");
+  normalized.contactName = first.name || "";
+  normalized.profileContactName = first.name || "";
+  normalized.firstName = first.firstName || "";
+  normalized.lastName = first.lastName || "";
+  normalized.contactEmail = first.email || "";
+  normalized.email = first.email || "";
+  normalized.contactPhone = split.phone;
+  normalized.phone = split.phone;
+  normalized.contactMobile = split.mobile || normalized.contactMobile || "";
+  normalized.mobile = split.mobile || normalized.mobile || "";
+  normalized.contactRole = first.role || "";
   return normalized;
 }
 
@@ -2882,6 +2951,184 @@ function localSeoPayload(article = {}, keywords = []) {
   };
 }
 
+function normalizeMorningText(value = "") {
+  return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+function normalizeMorningKey(value = "") {
+  return normalizeMorningText(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function sourceIsApprovedForMorning(source = {}) {
+  const status = normalizeMorningKey(source.source_status || source.review_status || source.check_status || "");
+  return ["erlaubt", "bevorzugt"].includes(status);
+}
+
+function verifiedSourceForMorning(item = {}, sources = []) {
+  const sourceText = normalizeMorningKey([item.source, item.source_name, item.sourceName, item.original_url, item.originalUrl, item.source_url, item.url].join(" "));
+  return sources.find((source) => {
+    if (!sourceIsApprovedForMorning(source)) return false;
+    const keys = [source.id, source.name, source.title, source.domain, source.url].map(normalizeMorningKey).filter(Boolean);
+    return keys.some((key) => key && sourceText.includes(key));
+  }) || null;
+}
+
+function parseMorningMeta(meta = "") {
+  const raw = normalizeMorningText(meta);
+  return {
+    is_regulator: /\b(regulator|behoerde|behorde|bundestag|bundesnetzagentur|eu|parlament|zak|dlm|medienanstalt)\b/i.test(raw),
+    source_type: /regulator/i.test(raw) ? "Behoerde" : raw || ""
+  };
+}
+
+function parseMorningBriefingPipeRows(text = "") {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"))
+    .map((line, index) => {
+      const [headline = "", summary = "", relevance = "", source = "", originalUrl = "", firstSeen = "", meta = ""] = line.split("|").map((part) => part.trim());
+      if (!headline || !summary) throw new Error(`Zeile ${index + 1}: Headline und Summary sind Pflicht.`);
+      const parsedMeta = parseMorningMeta(meta);
+      const now = new Date().toISOString();
+      const sourceKey = slugify([headline, source, originalUrl].filter(Boolean).join("-")).slice(0, 90) || crypto.randomUUID();
+      return {
+        id: `morning-item-${sourceKey}`,
+        workflow: "morning_briefing",
+        content_type: "morning_news_item",
+        headline,
+        title: headline,
+        summary,
+        teaser: summary,
+        relevance,
+        source,
+        source_name: source,
+        original_url: originalUrl,
+        url: originalUrl,
+        first_seen: firstSeen || now,
+        category: relevance || "Morgenbriefing",
+        score: parsedMeta.is_regulator ? 85 : 70,
+        status: originalUrl ? "Neu" : "Pruefpflichtig",
+        morning_status: originalUrl ? "Neu" : "Pruefpflichtig",
+        source_type: parsedMeta.source_type || "Importquelle",
+        is_regulator: parsedMeta.is_regulator,
+        duplicate_of: "",
+        created_at: now,
+        updated_at: now,
+        origin: "morning_briefing_pipe_import",
+        keywords: singleMorningKeywords([headline, summary, relevance, source].join(" "))
+      };
+    });
+}
+
+function singleMorningKeywords(text = "") {
+  return localEditorialKeywords({ title: text, bodyText: text, category: text }, [])
+    .map((item) => item.keyword)
+    .slice(0, 12);
+}
+
+function findMorningDuplicate(item = {}, existing = []) {
+  const url = normalizeMorningText(item.original_url || item.originalUrl || item.url || "");
+  const headline = normalizeMorningKey(item.headline || item.title || "");
+  return existing.find((candidate) => {
+    if (candidate.id === item.id) return false;
+    const candidateUrl = normalizeMorningText(candidate.original_url || candidate.originalUrl || candidate.url || candidate.source_url || "");
+    if (url && candidateUrl && url === candidateUrl) return true;
+    const candidateTitle = normalizeMorningKey(candidate.headline || candidate.title || "");
+    if (!headline || !candidateTitle) return false;
+    return candidateTitle.includes(headline.slice(0, 40)) || headline.includes(candidateTitle.slice(0, 40));
+  }) || null;
+}
+
+function morningArticleBody(item = {}) {
+  const headline = normalizeMorningText(item.headline || item.title || "Morgenbriefing-Meldung");
+  const summary = normalizeMorningText(item.summary || item.teaser || item.subline || "");
+  const relevance = normalizeMorningText(item.relevance || item.category || "");
+  const source = normalizeMorningText(item.source || item.source_name || item.sourceName || "");
+  return [
+    `${headline}.`,
+    summary,
+    `Die Meldung ist fuer PROdigitalTV relevant, weil sie den Bereich ${relevance || "digitale Medienwirtschaft"} beruehrt. Fuer TV, Streaming, Plattformen, Produktion, Regulierung oder Vermarktung kann daraus redaktioneller Einordnungsbedarf entstehen.`,
+    `Die Quelle fuer diesen Entwurf ist ${source || "noch redaktionell zu pruefen"}. Der Beitrag bleibt pruefpflichtig, solange Original-URL, Quellenlage und moegliche Dubletten nicht redaktionell bestaetigt sind.`,
+    "Vor einer Veroeffentlichung muss die Redaktion die Kernaussagen anhand der Originalquelle pruefen, fehlende Fakten ergaenzen und unbelegte Schlussfolgerungen entfernen. Ohne diese Freigabe wird der Artikel nicht automatisch veroeffentlicht."
+  ].filter(Boolean).join("\n\n");
+}
+
+async function morningArticleDraftFromItem(item = {}) {
+  const now = new Date().toISOString();
+  const sources = await list("verified_sources").catch(() => []);
+  const approvedSource = verifiedSourceForMorning(item, sources);
+  const originalUrl = item.original_url || item.originalUrl || item.url || "";
+  const sourceStatus = approvedSource && originalUrl ? "geprueft" : "Pruefpflichtig";
+  const status = sourceStatus === "geprueft" && !normalizeMorningKey(item.morning_status || item.status).includes("pruef") ? "Entwurf" : "pruefpflichtig";
+  const title = limitText(normalizeMorningText(item.headline || item.title || "Morgenbriefing-Meldung"), 80);
+  const subline = limitText(normalizeMorningText(item.summary || item.teaser || ""), 180);
+  const bodyText = morningArticleBody(item);
+  const keywords = localEditorialKeywords({ title, subline, bodyText, category: item.category || item.relevance || "" }, item.keywords || []);
+  const seo = localSeoPayload({ title, headline: title, subline, bodyText, slug: slugify(title) }, keywords);
+  const articleId = `morning-article-${slugify([item.first_seen || now.slice(0, 10), title].join("-")).slice(0, 90) || crypto.randomUUID()}`;
+  const sourceSnapshot = [{
+    title: item.source || item.source_name || approvedSource?.name || "Originalquelle",
+    publisher: item.source || item.source_name || approvedSource?.name || "",
+    domain: originalUrl ? domainFromUrl(originalUrl) : approvedSource?.domain || "",
+    url: originalUrl,
+    source_type: item.source_type || approvedSource?.source_type || "Morgenbriefing",
+    trust_score: Number(approvedSource?.trust_score || 0),
+    check_status: sourceStatus
+  }];
+  return {
+    id: articleId,
+    title,
+    headline: title,
+    subtitle: subline,
+    subline,
+    introText: subline,
+    shortText: subline,
+    teaserText: subline,
+    bodyText,
+    page: "news",
+    section: "news",
+    key: `news.${articleId}`,
+    slug: seo.slug || articleId,
+    ...seo,
+    category: item.category || item.relevance || "Morgenbriefing",
+    tags: keywords.map((keyword) => keyword.keyword),
+    primary_keyword: keywords[0]?.keyword || "",
+    keyword_json: keywords,
+    thumbnail_idea: item.thumbnail_idea || `Redaktionelles Branchenmotiv zur Meldung: ${title}.`,
+    thumbnail_prompt: item.thumbnail_prompt || `Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV zur Meldung "${title}". Sachlicher Business-Look, TV-, Streaming- und digitale Medienwirtschaft, keine Logos, keine realen Personen, keine erfundenen Fakten.`,
+    source_snapshot_json: sourceSnapshot,
+    source_status: sourceStatus,
+    duplicate_status: item.duplicate_of || item.duplicateOf ? "Dublette" : "nicht geprueft",
+    ai_check_status: sourceStatus === "geprueft" ? "Warnung" : "Pruefpflichtig",
+    legal_check_status: "offen",
+    publication_status: status,
+    status: "draft",
+    visibility: "internal",
+    relevance_score: Number(item.score || item.relevance_score || 0),
+    relevance_reason: item.relevance || "",
+    author_type: "ai",
+    author_name: "KI-Redaktion",
+    generation_origin: "morning_briefing",
+    content_type: "morning_briefing_article",
+    editorialType: "morning_briefing",
+    publication_target: "news",
+    morning_briefing_item_id: item.id,
+    topic_suggestion_id: item.id,
+    original_url: originalUrl,
+    ai_log_json: {
+      workflow: "morning_briefing",
+      rule: "no_auto_publish_without_manual_release",
+      sourceApproved: Boolean(approvedSource),
+      sourceId: approvedSource?.id || ""
+    },
+    publishDate: now.slice(0, 10),
+    validFrom: now.slice(0, 10),
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
 function cleanPressArticleText(value = "") {
   return String(value || "")
     .normalize("NFC")
@@ -4494,6 +4741,12 @@ async function syncLocalMediaAssetToFirestore(asset = {}) {
     if (targetField === "imageUrl") {
       update.thumbnail_url = finalUrl;
       update.thumbnailUrl = finalUrl;
+    }
+    if (targetCollection === "members" && targetField === "logoUrl") {
+      update.logoUrl = finalUrl;
+      update.logo_media_asset_id = asset.id;
+      update.logoMediaAssetId = asset.id;
+      update.mediaAssetId = asset.id;
     }
     await upsert(targetCollection, update);
     return { synced: true, targetUpdated: true };
@@ -6348,6 +6601,170 @@ function wireActions() {
       renderAiNewsImportFileList(form);
     });
   });
+
+  document.querySelector("[data-ai-morning-briefing-run]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const output = document.querySelector("#ai-morning-briefing-result") || document.querySelector("#ai-editorial-run-result");
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Briefing laeuft ...";
+    if (output) output.innerHTML = `<div class="alert">${progressMarkup("Vollrecherche startet: alle freigegebenen Quellen werden abgefragt ...", 25)}</div>`;
+    try {
+      const research = await generateAiTopicSuggestions({ limit: 10, allSources: true, researchMode: "all_sources" });
+      if (output) {
+        const sourceLine = Number(research?.totalSources || 0)
+          ? `${Number(research.researchedSources || 0)} von ${Number(research.totalSources || 0)} Quellen abgearbeitet, ${Number(research.sourcePublications || 0)} Quellenfunde gespeichert.`
+          : "Quellenrecherche abgeschlossen.";
+        output.innerHTML = `<div class="alert">${progressMarkup(`${sourceLine} Briefing wird jetzt aus frischen Funden, Dublettenpruefung und Relevanzbewertung erstellt ...`, 70)}</div>`;
+      }
+      const result = await runMorningBriefingTask({ mode: "manual" });
+      if (output) {
+        const researchInfo = Number(research?.totalSources || 0)
+          ? `<small>${escapeHtml(`${Number(research.researchedSources || 0)} von ${Number(research.totalSources || 0)} freigegebenen Quellen abgearbeitet. ${Number(research.sourcePublications || 0)} Quellenfunde gespeichert.${research.stoppedByTimeBudget ? " Zeitbudget erreicht; weitere Quellen folgen im naechsten Lauf." : ""}`)}</small>`
+          : "";
+        output.innerHTML = `<div class="alert ${result.ok ? "alert--success" : "alert--warning"}">${escapeHtml(result.message || "Morgenbriefing abgeschlossen.")}${researchInfo}</div>`;
+      }
+      window.setTimeout(render, 900);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Morgenbriefing konnte nicht erzeugt werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  });
+
+  document.querySelector("#ai-morning-briefing-import-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const output = document.querySelector("#ai-morning-briefing-result");
+    const submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
+    if (output) output.innerHTML = `<div class="alert">${progressMarkup("Meldungen werden importiert und auf Dubletten geprueft ...", 55)}</div>`;
+    try {
+      const rows = parseMorningBriefingPipeRows(formObject(form).pipeText || "");
+      if (!rows.length) throw new Error("Bitte mindestens eine Pipe-Zeile einfuegen.");
+      const [existingTopics, existingArticles] = await Promise.all([
+        list("ai_topic_suggestions").catch(() => []),
+        list("editorialContent").catch(() => [])
+      ]);
+      const existing = [...existingTopics, ...existingArticles];
+      const now = new Date().toISOString();
+      const saved = [];
+      for (const row of rows) {
+        const duplicate = findMorningDuplicate(row, existing.concat(saved));
+        const next = duplicate
+          ? { ...row, status: "Dublette", morning_status: "Dublette", duplicate_of: duplicate.id || duplicate.headline || duplicate.title || "", updated_at: now }
+          : row;
+        await upsert("ai_topic_suggestions", next);
+        saved.push(next);
+      }
+      await upsert("ai_editorial_logs", {
+        id: `ai-editorial-log-${crypto.randomUUID()}`,
+        article_id: "",
+        task_name: "Morgenbriefing_Import",
+        status: saved.some((item) => item.status === "Dublette") ? "warning" : "imported",
+        message: `${saved.length} Morgenbriefing-Meldung${saved.length === 1 ? "" : "en"} importiert.`,
+        found_topics_json: saved,
+        duplicate_check_json: { duplicates: saved.filter((item) => item.status === "Dublette").length },
+        ai_check_json: { status: "nicht freigegeben", publication_status: "pruefpflichtig" },
+        created_at: now
+      });
+      if (output) output.innerHTML = `<div class="alert alert--success">${saved.length} Meldung${saved.length === 1 ? "" : "en"} importiert. Dubletten wurden markiert.</div>`;
+      form.reset();
+      window.setTimeout(render, 900);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Import fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+
+  document.querySelectorAll("[data-ai-morning-status]").forEach((button) => button.addEventListener("click", async () => {
+    const id = button.dataset.aiMorningStatus;
+    const status = button.dataset.status || "Pruefpflichtig";
+    const output = document.querySelector("#ai-morning-briefing-result");
+    if (!id) return;
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "...";
+    try {
+      const item = await getOne("ai_topic_suggestions", id);
+      if (!item) throw new Error("Meldung nicht gefunden.");
+      await upsert("ai_topic_suggestions", { ...item, status, morning_status: status, updated_at: new Date().toISOString() });
+      if (output) output.innerHTML = `<div class="alert alert--success">Status auf ${escapeHtml(status)} gesetzt.</div>`;
+      window.setTimeout(render, 500);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Status konnte nicht gespeichert werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
+
+  document.querySelectorAll("[data-ai-morning-create-article]").forEach((button) => button.addEventListener("click", async () => {
+    const id = button.dataset.aiMorningCreateArticle;
+    const output = document.querySelector("#ai-morning-briefing-result");
+    if (!id) return;
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Erzeuge ...";
+    if (output) output.innerHTML = `<div class="alert">${progressMarkup("Artikelentwurf wird im bestehenden Editor vorbereitet ...", 65)}</div>`;
+    try {
+      const item = await getOne("ai_topic_suggestions", id);
+      if (!item) throw new Error("Morgenbriefing-Meldung nicht gefunden.");
+      const normalizedStatus = normalizeMorningKey(item.morning_status || item.status);
+      if (normalizedStatus.includes("dublette") || normalizedStatus.includes("archiviert")) {
+        throw new Error("Aus Dubletten oder archivierten Meldungen wird kein Artikel erzeugt.");
+      }
+      const article = await morningArticleDraftFromItem(item);
+      const existingArticle = await getOne("editorialContent", article.id).catch(() => null);
+      await upsert("editorialContent", { ...(existingArticle || {}), ...article, createdAt: existingArticle?.createdAt || article.createdAt, updatedAt: new Date().toISOString() });
+      await Promise.all((article.source_snapshot_json || []).map((source, index) => upsert("article_sources", {
+        id: `article-source-${article.id}-${index + 1}`,
+        article_id: article.id,
+        title: source.title || `Quelle ${index + 1}`,
+        publisher: source.publisher || source.title || "",
+        domain: source.domain || "",
+        url: source.url || "",
+        source_type: source.source_type || "Morgenbriefing",
+        relevance_note: "Aus Morgenbriefing-Meldung uebernommen. Redaktionell vor Veroeffentlichung pruefen.",
+        claim_reference: item.summary || "",
+        trust_score: Number(source.trust_score || 0),
+        check_status: source.check_status || "Pruefpflichtig",
+        created_at: existingArticle?.createdAt || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })));
+      await Promise.all((article.keyword_json || []).slice(0, 15).map((keyword, index) => upsert("article_keywords", {
+        id: `article-keyword-${article.id}-${index + 1}`,
+        article_id: article.id,
+        keyword: keyword.keyword,
+        keyword_type: keyword.keyword_type || keyword.type || (index === 0 ? "Thema" : "Branchenkeyword"),
+        relevance_score: Number(keyword.relevance_score || keyword.relevance || (index === 0 ? 95 : 70)),
+        type: keyword.type || keyword.keyword_type || "Thema",
+        reason: keyword.reason || keyword.explanation || "Aus Morgenbriefing-Meldung abgeleitet.",
+        explanation: keyword.explanation || keyword.reason || "Aus Morgenbriefing-Meldung abgeleitet.",
+        ai_generated: true,
+        manually_confirmed: false,
+        is_primary: index === 0,
+        created_at: existingArticle?.createdAt || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })));
+      await upsert("ai_topic_suggestions", {
+        ...item,
+        article_id: article.id,
+        status: "Artikel erstellt",
+        morning_status: "Artikel erstellt",
+        updated_at: new Date().toISOString()
+      });
+      if (output) output.innerHTML = `<div class="alert alert--success">Artikelentwurf wurde im vorhandenen Editor angelegt.</div>`;
+      window.location.hash = `#/cms/ai-editorial/editor?id=${encodeURIComponent(article.id)}`;
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Artikel konnte nicht erzeugt werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
 
   document.querySelectorAll("[data-ai-topic-raw-clear]").forEach((button) => button.addEventListener("click", async () => {
     const output = document.querySelector("#ai-topic-research-result") || document.querySelector("#ai-editorial-run-result");
@@ -8406,7 +8823,8 @@ function wireActions() {
       if (form.dataset.module === "members") {
         const membershipType = values.membershipType || existing.membershipType || "";
         values.eventContacts = collectMemberEventContacts(form, membershipType);
-        values = normalizeMembershipAccessValues(normalizeMemberContactValues(removeMemberEventContactFormFields(values)));
+        values = normalizeMembershipAccessValues(syncPrimaryMemberContact(normalizeMemberContactValues(removeMemberEventContactFormFields(values))));
+        values.membershipLabel = memberMembershipLabel(values.membershipType || membershipType);
       }
       const savedValues = withContentVersionMetadata(form.dataset.module, existing, { ...existing, ...values });
       await upsert(form.dataset.module, savedValues);
@@ -8535,9 +8953,10 @@ function wireActions() {
       if (!adminMode && user.memberId !== memberId) throw new Error("Sie koennen nur Ihr eigenes Mitgliedsprofil bearbeiten.");
       const existing = await getOne("members", memberId);
       if (!existing) throw new Error("Das verknuepfte Mitgliedsprofil wurde nicht gefunden.");
-      const values = normalizeMemberContactValues(removeMemberEventContactFormFields(formObject(form)));
+      let values = normalizeMemberContactValues(removeMemberEventContactFormFields(formObject(form)));
       values.eventContacts = collectMemberEventContacts(form, existing.membershipType || "");
-      const allowedFields = ["name", "description", "website", "category", "street", "postalCode", "city", "country", "contactEmail", "email", "phone", "contactPhone", "mobile", "contactMobile", "profileContactName", "contactName", "eventContacts", "personalSalutation"];
+      values = syncPrimaryMemberContact(values);
+      const allowedFields = ["name", "description", "website", "street", "houseNumber", "postalCode", "city", "country", "contactEmail", "email", "phone", "contactPhone", "mobile", "contactMobile", "profileContactName", "contactName", "contactRole", "eventContacts"];
       const update = {
         id: memberId,
         profileUpdatedAt: new Date().toISOString(),
@@ -8796,13 +9215,20 @@ function wireActions() {
       window.alert("CMS-Interna duerfen nicht unsichtbar geschaltet werden.");
       return;
     }
+    if (button.dataset.recordStatus === "members") {
+      const nextVisible = button.dataset.status === "active";
+      await upsert("members", {
+        id: button.dataset.recordId,
+        visible: nextVisible,
+        isLive: nextVisible,
+        visibility: nextVisible ? "public" : "internal"
+      });
+      await render();
+      return;
+    }
     const updates = { ...record, status: button.dataset.status };
     if (button.dataset.recordStatus === "eventMedia") {
       updates.visibility = button.dataset.status === "approved" ? "public" : "internal";
-    }
-    if (button.dataset.recordStatus === "members") {
-      updates.isLive = button.dataset.status === "active";
-      if (updates.isLive) updates.visibility = "public";
     }
     await upsert(button.dataset.recordStatus, updates);
     await render();

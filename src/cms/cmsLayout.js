@@ -5,7 +5,7 @@ const sections = [
   ["cms", "Dashboard"], ["cms/events", "Events"], ["cms/registrations", "Anmeldungen"], ["cms/followup", "Event Rückblick"],
   ["cms/sponsors", "Sponsoren / Gastgeber"], ["cms/members", "Mitglieder"], ["cms/membership-applications", "Mitgliedsantraege"], ["cms/board", "Vorstand"],
   ["cms/users", "User"],
-  ["cms/member-documents", "Mitglieder-Dokumente"], ["cms/member-directories", "Mitgliederverzeichnisse"],
+  ["cms/member-documents", "Mitglieder-Dokumente"],
   {
     route: "cms/editorial/press",
     title: "Redaktionelle Artikel",
@@ -33,6 +33,7 @@ const sections = [
     children: [
       ["cms/ai-editorial/dashboard", "Themenliste"],
       ["cms/ai-editorial/news-import", "News importieren"],
+      ["cms/ai-editorial/morning-briefing", "Morgenbriefing"],
       ["cms/ai-editorial/articles", "Beitraege"],
       ["cms/ai-editorial/sources", "Quellen"],
       ["cms/ai-editorial/prompts", "Prompts"],

@@ -114,7 +114,6 @@ function memberRecord(row, sortOrder) {
   return {
     id,
     name,
-    rgDate: "2026-01-01",
     membershipType,
     membershipLabel: membershipLabel[membershipType] || membershipType,
     membershipFeeAnnual,

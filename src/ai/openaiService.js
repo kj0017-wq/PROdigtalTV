@@ -171,6 +171,21 @@ export async function runAiEditorialTask(mode = "manual") {
   }
 }
 
+export async function runMorningBriefingTask(options = {}) {
+  const firebase = await getFirebaseServices();
+  if (!firebase || localPreviewMode()) {
+    return {
+      ok: false,
+      status: "blocked",
+      message: "Morgenbriefing laeuft nur ueber die deployte Firebase Function oder ueber den manuellen Pipe-Import."
+    };
+  }
+  await ensureCallableLogin("Morgenbriefing");
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "runMorningBriefingTask", { timeout: 600000 });
+  const result = await callable(options);
+  return result.data;
+}
+
 export async function generateAiTopicSuggestions(options = {}) {
   const categoryFilter = String(options.category || "").trim();
   const keywordFilter = String(options.keywords || "").trim();
@@ -181,7 +196,14 @@ export async function generateAiTopicSuggestions(options = {}) {
   if (firebase && !localPreviewMode()) {
     try {
       const callable = firebase.functionsLib.httpsCallable(firebase.functions, "generateAiEditorialTopicSuggestions", { timeout: 600000 });
-      const result = await callable({ limit: requestedLimit, category: categoryFilter, keywords: keywordFilter, sourceId: sourceFilter });
+      const result = await callable({
+        limit: requestedLimit,
+        category: categoryFilter,
+        keywords: keywordFilter,
+        sourceId: sourceFilter,
+        allSources: options.allSources === true,
+        researchMode: options.researchMode || ""
+      });
       if (isLocalHost() && Array.isArray(result.data?.suggestions)) {
         await Promise.all(result.data.suggestions.map((suggestion) => upsert("ai_topic_suggestions", suggestion)));
       }
@@ -190,7 +212,7 @@ export async function generateAiTopicSuggestions(options = {}) {
       if (!["functions/not-found", "functions/unavailable", "functions/internal", "functions/unauthenticated", "functions/permission-denied"].includes(error?.code)) throw error;
     }
   }
-  const { list, upsert } = await import("../firebase/dataService.js?v=466");
+  const { list, upsert: localUpsert } = await import("../firebase/dataService.js?v=466");
   const now = new Date().toISOString();
   const [articles, existingSuggestions, verifiedSources] = await Promise.all([
     list("editorialContent"),
@@ -267,8 +289,8 @@ export async function generateAiTopicSuggestions(options = {}) {
       }] : []
     };
   });
-  await Promise.all(suggestions.map((suggestion, index) => upsert("ai_topic_suggestions", { ...suggestion, rank: index + 1 })));
-  await upsert("ai_editorial_logs", {
+  await Promise.all(suggestions.map((suggestion, index) => localUpsert("ai_topic_suggestions", { ...suggestion, rank: index + 1 })));
+  await localUpsert("ai_editorial_logs", {
     id: `ai-editorial-log-${crypto.randomUUID()}`,
     article_id: "",
     task_name: "KI_Redaktion_Themenrecherche",

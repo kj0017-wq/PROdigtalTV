@@ -1,7 +1,7 @@
 import { cmsShell, cmsTitle } from "./cmsLayout.js";
 import { list, getOne, upsert, resetLocalCollection } from "../firebase/dataService.js?v=466";
 import { localPreviewMode } from "../firebase/firebaseClient.js";
-import { authDebugState, currentUser, canUseCms, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=466";
+import { authDebugState, currentUser, canUseCms } from "../firebase/authService.js?v=466";
 import { verified_sources as defaultVerifiedSources } from "../data/demoData.js";
 import { aiSourceCatalog } from "../data/aiSourceCatalog.js";
 import { escapeHtml, formatDateTime, formatShortDate } from "../utils/format.js";
@@ -9,6 +9,7 @@ import { escapeHtml, formatDateTime, formatShortDate } from "../utils/format.js"
 const sections = [
   ["dashboard", "Themenliste"],
   ["news-import", "News importieren"],
+  ["morning-briefing", "Morgenbriefing"],
   ["press", "Presse"],
   ["articles", "Beitraege"],
   ["sources", "Quellen"],
@@ -31,6 +32,9 @@ const promptTypes = [
   "Quellenpruefung",
   "Headline",
   "Subline / Thubline",
+  "Dublettenpruefung",
+  "Relevanzbewertung",
+  "Morgenbriefing",
   "Beitragstext",
   "Sprachstil",
   "Thumbnail-Idee",
@@ -45,6 +49,9 @@ const systemPromptCatalog = [
   ["Themenrecherche", "Themenrecherche"],
   ["Themenbewertung", "Themenbewertung"],
   ["Quellenpruefung", "Quellenpruefung"],
+  ["Dublettenpruefung", "Dublettenpruefung"],
+  ["Relevanzbewertung", "Relevanzbewertung"],
+  ["Morgenbriefing", "Morgenbriefing"],
   ["Headline", "Headline-Erstellung"],
   ["Subline / Thubline", "Subline-/Thubline-Erstellung"],
   ["Beitragstext", "Texterstellung"],
@@ -246,6 +253,24 @@ function protect(content) {
     return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Zugriff geschuetzt</p><h1>CMS-Login erforderlich</h1><p style="margin:14px 0 24px">Die KI-Redaktion steht Administratoren und Redakteuren zur Verfuegung.</p>${userHint}<div class="alert" style="margin:16px 0;text-align:left"><strong>Diagnose</strong><br>Session: ${debug.stored ? "vorhanden" : "leer"}<br>Firebase: ${escapeHtml(debug.firebaseAuthUser?.email || "nicht angemeldet")}<br>Real-Modus: ${debug.realDataMode ? "ja" : "nein"}<br>Lokale Vorschau: ${debug.localPreviewMode ? "ja" : "nein"}</div><a class="button button--primary" href="#/login">Anmelden</a></div></section>`;
   }
   return content;
+}
+
+async function optionalList(collectionName) {
+  try {
+    return await list(collectionName);
+  } catch (error) {
+    console.warn(`KI-Redaktion: ${collectionName} konnte nicht geladen werden`, error);
+    return [];
+  }
+}
+
+async function optionalGetOne(collectionName, id) {
+  try {
+    return await getOne(collectionName, id);
+  } catch (error) {
+    console.warn(`KI-Redaktion: ${collectionName}/${id} konnte nicht geladen werden`, error);
+    return null;
+  }
 }
 
 function badge(value = "") {
@@ -465,6 +490,108 @@ function pressSourceStatusRows(items = []) {
     <td>${escapeHtml(formatShortDate(item.skip_until || "")) || "-"}</td>
     <td>${escapeHtml(item.reason || "")}</td>
   </tr>`).join("");
+}
+
+function isMorningBriefingItem(item = {}) {
+  const marker = normalizeText([item.workflow, item.content_type, item.contentType, item.origin, item.source].join(" "));
+  return marker.includes("morning") || marker.includes("morgenbriefing");
+}
+
+function isMorningBriefingArticle(item = {}) {
+  const marker = normalizeText([item.content_type, item.contentType, item.editorialType, item.generation_origin, item.origin, item.category].join(" "));
+  return marker.includes("morning") || marker.includes("morgenbriefing");
+}
+
+function morningBriefingStatus(item = {}) {
+  return item.morning_status || item.briefing_status || item.status || "Neu";
+}
+
+function morningBriefingSourceUrl(item = {}) {
+  const candidates = [
+    item.original_url,
+    item.originalUrl,
+    item.source_url,
+    item.sourceUrl,
+    item.url,
+    ...(topicSourceCandidates(item).map((source) => source.url))
+  ].filter(Boolean);
+  return candidates.find((url) => /^https?:\/\//i.test(String(url || ""))) || "";
+}
+
+function morningBriefingRows(items = [], articles = []) {
+  const articleByItem = new Map(articles.filter(isMorningBriefingArticle).map((article) => [article.morning_briefing_item_id || article.topic_suggestion_id || article.source_item_id || "", article]));
+  return items.map((item) => {
+    const sourceUrl = morningBriefingSourceUrl(item);
+    const status = morningBriefingStatus(item);
+    const article = articleByItem.get(item.id) || articles.find((candidate) => candidate.id === item.article_id || candidate.id === item.articleId);
+    const disabled = normalizeText(status).includes("dublette") || normalizeText(status).includes("archiviert");
+    return `<tr>
+      <td><strong>${escapeHtml(item.headline || item.title || "-")}</strong><small>${escapeHtml(item.summary || item.teaser || item.subline || "")}</small>${topicKeywordChips(item)}</td>
+      <td>${sourceUrl ? `<a class="link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(item.source || item.source_name || item.sourceName || item.publisher || "Quelle")}</a>` : escapeHtml(item.source || item.source_name || item.sourceName || "-")}<small>${escapeHtml(item.source_type || item.sourceType || "")}</small></td>
+      <td>${escapeHtml(item.category || item.relevance || "-")}<small>Score ${Number(item.score || item.relevance_score || item.relevanceScore || 0)}</small></td>
+      <td>${badge(status)}${item.duplicate_of || item.duplicateOf ? `<small>Dublette: ${escapeHtml(item.duplicate_of || item.duplicateOf)}</small>` : ""}</td>
+      <td><div class="ai-picto-row">
+        ${article ? linkPictogram("ART", "Artikel oeffnen", `#/cms/ai-editorial/editor?id=${encodeURIComponent(article.id)}`) : pictogram("ART", "Artikel erzeugen", `data-ai-morning-create-article="${escapeHtml(item.id)}"`, disabled)}
+        ${pictogram("OK", "Freigeben", `data-ai-morning-status="${escapeHtml(item.id)}" data-status="Freigegeben"`, normalizeText(status).includes("freigegeben"))}
+        ${pictogram("!", "Pruefpflichtig markieren", `data-ai-morning-status="${escapeHtml(item.id)}" data-status="Pruefpflichtig"`)}
+        ${pictogram("X", "Archivieren", `data-ai-morning-status="${escapeHtml(item.id)}" data-status="Archiviert"`)}
+      </div></td>
+    </tr>`;
+  }).join("");
+}
+
+function morningBriefingPipeExample() {
+  return "Bundesnetzagentur wird zentrale KI-Aufsicht in Deutschland|Bundestag setzt EU-KI-Verordnung national um; BNetzA koordiniert Marktaufsicht.|Regulierung & Compliance|bundestag.de|https://www.bundestag.de/dokumente/textarchiv/2026/kw24-de-ki-1183820|2026-06-16T09:00:00Z|regulator";
+}
+
+function morningBriefingPanel({ items = [], articles = [], sources = [], logs = [], settings = {} } = {}) {
+  const usableItems = items.filter((item) => !["archiviert", "ignoriert"].includes(normalizeText(morningBriefingStatus(item))));
+  const duplicateItems = items.filter((item) => normalizeText(morningBriefingStatus(item)).includes("dublette") || item.duplicate_of || item.duplicateOf);
+  const reviewItems = items.filter((item) => normalizeText(morningBriefingStatus(item)).includes("pruef") || !morningBriefingSourceUrl(item));
+  const latestBriefing = sortArticlesNewestFirst(articles.filter(isMorningBriefingArticle))[0];
+  const approvedSources = sources.filter((source) => ["bevorzugt", "erlaubt"].includes(normalizeText(source.source_status || source.review_status || source.check_status)));
+  const latestMorningLog = latest(logs.filter((log) => normalizeText([log.task_name, log.taskName, log.message].join(" ")).includes("morgenbriefing")), "created_at");
+  return `${cmsTitle("KI-Redaktion", "Morgenbriefing")}
+    ${nav("morning-briefing")}
+    ${demoModeNotice()}
+    <section class="panel ai-morning-briefing-panel">
+      <div class="editorial-field-head">
+        <div>
+          <h2>Morgenbriefing & KI-Redaktion</h2>
+          <p class="muted">Tägliche Themenauswahl aus freigegebenen Quellen. Meldungen bleiben Arbeitsdaten der KI-Redaktion; Artikel entstehen als normale Redaktionsbeiträge im vorhandenen Editor.</p>
+        </div>
+        <div class="ai-picto-row">${pictogram(">", "Morgenbriefing jetzt erzeugen", "data-ai-morning-briefing-run")}</div>
+      </div>
+      <div class="setup-steps">
+        <div class="setup-step"><span>Freigegebene Quellen</span><strong>${approvedSources.length}</strong><small>nur erlaubt / bevorzugt</small></div>
+        <div class="setup-step"><span>Arbeitsliste</span><strong>${usableItems.length}</strong><small>5 bis 10 fuer Briefing vorgesehen</small></div>
+        <div class="setup-step"><span>Pruefpflichtig</span><strong>${reviewItems.length}</strong><small>keine automatische Veroeffentlichung</small></div>
+        <div class="setup-step"><span>Dubletten</span><strong>${duplicateItems.length}</strong><small>blockiert</small></div>
+      </div>
+      <div id="ai-morning-briefing-result"></div>
+      ${latestBriefing ? `<p class="muted">Letztes Briefing: <a class="link" href="#/cms/ai-editorial/editor?id=${encodeURIComponent(latestBriefing.id)}">${escapeHtml(latestBriefing.title || latestBriefing.headline || latestBriefing.id)}</a></p>` : ""}
+      ${latestMorningLog ? `<p class="muted">Letzter Lauf: ${escapeHtml(formatDateTime(latestMorningLog.created_at || latestMorningLog.createdAt || ""))} - ${escapeHtml(latestMorningLog.message || "")}</p>` : ""}
+    </section>
+    <section class="panel">
+      <h2>Pipe-Import fuer Meldungen</h2>
+      <p class="muted">Format: headline|summary|relevance|source|original_url|first_seen|meta. Neue Einträge werden als Morgenbriefing-Meldungen gespeichert und bleiben bis zur Freigabe pruefpflichtig.</p>
+      <form id="ai-morning-briefing-import-form" class="form-grid">
+        <div class="field editorial-text-field editorial-text-field--body"><label>Meldungen einfuegen</label><textarea name="pipeText" rows="6" placeholder="${escapeHtml(morningBriefingPipeExample())}"></textarea></div>
+        <div class="actions"><button class="button button--primary">Meldungen importieren</button></div>
+      </form>
+    </section>
+    <section class="panel">
+      <div class="editorial-field-head"><h2>NewsFeed / Morgenbriefing</h2><span class="tag">${usableItems.length} Meldungen</span></div>
+      <div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Meldung</th><th>Quelle</th><th>Kategorie / Score</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${usableItems.length ? morningBriefingRows(usableItems.slice(0, 120), articles) : `<tr><td colspan="5">Noch keine Morgenbriefing-Meldungen vorhanden.</td></tr>`}</tbody></table></div>
+    </section>
+    <section class="panel">
+      <h2>Pruefpflichtig & Dubletten</h2>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Meldung</th><th>Quelle</th><th>Kategorie / Score</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${[...reviewItems, ...duplicateItems].length ? morningBriefingRows([...reviewItems, ...duplicateItems].slice(0, 80), articles) : `<tr><td colspan="5">Keine blockierten Meldungen.</td></tr>`}</tbody></table></div>
+    </section>
+    <section class="panel">
+      <h2>Vorhandene Briefing-Artikel</h2>
+      <div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Beitrag</th><th>Herkunft</th><th>Kategorie</th><th>Quellen</th><th>Dubletten</th><th>KI-Pruefung</th><th>Status</th><th>Datum</th></tr></thead><tbody>${articles.filter(isMorningBriefingArticle).length ? articleRows(sortArticlesNewestFirst(articles.filter(isMorningBriefingArticle)).slice(0, 40)) : `<tr><td colspan="8">Noch keine Artikel aus Morgenbriefings.</td></tr>`}</tbody></table></div>
+    </section>`;
 }
 
 function cleanPressDisplayText(value = "") {
@@ -1189,28 +1316,27 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
     resetLocalCollection("ai_topic_suggestions");
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#/cms/ai-editorial/dashboard`);
   }
-  let user = currentUser();
-  if (!canUseCms(user)) user = await waitForAuthReady();
-  if (!canUseCms(user)) user = await refreshAuthToken(true);
+  const user = currentUser();
   if (!canUseCms(user)) return protect("");
   let [articles, sources, prompts, promptTests, keywords, logs, settingsRecord, topicSuggestions, topicQueue, topicRawData, pressReleases, pressSourceStatus, pressImportRuns] = await Promise.all([
-    list("editorialContent"),
-    list("verified_sources"),
-    list("ai_prompts"),
-    list("ai_prompt_tests"),
-    list("article_keywords"),
-    list("ai_editorial_logs"),
-    getOne("settings", "aiEditorial"),
-    list("ai_topic_suggestions"),
-    list("ai_topic_queue"),
-    list("ai_topic_raw_data"),
-    list("ai_press_releases"),
-    list("ai_press_source_status"),
-    list("ai_press_import_runs")
+    optionalList("editorialContent"),
+    optionalList("verified_sources"),
+    optionalList("ai_prompts"),
+    optionalList("ai_prompt_tests"),
+    optionalList("article_keywords"),
+    optionalList("ai_editorial_logs"),
+    optionalGetOne("settings", "aiEditorial"),
+    optionalList("ai_topic_suggestions"),
+    optionalList("ai_topic_queue"),
+    optionalList("ai_topic_raw_data"),
+    optionalList("ai_press_releases"),
+    optionalList("ai_press_source_status"),
+    optionalList("ai_press_import_runs")
   ]);
   sources = uniqueSources([...sources, ...defaultVerifiedSources, ...aiSourceCatalog]);
   prompts = await ensureSystemPrompts(prompts);
   const aiArticles = sortArticlesNewestFirst(articles.filter(isAiEditorialArticle).filter((article) => !isLowQualityPressImportArticle(article)));
+  const morningBriefingItems = sortTopicSuggestions(topicSuggestions.filter(isMorningBriefingItem));
   const sourceSuggestions = sources.filter((source) => source.suggested_by_ai || ["vorgeschlagen", "in Pruefung", "neu", "ungeprueft"].includes(source.review_status));
   const settings = {
     automationEnabled: false,
@@ -1283,6 +1409,7 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
       ${topicResearchPanel}
       <div id="ai-editorial-run-result"></div>`,
     "news-import": newsImportPageContent(active),
+    "morning-briefing": morningBriefingPanel({ items: morningBriefingItems, articles, sources, logs, settings }),
     articles: `${cmsTitle("KI-Redaktion", "Beitraege")}${nav(active)}${demoModeNotice()}<section class="panel"><p class="muted">Neueste Beitraege zuerst.</p><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Beitrag</th><th>Herkunft</th><th>Kategorie</th><th>Quellen</th><th>Dubletten</th><th>KI-Pruefung</th><th>Status</th><th>Datum</th></tr></thead><tbody>${aiArticles.length ? articleRows(aiArticles) : `<tr><td colspan="8">Noch keine KI-Beitraege.</td></tr>`}</tbody></table></div></section><div id="ai-editorial-run-result"></div>`,
     press: pressPanel,
     sources: `${cmsTitle("KI-Redaktion", "Quellen")}${nav(active)}<section class="panel"><details class="source-management-details"><summary><strong>Quellen verwalten</strong><span>manuell hinzufuegen, automatisch erweitern, loeschen</span></summary><p class="muted">Quellen koennen manuell ergaenzt oder aus dem Systemkatalog automatisch in die verifizierte Quellenliste uebernommen werden.</p>${verifiedSourceForm()}</details></section><section class="panel"><h2>Quellen nach Themenbereich</h2><p class="muted">Orientierungsliste fuer die Themenrecherche. Die Quellen sind noch keine Belege fuer einen Artikel; die konkrete Belegpruefung erfolgt im Editor.</p>${sourceCategoryBlocks(sources)}</section><section class="panel"><h2>Alle verifizierten Quellen</h2><div class="table-wrap"><table class="table"><thead><tr><th>Nr.</th><th>Quelle</th><th>Typ</th><th>Status</th><th>Trust</th><th>Link</th><th>Aktion</th></tr></thead><tbody>${sources.length ? sourceRows(sources, { numbered: true, manageable: true }) : `<tr><td colspan="7">Noch keine Quellen erfasst.</td></tr>`}</tbody></table></div></section>`,

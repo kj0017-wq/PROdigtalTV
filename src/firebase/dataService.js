@@ -231,6 +231,7 @@ function isEventVisible(event) {
 function isPublicLiveMember(member) {
   return member.status === "active"
     && (member.visibility || "public") === "public"
+    && member.visible !== false
     && member.isLive !== false
     && !memberAccessBlocked(member);
 }

@@ -497,16 +497,21 @@ function sourceIsGerman(source = {}) {
   return germanLanguage || bilingualGerman || germanCountry || germanDomain || germanNamedSource;
 }
 
-function selectResearchSources(sources = [], existingSuggestions = [], category = "", keywords = "", limit = 30) {
+function selectResearchSources(sources = [], existingSuggestions = [], category = "", keywords = "", limit = 30, options = {}) {
   const usage = new Map();
   existingSuggestions.forEach((suggestion) => {
     usedSourceKeysFromSuggestion(suggestion).forEach((key) => usage.set(key, (usage.get(key) || 0) + 1));
   });
+  const includeAllApproved = options.includeAllApproved === true;
   const allowed = sources
     .filter((source) => !sourceIsExcluded(source))
-    .filter((source) => !String(source.source_status || source.sourceStatus || "").toLowerCase().includes("gesperrt"))
-    .filter((source) => sourceIsGerman(source))
-    .filter((source) => Number(source.trust_score || source.suggested_trust_score || 0) >= 70);
+    .filter((source) => {
+      const status = String(source.source_status || source.sourceStatus || source.review_status || source.check_status || "").toLowerCase();
+      if (includeAllApproved) return ["erlaubt", "bevorzugt"].includes(status);
+      return !status.includes("gesperrt");
+    })
+    .filter((source) => includeAllApproved || sourceIsGerman(source))
+    .filter((source) => includeAllApproved || Number(source.trust_score || source.suggested_trust_score || 0) >= 70);
   const categoryPool = category ? allowed.filter((source) => sourceMatchesCategory(source, category)) : allowed;
   const minimumPoolSize = category ? Math.min(30, allowed.length) : 0;
   const sourcePool = category && categoryPool.length < minimumPoolSize
@@ -1896,6 +1901,7 @@ exports.generateAiEditorialTopicSuggestions = onCall({ region, secrets: [openAiA
   const category = String(payload.category || "").trim();
   const keywords = String(payload.keywords || "").trim();
   const sourceFilter = String(payload.sourceId || payload.source_id || "").trim().toLowerCase();
+  const useAllSources = payload.allSources === true || payload.researchMode === "all_sources";
   const [sourceSnapshot, existingSuggestionsSnapshot] = await Promise.all([
     db.collection("verified_sources").get(),
     db.collection("ai_topic_suggestions").get()
@@ -1908,8 +1914,8 @@ exports.generateAiEditorialTopicSuggestions = onCall({ region, secrets: [openAiA
     ? verifiedSources.filter((source) => [source.id, source.domain, source.url, source.name, source.title].some((value) => String(value || "").trim().toLowerCase() === sourceFilter))
     : verifiedSources;
   const existingSuggestionRecords = existingSuggestionsSnapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() || {}) }));
-  const maxLiveSources = sourceFilter ? 1 : category ? filteredSources.length : 60;
-  const researchSources = selectResearchSources(filteredSources, existingSuggestionRecords, category, keywords, Math.min(filteredSources.length || maxLiveSources, maxLiveSources));
+  const maxLiveSources = sourceFilter ? 1 : (useAllSources || category) ? filteredSources.length : 60;
+  const researchSources = selectResearchSources(filteredSources, existingSuggestionRecords, category, keywords, Math.min(filteredSources.length || maxLiveSources, maxLiveSources), { includeAllApproved: useAllSources });
   if ((category || sourceFilter) && !researchSources.length) {
     throw new HttpsError("failed-precondition", `Keine verifizierten Quellen fuer diese Auswahl gefunden. Bitte Quellenliste oder Filter pruefen.`);
   }

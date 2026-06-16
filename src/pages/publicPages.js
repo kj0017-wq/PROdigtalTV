@@ -3,7 +3,7 @@ import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=466
 import { firebaseEnabled, localPreviewMode, realDataMode } from "../firebase/firebaseClient.js";
 import { publicShell, logo } from "../components/layout.js?v=4";
 import { eventCard, topicCard } from "../components/cards.js?v=2";
-import { accessLabels, lifecycleLabels } from "../data/demoData.js";
+import { accessLabels, lifecycleLabels, members as fallbackMembers } from "../data/demoData.js";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
 
 function editorialThumbDataUrl(title = "", label = "", context = "") {
@@ -179,6 +179,40 @@ function publicEventMediaAsset(event = {}, mediaAssets = []) {
     })[0];
 }
 
+const currentMemberFallbackIds = new Set([
+  "bibel-tv",
+  "channel-21",
+  "dsc",
+  "ors",
+  "moderne-werbung",
+  "blu-tec-one",
+  "house-of-research",
+  "schneider-enterprise",
+  "fashion-tv-production",
+  "stingray-music",
+  "eutelsat",
+  "farbi-flora",
+  "anixe-hd",
+  "js-consult",
+  "red-bull-media-house",
+  "hardy-heine",
+  "no-limits-media",
+  "itsmaxsuhr",
+  "idee-medien",
+  "labcom",
+  "3q"
+]);
+
+async function publicManagedMembers() {
+  const liveMembers = (await list("members"))
+    .filter((member) => ["company", "individual"].includes(member.membershipType || "") && member.visible !== false && !memberAccessBlocked(member) && !["inactive", "cancelled", "archived"].includes(member.status || ""))
+    .sort((a, b) => Number(a.sortOrder ?? 999) - Number(b.sortOrder ?? 999) || String(a.name || "").localeCompare(String(b.name || ""), "de"));
+  if (liveMembers.length) return liveMembers;
+  return fallbackMembers
+    .filter((member) => currentMemberFallbackIds.has(member.id))
+    .sort((a, b) => Number(a.sortOrder ?? 999) - Number(b.sortOrder ?? 999) || String(a.name || "").localeCompare(String(b.name || ""), "de"));
+}
+
 function publicEditorialMediaAsset(item = {}, mediaAssets = []) {
   return mediaAssets
     .filter((asset) => {
@@ -266,13 +300,7 @@ function publicSponsorLogoUrl(sponsor = {}, mediaAssets = []) {
 }
 
 async function withPublicMemberLogos(members = []) {
-  if (!members.length) return members;
-  const mediaAssets = await list("media_assets").catch(() => []);
-  return members.map((member) => {
-    const asset = publicMemberLogoAsset(member, mediaAssets);
-    const logoDisplayUrl = asset ? mediaAssetUrl(asset) || member.logoUrl || "" : member.logoUrl || "";
-    return { ...member, logoDisplayUrl };
-  });
+  return members.map((member) => ({ ...member, logoDisplayUrl: member.logoUrl || "" }));
 }
 
 function boardPortrait(person) {
@@ -617,7 +645,7 @@ function aboutLongTextSection(block, options = {}) {
     ${ttsReader({ rubric: "Interna", title: block.titel || "", text: block.langtext || "", audio: block.audio || {}, audioProvider: block.audioProvider || "", audioUrl: block.audioUrl || "", audioAccessibleUrl: block.audioAccessibleUrl || "", audioNaturalUrl: block.audioNaturalUrl || "", timingUrl: block.timingUrl || "", audioStatus: block.audioStatus || "", audioAccessibleStatus: block.audioAccessibleStatus || "", audioNaturalStatus: block.audioNaturalStatus || "" })}
     <div class="editorial-text">${articleParagraphs(block.langtext)}</div>
     ${options.joinCta ? `<button class="join-text-link internal-text-join-cta" type="button" data-join-scroll>Mitgliedsantrag -></button>` : ""}
-    <button class="internal-about-top-button" type="button" data-internal-scroll-top aria-label="Nach oben">â†‘</button>
+    <button class="internal-about-top-button" type="button" data-internal-scroll-top aria-label="Nach oben">&uarr;</button>
   </article>`;
 }
 
@@ -739,6 +767,12 @@ export async function internalDetailPage(bereich, slug) {
 }
 
 function articleSourcesList(item = {}) {
+  const sources = articleSources(item).slice(0, 8);
+  if (!sources.length) return "";
+  return `<details class="sources-list" open><summary>Quellen anzeigen</summary><ul>${sources.map((source) => `<li><a class="link" href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.publisher || source.name || "Quelle")}: ${escapeHtml(source.title || source.relevance_note || source.url)}</a></li>`).join("")}</ul></details>`;
+}
+
+function articleSources(item = {}) {
   const rawSources = Array.isArray(item.sources)
     ? item.sources
     : Array.isArray(item.source_snapshot_json)
@@ -746,11 +780,56 @@ function articleSourcesList(item = {}) {
       : Array.isArray(item.sourceSnapshotJson)
         ? item.sourceSnapshotJson
         : [];
-  const sources = rawSources
-    .filter((source) => source?.url && (source.title || source.publisher || source.name))
-    .slice(0, 8);
+  const sources = rawSources.filter((source) => source?.url && (source.title || source.publisher || source.name));
+  const fallbackUrl = item.original_url || item.originalUrl || item.source_url || item.sourceUrl || item.url || "";
+  const fallbackName = item.source || item.publisher || item.sourceName || "";
+  if (!sources.length && fallbackUrl) {
+    sources.push({
+      title: item.sourceTitle || item.title || "",
+      publisher: fallbackName || "Quelle",
+      url: fallbackUrl
+    });
+  }
+  return sources;
+}
+
+function newsDetailSources(item = {}) {
+  const sources = articleSources(item).slice(0, 4);
   if (!sources.length) return "";
-  return `<details class="sources-list" open><summary>Quellen anzeigen</summary><ul>${sources.map((source) => `<li><a class="link" href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.publisher || source.name || "Quelle")}: ${escapeHtml(source.title || source.relevance_note || source.url)}</a></li>`).join("")}</ul></details>`;
+  return `<div class="news-detail-source"><p class="eyebrow">Quelle${sources.length > 1 ? "n" : ""}</p>${sources.map((source) => `<a class="link" href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.publisher || source.name || "Quelle")}${source.title ? `: ${escapeHtml(source.title)}` : ""}</a>`).join("")}</div>`;
+}
+
+function cleanNewsDetailTitle(item = {}) {
+  let title = String(item.title || item.headline || "").trim();
+  const slug = String(item.slug || item.key || item.id || "").trim();
+  if (slug && title.endsWith(slug)) title = title.slice(0, -slug.length).trim();
+  for (let length = Math.floor(title.length / 2); length > 12; length -= 1) {
+    const left = title.slice(0, length).trim();
+    const right = title.slice(length, length * 2).trim();
+    if (left && left === right) {
+      title = left;
+      break;
+    }
+  }
+  return title || String(item.title || item.headline || "").trim();
+}
+
+function cleanNewsDetailText(text = "", title = "", subtitle = "", slug = "") {
+  let value = String(text || "").trim();
+  value = value.replace(/(?:^|\n{2,})(?:keywords?|tags?|schlagworte?|seo|thumbnail(?:-idee|-prompt)?|quellen?)\s*[:\n][\s\S]*$/i, "").trim();
+  [slug, title, subtitle].filter(Boolean).forEach((part) => {
+    const escaped = String(part).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    value = value.replace(new RegExp(`^\\s*${escaped}\\s*`, "i"), "").trim();
+  });
+  const blocks = value.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
+  const first = blocks[0] || "";
+  const titleKey = String(title || "").toLowerCase().replace(/[^a-z0-9äöüß]+/gi, " ").trim();
+  const firstKey = first.toLowerCase().replace(/[^a-z0-9äöüß]+/gi, " ").trim();
+  const titleLead = titleKey.split(/\s+/).slice(0, 3).join(" ");
+  if (blocks.length > 1 && first.length < 150 && titleLead && firstKey.startsWith(titleLead)) {
+    value = blocks.slice(1).join("\n\n");
+  }
+  return value;
 }
 
 function publicNewsItems(items = []) {
@@ -872,7 +951,7 @@ function isElevenLabsAudio({ audio = {}, audioProvider = "", audioUrl = "", audi
     || isElevenLabsAudioUrl(audio.audioUrl || audioUrl || audioAccessibleUrl || audioNaturalUrl);
 }
 
-function ttsReader({ rubric = "Audio", title = "", text = "", audio = {}, audioProvider = "", audioUrl = "", audioAccessibleUrl = "", audioNaturalUrl = "", timingUrl = "", audioStatus = "", audioAccessibleStatus = "", audioNaturalStatus = "" }) {
+function ttsReader({ rubric = "Audio", title = "", label = title || "Vorlesen", text = "", inlineOffsetText = title, audio = {}, audioProvider = "", audioUrl = "", audioAccessibleUrl = "", audioNaturalUrl = "", timingUrl = "", audioStatus = "", audioAccessibleStatus = "", audioNaturalStatus = "" }) {
   const readerText = [title, text].filter(Boolean).join("\n\n");
   const serviceStatus = audio.status || audioStatus;
   const serviceUrl = isElevenLabsAudio({ audio, audioProvider, audioUrl, audioAccessibleUrl, audioNaturalUrl })
@@ -889,12 +968,12 @@ function ttsReader({ rubric = "Audio", title = "", text = "", audio = {}, audioP
     ? availableAudioUrl(audioNaturalUrl, audioNaturalStatus, audioStatus)
     : "") || accessibleUrl;
   if (!accessibleUrl && !naturalUrl) return "";
-  return `<div class="tts-reader" data-tts-reader data-timing-url="${escapeHtml(serviceTimingUrl)}" data-tts-inline-offset="${countTextWords(title)}">
-    <div class="tts-reader__meta"><p class="eyebrow">${escapeHtml(rubric || "Audio")}</p><strong>${escapeHtml(title || "Vorlesen")}</strong></div>
+  return `<div class="tts-reader" data-tts-reader data-timing-url="${escapeHtml(serviceTimingUrl)}" data-tts-inline-offset="${countTextWords(inlineOffsetText)}">
+    <div class="tts-reader__meta"><p class="eyebrow">${escapeHtml(rubric || "Audio")}</p><strong>${escapeHtml(label || "Vorlesen")}</strong></div>
     <template data-tts-source>${escapeHtml(readerText)}</template>
     <div class="tts-reader__actions" data-tts-actions>
       <button type="button" class="button button--primary button--small tts-reader__play" data-tts-play data-tts-mode="natural" data-audio-url="${escapeHtml(naturalUrl)}" aria-pressed="false" aria-label="Audio abspielen oder pausieren" ${naturalUrl ? "" : "disabled"}><span class="tts-control-icon tts-control-icon--play" aria-hidden="true"></span></button>
-      <button type="button" class="button button--secondary button--small tts-reader__large-text" data-tts-play data-tts-mode="accessible" data-audio-url="${escapeHtml(accessibleUrl)}" data-timing-url="${escapeHtml(serviceTimingUrl)}" aria-pressed="false" aria-label="Gro?en Text ?ffnen" ${accessibleUrl ? "" : "disabled"}><span class="tts-control-icon tts-control-icon--search" aria-hidden="true"></span></button>
+      <button type="button" class="button button--secondary button--small tts-reader__large-text" data-tts-play data-tts-mode="accessible" data-audio-url="${escapeHtml(accessibleUrl)}" data-timing-url="${escapeHtml(serviceTimingUrl)}" aria-pressed="false" aria-label="Gro&szlig;en Text &ouml;ffnen" ${accessibleUrl ? "" : "disabled"}><span class="tts-control-icon tts-control-icon--search" aria-hidden="true"></span></button>
     </div>
   </div>`;
 }
@@ -947,7 +1026,7 @@ export async function homePage() {
   const leanMobile = mobileLeanStart();
   const [events, rawMembers, editorial, mediaAssets] = await Promise.all([
     listPublicEvents(),
-    leanMobile ? Promise.resolve([]) : listPublicContent("members"),
+    leanMobile ? Promise.resolve([]) : publicManagedMembers(),
     listPublicContent("editorialContent"),
     leanMobile ? Promise.resolve([]) : list("media_assets").catch(() => [])
   ]);
@@ -1224,15 +1303,21 @@ export async function newsPage(query = new URLSearchParams()) {
 export async function newsDetailPage(id) {
   const fallbackNews = realDataMode() ? [] : editorialFallbackNews;
   const publicEditorialContent = await listPublicContent("editorialContent").catch(() => []);
-  const item = publicEditorialContent.find((entry) => [entry.id, entry.slug, entry.key].filter(Boolean).includes(id))
+  let item = publicEditorialContent.find((entry) => [entry.id, entry.slug, entry.key].filter(Boolean).includes(id))
     || await getOne("editorialContent", id).catch(() => null)
     || fallbackNews.find((entry) => entry.id === id);
+  const fallbackSourceItem = editorialFallbackNews.find((entry) => entry.id === id || [item?.id, item?.slug, item?.key].filter(Boolean).includes(entry.id));
+  if (item && fallbackSourceItem && !articleSources(item).length) {
+    item = { ...item, source_snapshot_json: fallbackSourceItem.source_snapshot_json || [] };
+  }
   const isRetrospective = isRetrospectiveArticle(item);
   if (!item || (item.page !== "news" && item.section !== "news" && !isRetrospective)) return notFoundPage();
   if (!isRetrospective && !publicNewsItems([item]).length) return notFoundPage();
   const [sponsors, galleries, events, mediaAssets] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries"), listPublicEvents(), list("media_assets").catch(() => [])]);
   const date = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   const text = item.longDescription || item.articleText || item.bodyText || item.mainText || item.text || item.fullText || item.longText || item.shortText || item.teaserText || "";
+  const displayTitle = cleanNewsDetailTitle(item);
+  const displayText = cleanNewsDetailText(text, displayTitle, item.subtitle || "", item.slug || item.key || item.id || "");
   const sponsor = item.sponsorId ? sponsors.find((entry) => entry.id === item.sponsorId) : null;
   const linkedEvent = retrospectiveLinkedEvent(item, events);
   const articleImageUrl = isRetrospective && linkedEvent
@@ -1250,6 +1335,20 @@ export async function newsDetailPage(id) {
   const backText = isRetrospective ? "Zurück zu Rückblick" : "Zurück zu News";
   const sectionLabel = isRetrospective ? "Rückblick" : item.category || "News";
   const allText = isRetrospective ? "Alle Rückblicke" : "Alle News";
+  if (!isRetrospective) {
+    return publicShell("news", `<section class="section news-detail-clean-section"><div class="container">
+      <article class="news-detail-clean">
+        <a class="link news-detail-clean__back" href="#/news">Zur&uuml;ck zu News</a>
+        ${articleImageUrl ? `<figure class="news-detail-clean__hero"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${displayTitle || "News"}`)}" loading="eager" decoding="async"><figcaption><h1>${escapeHtml(displayTitle)}</h1></figcaption></figure>` : `<header class="news-detail-clean__header"><h1>${escapeHtml(displayTitle)}</h1></header>`}
+        <div class="news-detail-clean__body">
+          ${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}
+          ${ttsReader({ rubric: item.category || "News", title: displayTitle || "", label: "Vorlesen", text: [item.subtitle, displayText].filter(Boolean).join("\n\n"), inlineOffsetText: [displayTitle, item.subtitle].filter(Boolean).join("\n\n"), audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
+          <div class="editorial-text">${articleParagraphs(displayText)}</div>
+          ${newsDetailSources(item)}
+        </div>
+      </article>
+    </div></section>`);
+  }
   return publicShell(detailSection, `${subhero("", detailTitle, detailIntro)}
     <section class="section"><div class="container detail-grid">
       <article class="detail-main news-detail">
@@ -1311,7 +1410,13 @@ export async function topicDetailPage(id) {
 export const aboutPage = internalOverviewPage("ueber_uns");
 
 export async function membersPage() {
-  const members = await withPublicMemberLogos(await listPublicContent("members"));
+  const members = await withPublicMemberLogos(await publicManagedMembers());
+  const memberRows = members.map((member) => {
+    const teaser = member.description || "";
+    return `<article class="member-directory-card"><div class="member-tile">${memberLogo(member)}</div><div class="member-directory-card__body"><h3>${escapeHtml(member.name)}</h3>${teaser ? `<p>${escapeHtml(teaser)}</p>` : ""}<span class="member-directory-card__meta">${escapeHtml(member.city || "")}${member.country ? ` · ${escapeHtml(member.country)}` : ""}</span></div>${member.website ? `<a class="button button--secondary button--small" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Website</a>` : ""}</article>`;
+  }).join("");
+  return publicShell("members", `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform fuer Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
+    <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input placeholder="Mitglieder suchen"></div></div><div class="member-directory-list">${memberRows}</div></div></section>`);
   return publicShell("members", `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform fuer Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
     <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input placeholder="Mitglieder suchen"></div></div><div class="card-grid card-grid--three">${members.map((member) => `<article class="card card__body"><div class="member-tile" style="margin-bottom:16px">${memberLogo(member)}</div><h3 style="margin:15px 0 8px">${escapeHtml(member.name)}</h3><p>${escapeHtml(member.description || "")}</p><p style="margin-top:12px">${escapeHtml(member.city)}${member.country ? ` Â· ${escapeHtml(member.country)}` : ""}</p>${member.website ? `<a class="link" style="display:inline-block;margin-top:14px" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Zur Website â†’</a>` : ""}</article>`).join("")}</div></div></section>`);
 }
@@ -1506,11 +1611,8 @@ function memberProfileForm(member = {}, user = {}, options = {}) {
     <p class="eyebrow">${adminMode ? "Admin-Mitgliederpflege" : "Eigenes Mitgliedsprofil"}</p>
     <h2 style="margin-bottom:6px">${adminMode ? escapeHtml(member.name || "Mitglied bearbeiten") : "Profil bearbeiten"}</h2>
     <p class="muted">${adminMode ? "Als Admin können Sie den ausgewählten Mitgliedsdatensatz bearbeiten." : "Diese Angaben werden direkt im eigenen Mitglieder-Datensatz gespeichert."}</p>
-    <div class="form-grid--two">
-      <div class="field"><label>Name / Unternehmen</label><input name="name" value="${escapeHtml(member.name || "")}" required></div>
-      <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(member.category || "")}" placeholder="z. B. Streaming, Produktion, Beratung"></div>
-    </div>
-    <div class="field"><label>Kurzbeschreibung</label><textarea name="description" rows="5">${escapeHtml(member.description || "")}</textarea></div>
+    <div class="field"><label>Name / Unternehmen</label><input name="name" value="${escapeHtml(member.name || "")}" required></div>
+    <div class="field"><label>Beschreibung</label><textarea name="description" rows="5">${escapeHtml(member.description || "")}</textarea></div>
     <div class="form-grid--two">
       <div class="field"><label>Website</label><input name="website" type="url" value="${escapeHtml(member.website || "")}" placeholder="https://"></div>
       <div class="field"><label>Kontakt-E-Mail</label><input name="contactEmail" type="email" value="${escapeHtml(member.contactEmail || member.email || "")}"></div>
@@ -1581,7 +1683,7 @@ export async function memberPortalPage() {
     .filter((item) => item.status === "published" && (item.visibility || "members") === "members")
     .sort((a, b) => String(b.meetingDate || b.publishDate || b.year || b.updatedAt || "").localeCompare(String(a.meetingDate || a.publishDate || a.year || a.updatedAt || "")));
   const visibleMembers = members
-    .filter((member) => (member.status || "active") === "active" && (member.visibility || "public") === "public" && member.isLive !== false && !memberAccessBlocked(member))
+    .filter((member) => ["company", "individual"].includes(member.membershipType || "") && member.visible !== false && !memberAccessBlocked(member) && !["inactive", "cancelled", "archived"].includes(member.status || ""))
     .sort((a, b) => Number(a.sortOrder || 9999) - Number(b.sortOrder || 9999) || String(a.name || "").localeCompare(String(b.name || "")));
   const documentUrl = (item) => item.documentUrl || item.assetUrl || item.fileUrl || item.url || "";
   const documentCard = (item) => {

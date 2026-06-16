@@ -432,7 +432,7 @@ async function aiEditorialSettings() {
 async function writeAiEditorialLog(payload) {
   const ref = await db.collection("ai_editorial_logs").add({
     article_id: payload.article_id || "",
-    task_name: AI_EDITORIAL_TASK,
+    task_name: payload.task_name || AI_EDITORIAL_TASK,
     status: payload.status || "blocked",
     message: payload.message || "",
     found_topics_json: payload.found_topics_json || [],
@@ -622,6 +622,240 @@ exports.runAiEditorialTask = onCall({ region, timeoutSeconds: 180 }, async (requ
   return runAiEditorialPipeline({ manual: true, actor: profile.email || request.auth.uid });
 });
 
+function safeSlug(value = "") {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 90);
+}
+
+function sourceNameFromUrl(value = "") {
+  try {
+    return new URL(String(value || "")).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+function sourceApprovedForBriefing(source = {}) {
+  const status = normalizeStatus(source.source_status || source.review_status || source.check_status || "");
+  return ["bevorzugt", "erlaubt"].includes(status);
+}
+
+function briefingSourceApproved(item = {}, sources = []) {
+  const haystack = normalizeStatus([item.source, item.source_name, item.sourceName, item.source_domain, item.url, item.original_url].join(" "));
+  return sources.find((source) => {
+    if (!sourceApprovedForBriefing(source)) return false;
+    return [source.id, source.name, source.title, source.domain, source.url].some((value) => {
+      const key = normalizeStatus(value || "");
+      return key && haystack.includes(key);
+    });
+  }) || null;
+}
+
+function briefingDuplicate(item = {}, existing = []) {
+  const url = String(item.original_url || item.url || item.source_url || "").trim();
+  const title = normalizeStatus(item.headline || item.title || "");
+  return existing.find((candidate) => {
+    const candidateUrl = String(candidate.original_url || candidate.url || candidate.source_url || "").trim();
+    if (url && candidateUrl && url === candidateUrl) return true;
+    const candidateTitle = normalizeStatus(candidate.headline || candidate.title || "");
+    return title && candidateTitle && (candidateTitle.includes(title.slice(0, 38)) || title.includes(candidateTitle.slice(0, 38)));
+  }) || null;
+}
+
+function topicToBriefingItem(topic = {}, sources = [], existing = [], index = 0) {
+  const sourceCandidate = Array.isArray(topic.source_candidates) ? topic.source_candidates[0] || {} : {};
+  const sourceUrl = sourceCandidate.url || topic.source_url || topic.url || "";
+  const sourceName = sourceCandidate.name || topic.source_names?.[0] || topic.source_name || sourceNameFromUrl(sourceUrl);
+  const approvedSource = briefingSourceApproved({ ...topic, source: sourceName, original_url: sourceUrl }, sources);
+  const duplicate = briefingDuplicate({ ...topic, original_url: sourceUrl }, existing);
+  const headline = String(topic.headline || topic.title || "").trim();
+  const id = `morning-item-${safeSlug([topic.id, headline].filter(Boolean).join("-")) || createHash("sha1").update(headline || String(index)).digest("hex").slice(0, 16)}`;
+  return {
+    id,
+    workflow: "morning_briefing",
+    content_type: "morning_news_item",
+    headline,
+    title: headline,
+    summary: String(topic.subline || topic.teaser || topic.reason || "").trim(),
+    relevance: String(topic.category || "").trim(),
+    source: sourceName || approvedSource?.name || "",
+    source_name: sourceName || approvedSource?.name || "",
+    original_url: sourceUrl,
+    first_seen: topic.created_at || topic.createdAt || new Date().toISOString(),
+    category: topic.category || "Morgenbriefing",
+    score: Number(topic.relevance_score || topic.quality_score || topic.industry_score || 0),
+    status: duplicate ? "Dublette" : approvedSource && sourceUrl ? "Briefing" : "Pruefpflichtig",
+    morning_status: duplicate ? "Dublette" : approvedSource && sourceUrl ? "Briefing" : "Pruefpflichtig",
+    source_type: approvedSource?.source_type || "verifizierte Quelle",
+    is_regulator: /behoerde|bundestag|bundesnetzagentur|eu|parlament|zak|dlm|medienanstalt/i.test([approvedSource?.source_type, sourceName, topic.category].join(" ")),
+    duplicate_of: duplicate?.id || "",
+    keywords: Array.isArray(topic.keywords) ? topic.keywords : [],
+    topic_suggestion_id: topic.id || "",
+    origin: "scheduled_morning_briefing",
+    created_at: FieldValue.serverTimestamp(),
+    updated_at: FieldValue.serverTimestamp()
+  };
+}
+
+function pressReleaseToBriefingItem(release = {}, sources = [], existing = [], index = 0) {
+  const headline = String(release.title || "").trim();
+  const sourceName = release.source_name || release.sourceName || release.source_domain || release.sourceDomain || sourceNameFromUrl(release.url || "");
+  const approvedSource = briefingSourceApproved({ source: sourceName, original_url: release.url }, sources);
+  const duplicate = briefingDuplicate({ headline, original_url: release.url }, existing);
+  const id = `morning-item-${safeSlug([release.id, headline].filter(Boolean).join("-")) || createHash("sha1").update(headline || String(index)).digest("hex").slice(0, 16)}`;
+  return {
+    id,
+    workflow: "morning_briefing",
+    content_type: "morning_news_item",
+    headline,
+    title: headline,
+    summary: String(release.summary || release.full_text || "").replace(/\s+/g, " ").trim().slice(0, 360),
+    relevance: release.category || "Presse / Branche",
+    source: sourceName,
+    source_name: sourceName,
+    original_url: release.url || "",
+    first_seen: release.published_at || release.imported_at || new Date().toISOString(),
+    category: release.category || "Presse / Branche",
+    score: approvedSource ? 72 : 45,
+    status: duplicate ? "Dublette" : approvedSource && release.url ? "Briefing" : "Pruefpflichtig",
+    morning_status: duplicate ? "Dublette" : approvedSource && release.url ? "Briefing" : "Pruefpflichtig",
+    source_type: approvedSource?.source_type || "Pressebereich",
+    is_regulator: false,
+    duplicate_of: duplicate?.id || "",
+    keywords: [],
+    press_release_id: release.id || "",
+    origin: "scheduled_morning_briefing",
+    created_at: FieldValue.serverTimestamp(),
+    updated_at: FieldValue.serverTimestamp()
+  };
+}
+
+async function runMorningBriefingPipeline({ manual = false, actor = "scheduler" } = {}) {
+  const settings = await aiEditorialSettings();
+  if (!manual && !settings.automationEnabled) {
+    await writeAiEditorialLog({
+      task_name: "Morgenbriefing",
+      status: "skipped",
+      message: "Morgenbriefing pausiert, weil die KI-Redaktionsautomatik inaktiv ist.",
+      ai_check_json: { status: "nicht gestartet" }
+    });
+    return { ok: false, status: "skipped", message: "Automatisierung ist pausiert." };
+  }
+
+  const [sources, articlesSnapshot, topicsSnapshot, pressSnapshot] = await Promise.all([
+    trustedSources(settings.minimumTrustScore),
+    db.collection("editorialContent").orderBy("updatedAt", "desc").limit(120).get().catch(() => db.collection("editorialContent").limit(120).get()),
+    db.collection("ai_topic_suggestions").limit(160).get(),
+    db.collection("ai_press_releases").limit(120).get().catch(() => ({ docs: [] }))
+  ]);
+  const existingArticles = articlesSnapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
+  const existingTopics = topicsSnapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
+  const pressReleases = pressSnapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
+  const sourcePool = sources.filter(sourceApprovedForBriefing);
+  if (!sourcePool.length) {
+    await writeAiEditorialLog({
+      task_name: "Morgenbriefing",
+      status: "blocked",
+      message: "Keine freigegebenen Quellen fuer Morgenbriefing vorhanden.",
+      ai_check_json: { status: "nicht bestanden", blockers: ["approved_sources_missing"] }
+    });
+    return { ok: false, status: "blocked", message: "Keine freigegebenen Quellen vorhanden." };
+  }
+  const candidates = [
+    ...existingTopics
+      .filter((topic) => !["abgelehnt", "archiviert", "uebernommen"].includes(normalizeStatus(topic.status || topic.queue_status)))
+      .map((topic, index) => topicToBriefingItem(topic, sourcePool, [...existingArticles, ...existingTopics], index)),
+    ...pressReleases
+      .filter((release) => !normalizeStatus(release.editorial_status || release.status).includes("dublette"))
+      .map((release, index) => pressReleaseToBriefingItem(release, sourcePool, [...existingArticles, ...existingTopics], index))
+  ].filter((item) => item.headline && item.summary)
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+    .slice(0, 10);
+
+  if (!candidates.length) {
+    await writeAiEditorialLog({
+      task_name: "Morgenbriefing",
+      status: "blocked",
+      message: "Keine belegbaren Meldungen fuer ein Morgenbriefing vorhanden.",
+      used_sources_json: sourcePool.slice(0, 20),
+      ai_check_json: { status: "nicht bestanden", blockers: ["briefing_items_missing"] }
+    });
+    return { ok: false, status: "blocked", message: "Keine belegbaren Meldungen fuer ein Morgenbriefing vorhanden." };
+  }
+
+  const batch = db.batch();
+  candidates.forEach((item) => batch.set(db.collection("ai_topic_suggestions").doc(item.id), item, { merge: true }));
+  const today = new Date().toISOString().slice(0, 10);
+  const briefingId = `morgenbriefing-${today}`;
+  const bodyText = candidates.map((item, index) => [
+    `${index + 1}. ${item.headline}`,
+    item.summary,
+    `Quelle: ${item.source || "-"} | Kategorie: ${item.category || "-"} | Relevanz: ${item.relevance || "-"} | Status: ${item.status || "-"}`
+  ].join("\n")).join("\n\n");
+  batch.set(db.collection("editorialContent").doc(briefingId), {
+    id: briefingId,
+    title: `Morgenbriefing ${today}`,
+    headline: `Morgenbriefing ${today}`,
+    subtitle: `${candidates.length} quellenbasierte Meldungen fuer die PROdigitalTV-Redaktion.`,
+    subline: `${candidates.length} quellenbasierte Meldungen fuer die PROdigitalTV-Redaktion.`,
+    introText: "Automatisch vorbereitete Morgenbriefing-Arbeitsfassung. Keine automatische Veroeffentlichung ohne redaktionelle Freigabe.",
+    shortText: "Automatisch vorbereitete Morgenbriefing-Arbeitsfassung.",
+    teaserText: "Automatisch vorbereitete Morgenbriefing-Arbeitsfassung.",
+    bodyText,
+    page: "news",
+    section: "news",
+    key: `news.${briefingId}`,
+    slug: briefingId,
+    category: "Morgenbriefing",
+    tags: ["Morgenbriefing", "KI-Redaktion", "Medienwirtschaft"],
+    source_snapshot_json: candidates.map((item) => ({ title: item.source, url: item.original_url, check_status: item.status, source_type: item.source_type })),
+    source_status: candidates.some((item) => item.status === "Pruefpflichtig") ? "Pruefpflichtig" : "geprueft",
+    duplicate_status: candidates.some((item) => item.status === "Dublette") ? "Dublette enthalten" : "nicht blockierend",
+    ai_check_status: "Warnung",
+    legal_check_status: "offen",
+    publication_status: "pruefpflichtig",
+    status: "draft",
+    visibility: "internal",
+    author_type: "ai",
+    author_name: "KI-Redaktion",
+    generation_origin: "morning_briefing",
+    content_type: "morning_briefing",
+    editorialType: "morning_briefing",
+    ai_log_json: { workflow: "morning_briefing", actor, itemIds: candidates.map((item) => item.id) },
+    publishDate: today,
+    validFrom: today,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  await batch.commit();
+  const logItems = candidates.map((item) => ({
+    ...item,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }));
+  await writeAiEditorialLog({
+    article_id: briefingId,
+    task_name: "Morgenbriefing",
+    status: "warning",
+    message: `${candidates.length} Meldungen fuer Morgenbriefing vorbereitet. Keine automatische Veroeffentlichung.`,
+    found_topics_json: logItems,
+    used_sources_json: sourcePool.slice(0, 20),
+    duplicate_check_json: { duplicates: candidates.filter((item) => item.status === "Dublette").length },
+    ai_check_json: { status: "Warnung", publication_status: "pruefpflichtig" }
+  });
+  return { ok: true, status: "warning", briefingId, items: candidates.length, message: `${candidates.length} Meldungen fuer Morgenbriefing vorbereitet.` };
+}
+
+exports.runMorningBriefingTask = onCall({ region, timeoutSeconds: 300 }, async (request) => {
+  const profile = await requireEditor(request);
+  return runMorningBriefingPipeline({ manual: true, actor: profile.email || request.auth.uid });
+});
+
 exports.saveAiEditorialSettings = onCall({ region }, async (request) => {
   const profile = await requireEditor(request);
   const data = request.data || {};
@@ -641,6 +875,10 @@ exports.saveAiEditorialSettings = onCall({ region }, async (request) => {
 
 exports.KI_Redaktion_Taeglicher_Beitrag = onSchedule({ schedule: "every day 06:00", region, timeZone: "Europe/Berlin", timeoutSeconds: 180 }, async () => {
   await runAiEditorialPipeline({ manual: false, actor: "scheduler" });
+});
+
+exports.Morgenbriefing_Taeglich = onSchedule({ schedule: "every day 06:15", region, timeZone: "Europe/Berlin", timeoutSeconds: 300 }, async () => {
+  await runMorningBriefingPipeline({ manual: false, actor: "scheduler" });
 });
 
 /*

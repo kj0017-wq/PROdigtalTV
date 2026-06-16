@@ -1,7 +1,7 @@
 import { cmsShell, cmsTitle } from "./cmsLayout.js?v=461";
 import { list, getOne } from "../firebase/dataService.js?v=466";
 import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=466";
-import { accessLabels, lifecycleLabels } from "../data/demoData.js";
+import { accessLabels, lifecycleLabels, members as publicMemberProfiles } from "../data/demoData.js";
 import { escapeHtml, formatDate, formatDateTime, formatShortDate } from "../utils/format.js";
 
 function protect(content, adminOnly = false) {
@@ -35,6 +35,10 @@ function iconImage(name) {
     trash: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAlElEQVR4AeyUXQqAIBCE2y7iWbp5R1lP0s/DQLQTjpFEZCCj267fOoLj0Pj7CSCltCQyFHeDRTUbKbkBoHRVkxMAOWfDBvtcGcd8zKEBgB9PqQSA14Ce14gzlQCsUI11QNGpbtFHLMJzgXbPa8SZvnvJeBJKyjpHjJ7AzCYkqGoXNRTg7jN8VtW3GtYMBbDEu7HmgBUAAP//nstLKAAAAAZJREFUAwAtM3oxRhnWAgAAAABJRU5ErkJggg=="
   };
   return icons[name] ? `<img src="${icons[name]}" alt="" loading="lazy">` : "";
+}
+
+function eyeSvgIcon(isVisible = false) {
+  return `<svg class="member-eye-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.7"></circle>${isVisible ? "" : `<path class="member-eye-svg__slash" d="M4.5 4.5 19.5 19.5"></path>`}</svg>`;
 }
 
 function editorialActionButtons(item, section, module, activeStatus, inactiveStatus) {
@@ -74,7 +78,28 @@ function editorialVisibilityListStatus(item) {
 }
 
 function memberIsLive(item) {
-  return item.status === "active" && (item.visibility || "public") === "public" && item.isLive !== false && !memberAccessBlocked(item);
+  const hasManagedType = ["company", "individual"].includes(item.membershipType || "");
+  if (hasManagedType) return item.visible !== false && !memberAccessBlocked(item);
+  return (item.status || "active") === "active" && (item.visibility || "public") === "public" && item.isLive !== false && !memberAccessBlocked(item);
+}
+
+function memberIsManagedActive(item = {}) {
+  const hasManagedType = ["company", "individual"].includes(item.membershipType || "");
+  return hasManagedType && !memberAccessBlocked(item) && !["inactive", "cancelled", "archived"].includes(item.status || "");
+}
+
+function memberMembershipTypeLabel(item = {}) {
+  const type = item.membershipType || "";
+  if (type === "company") return "UM";
+  if (type === "individual") return "EM";
+  return item.membershipLabel || item.category || "-";
+}
+
+function memberMembershipTypeTitle(item = {}) {
+  const type = item.membershipType || "";
+  if (type === "company") return "Unternehmensmitglied";
+  if (type === "individual") return "Einzelmitglied";
+  return item.membershipLabel || item.category || "Mitglied";
 }
 
 function timestampInputDate(value) {
@@ -103,17 +128,106 @@ function memberAccessStatusCell(item = {}) {
 }
 
 function memberListStatus(item) {
-  if ((item.visibility || "") === "internal" || item.isLive === false) return status("internal");
   return memberAccessStatusCell(item);
+}
+
+function memberStatusDot(item = {}) {
+  const blocked = memberAccessBlocked(item);
+  const isLive = memberIsLive(item);
+  const accessStatus = item.membershipAccessStatus || "active";
+  const state = blocked || accessStatus !== "active" ? "blocked" : isLive ? "visible" : "hidden";
+  const label = blocked
+    ? accessStatus === "cancelled" ? "Gekuendigt" : "Inaktiv"
+    : isLive
+      ? "Aktiv sichtbar"
+      : "Aktiv, nicht sichtbar";
+  return `<span class="member-status-dot member-status-dot--${state}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"></span>`;
+}
+
+function memberVisibilityCell(item) {
+  const isLive = memberIsLive(item);
+  const toggleStatus = isLive ? "inactive" : "active";
+  const toggleLabel = isLive ? "Sichtbar: ausblenden" : "Nicht sichtbar: sichtbar machen";
+  const label = isLive ? "Sichtbar" : "Nicht sichtbar";
+  const reason = isLive
+    ? "Website"
+    : memberAccessBlocked(item)
+      ? "Zugang gesperrt"
+      : item.isLive === false
+        ? "Live aus"
+        : (item.visibility || "public") !== "public"
+          ? "Intern"
+          : "Nicht aktiv";
+  return `<div class="member-visibility-cell ${isLive ? "is-visible" : "is-hidden"}"><button class="icon-button member-eye-toggle ${isLive ? "icon-button--visible" : "icon-button--hidden"}" type="button" data-record-status="members" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${eyeSvgIcon(isLive)}</button><span>${escapeHtml(label)}</span><small>${escapeHtml(reason)}</small></div>`;
+}
+
+function memberVisibleToggleCell(item = {}) {
+  return `<div class="member-combined-status member-visible-toggle-cell">${memberVisibilityCell(item)}</div>`;
+}
+
+function normalizedPhoneDigits(value = "") {
+  let text = String(value || "").trim().replace(/[^\d+]/g, "");
+  text = text.replace(/^\++/, "+");
+  if (text.startsWith("00")) text = `+${text.slice(2)}`;
+  if (text.startsWith("0") && !text.startsWith("00")) text = `+49${text.slice(1)}`;
+  return text.replace(/[^\d+]/g, "");
+}
+
+function cleanPhoneDisplay(value = "") {
+  return String(value || "").trim().replace(/^\++/, "+");
+}
+
+function phoneLooksMobile(value = "") {
+  const phone = normalizedPhoneDigits(value);
+  const digits = phone.replace(/\D/g, "");
+  return phone.startsWith("+4915")
+    || phone.startsWith("+4916")
+    || phone.startsWith("+4917")
+    || phone.startsWith("+436")
+    || phone.startsWith("+447")
+    || /^491[567]/.test(digits)
+    || /^436/.test(digits)
+    || /^447/.test(digits);
+}
+
+function splitPhoneAndMobile(phone = "", mobile = "") {
+  const tel = cleanPhoneDisplay(phone);
+  const mob = cleanPhoneDisplay(mobile);
+  if (tel && !mob && phoneLooksMobile(tel)) return { phone: "", mobile: tel };
+  if (!tel && mob && !phoneLooksMobile(mob)) return { phone: mob, mobile: "" };
+  if (tel && mob && phoneLooksMobile(tel) && !phoneLooksMobile(mob)) return { phone: mob, mobile: tel };
+  return { phone: tel, mobile: mob };
 }
 
 function memberContactCell(item = {}) {
   const email = item.contactEmail || item.email || "";
-  const phone = item.contactPhone || item.phone || "";
-  const mobile = item.contactMobile || item.mobile || "";
+  const split = splitPhoneAndMobile(item.contactPhone || item.phone || "", item.contactMobile || item.mobile || "");
+  const phone = split.phone;
+  const mobile = split.mobile;
   const phoneLine = phone ? `Tel. ${escapeHtml(phone)}` : "Tel. fehlt";
   const mobileLine = mobile ? `Mobil ${escapeHtml(mobile)}` : "Mobil fehlt";
   return `<div class="member-contact-cell"><span>${email ? escapeHtml(email) : "Mail fehlt"}</span><small>${phoneLine}</small><small>${mobileLine}</small></div>`;
+}
+
+const publicMemberProfileAliases = {
+  "bibel-tv-stiftung": "bibel-tv",
+  "dsc-dietmar-schickel-consulting": "dsc",
+  "ors-comm": "ors",
+  "buero-fuer-moderne-werbung-tv": "moderne-werbung",
+  "eutelsat-services-beteiligungen": "eutelsat",
+  "stingray-digital-international": "stingray-music"
+};
+
+function memberFrontendDescription(item = {}) {
+  const publicId = publicMemberProfileAliases[item.id] || item.id;
+  const profile = publicMemberProfiles.find((member) => member.id === publicId);
+  return profile?.description || "";
+}
+
+function memberDescriptionValue(item = {}) {
+  const current = String(item.description || "").trim();
+  const generic = /^Internes Mitgliedsprofil aus der Mitgliederliste 2026\.?$/i.test(current);
+  return !current || generic ? memberFrontendDescription(item) || current : current;
 }
 
 function mediaAssetUrl(asset = {}) {
@@ -177,12 +291,41 @@ function memberLogoUrl(item = {}, mediaAssets = []) {
   return asset ? mediaAssetUrl(asset) || item.logoUrl || "" : item.logoUrl || "";
 }
 
+function memberLogoInitials(item = {}) {
+  const name = String(item.name || item.title || "").replace(/\b(gmbh|ug|ag|kg|co|ltd|inc|stiftung|consulting|media|medien|television)\b/gi, " ");
+  const words = name
+    .split(/[^A-Za-z0-9ÄÖÜäöüß]+/)
+    .map((word) => word.trim())
+    .filter((word) => word.length > 1);
+  const initials = words.length >= 2
+    ? `${words[0][0]}${words[1][0]}`
+    : (words[0] || item.id || "PD").slice(0, 2);
+  return initials.toUpperCase();
+}
+
+function memberLogoFallbackPalette(item = {}) {
+  const palettes = [
+    ["#fff1f2", "#e30613", "#071a33"],
+    ["#eff6ff", "#2563eb", "#071a33"],
+    ["#ecfdf5", "#059669", "#063a2b"],
+    ["#fff7ed", "#ea580c", "#3b1d08"],
+    ["#f5f3ff", "#7c3aed", "#211047"],
+    ["#ecfeff", "#0891b2", "#083344"],
+    ["#fefce8", "#ca8a04", "#3f2f05"],
+    ["#fdf2f8", "#db2777", "#4a102b"]
+  ];
+  const key = String(item.id || item.name || item.title || "member");
+  const hash = Array.from(key).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const [bg, border, color] = palettes[hash % palettes.length];
+  return `--member-fallback-bg:${bg};--member-fallback-border:${border};--member-fallback-color:${color};`;
+}
+
+function memberLogoFallback(item = {}) {
+  return `<span class="member-logo-fallback" style="${memberLogoFallbackPalette(item)}" aria-label="Logo Platzhalter ${escapeHtml(item.name || "Mitglied")}">${escapeHtml(memberLogoInitials(item))}</span>`;
+}
+
 function memberActionButtons(item, section) {
-  const isLive = memberIsLive(item);
-  const toggleStatus = isLive ? "inactive" : "active";
-  const toggleClass = isLive ? "icon-button--visible" : "icon-button--hidden";
-  const toggleLabel = isLive ? "Live: ausblenden" : "Inaktiv: live schalten";
-  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-record-status="members" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isLive ? "eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="members" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
+  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button icon-button--danger" type="button" data-delete-record="members" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
 }
 
 function galleryPlayerButton(gallery, label = "Galerie abspielen") {
@@ -897,7 +1040,7 @@ function memberLogoEditor(item = {}, mediaAssets = [], returnTo = "") {
     ? `#/cms/media/edit?id=${encodeURIComponent(currentAsset.id)}&${params.toString()}`
     : `#/cms/media/library?${params.toString()}`;
   return `<div class="member-logo-editor">
-    <div class="member-logo-editor__preview">${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(item.name || "")}">` : `<span>Noch kein Logo</span>`}</div>
+    <div class="member-logo-editor__preview">${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(item.name || "")}">` : memberLogoFallback(item)}</div>
     <div class="member-logo-editor__actions">
       <a class="button button--primary button--small" href="${editHref}">Logo bearbeiten</a>
       ${logoUrl ? `<button class="button button--secondary button--small" type="button" data-clear-member-logo="${escapeHtml(item.id || "")}">Logo loeschen</button>` : ""}
@@ -911,7 +1054,7 @@ function memberLogoThumb(item = {}, mediaAssets = [], section = "all") {
   const logoUrl = memberLogoUrl(item, mediaAssets);
   const content = logoUrl
     ? `<img src="${escapeHtml(logoUrl)}" alt="">`
-    : `<span>Bild</span>`;
+    : memberLogoFallback(item);
   if (!item.id) return content;
   const targetItem = { ...item, logoUrl, logo_media_asset_id: currentAsset?.id || item.logo_media_asset_id || "", thumbnail_media_asset_id: currentAsset?.id || item.thumbnail_media_asset_id || item.mediaAssetId || "" };
   return `<a class="cms-thumb-action" href="${cmsThumbTarget("members", targetItem, section, "logoUrl", "altText")}" title="${logoUrl ? "Logo bearbeiten" : "Logo mit KI erstellen"}" aria-label="${logoUrl ? "Logo bearbeiten" : "Logo mit KI erstellen"}">${content}</a>`;
@@ -1327,7 +1470,14 @@ export async function moduleListPage(module, section = "all") {
   const records = (await list(module))
     .filter((item) => !editorialConfig || editorialConfig.filter(item))
     .filter((item) => module !== "editorialContent" || section !== "interna" || !isAiGeneratedEditorialItem(item))
+    .filter((item) => module !== "members" || memberIsManagedActive(item))
     .sort((a, b) => {
+      if (module === "members") {
+        const sortA = Number.isFinite(Number(a.sortOrder)) ? Number(a.sortOrder) : 9999;
+        const sortB = Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : 9999;
+        if (sortA !== sortB) return sortA - sortB;
+        return String(a.name || "").localeCompare(String(b.name || ""), "de", { sensitivity: "base" });
+      }
       const dateA = a.publishDate || a.date || a.validFrom || a.updatedAt || a.createdAt || "";
       const dateB = b.publishDate || b.date || b.validFrom || b.updatedAt || b.createdAt || "";
       if (dateA || dateB) return String(dateB).localeCompare(String(dateA));
@@ -1355,7 +1505,7 @@ export async function moduleListPage(module, section = "all") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--with-audio${section === "press" ? " table--press" : ""}${section === "news" ? " table--news" : ""}"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td><td>${audioListCell("editorialContent", item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "members") {
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--members"><thead><tr><th>Logo</th><th>Mitglied</th><th>Ansprechperson</th><th>Kontakt</th><th>Mitgliedsart</th><th>Ort</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table member-logo-thumb--table">${memberLogoThumb(item, memberMediaAssets, section)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a></td><td>${escapeHtml(shortText(item.contactName || [item.firstName, item.lastName].filter(Boolean).join(" ") || "-", 70))}</td><td>${memberContactCell(item)}</td><td>${escapeHtml(item.membershipLabel || item.category || "-")}</td><td>${escapeHtml([item.postalCode, item.city].filter(Boolean).join(" ") || "-")}</td><td>${memberListStatus(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--members"><thead><tr><th>Logo</th><th>Mitglied</th><th>Ansprechperson</th><th>Kontakt</th><th>Art</th><th>Ort</th><th>Visible</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table member-logo-thumb--table">${memberLogoThumb(item, memberMediaAssets, section)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a></td><td>${escapeHtml(shortText(item.contactName || [item.firstName, item.lastName].filter(Boolean).join(" ") || "-", 70))}</td><td>${memberContactCell(item)}</td><td class="member-type-short" title="${escapeHtml(memberMembershipTypeTitle(item))}">${escapeHtml(memberMembershipTypeLabel(item))}</td><td>${escapeHtml([item.postalCode, item.city].filter(Boolean).join(" ") || "-")}</td><td>${memberVisibleToggleCell(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (["boardMembers", "speakers", "sponsors"].includes(module)) {
     const imageField = module === "sponsors" ? "logoUrl" : "photoUrl";
@@ -1405,6 +1555,14 @@ function topicSpeakerManager(topic, speakers) {
   return `<div class="form-grid" style="margin-top:18px"><h2>Referenten</h2><div class="selection-grid">${speakers.length ? speakers.map((speaker) => `<label class="selection-item"><input type="checkbox" name="assignedSpeakerIds" value="${speaker.id}" ${speaker.topicId === topic.id || (speaker.topicIds || []).includes(topic.id) ? "checked" : ""}><span><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml(speaker.company || "")}</small></span></label>`).join("") : `<div class="alert">Noch keine Referenten vorhanden.</div>`}</div>${assigned.length ? assigned.map((speaker) => `<section class="panel"><h3>${escapeHtml(speaker.name || "Referent")}</h3>${topicSpeakerEditor(topic, speaker)}</section>`).join("") : ""}<section class="panel"><h3>Neuen Referenten anlegen</h3><div class="form-grid--two"><div class="field"><label>Referentname</label><input name="newSpeakerName"></div><div class="field"><label>Firma</label><input name="newSpeakerCompany"></div><div class="field"><label>Position</label><input name="newSpeakerPosition"></div><div class="field"><label>Kurzvita</label><textarea name="newSpeakerShortBio"></textarea></div></div></section></div>`;
 }
 
+const memberContactFunctions = ["", "Buchhaltung", "Geschaeftsleitung", "Marketing", "Sales / Verkauf", "Redaktion", "Event", "Technik", "Presse", "Sonstiges"];
+
+function memberContactFunctionOptions(value = "") {
+  const current = String(value || "");
+  const options = memberContactFunctions.includes(current) ? memberContactFunctions : [current, ...memberContactFunctions];
+  return options.map((option) => `<option value="${escapeHtml(option)}" ${current === option ? "selected" : ""}>${escapeHtml(option || "Funktion waehlen")}</option>`).join("");
+}
+
 export async function contentEditPage(module, id, query = new URLSearchParams()) {
   if (!hasCmsAccess()) return denied();
   if (module === "users" && !hasCmsAccess(true)) return denied(true);
@@ -1412,7 +1570,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
     topics: { title: "Redaktionelles Thema", fields: [["title", "Thema"], ["shortDescription", "Kurze Beschreibung"]] },
     speakers: { title: "Referent", fields: [["name", "Referent Name"], ["company", "Firma"]] },
     sponsors: { title: "Sponsor / Gastgeber", fields: [["name", "Name"], ["role", "Sponsor / Gastgeber"], ["address", "Adresse"], ["website", "Webseite"]] },
-    members: { title: "Mitglied", fields: [["membershipType", "Mitgliedstyp"], ["name", "Firma / Name"], ["rgDate", "RG-Datum"], ["membershipFeeAnnual", "Mitgliedsbeitrag"], ["description", "Beschreibung"], ["website", "Website"], ["category", "Kategorie"], ["salutation", "Anrede"], ["firstName", "Vorname"], ["lastName", "Nachname"], ["department", "Abteilung"], ["street", "Strasse"], ["postalCode", "PLZ"], ["city", "Ort"], ["country", "Land"], ["contactName", "Kontaktperson"], ["contactEmail", "Kontakt E-Mail"], ["contactPhone", "Kontakt Telefon"], ["contactMobile", "Kontakt Mobil"], ["personalSalutation", "Briefanrede"]] },
+    members: { title: "Mitglied", fields: [["membershipType", "Mitgliedstyp"], ["name", "Firma / Name"], ["description", "Beschreibung"], ["website", "Website"], ["street", "Straße"], ["houseNumber", "Hausnummer"], ["postalCode", "PLZ"], ["city", "Ort"], ["country", "Land"]] },
     membershipApplications: { title: "Mitgliedsantrag", fields: [["company", "Unternehmen / Name"], ["legalForm", "Rechtsform"], ["street", "Strasse"], ["city", "PLZ / Ort"], ["country", "Land"], ["website", "Website"], ["firstName", "Vorname"], ["lastName", "Nachname"], ["position", "Position"], ["email", "E-Mail"], ["phone", "Telefon"], ["membershipType", "Mitgliedschaft: company oder individual"], ["companyDescription", "Kurzbeschreibung"], ["message", "Nachricht"], ["status", "Status"], ["submittedAt", "Eingegangen"]] },
     memberDocuments: { title: "Mitgliederdokument", fields: [["title", "Titel"], ["category", "Kategorie"], ["year", "Jahr"], ["meetingDate", "Datum"], ["description", "Beschreibung"]] },
     memberDirectories: { title: "Mitgliederverzeichnis", fields: [["title", "Titel"], ["year", "Jahr"], ["description", "Beschreibung"], ["documentUrl", "Datei-Link optional"]] },
@@ -1764,7 +1922,7 @@ Ausgangstext:
     return `<div class="field"><label>${label}</label>${long ? `<textarea name="${field}">${escapeHtml(item?.[field] || "")}</textarea>` : `<input name="${field}" value="${escapeHtml(item?.[field] || "")}">`}${ai}</div>`;
   }).join("");
   const memberField = (field, label) => {
-    const long = field === "description";
+    const long = field === "description" || field === "shortDescription";
     const value = field === "contactName"
       ? item?.contactName || item?.profileContactName || ""
       : field === "contactEmail"
@@ -1773,7 +1931,9 @@ Ausgangstext:
           ? item?.contactPhone || item?.phone || ""
           : field === "contactMobile"
             ? item?.contactMobile || item?.mobile || ""
-            : item?.[field] || "";
+            : field === "description"
+              ? memberDescriptionValue(item)
+              : item?.[field] || "";
     if (field === "membershipType") {
       const currentType = item?.membershipType || "";
       return `<div class="field"><label>${label}</label><select name="membershipType"><option value="" ${currentType ? "" : "selected"}>Nicht festgelegt</option><option value="company" ${currentType === "company" ? "selected" : ""}>Firmenmitglied</option><option value="individual" ${currentType === "individual" ? "selected" : ""}>Einzelmitglied</option></select></div>`;
@@ -1781,24 +1941,44 @@ Ausgangstext:
     return `<div class="field"><label>${label}</label>${long ? `<textarea name="${field}">${escapeHtml(value)}</textarea>` : `<input name="${field}" value="${escapeHtml(value)}">`}</div>`;
   };
   const memberEventContactLimit = item?.membershipType === "company" ? 5 : 1;
+  const normalizeMemberEventContact = (contact = {}) => {
+    const fullName = String(contact.name || "").trim();
+    const parts = fullName.split(/\s+/).filter(Boolean);
+    return {
+      firstName: contact.firstName || contact.vorname || (parts.length > 1 ? parts.slice(0, -1).join(" ") : fullName),
+      lastName: contact.lastName || contact.nachname || (parts.length > 1 ? parts.slice(-1).join(" ") : ""),
+      name: fullName,
+      role: contact.role || contact.function || contact.department || "",
+      email: contact.email || "",
+      phone: contact.phone || ""
+    };
+  };
   const memberEventContacts = Array.isArray(item?.eventContacts) && item.eventContacts.length
-    ? item.eventContacts
+    ? item.eventContacts.map(normalizeMemberEventContact)
     : ([{
-        name: item?.profileContactName || item?.contactName || "",
+        firstName: item?.firstName || "",
+        lastName: item?.lastName || "",
+        name: item?.profileContactName || item?.contactName || [item?.firstName, item?.lastName].filter(Boolean).join(" "),
+        role: item?.contactRole || item?.department || "",
         email: item?.contactEmail || item?.email || "",
         phone: item?.phone || item?.contactPhone || item?.mobile || item?.contactMobile || ""
-      }].filter((contact) => contact.name || contact.email || contact.phone));
+      }].map(normalizeMemberEventContact).filter((contact) => contact.firstName || contact.lastName || contact.name || contact.email || contact.phone));
   const memberEventContactsHtml = module === "members"
     ? `<div class="member-edit-form__event-contacts">
-        <p class="eyebrow">Eventberechtigte Kontakte</p>
+        <p class="eyebrow">Kontaktdaten</p>
         <p class="muted">${memberEventContactLimit === 1 ? "Einzelmitglieder: 1 Kontakt." : "Firmenmitglieder: bis zu 5 Kontakte."}</p>
         ${Array.from({ length: memberEventContactLimit }, (_, index) => {
           const contact = memberEventContacts[index] || {};
-          return `<div class="form-grid form-grid--three member-event-contact-row">
-            <div class="field"><label>Kontakt ${index + 1} Name</label><input name="eventContactName${index}" value="${escapeHtml(contact.name || "")}"></div>
-            <div class="field"><label>E-Mail</label><input name="eventContactEmail${index}" type="email" value="${escapeHtml(contact.email || "")}"></div>
-            <div class="field"><label>Telefon</label><input name="eventContactPhone${index}" type="tel" value="${escapeHtml(contact.phone || "")}"></div>
-          </div>`;
+          return `<fieldset class="member-event-contact-row">
+            <legend>Kontakt ${index + 1}</legend>
+            <div class="form-grid form-grid--member-contact">
+            <div class="field"><label>Vorname</label><input name="eventContactFirstName${index}" value="${escapeHtml(contact.firstName || "")}"></div>
+            <div class="field"><label>Nachname</label><input name="eventContactLastName${index}" value="${escapeHtml(contact.lastName || "")}"></div>
+            <div class="field"><label>Funktion</label><select name="eventContactRole${index}">${memberContactFunctionOptions(contact.role || contact.function || contact.department || "")}</select></div>
+            <div class="field"><label>Mail</label><input name="eventContactEmail${index}" type="email" value="${escapeHtml(contact.email || "")}"></div>
+            <div class="field"><label>Tel. mit Landesvorwahl</label><input name="eventContactPhone${index}" type="tel" placeholder="+49 ..." value="${escapeHtml(contact.phone || "")}"></div>
+            </div>
+          </fieldset>`;
         }).join("")}
       </div>`
     : "";
@@ -1806,14 +1986,14 @@ Ausgangstext:
   const memberAccessControls = module === "members"
     ? `<div class="member-edit-form__access">
         <p class="eyebrow">Zugang steuern</p>
-        <p class="muted">Ab dem Wirksamkeitsdatum hat das Mitglied keinen Portalzugang mehr und erscheint nicht mehr im Mitgliederverzeichnis.</p>
+        <p class="muted">Ab diesem Datum hat das Mitglied keinen Portalzugang mehr und erscheint nicht mehr im Mitgliederverzeichnis.</p>
         <div class="form-grid form-grid--two">
           <div class="field"><label>Mitgliedschaftsstatus</label><select name="membershipAccessStatus">
             <option value="active" ${memberAccessStatus === "active" ? "selected" : ""}>Aktiv</option>
             <option value="inactive" ${memberAccessStatus === "inactive" ? "selected" : ""}>Inaktiv</option>
             <option value="cancelled" ${memberAccessStatus === "cancelled" ? "selected" : ""}>Gekündigt</option>
           </select></div>
-          <div class="field"><label>Wirksam ab</label><input name="membershipAccessEffectiveAt" type="date" value="${escapeHtml(timestampInputDate(item?.membershipAccessEffectiveAt))}"><p class="muted">Leer = sofort wirksam.</p></div>
+          <div class="field"><label>Gekündigt / inaktiv ab</label><input name="membershipAccessEffectiveAt" type="date" value="${escapeHtml(timestampInputDate(item?.membershipAccessEffectiveAt))}"><p class="muted">Leer = sofort.</p></div>
         </div>
       </div>`
     : "";
@@ -1846,34 +2026,34 @@ Ausgangstext:
   const formClass = module === "members" ? "form-grid form-grid--two member-edit-form" : "form-grid";
   const memberEditHtml = module === "members"
     ? `<div class="member-edit-form__column member-edit-form__column--identity">
-        ${memberField("membershipType", "Mitgliedstyp")}
-        ${memberField("name", "Firma / Name")}
-        ${memberField("rgDate", "RG-Datum")}
-        ${memberField("membershipFeeAnnual", "Mitgliedsbeitrag")}
-        ${memberField("salutation", "Anrede")}
-        ${memberField("firstName", "Vorname")}
-        ${memberField("lastName", "Nachname")}
-        ${memberField("department", "Abteilung")}
-        ${memberField("street", "Strasse")}
-        ${memberField("postalCode", "PLZ")}
-        ${memberField("city", "Ort")}
-        ${memberField("country", "Land")}
-        ${memberField("contactName", "Kontaktperson")}
-        ${memberField("contactEmail", "Kontakt E-Mail")}
-        ${memberField("contactPhone", "Kontakt Telefon")}
-        ${memberField("contactMobile", "Kontakt Mobil")}
-        ${memberField("personalSalutation", "Briefanrede")}
-        ${memberAccessControls}
+        <section class="member-edit-card">
+          <p class="eyebrow">Stammdaten</p>
+        <div class="form-grid form-grid--member-base">
+          ${memberField("membershipType", "Mitgliedstyp")}
+          ${memberField("name", "Firma / Name")}
+          ${memberField("street", "Straße")}
+          ${memberField("houseNumber", "Hausnummer")}
+          ${memberField("postalCode", "PLZ")}
+          ${memberField("city", "Ort")}
+          ${memberField("country", "Land")}
+        </div>
+        </section>
         ${memberEventContactsHtml}
+        ${memberAccessControls}
       </div>
       <div class="member-edit-form__column member-edit-form__column--content">
+        <section class="member-edit-card member-edit-card--profile">
+          <p class="eyebrow">Profil</p>
+        ${imageUpload}
         ${memberField("description", "Beschreibung")}
         ${memberField("website", "Website")}
-        ${memberField("category", "Kategorie")}
-        ${imageUpload}
+        </section>
       </div>`
     : `${fieldHtml}${imageUpload}`;
-  return protect(cmsShell(activeSection, `${cmsTitle("Bearbeiten", `${definition.title} pflegen`, `<a class="button button--secondary button--small" href="#/cms/${backSection}">Zurueck</a>`)}<section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="${formClass}">${memberEditHtml}${statusVisibilityControls}${module === "members" ? "" : memberLiveControl}<button class="button button--primary">Speichern</button><div id="content-save-result"></div></form></section>${speakerManager}`));
+  const saveControls = module === "members"
+    ? `<div class="member-edit-savebar"><button class="button button--primary">Speichern</button><div id="content-save-result"></div></div>`
+    : `<button class="button button--primary">Speichern</button><div id="content-save-result"></div>`;
+  return protect(cmsShell(activeSection, `${cmsTitle("Bearbeiten", `${definition.title} pflegen`, `<a class="button button--secondary button--small" href="#/cms/${backSection}">Zurueck</a>`)}<section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="${formClass}">${memberEditHtml}${statusVisibilityControls}${module === "members" ? "" : memberLiveControl}${saveControls}</form></section>${speakerManager}`));
 }
 
 export async function audioAdminPage() {
