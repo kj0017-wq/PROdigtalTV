@@ -1,13 +1,10 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=461";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=464";
 import { list, getOne } from "../firebase/dataService.js?v=466";
-import { currentUser, canUseCms, waitForAuthReady } from "../firebase/authService.js?v=466";
+import { currentUser, canUseCms, waitForAuthReady } from "../firebase/authService.js?v=467";
 import { escapeHtml } from "../utils/format.js";
 
 const mediaSections = [
-  ["library", "Mediathek"],
-  ["edit", "Bild bearbeiten"],
-  ["ai", "KI-Grafik"],
-  ["variants", "Varianten"]
+  ["library", "Mediathek"]
 ];
 
 const mediaTypeLabels = {
@@ -223,7 +220,7 @@ function mediaTypeFromLinkedRecord(entry = {}) {
   const collection = entry.collection || "";
   if (collection === "topics") return "topic";
   if (collection === "events" || collection === "eventMedia" || entry.page === "events") return "event";
-  if (collection === "members") return "member";
+  if (collection === "members") return "logo";
   if (collection === "boardMembers") return "board";
   if (collection === "speakers") return "person";
   if (collection === "sponsors") return "logo";
@@ -249,7 +246,7 @@ function inferredMediaType(asset = {}, usedIn = []) {
   if (linkedType && ["upload", "thumb", "thumbnail", "ai", "article"].includes(current)) return linkedType;
   if (current !== "upload") return current;
   const values = mediaUrlValues(asset).join(" ");
-  if (/assets(?:%2F|\/)official(?:%2F|\/)members/i.test(values)) return "member";
+  if (/assets(?:%2F|\/)official(?:%2F|\/)members/i.test(values)) return "logo";
   if (/assets(?:%2F|\/)official(?:%2F|\/)board/i.test(values)) return "board";
   if (/assets(?:%2F|\/)official(?:%2F|\/)events/i.test(values)) return "event";
   if (/assets(?:%2F|\/)official(?:%2F|\/)topics/i.test(values)) return "topic";
@@ -281,6 +278,50 @@ function newestMediaAssetsFirst(assets = []) {
   return assets.slice().sort((a, b) =>
     mediaAssetSortValue(b).localeCompare(mediaAssetSortValue(a)) || String(b.id || "").localeCompare(String(a.id || ""))
   );
+}
+
+function mediaMemberAccessBlocked(member = {}, now = new Date()) {
+  if (!["inactive", "cancelled"].includes(member.membershipAccessStatus)) return false;
+  const effective = member.membershipAccessEffectiveAt;
+  if (!effective) return true;
+  const effectiveDate = effective.seconds ? new Date(effective.seconds * 1000) : new Date(effective);
+  return !Number.isNaN(effectiveDate.getTime()) && effectiveDate <= now;
+}
+
+function mediaMemberIsCurrent(member = {}) {
+  const type = member.membershipType || "";
+  return ["company", "individual"].includes(type)
+    && !["inactive", "cancelled", "archived"].includes(member.status || "")
+    && (member.visibility || "public") === "public"
+    && member.visible !== false
+    && member.isLive !== false
+    && !mediaMemberAccessBlocked(member);
+}
+
+function mediaPreferredMemberLogoAsset(member = {}, assets = []) {
+  const directIds = [member.logo_media_asset_id, member.logoMediaAssetId, member.thumbnail_media_asset_id, member.mediaAssetId, member.media_asset_id].filter(Boolean);
+  const logoUrl = member.logoUrl || "";
+  return assets
+    .filter((asset) => {
+      const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
+      return directIds.includes(asset.id)
+        || (asset.target_collection === "members" && asset.target_id === member.id && (asset.target_field || "logoUrl") === "logoUrl")
+        || (asset.linked_collection === "members" && asset.linked_record_id === member.id && (asset.linked_field || "logoUrl") === "logoUrl")
+        || (logoUrl && urls.includes(logoUrl));
+    })
+    .filter((asset) => mediaUrl(asset))
+    .sort((a, b) => {
+      const score = (asset = {}) => [
+        directIds.includes(asset.id) ? "5" : "0",
+        asset.target_collection === "members" && asset.target_id === member.id && (asset.target_field || "logoUrl") === "logoUrl" ? "4" : "0",
+        asset.linked_collection === "members" && asset.linked_record_id === member.id && (asset.linked_field || "logoUrl") === "logoUrl" ? "3" : "0",
+        asset.source_type === "edited" ? "2" : "0",
+        asset.status === "active" ? "2" : "1",
+        asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
+        asset.id || ""
+      ].join("|");
+      return score(b).localeCompare(score(a));
+    })[0];
 }
 
 function mediaAspectStyle(format = "16x9") {
@@ -523,25 +564,37 @@ async function mediaUsageMap(assets = []) {
       return [collection, []];
     }
   }));
+  const recordsByCollection = Object.fromEntries(collectionRecords);
+  const currentMembers = (recordsByCollection.members || []).filter(mediaMemberIsCurrent);
+  const currentMemberIds = new Set(currentMembers.map((member) => member.id).filter(Boolean));
+  const preferredMemberLogoIds = new Set(currentMembers
+    .map((member) => mediaPreferredMemberLogoAsset(member, assets)?.id)
+    .filter(Boolean));
   assets.forEach((asset) => {
     const usedIn = [];
     if (asset.target_collection && asset.target_id) {
+      const targetRecord = (recordsByCollection[asset.target_collection] || []).find((record) => record.id === asset.target_id);
       usedIn.push({
         collection: asset.target_collection,
         id: asset.target_id,
-        title: asset.target_title || asset.linked_title || asset.target_id,
+        title: asset.target_title || asset.linked_title || targetRecord?.title || targetRecord?.name || asset.target_id,
         page: asset.target_page || asset.linked_page || asset.page,
         section: asset.target_section || asset.linked_section || asset.section,
-        publication_target: asset.publication_target
+        publication_target: asset.publication_target,
+        actual_reference: false,
+        member_current: asset.target_collection === "members" ? mediaMemberIsCurrent(targetRecord || {}) : undefined
       });
     } else if (asset.linked_collection && asset.linked_record_id) {
+      const linkedRecord = (recordsByCollection[asset.linked_collection] || []).find((record) => record.id === asset.linked_record_id);
       usedIn.push({
         collection: asset.linked_collection,
         id: asset.linked_record_id,
-        title: asset.linked_title || asset.linked_record_id,
+        title: asset.linked_title || linkedRecord?.title || linkedRecord?.name || asset.linked_record_id,
         page: asset.linked_page || asset.page,
         section: asset.linked_section || asset.section,
-        publication_target: asset.publication_target
+        publication_target: asset.publication_target,
+        actual_reference: false,
+        member_current: asset.linked_collection === "members" ? mediaMemberIsCurrent(linkedRecord || {}) : undefined
       });
     }
     collectionRecords.forEach(([collection, records]) => {
@@ -553,12 +606,22 @@ async function mediaUsageMap(assets = []) {
           title: match.title || match.name || match.headline || match.slug || match.id,
           page: match.page,
           section: match.section,
-          publication_target: match.publication_target
+          publication_target: match.publication_target,
+          actual_reference: true,
+          member_current: collection === "members" ? mediaMemberIsCurrent(match) : undefined
         });
+      } else if (match) {
+        const existing = usedIn.find((entry) => entry.collection === collection && entry.id === match.id);
+        if (existing) {
+          existing.actual_reference = true;
+          if (collection === "members") existing.member_current = mediaMemberIsCurrent(match);
+        }
       }
     });
     usage.set(asset.id, usedIn);
   });
+  usage.currentMemberIds = currentMemberIds;
+  usage.preferredMemberLogoIds = preferredMemberLogoIds;
   return usage;
 }
 
@@ -616,7 +679,7 @@ function mediaAssetCard(asset, contextQuery = "", usageMap = new Map()) {
     : "";
   const sourceGroup = mediaAssetSourceGroup(asset);
   const displayType = inferredMediaType(asset, usedIn);
-  return `<article class="media-asset-card" data-media-card data-media-edit-link="${editHref}"${selectAttrs} data-search="${escapeHtml([asset.title, asset.filename_original, asset.filename_web, asset.filename_thumb, asset.tags, asset.description].flat().filter(Boolean).join(" ").toLowerCase())}" data-source="${escapeHtml(sourceGroup)}" data-type="${escapeHtml(displayType)}" data-format="${escapeHtml(asset.aspect_ratio || "")}" tabindex="0" role="button" aria-label="${escapeHtml(asset.title || asset.filename_original || "Bild")} ${contextQuery ? "auswaehlen" : "bearbeiten"}">
+  return `<article class="media-asset-card ${isUsed ? "media-asset-card--used" : "media-asset-card--free"}" data-media-card data-media-edit-link="${editHref}"${selectAttrs} data-search="${escapeHtml([asset.title, asset.filename_original, asset.filename_web, asset.filename_thumb, asset.tags, asset.description].flat().filter(Boolean).join(" ").toLowerCase())}" data-source="${escapeHtml(sourceGroup)}" data-type="${escapeHtml(displayType)}" data-format="${escapeHtml(asset.aspect_ratio || "")}" tabindex="0" role="button" aria-label="${escapeHtml(asset.title || asset.filename_original || "Bild")} ${contextQuery ? "auswaehlen" : "bearbeiten"}">
       <figure style="--media-card-aspect:${mediaAspectStyle(mediaDisplayAspect(asset, usedIn))}">
         <a class="media-card-edit-picto" href="${editHref}" title="Bild bearbeiten" aria-label="Bild bearbeiten">${mediaEditIcon()}</a>
         ${mediaThumb(asset)}
@@ -636,11 +699,10 @@ function mediaAssetCard(asset, contextQuery = "", usageMap = new Map()) {
             </details>
             ${isUsed
               ? `<span class="media-asset-used" title="Bild wird verwendet">${escapeHtml(usageLabel || "Verwendet")}</span>`
-              : `<button class="media-trash-button" type="button" data-media-delete="${escapeHtml(asset.id)}" data-media-title="${escapeHtml(asset.title || asset.filename_original || "Bild")}" title="Sofort loeschen" aria-label="Bild sofort loeschen">${mediaTrashIcon()}</button>`}
+              : `<span class="media-asset-free" title="Keine aktuelle Verlinkung">Nicht verlinkt</span><button class="media-trash-button" type="button" data-media-delete="${escapeHtml(asset.id)}" data-media-title="${escapeHtml(asset.title || asset.filename_original || "Bild")}" title="Sofort loeschen" aria-label="Bild sofort loeschen">${mediaTrashIcon()}</button>`}
           </div>
         </div>
-        <label class="media-card-assignment media-card-assignment--inline"><span>Quelle</span><select data-media-source-update="${escapeHtml(asset.id)}">${mediaSourceOptions(sourceGroup)}</select></label>
-        <label class="media-card-assignment media-card-assignment--inline"><span>Zuordnung</span><select data-media-type-update="${escapeHtml(asset.id)}">${mediaTypeOptions(displayType)}</select></label>
+        <div class="media-card-auto-assignment"><span>${escapeHtml(mediaTypeLabels[displayType] || displayType || "Bild")}</span><small>${isUsed ? escapeHtml(usageLabel || "Automatisch verlinkt") : "Keine Verlinkung"}</small></div>
         ${selectButton}
       </div>
     </article>`;
@@ -682,8 +744,20 @@ function mediaSourceFilterOptions(assets = []) {
 
 function mediaAssetVisibleInLibrary(asset = {}, usageMap = new Map()) {
   if (asset.status === "archived") return false;
-  if (!asset.parent_media_asset_id) return true;
   const usedIn = usageMap.get(asset.id) || [];
+  const memberIds = new Set([
+    asset.target_collection === "members" ? asset.target_id : "",
+    asset.linked_collection === "members" ? asset.linked_record_id : "",
+    ...usedIn.filter((entry) => entry.collection === "members").map((entry) => entry.id)
+  ].filter(Boolean));
+  if (memberIds.size) {
+    const currentMemberIds = usageMap.currentMemberIds || new Set();
+    const preferredMemberLogoIds = usageMap.preferredMemberLogoIds || new Set();
+    const belongsToCurrentMember = Array.from(memberIds).some((id) => currentMemberIds.has(id));
+    if (!belongsToCurrentMember) return false;
+    return preferredMemberLogoIds.has(asset.id);
+  }
+  if (!asset.parent_media_asset_id) return true;
   return Boolean(usedIn.length || asset.target_collection || asset.linked_collection);
 }
 
@@ -719,17 +793,15 @@ function libraryPage(assets = [], query = new URLSearchParams(), usageMap = new 
         </form>
         <div class="media-library-upload media-library-sync">
           <button class="button button--secondary button--small" type="button" data-sync-local-media-assets>Codex-Bilder nach Firestore uebertragen</button>
+          <button class="button button--secondary button--small" type="button" data-auto-classify-media-assets>Zuordnung automatisch aktualisieren</button>
           <p class="muted media-paste-hint">Gleicht lokale Browser-Bilder mit Firestore und Storage ab, damit Codex und externer Browser dieselben Bilder sehen.</p>
           <div id="local-media-sync-result"></div>
+          <div id="media-auto-classify-result"></div>
         </div>
       </aside>
       <div class="media-library-main">
         <div class="media-toolbar">
           <div class="field"><label>Suche</label><input data-media-search placeholder="Titel, Datei, Schlagwort"></div>
-          <div class="field media-source-switch-field">
-            <label>Quelle</label>
-            <select data-media-filter="source">${mediaSourceFilterOptions(visibleAssets)}</select>
-          </div>
           <div class="field"><label>Format</label><select data-media-filter="format"><option value="">Alle</option><option value="16x9">16x9</option><option value="4x3">4x3</option><option value="1x1">1x1</option><option value="4x5">4x5</option><option value="9x16">9x16</option></select></div>
           <div class="field"><label>Zuordnung</label><select data-media-filter="type">${mediaTypeFilterOptions(visibleAssets, usageMap)}</select></div>
         </div>
@@ -919,13 +991,22 @@ function variantsPage(assets = [], variants = []) {
 }
 
 export async function mediaPage(section = "library", query = new URLSearchParams()) {
-  const activeSection = mediaSections.some(([key]) => key === section) ? section : "library";
+  const allowedSections = ["library", "edit", "ai", "variants"];
+  const activeSection = allowedSections.includes(section) ? section : "library";
   await waitForAuthReady();
   if (!canUseCms(currentUser())) return protect("");
-  const [assets, variants] = await Promise.all([
-    list("media_assets"),
-    list("media_variants").catch(() => [])
-  ]);
+  let assets = [];
+  let variants = [];
+  let mediaAccessError = "";
+  try {
+    assets = await list("media_assets");
+  } catch (error) {
+    mediaAccessError = error.message || String(error);
+  }
+  variants = await list("media_variants").catch(() => []);
+  if (mediaAccessError) {
+    return protect(cmsShell("cms/media/library", `${cmsTitle("Bilder", "Mediathek")}<section class="panel"><div class="alert alert--error"><strong>Mediathek konnte nicht geoeffnet werden.</strong><br>${escapeHtml(mediaAccessError)}<br><small>Bitte Firestore-Regeln fuer <code>media_assets</code> pruefen: Admins und Redakteure muessen lesen duerfen.</small></div></section>`));
+  }
   const targetRecord = query.get("targetCollection") && query.get("targetId")
     ? await getOne(query.get("targetCollection"), query.get("targetId")).catch(() => null)
     : null;

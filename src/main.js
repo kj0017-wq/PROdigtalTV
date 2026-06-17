@@ -2,9 +2,9 @@ import { route, onRouteChange, go } from "./utils/router.js";
 import {
   homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
   newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, memberPortalPage, legalPage, notFoundPage, webappQrPage
-} from "./pages/publicPages.js?v=516";
-import { currentUser, canUseCms, isAdmin, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=466";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=466";
+} from "./pages/publicPages.js?v=530";
+import { currentUser, canUseCms, isAdmin, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=467";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=470";
 import { escapeHtml, formatDate } from "./utils/format.js";
 
 const root = document.querySelector("#app");
@@ -13,9 +13,9 @@ const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9
 const localCodexStoreKey = "prodigitaltv-demo-db-official-assets-v4";
 
 const lazy = {};
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=531");
-const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=468");
-const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=59");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=540");
+const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=485");
+const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=64");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=5");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
@@ -47,6 +47,7 @@ const generateAiEditorialThumbnail = async (...args) => (await openaiService()).
 const generateAiTopicSuggestions = async (...args) => (await openaiService()).generateAiTopicSuggestions(...args);
 const importGermanPressReleases = async (...args) => (await openaiService()).importGermanPressReleases(...args);
 const importNewsFromSources = async (...args) => (await openaiService()).importNewsFromSources(...args);
+const importNewsUrlText = async (...args) => (await openaiService()).importNewsUrlText(...args);
 const generateArticleSpeechAsset = async (...args) => (await ttsService()).generateArticleSpeechAsset(...args);
 const saveProviderConfig = async (...args) => (await audioService()).saveProviderConfig(...args);
 const testAudioProviderConnection = async (...args) => (await audioService()).testConnection(...args);
@@ -174,7 +175,9 @@ async function render() {
     updateMobileQrCode();
     window.scrollTo({ top: 0 });
     schedulePublicGermanTextNormalization();
+    clearRoutePending();
   } catch (error) {
+    clearRoutePending();
     console.error(error);
     root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Seite konnte nicht geladen werden</p><h1>Bitte neu laden</h1><p style="margin:14px 0 24px">${escapeHtml(error.message || String(error))}</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
   }
@@ -222,6 +225,30 @@ function updateMobileQrCode() {
   link.href = mobileUrl;
   link.title = mobileUrl;
   image.src = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&margin=1&data=${encodeURIComponent(mobileUrl)}`;
+}
+
+function showRoutePending(link) {
+  if (!root || !link) return;
+  const href = link.getAttribute("href") || "";
+  const target = href.replace(/^#\/?/, "").split("?")[0].split("/")[0] || "home";
+  if (!window.matchMedia?.("(max-width: 820px), (pointer: coarse)")?.matches) return;
+  if (target === "cms" || target === "login") return;
+  root.setAttribute("aria-busy", "true");
+  document.body.classList.add("is-route-pending");
+  let indicator = document.querySelector("[data-route-pending]");
+  if (!indicator) {
+    indicator = document.createElement("div");
+    indicator.dataset.routePending = "1";
+    indicator.className = "route-pending-indicator";
+    indicator.innerHTML = `<span></span>`;
+    document.body.appendChild(indicator);
+  }
+}
+
+function clearRoutePending() {
+  root?.removeAttribute("aria-busy");
+  document.body?.classList.remove("is-route-pending");
+  document.querySelector("[data-route-pending]")?.remove();
 }
 
 function clickedAnchor(event) {
@@ -561,7 +588,7 @@ async function startPublicTts(button) {
   const timedWords = await loadTtsTiming(button.dataset.timingUrl || reader?.dataset.timingUrl || "");
   const sourceWords = ttsWords(ttsSourceText(reader));
   const words = timedWords.length ? timedWords.map((word) => word.text) : sourceWords;
-  const inlineHighlight = !isAccessible ? prepareInlineTtsHighlight(reader) : { restore: [], nodes: [] };
+  const inlineHighlight = { restore: [], nodes: [] };
   const inlineWordOffset = Number(reader?.dataset.ttsInlineOffset || 0) || 0;
   const readingText = words.map((word, index) => `<span class="tts-reading-layer__token" data-tts-word-index="${index}">${escapeHtml(word)}</span>`).join(" ");
   const node = document.createElement("div");
@@ -599,7 +626,7 @@ async function startPublicTts(button) {
   audio.addEventListener("error", () => {
     if (activePublicTts?.node) activePublicTts.node.innerHTML = `<div class="alert alert--warning">Audio ist fuer diesen Text noch nicht verfuegbar. Bitte im CMS neu erzeugen.</div>`;
   }, { once: true });
-  if (isAccessible || inlineHighlight.nodes.length) {
+  if (isAccessible) {
     activePublicTts.timer = setInterval(() => updateAccessibleTtsWord(activePublicTts), 140);
     audio.addEventListener("timeupdate", () => updateAccessibleTtsWord(activePublicTts));
   }
@@ -627,7 +654,7 @@ document.addEventListener("click", (event) => {
   const link = clickedAnchor(event);
   if (!link || !link.matches('a[href^="#/"]')) return;
   stopAllAudioPlayback();
-  window.setTimeout(render, 0);
+  showRoutePending(link);
 });
 
 window.addEventListener("hashchange", stopAllAudioPlayback, true);
@@ -757,6 +784,208 @@ function rewriteNewsBodyClient({ sourceText = "", headline = "", subline = "", t
     if (index > 12 && countWords(body) > goal) break;
   }
   return trimTextToWordGoal(body, goal);
+}
+
+const AI_EDITORIAL_BANNED_PHRASES = [
+  /\bFuer PROdigitalTV liegt die Relevanz des Themas darin[^.?!]*[.?!]\s*/gi,
+  /\bFür PROdigitalTV liegt die Relevanz des Themas darin[^.?!]*[.?!]\s*/gi,
+  /\bDie Meldung ist fuer PROdigitalTV relevant[^.?!]*[.?!]\s*/gi,
+  /\bDie Meldung ist für PROdigitalTV relevant[^.?!]*[.?!]\s*/gi,
+  /\bFuer die Branche ist deshalb entscheidend[^.?!]*[.?!]\s*/gi,
+  /\bFür die Branche ist deshalb entscheidend[^.?!]*[.?!]\s*/gi,
+  /\bDamit geht es nicht um eine abstrakte Trendmeldung[^.?!]*[.?!]\s*/gi,
+  /\bDaraus ergibt sich ein Branchenbezug[^.?!]*[.?!]\s*/gi,
+  /\bDie Einordnung darf den Inhalt nicht verallgemeinern[^.?!]*[.?!]\s*/gi,
+  /\bGenau deshalb sollte die weitere Bewertung[^.?!]*[.?!]\s*/gi,
+  /\bSo entsteht ein Beitrag[^.?!]*[.?!]\s*/gi,
+  /\bVor einer Veroeffentlichung[^.?!]*[.?!]\s*/gi,
+  /\bVor einer Veröffentlichung[^.?!]*[.?!]\s*/gi,
+  /\bredaktionell pruefen\b/gi,
+  /\bredaktionell prüfen\b/gi,
+  /\bPruefpflichtig\b/gi,
+  /\bPrüfpflichtig\b/gi,
+  /\bArbeitsentwurf\b/gi,
+  /\bMorgenbriefing-Meldung\b/gi,
+  /\bThemenkandidat\b/gi,
+  /\bVorschlag\b/gi
+];
+
+function stripEditorialProcessPhrases(value = "") {
+  let text = String(value || "").normalize("NFC").replace(/\r/g, "\n");
+  AI_EDITORIAL_BANNED_PHRASES.forEach((pattern) => {
+    text = text.replace(pattern, " ");
+  });
+  return text
+    .replace(/\bKI-Redaktion\b/g, "Redaktion")
+    .replace(/\bVeroeffentlichung\b/g, "Veröffentlichung")
+    .replace(/\bFuer\b/g, "Für")
+    .replace(/\bfuer\b/g, "für")
+    .replace(/\bkoennen\b/g, "können")
+    .replace(/\bmuessen\b/g, "müssen")
+    .replace(/\bwaere\b/g, "wäre")
+    .replace(/\bhaette\b/g, "hätte")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function neutralEditorialRewrite({ sourceText = "", headline = "", subline = "", targetWords = 360 } = {}) {
+  const cleaned = stripEditorialProcessPhrases(sourceText);
+  const sentences = cleaned
+    .replace(/\n+/g, " ")
+    .split(/(?<=[.!?])\s+(?=[A-ZÄÖÜ0-9])/)
+    .map((sentence) => cleanNewsSentence(sentence))
+    .filter((sentence) => sentence.length > 18)
+    .filter((sentence) => !/^(Quelle|Status|Kategorie|Relevanz|Keywords?)\s*:/i.test(sentence))
+    .filter((sentence) => !/^(Was ist passiert|Warum ist das relevant|Welche Auswirkungen)/i.test(sentence));
+  const unique = [];
+  const seen = new Set();
+  sentences.forEach((sentence) => {
+    const key = sentence.toLowerCase().replace(/[^a-z0-9äöüß]+/gi, " ").slice(0, 90);
+    if (seen.has(key)) return;
+    seen.add(key);
+    unique.push(sentence);
+  });
+  const facts = unique.slice(0, 9).map((sentence) => limitText(sentence, 260)).filter(Boolean);
+  const title = cleanNewsSentence(headline || facts[0] || "die Entwicklung");
+  const lead = cleanNewsSentence(subline || facts[0] || title);
+  const fact = (index, fallback = "") => facts[index] || fallback || lead;
+  const topic = title.replace(/[.!?]+$/g, "");
+  const paragraphs = [
+    `${lead} ${fact(0, topic)}.`,
+    `${fact(1)} ${fact(2, "Die Entwicklung betrifft damit einen Bereich, der fuer Medienunternehmen, Plattformen, Produktion oder Regulierung praktische Bedeutung haben kann.")}`,
+    `${fact(3)} ${fact(4, "Relevant ist vor allem, welche Akteure genannt werden und welche konkreten Schritte aus der Mitteilung hervorgehen.")}`,
+    `${fact(5)} ${fact(6, "Fuer den Markt kann daraus ein Hinweis auf Veraenderungen bei Rechten, Verbreitung, Vermarktung, Technologie oder Medienpolitik entstehen.")}`,
+    `${fact(7)} ${fact(8, "Offen bleibt, welche weiteren Folgen sich aus der angekuendigten Entwicklung ergeben.")}`
+  ];
+  let text = paragraphs.join("\n\n").trim();
+  if (!text) text = cleaned;
+  return trimTextToWordGoal(stripEditorialProcessPhrases(text), Math.max(120, Math.min(650, Number(targetWords || 360))));
+}
+
+async function activeAiPromptConfig(promptType = "Beitragstext") {
+  const prompts = await list("ai_prompts").catch(() => []);
+  const active = prompts
+    .filter((prompt) => {
+      const type = prompt.prompt_type || prompt.promptType || "";
+      const status = String(prompt.status || "").toLowerCase();
+      return type === promptType && !status.includes("archiviert") && !status.includes("geloescht") && prompt.deleted_at == null && prompt.deletedAt == null;
+    })
+    .sort((a, b) => String(b.updated_at || b.updatedAt || b.created_at || "").localeCompare(String(a.updated_at || a.updatedAt || a.created_at || "")))[0];
+  return active || null;
+}
+
+async function generateAiArticleBodyWithNewsPrompt({ article = {}, formValues = {}, sources = [], keywords = [] } = {}) {
+  const sourceText = String(
+    article.imported_full_text
+    || article.source_full_text
+    || article.ai_original_suggested_text
+    || article.aiOriginalSuggestedText
+    || article.source_suggested_text
+    || article.bodyText
+    || article.body
+    || formValues.bodyText
+    || ""
+  ).trim();
+  const currentText = String(formValues.bodyText || article.bodyText || article.body || "").trim();
+  const headline = String(formValues.headline || article.headline || article.title || "").trim();
+  const subline = String(formValues.subline || article.subline || article.subtitle || "").trim();
+  const keywordList = keywords.length
+    ? keywords.map((keyword) => keyword.keyword || keyword).filter(Boolean)
+    : toList(article.keyword_json || article.tags || article.keywords || article.primary_keyword).map((keyword) => keyword.keyword || keyword).filter(Boolean);
+  const activePrompt = await activeAiPromptConfig("Beitragstext");
+  const result = await callChatGptAction("improveText", {
+    module: "ai-editorial",
+    entityType: "editorialContent",
+    entityId: article.id || "",
+    fieldName: "bodyText",
+    originalText: sourceText || currentText,
+    context: {
+      prompt_type: "Beitragstext",
+      workflow: "KI-News erstellen",
+      title: headline,
+      headline,
+      subtitle: subline,
+      subline,
+      category: formValues.category || article.category || "",
+      keywords: keywordList,
+      prompt_id: activePrompt?.id || "",
+      prompt_text: activePrompt?.prompt_text || activePrompt?.promptText || "",
+      system_instructions: activePrompt?.system_instructions || activePrompt?.systemInstructions || "",
+      model: activePrompt?.model || "",
+      sources: sources.map((source) => ({
+        title: source.title || "",
+        publisher: source.publisher || "",
+        url: source.url || "",
+        domain: source.domain || "",
+        source_type: source.source_type || source.sourceType || "",
+        claim_reference: source.claim_reference || "",
+        relevance_note: source.relevance_note || ""
+      })),
+      sourceText,
+      currentText
+    }
+  });
+  return cleanRawImportText(result?.suggestedText || result?.text || "");
+}
+
+function showAiArticleRewriteDialog({ article = {}, formValues = {}, sources = [], keywords = [], revisedText = "" } = {}) {
+  document.querySelector(".ai-dialog-backdrop")?.remove();
+  const sourceText = String(article.ai_original_suggested_text || article.aiOriginalSuggestedText || article.source_suggested_text || article.bodyText || article.body || formValues.bodyText || "").trim();
+  const currentText = String(formValues.bodyText || article.bodyText || article.body || sourceText || "").trim();
+  const headline = String(formValues.headline || article.headline || article.title || "").trim();
+  const subline = String(formValues.subline || article.subline || article.subtitle || "").trim();
+  const sourceNames = sources.map((source) => source.publisher || source.title || source.domain).filter(Boolean).slice(0, 3).join(", ");
+  const revised = revisedText || neutralEditorialRewrite({ sourceText: sourceText || currentText, headline, subline, targetWords: Math.max(180, Math.min(520, countWords(currentText || sourceText) || 360)) });
+  const wrapper = document.createElement("div");
+  wrapper.className = "ai-dialog-backdrop";
+  wrapper.innerHTML = `<div class="ai-dialog ai-dialog--news-review" role="dialog" aria-modal="true">
+    <div class="actions" style="justify-content:space-between"><div><p class="eyebrow">KI-Redaktion</p><h2>Vorschlag und Neufassung vergleichen</h2></div><button type="button" class="link-button" data-ai-close>Schliessen</button></div>
+    <div class="ai-dialog-grid ai-dialog-grid--review">
+      <div class="field"><label>Übernommener Vorschlag <span>${countWords(sourceText || currentText)} Wörter</span></label><textarea readonly>${escapeHtml(sourceText || currentText || "Noch kein Vorschlag gespeichert.")}</textarea></div>
+      <div class="field"><label>Neu formuliert <span data-ai-rewrite-count>${countWords(revised)} Wörter</span></label><textarea data-ai-article-rewrite>${escapeHtml(revised)}</textarea></div>
+    </div>
+    <div class="alert"><strong>Leitlinie:</strong> keine Eigenphrasen, keine Bewertungen ohne Quelle, keine beitragsfremden Formulierungen.${sourceNames ? ` Quellenhinweise: ${escapeHtml(sourceNames)}.` : ""}</div>
+    <div class="actions"><button type="button" class="button button--primary" data-ai-rewrite-accept>Neufassung uebernehmen</button><button type="button" class="button button--secondary" data-ai-rewrite-regenerate>Nochmals neutral formulieren</button><button type="button" class="button button--secondary" data-ai-close>Verwerfen</button></div>
+    <p class="muted">Erst „Neufassung uebernehmen“ schreibt den Text in den Beitragseditor. Danach bitte speichern.</p>
+  </div>`;
+  document.body.append(wrapper);
+  wrapper.querySelectorAll("[data-ai-close]").forEach((item) => item.addEventListener("click", () => wrapper.remove()));
+  const outputField = wrapper.querySelector("[data-ai-article-rewrite]");
+  const countNode = wrapper.querySelector("[data-ai-rewrite-count]");
+  const updateCount = () => {
+    if (countNode) countNode.textContent = `${countWords(outputField?.value || "")} Wörter`;
+  };
+  outputField?.addEventListener("input", updateCount);
+  wrapper.querySelector("[data-ai-rewrite-regenerate]")?.addEventListener("click", async (event) => {
+    if (!outputField) return;
+    const button = event.currentTarget;
+    const oldLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Erzeuge ...";
+    try {
+      const generated = await generateAiArticleBodyWithNewsPrompt({ article, formValues, sources, keywords });
+      outputField.value = generated || neutralEditorialRewrite({ sourceText: sourceText || currentText || outputField.value, headline, subline, targetWords: Math.max(180, Math.min(520, countWords(outputField.value) || 360)) });
+      updateCount();
+    } catch (error) {
+      console.warn("Beitragstext-Prompt nicht erreichbar, lokaler Fallback genutzt.", error);
+      outputField.value = neutralEditorialRewrite({ sourceText: sourceText || currentText || outputField.value, headline, subline, targetWords: Math.max(180, Math.min(520, countWords(outputField.value) || 360)) });
+      updateCount();
+    } finally {
+      button.disabled = false;
+      button.textContent = oldLabel;
+    }
+  });
+  wrapper.querySelector("[data-ai-rewrite-accept]")?.addEventListener("click", () => {
+    const form = document.querySelector(`#ai-article-edit-form[data-article-id="${CSS.escape(article.id || "")}"]`);
+    const bodyField = form?.querySelector('[name="bodyText"]');
+    if (bodyField) {
+      bodyField.value = outputField?.value || "";
+      bodyField.dispatchEvent(new Event("input", { bubbles: true }));
+      bodyField.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    wrapper.remove();
+  });
 }
 
 const AI_NEWS_TEXT_TYPES = new Set([
@@ -1530,8 +1759,13 @@ function draftArticleTextFromTopic(topic = {}) {
   const keywordList = Array.isArray(topic.keywords) ? topic.keywords : [];
   const mainKeyword = keywordList[0] || topic.category || "das Thema";
   const category = topic.category || "Medienbranche";
+  const topicParagraph = cleanMorningFullText(topic.themenabsatz || topic.themen_absatz || topic.editorial_paragraph || topic.topic_paragraph || "");
+  const pdtvApproach = cleanMorningFullText(topic.pdtv_ansatz || topic.pdtvAnsatz || topic.pdtv_approach || topic.pdtvApproach || "");
   const teaser = cleanEditorialSentence(topic.teaser || topic.summary || topic.reason || topic.subline || "");
   const subline = cleanEditorialSentence(topic.subline || "");
+  if (topicParagraph || pdtvApproach) {
+    return [topicParagraph || teaser || subline || title, pdtvApproach].filter(Boolean).join("\n\n");
+  }
   const sources = [
     ...(Array.isArray(topic.source_candidates) ? topic.source_candidates : []),
     ...(Array.isArray(topic.sources) ? topic.sources : [])
@@ -2955,6 +3189,17 @@ function normalizeMorningText(value = "") {
   return String(value || "").trim().replace(/\s+/g, " ");
 }
 
+function cleanMorningFullText(value = "") {
+  return String(value || "")
+    .normalize("NFC")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]+/g, " ")
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 function normalizeMorningKey(value = "") {
   return normalizeMorningText(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 }
@@ -2962,6 +3207,11 @@ function normalizeMorningKey(value = "") {
 function sourceIsApprovedForMorning(source = {}) {
   const status = normalizeMorningKey(source.source_status || source.review_status || source.check_status || "");
   return ["erlaubt", "bevorzugt"].includes(status);
+}
+
+function isMorningBriefingWorkItem(item = {}) {
+  const marker = normalizeMorningKey([item.workflow, item.content_type, item.contentType, item.origin, item.source, item.category].join(" "));
+  return marker.includes("morning") || marker.includes("morgenbriefing");
 }
 
 function verifiedSourceForMorning(item = {}, sources = []) {
@@ -2987,11 +3237,12 @@ function parseMorningBriefingPipeRows(text = "") {
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("#"))
     .map((line, index) => {
-      const [headline = "", summary = "", relevance = "", source = "", originalUrl = "", firstSeen = "", meta = ""] = line.split("|").map((part) => part.trim());
+      const [headline = "", summary = "", relevance = "", source = "", originalUrl = "", firstSeen = "", meta = "", ...fullTextParts] = line.split("|").map((part) => part.trim());
       if (!headline || !summary) throw new Error(`Zeile ${index + 1}: Headline und Summary sind Pflicht.`);
       const parsedMeta = parseMorningMeta(meta);
       const now = new Date().toISOString();
       const sourceKey = slugify([headline, source, originalUrl].filter(Boolean).join("-")).slice(0, 90) || crypto.randomUUID();
+      const fullText = cleanMorningFullText(fullTextParts.join(" | "));
       return {
         id: `morning-item-${sourceKey}`,
         workflow: "morning_briefing",
@@ -3008,17 +3259,78 @@ function parseMorningBriefingPipeRows(text = "") {
         first_seen: firstSeen || now,
         category: relevance || "Morgenbriefing",
         score: parsedMeta.is_regulator ? 85 : 70,
-        status: originalUrl ? "Neu" : "Pruefpflichtig",
-        morning_status: originalUrl ? "Neu" : "Pruefpflichtig",
+        status: "Neu",
+        morning_status: "Neu",
         source_type: parsedMeta.source_type || "Importquelle",
         is_regulator: parsedMeta.is_regulator,
         duplicate_of: "",
+        full_text: fullText,
+        fullText,
+        text_length: fullText.length || summary.length,
         created_at: now,
         updated_at: now,
         origin: "morning_briefing_pipe_import",
-        keywords: singleMorningKeywords([headline, summary, relevance, source].join(" "))
+        keywords: singleMorningKeywords([headline, summary, fullText, relevance, source].join(" "))
       };
     });
+}
+
+function morningUrlKey(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    [...url.searchParams.keys()].forEach((key) => {
+      if (/^(utm_|fbclid|gclid|mc_|pk_)/i.test(key)) url.searchParams.delete(key);
+    });
+    url.hash = "";
+    return url.toString().replace(/\/+$/, "").toLowerCase();
+  } catch {
+    return raw.replace(/[?#].*$/, "").replace(/\/+$/, "").toLowerCase();
+  }
+}
+
+function morningRawText(raw = {}) {
+  return cleanMorningFullText(raw.full_text || raw.fullText || raw.bodyText || raw.text || raw.content || raw.summary || "");
+}
+
+function findRawMorningSource(row = {}, rawRows = []) {
+  const rowUrl = morningUrlKey(row.original_url || row.originalUrl || row.url || "");
+  const rowTitle = normalizeMorningKey(row.headline || row.title || "");
+  const rowSource = normalizeMorningKey(row.source || row.source_name || "");
+  if (rowUrl) {
+    const exact = rawRows.find((raw) => morningUrlKey(raw.original_url || raw.originalUrl || raw.url || raw.source_url || raw.sourceUrl || "") === rowUrl);
+    if (exact) return exact;
+  }
+  return rawRows.find((raw) => {
+    const rawTitle = normalizeMorningKey(raw.headline || raw.title || "");
+    const rawSource = normalizeMorningKey(raw.source || raw.source_name || raw.sourceName || raw.source_domain || "");
+    if (!rowTitle || !rawTitle) return false;
+    const titleMatch = rawTitle.includes(rowTitle.slice(0, 42)) || rowTitle.includes(rawTitle.slice(0, 42));
+    const sourceMatch = !rowSource || !rawSource || rawSource.includes(rowSource.slice(0, 24)) || rowSource.includes(rawSource.slice(0, 24));
+    return titleMatch && sourceMatch;
+  }) || null;
+}
+
+function enrichMorningRowsWithRawText(rows = [], rawRows = []) {
+  return rows.map((row) => {
+    const existingText = normalizeMorningText(row.full_text || row.fullText || "");
+    const raw = existingText ? null : findRawMorningSource(row, rawRows);
+    const rawText = raw ? morningRawText(raw) : "";
+    const fullText = existingText || rawText;
+    if (!fullText) return row;
+    return {
+      ...row,
+      full_text: fullText,
+      fullText,
+      text_length: fullText.length,
+      raw_data_id: raw?.id || row.raw_data_id || "",
+      source_raw_id: raw?.id || row.source_raw_id || "",
+      summary: row.summary || limitText(fullText, 450),
+      teaser: row.teaser || row.summary || limitText(fullText, 450),
+      keywords: singleMorningKeywords([row.headline, row.summary, fullText, row.relevance, row.source].join(" "))
+    };
+  });
 }
 
 function singleMorningKeywords(text = "") {
@@ -3041,17 +3353,9 @@ function findMorningDuplicate(item = {}, existing = []) {
 }
 
 function morningArticleBody(item = {}) {
-  const headline = normalizeMorningText(item.headline || item.title || "Morgenbriefing-Meldung");
-  const summary = normalizeMorningText(item.summary || item.teaser || item.subline || "");
-  const relevance = normalizeMorningText(item.relevance || item.category || "");
-  const source = normalizeMorningText(item.source || item.source_name || item.sourceName || "");
-  return [
-    `${headline}.`,
-    summary,
-    `Die Meldung ist fuer PROdigitalTV relevant, weil sie den Bereich ${relevance || "digitale Medienwirtschaft"} beruehrt. Fuer TV, Streaming, Plattformen, Produktion, Regulierung oder Vermarktung kann daraus redaktioneller Einordnungsbedarf entstehen.`,
-    `Die Quelle fuer diesen Entwurf ist ${source || "noch redaktionell zu pruefen"}. Der Beitrag bleibt pruefpflichtig, solange Original-URL, Quellenlage und moegliche Dubletten nicht redaktionell bestaetigt sind.`,
-    "Vor einer Veroeffentlichung muss die Redaktion die Kernaussagen anhand der Originalquelle pruefen, fehlende Fakten ergaenzen und unbelegte Schlussfolgerungen entfernen. Ohne diese Freigabe wird der Artikel nicht automatisch veroeffentlicht."
-  ].filter(Boolean).join("\n\n");
+  const summary = cleanMorningFullText(item.summary || item.teaser || item.subline || "");
+  const sourceText = cleanMorningFullText(item.full_text || item.fullText || item.bodyText || item.text || "");
+  return sourceText || summary || cleanMorningFullText(item.headline || item.title || "Morgenbriefing-Meldung");
 }
 
 async function morningArticleDraftFromItem(item = {}) {
@@ -3059,11 +3363,12 @@ async function morningArticleDraftFromItem(item = {}) {
   const sources = await list("verified_sources").catch(() => []);
   const approvedSource = verifiedSourceForMorning(item, sources);
   const originalUrl = item.original_url || item.originalUrl || item.url || "";
-  const sourceStatus = approvedSource && originalUrl ? "geprueft" : "Pruefpflichtig";
-  const status = sourceStatus === "geprueft" && !normalizeMorningKey(item.morning_status || item.status).includes("pruef") ? "Entwurf" : "pruefpflichtig";
+  const sourceStatus = approvedSource && originalUrl ? "Quelle vorhanden" : "Quelle bitte redaktionell pruefen";
+  const status = "Entwurf";
   const title = limitText(normalizeMorningText(item.headline || item.title || "Morgenbriefing-Meldung"), 80);
   const subline = limitText(normalizeMorningText(item.summary || item.teaser || ""), 180);
   const bodyText = morningArticleBody(item);
+  const importedFullText = cleanMorningFullText(item.full_text || item.fullText || item.bodyText || item.text || "");
   const keywords = localEditorialKeywords({ title, subline, bodyText, category: item.category || item.relevance || "" }, item.keywords || []);
   const seo = localSeoPayload({ title, headline: title, subline, bodyText, slug: slugify(title) }, keywords);
   const articleId = `morning-article-${slugify([item.first_seen || now.slice(0, 10), title].join("-")).slice(0, 90) || crypto.randomUUID()}`;
@@ -3086,6 +3391,11 @@ async function morningArticleDraftFromItem(item = {}) {
     shortText: subline,
     teaserText: subline,
     bodyText,
+    ai_original_suggested_text: bodyText,
+    source_suggested_text: bodyText,
+    imported_full_text: importedFullText,
+    source_full_text: importedFullText,
+    text_length: bodyText.length,
     page: "news",
     section: "news",
     key: `news.${articleId}`,
@@ -3099,8 +3409,8 @@ async function morningArticleDraftFromItem(item = {}) {
     thumbnail_prompt: item.thumbnail_prompt || `Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV zur Meldung "${title}". Sachlicher Business-Look, TV-, Streaming- und digitale Medienwirtschaft, keine Logos, keine realen Personen, keine erfundenen Fakten.`,
     source_snapshot_json: sourceSnapshot,
     source_status: sourceStatus,
-    duplicate_status: item.duplicate_of || item.duplicateOf ? "Dublette" : "nicht geprueft",
-    ai_check_status: sourceStatus === "geprueft" ? "Warnung" : "Pruefpflichtig",
+    duplicate_status: "redaktioneller Hinweis",
+    ai_check_status: "vorbereitet",
     legal_check_status: "offen",
     publication_status: status,
     status: "draft",
@@ -3118,7 +3428,7 @@ async function morningArticleDraftFromItem(item = {}) {
     original_url: originalUrl,
     ai_log_json: {
       workflow: "morning_briefing",
-      rule: "no_auto_publish_without_manual_release",
+      rule: "editor_decides",
       sourceApproved: Boolean(approvedSource),
       sourceId: approvedSource?.id || ""
     },
@@ -3337,6 +3647,15 @@ const PRESS_IMPORT_STEPS = [
   "Presseliste speichern und aktualisieren"
 ];
 
+const MORNING_BRIEFING_STEPS = [
+  "Morgenbriefing vorbereiten",
+  "Freigegebene Quellen laden",
+  "Quellen abrufen und neue Meldungen erkennen",
+  "Quellenfunde speichern",
+  "Dubletten pruefen und Relevanz bewerten",
+  "Briefing-Meldungen zusammenstellen"
+];
+
 function sourceSearchText(source = {}) {
   return [
     source.name,
@@ -3436,8 +3755,64 @@ async function topicResearchSourcePool(category = "", keywords = "", sourceId = 
     });
 }
 
+async function morningBriefingSourcePool() {
+  let verifiedSources = [];
+  try {
+    verifiedSources = await list("verified_sources");
+  } catch {
+    verifiedSources = [];
+  }
+  const aiSourceCatalog = await getAiSourceCatalog();
+  return uniqueResearchSources([...verifiedSources, ...aiSourceCatalog])
+    .filter((source) => ["erlaubt", "bevorzugt"].includes(normalizeResearchTerm(source.source_status || source.review_status || source.check_status)))
+    .sort((a, b) => Number(a.priority || 99) - Number(b.priority || 99)
+      || Number(b.trust_score || b.suggested_trust_score || 0) - Number(a.trust_score || a.suggested_trust_score || 0));
+}
+
 function researchSourceLabel(source = {}) {
   return source.name || source.title || source.publisher || source.domain || "Quelle";
+}
+
+function recordTimestampMs(record = {}) {
+  const value = record.created_at || record.createdAt || record.imported_at || record.importedAt || record.updated_at || record.updatedAt || "";
+  if (!value) return 0;
+  if (typeof value === "number") return value;
+  if (typeof value?.toDate === "function") return value.toDate().getTime();
+  if (typeof value?.seconds === "number") return value.seconds * 1000;
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function countMorningRawFindsSince(startedAtMs = Date.now()) {
+  const rows = await list("ai_topic_raw_data").catch(() => []);
+  const threshold = Math.max(0, startedAtMs - 120000);
+  return rows.filter((row) => recordTimestampMs(row) >= threshold).length;
+}
+
+function morningBriefingStatusMarkup({ startedAt = Date.now(), stepIndex = 0, done = false, sourcePool = [], sourceIndex = 0, result = null } = {}) {
+  const elapsedSeconds = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+  const boundedStep = Math.max(0, Math.min(MORNING_BRIEFING_STEPS.length - 1, stepIndex));
+  const totalSources = Number(result?.totalSources || result?.total_sources || sourcePool.length || 0);
+  const researchedSources = Number(result?.researchedSources || result?.researched_sources || 0);
+  const sourcePublications = Number(result?.sourcePublications || result?.source_publications || result?.liveSourcePublications || 0);
+  const percent = done
+    ? 100
+    : totalSources && researchedSources
+      ? Math.max(12, Math.min(94, Math.round((researchedSources / Math.max(1, totalSources)) * 88)))
+      : Math.max(12, Math.min(92, Math.round(((boundedStep + 1) / MORNING_BRIEFING_STEPS.length) * 86)));
+  const headline = done ? "Morgenbriefing abgeschlossen" : "Morgenbriefing laeuft";
+  const activeSourcePosition = sourcePool.length ? Math.min(sourceIndex + 1, sourcePool.length) : 0;
+  const activeSource = !done && sourcePool.length ? sourcePool[activeSourcePosition - 1] : null;
+  const upcomingSources = sourcePool.length ? sourcePool.slice(activeSourcePosition, activeSourcePosition + 3) : [];
+  return `<div class="ai-research-status ${done ? "ai-research-status--done" : ""}">
+    ${progressMarkup(headline, percent)}
+    <div class="ai-research-status__meta"><strong>Status:</strong> ${escapeHtml(MORNING_BRIEFING_STEPS[boundedStep])}<span>${elapsedSeconds}s</span></div>
+    ${activeSource ? `<div class="ai-research-current-source"><span>Aktuelle Quelle ${activeSourcePosition} von ${sourcePool.length}</span><strong>${escapeHtml(researchSourceLabel(activeSource))}</strong><small>${escapeHtml(activeSource.domain || activeSource.url || "")}</small></div>` : ""}
+    ${!done && upcomingSources.length ? `<div class="ai-research-source-strip">${upcomingSources.map((source) => `<span>${escapeHtml(researchSourceLabel(source))}</span>`).join("")}</div>` : ""}
+    <ol class="ai-research-steps">${MORNING_BRIEFING_STEPS.map((step, index) => `<li class="${done || index < boundedStep ? "is-done" : index === boundedStep ? "is-active" : ""}"><span>${index + 1}</span>${escapeHtml(step)}</li>`).join("")}</ol>
+    <div class="ai-press-progress__stats"><span>Quellen: ${researchedSources || activeSourcePosition || 0}/${totalSources || sourcePool.length || "?"}</span><span>Quellenfunde: ${sourcePublications}</span><span>Briefing: ${Number(result?.items || 0)}</span></div>
+    <p class="muted">Hinweis: Das Morgenbriefing erzeugt Arbeitsdaten. Veroeffentlicht wird erst nach redaktioneller Freigabe.</p>
+  </div>`;
 }
 
 function topicResearchStatusMarkup({ contextLabel = "", startedAt = Date.now(), stepIndex = 0, done = false, sourcePool = [], sourceIndex = 0 }) {
@@ -3675,6 +4050,82 @@ function confirmAiNewsImportDraft({ sourceText = "", draft = {}, regenerateDraft
     });
     document.body.append(wrapper);
   });
+}
+
+function cleanRawImportText(value = "") {
+  return String(value || "")
+    .normalize("NFC")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]+/g, " ")
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{4,}/g, "\n\n\n")
+    .trim();
+}
+
+function rawImportHeadline(value = "", fallback = "Importierte News") {
+  const line = cleanRawImportText(value)
+    .split(/\n+/)
+    .map((item) => item.trim())
+    .find((item) => item.length >= 6) || fallback;
+  return limitText(line.replace(/^Pressemitteilung[:\s-]*/i, ""), 90) || fallback;
+}
+
+function importedTitleLooksLikeSource(title = "", source = "", url = "") {
+  const normalizeImportLabel = (value = "") => String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/&[a-z0-9#]+;/gi, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  const cleanTitle = normalizeImportLabel(title);
+  const cleanSource = normalizeImportLabel(source);
+  let host = "";
+  try {
+    host = normalizeImportLabel(new URL(url).hostname.replace(/^www\./i, ""));
+  } catch {}
+  if (!cleanTitle) return true;
+  if (cleanSource && (cleanTitle === cleanSource || cleanTitle.includes(cleanSource))) return true;
+  if (host && (cleanTitle === host || cleanTitle.includes(host))) return true;
+  return /\b(zeitverlag|zeit verlag|verlagsgruppe|publisher|newsroom|presseportal|pressebereich|pressemitteilungen|homepage|startseite)\b/.test(cleanTitle);
+}
+
+function normalizedImportUrl(value = "") {
+  const url = String(value || "").trim();
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    return /^https?:$/i.test(parsed.protocol) ? parsed.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function rawImportHeadlineFromUrl(url = "") {
+  try {
+    const parsed = new URL(url);
+    return limitText(`URL-Import: ${parsed.hostname.replace(/^www\./i, "")}`, 90);
+  } catch {
+    return "URL-Import";
+  }
+}
+
+async function importUrlIntoNewsImportForm(form, sourceUrl = "") {
+  const output = form?.querySelector("#ai-news-import-result");
+  const textarea = form?.querySelector('textarea[name="sourceText"]');
+  const urlField = form?.querySelector('input[name="sourceUrl"]');
+  const cleanUrl = normalizedImportUrl(sourceUrl || urlField?.value || "");
+  if (!form || !cleanUrl) return null;
+  if (output) output.innerHTML = `<div class="alert">${progressMarkup("URL wird geoeffnet und in den KI-News-Import geladen ...", 35)}</div>`;
+  const imported = await importNewsUrlText(cleanUrl);
+  if (textarea) {
+    textarea.value = cleanRawImportText(imported?.text || "");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    textarea.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  if (urlField) urlField.value = cleanUrl;
+  if (output) output.innerHTML = `<div class="alert alert--success">${Number(imported?.chars || imported?.text?.length || 0).toLocaleString("de-DE")} Zeichen aus der URL in den KI-News-Import geladen. Bitte pruefen und dann mit "KI-News erstellen" weiterarbeiten.</div>`;
+  return imported;
 }
 
 function markPressRetrospectiveForm(button) {
@@ -4310,13 +4761,15 @@ function wirePublicMenu() {
   const closeTargets = document.querySelectorAll("[data-public-menu-close]");
   if (!topbar || !toggle) return;
   const setOpen = (open) => {
-    window.requestAnimationFrame(() => {
-      topbar.classList.toggle("is-public-menu-open", open);
-      toggle.setAttribute("aria-expanded", open ? "true" : "false");
-      toggle.setAttribute("aria-label", open ? "Menue schliessen" : "Menue oeffnen");
-    });
+    topbar.classList.toggle("is-public-menu-open", open);
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    toggle.setAttribute("aria-label", open ? "Menue schliessen" : "Menue oeffnen");
   };
-  toggle.addEventListener("click", () => setOpen(!topbar.classList.contains("is-public-menu-open")));
+  toggle.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen(!topbar.classList.contains("is-public-menu-open"));
+  });
   closeTargets.forEach((target) => target.addEventListener("click", () => setOpen(false)));
 }
 
@@ -4500,6 +4953,31 @@ function wireLocalMediaAssetSync() {
   });
 }
 
+function wireMediaAutoClassify() {
+  const button = document.querySelector("[data-auto-classify-media-assets]");
+  if (!button || button.dataset.mediaAutoClassifyWired === "1") return;
+  button.dataset.mediaAutoClassifyWired = "1";
+  button.addEventListener("click", async () => {
+    const result = document.querySelector("#media-auto-classify-result");
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Aktualisiere ...";
+    try {
+      if (!currentUser() || !canUseCms()) throw new Error("Bitte zuerst im CMS einloggen.");
+      const summary = await autoClassifyMediaAssets(result);
+      if (result) result.innerHTML = `<div class="alert alert--success">Mediathek aktualisiert: ${summary.updated} Bilder neu zugeordnet, ${summary.free} Bilder ohne aktuelle Verlinkung markiert.</div>`;
+      window.setTimeout(() => render(), 900);
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Automatische Zuordnung fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      window.setTimeout(() => {
+        button.disabled = false;
+        button.textContent = originalLabel;
+      }, 1200);
+    }
+  });
+}
+
 function mediaContextFromNode(node) {
   const selectedEventTargetId = node?.elements?.mediaEventTargetId?.value || "";
   const canUseEventFallback = selectedEventTargetId && !node?.dataset.mediaTargetCollection && Boolean(node?.querySelector?.('[name="mediaEventTargetId"]'));
@@ -4575,6 +5053,51 @@ function mediaAssetUrl(asset = {}) {
     asset.file_path_web,
     asset.file_path_original
   ].map(usableMediaAssetUrl).find(Boolean) || "";
+}
+
+function mediaAssetUrlValues(asset = {}) {
+  return [
+    asset.id,
+    asset.file_path_thumb_url,
+    asset.file_path_web_url,
+    asset.file_path_original_url,
+    asset.imageUrl,
+    asset.assetUrl,
+    asset.fileUrl,
+    asset.url,
+    asset.downloadUrl,
+    asset.thumbnail_url,
+    asset.thumbnailUrl,
+    asset.file_url,
+    asset.original_url,
+    asset.web_url,
+    asset.thumb_url,
+    asset.file_path_thumb,
+    asset.file_path_web,
+    asset.file_path_original
+  ].map((value) => String(value || "").trim()).filter(Boolean);
+}
+
+function valueReferencesMediaAsset(value, assetId = "", urls = []) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "string") return value === assetId || urls.includes(value);
+  if (Array.isArray(value)) return value.some((item) => valueReferencesMediaAsset(item, assetId, urls));
+  if (typeof value === "object") return Object.values(value).some((item) => valueReferencesMediaAsset(item, assetId, urls));
+  return false;
+}
+
+function mediaTypeForLinkedCollection(collectionName = "", record = {}) {
+  if (collectionName === "events" || collectionName === "eventMedia") return "event";
+  if (collectionName === "topics") return "topic";
+  if (collectionName === "members" || collectionName === "sponsors") return "logo";
+  if (collectionName === "boardMembers") return "board";
+  if (collectionName === "speakers") return "person";
+  if (collectionName === "editorialContent") {
+    if (record.page === "news" || record.section === "news" || record.publication_target === "news") return "news";
+    if (record.page === "home" || record.section === "internal" || record.section === "intro" || record.section === "hero") return "article";
+    return "article";
+  }
+  return "upload";
 }
 
 function readLocalCodexStore() {
@@ -4781,6 +5304,71 @@ async function syncLocalRecordImagesToFirestore(localDb = {}) {
     }
   }
   return { updated, uploaded };
+}
+
+async function autoClassifyMediaAssets(result) {
+  const collections = ["editorialContent", "topics", "events", "members", "boardMembers", "speakers", "sponsors", "galleries", "eventMedia"];
+  if (result) result.innerHTML = `<div class="alert">${progressMarkup("Mediathek-Verlinkungen werden geprueft ...", 20)}</div>`;
+  const [assets, ...collectionEntries] = await Promise.all([
+    list("media_assets"),
+    ...collections.map(async (collection) => [collection, await list(collection).catch(() => [])])
+  ]);
+  const recordsByCollection = Object.fromEntries(collectionEntries);
+  let updated = 0;
+  let free = 0;
+  for (const [index, asset] of assets.entries()) {
+    const urls = mediaAssetUrlValues(asset);
+    let match = null;
+    for (const collection of collections) {
+      const record = (recordsByCollection[collection] || []).find((item) => valueReferencesMediaAsset(item, asset.id, urls));
+      if (record) {
+        match = { collection, record };
+        break;
+      }
+    }
+    if (!match) {
+      free += 1;
+      continue;
+    }
+    const nextType = normalizedMediaType(mediaTypeForLinkedCollection(match.collection, match.record));
+    const presetFields = mediaPresetFields(nextType);
+    const targetTitle = match.record.title || match.record.headline || match.record.name || match.record.company || match.record.id || "";
+    const update = {
+      ...asset,
+      media_type: nextType,
+      ...presetFields,
+      linked_collection: match.collection,
+      linked_record_id: match.record.id,
+      linked_title: targetTitle,
+      linked_page: match.record.page || "",
+      linked_section: match.record.section || "",
+      target_collection: asset.target_collection || match.collection,
+      target_id: asset.target_id || match.record.id,
+      target_title: asset.target_title || targetTitle,
+      target_page: asset.target_page || match.record.page || "",
+      target_section: asset.target_section || match.record.section || "",
+      updated_at: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    if (JSON.stringify({
+      media_type: asset.media_type,
+      linked_collection: asset.linked_collection,
+      linked_record_id: asset.linked_record_id,
+      linked_title: asset.linked_title
+    }) !== JSON.stringify({
+      media_type: update.media_type,
+      linked_collection: update.linked_collection,
+      linked_record_id: update.linked_record_id,
+      linked_title: update.linked_title
+    })) {
+      await upsert("media_assets", update);
+      updated += 1;
+    }
+    if (result && index % 8 === 0) {
+      result.innerHTML = `<div class="alert">${progressMarkup(`Mediathek-Zuordnung ${index + 1} von ${assets.length} ...`, 20 + Math.round(((index + 1) / Math.max(1, assets.length)) * 70))}</div>`;
+    }
+  }
+  return { updated, free, total: assets.length };
 }
 
 function imageDimensionsFromUrl(url = "") {
@@ -6004,6 +6592,7 @@ function wireActions() {
   wireMediaLibraryFilters();
   wireExistingThumbImport();
   wireLocalMediaAssetSync();
+  wireMediaAutoClassify();
   wireMediaCardLinks();
   wireCentralMediaUpload();
   wireMediaAiDraft();
@@ -6412,51 +7001,42 @@ function wireActions() {
     const output = form.querySelector("#ai-news-import-result");
     const submitButton = form.querySelector('button[type="submit"]');
     if (submitButton) submitButton.disabled = true;
-    if (output) output.innerHTML = `<div class="alert">${progressMarkup("Quellen werden analysiert und als News vorbereitet ...", 45)}</div>`;
+    if (output) output.innerHTML = `<div class="alert">${progressMarkup("KI-News-Entwurf wird aus dem Import vorbereitet ...", 45)}</div>`;
     try {
       const values = formObject(form);
       const { textSources, imageFiles, imageSources, unsupportedTextFiles } = await collectAiNewsImportSources(form);
-      if (!String(values.sourceText || "").trim() && !textSources.length && !imageFiles.length) {
-        throw new Error("Bitte Text einfuegen oder mindestens eine Text- oder Bilddatei hochladen.");
+      const sourceUrl = normalizedImportUrl(values.sourceUrl || "");
+      if (String(values.sourceUrl || "").trim() && !sourceUrl) {
+        throw new Error("Bitte eine gueltige http- oder https-URL eintragen.");
       }
-      const baseImportPayload = {
-        sourceText: values.sourceText || "",
-        textSources,
-        imageSources,
-        rules: {
-          visible: true,
-          noStatusLogic: true,
-          noAudioVideo: true,
-          targetWords: 300
-        }
-      };
-      const result = await importNewsFromSources(baseImportPayload);
-      const draft = result.article || result.news || result;
-      if (!draft) throw new Error("Die KI hat keinen News-Beitrag zurueckgegeben.");
+      if (!String(values.sourceText || "").trim() && !sourceUrl && !textSources.length && !imageFiles.length) {
+        throw new Error("Bitte Text einfuegen, eine URL eintragen oder mindestens eine Text- oder Bilddatei hochladen.");
+      }
+      let importedUrl = null;
+      if (sourceUrl && !String(values.sourceText || "").trim() && !textSources.length) {
+        importedUrl = await importUrlIntoNewsImportForm(form, sourceUrl);
+        values.sourceText = importedUrl?.text || "";
+      }
       const sourcePreviewText = [
         values.sourceText || "",
-        ...textSources.map((source) => source.text || source.content || source.name || source.fileName || "")
+        importedUrl?.text || "",
+        ...textSources.map((source) => source.text || source.content || "")
       ].filter(Boolean).join("\n\n").trim();
-      const acceptedDraft = await confirmAiNewsImportDraft({
-        sourceText: sourcePreviewText,
-        draft,
-        regenerateDraft: async (targetWords) => {
-          const rerun = await importNewsFromSources({
-            ...baseImportPayload,
-            targetWords,
-            rules: { ...baseImportPayload.rules, targetWords }
-          });
-          return rerun.article || rerun.news || rerun;
-        }
-      });
-      if (!acceptedDraft) {
-        if (output) output.innerHTML = `<div class="alert">News-Import wurde verworfen. Es wurde nichts gespeichert.</div>`;
-        return;
+      const rawText = cleanRawImportText(sourcePreviewText);
+      if (!rawText) {
+        throw new Error("Es konnte kein Beitragstext importiert werden.");
       }
-      Object.assign(draft, acceptedDraft);
-      if (output) output.innerHTML = `<div class="alert">${progressMarkup("News wird nach deiner Auswahl gespeichert ...", 78)}</div>`;
+      if (output) output.innerHTML = `<div class="alert">${progressMarkup("Import wird als KI-News-Entwurf gespeichert ...", 78)}</div>`;
       const now = new Date().toISOString();
-      const cleanHeadline = String(draft.headline || draft.title || "Importierte News").trim();
+      const importedTitle = importedUrl?.title || "";
+      const importedTitleIsSource = importedTitleLooksLikeSource(importedTitle, importedUrl?.source || "", sourceUrl);
+      const cleanHeadline = importedTitle && !importedTitleIsSource
+        ? rawImportHeadline(importedTitle)
+        : sourcePreviewText
+          ? rawImportHeadline(rawText || imageFiles[0]?.name || "Importierte News")
+          : sourceUrl
+            ? rawImportHeadlineFromUrl(sourceUrl)
+            : rawImportHeadline(rawText || imageFiles[0]?.name || "Importierte News");
       const articleId = `news-import-${crypto.randomUUID()}`;
       let imageUrl = "";
       let assetStoragePath = "";
@@ -6473,42 +7053,67 @@ function wireActions() {
         await upsert("galleries", {
           id: galleryId,
           title: `Galerie: ${cleanHeadline}`,
-          description: "Aus dem News-Import uebernommene Bildquellen. Bildunterschriften und Alt-Texte redaktionell pruefen.",
-          status: "published",
-          visibility: "public",
+          description: "Aus dem Rohimport uebernommene Bildquellen.",
+          status: "draft",
+          visibility: "internal",
           images: galleryImages.map((image, index) => ({
             ...image,
-            caption: draft.gallery_suggestions?.[index]?.caption || image.caption || image.fileName || "",
-            altText: draft.gallery_suggestions?.[index]?.alt_text || draft.gallery_suggestions?.[index]?.altText || image.altText || image.fileName || ""
+            caption: image.caption || image.fileName || "",
+            altText: image.altText || image.fileName || ""
           })),
           createdAt: now,
           updatedAt: now
         });
       }
-      const tags = Array.isArray(draft.tags) ? draft.tags : String(draft.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean);
-      const sourceSnapshot = Array.isArray(draft.sources) ? draft.sources : [];
+      const tags = [];
+      const sourceSnapshot = [
+        ...(sourceUrl ? [{
+          title: importedUrl?.source || domainFromUrl(sourceUrl),
+          publisher: importedUrl?.source || domainFromUrl(sourceUrl),
+          url: sourceUrl,
+          source_type: "URL"
+        }] : []),
+        ...textSources.map((source, index) => ({
+          title: source.name || source.fileName || `Textquelle ${index + 1}`,
+          publisher: source.name || source.fileName || "",
+          url: source.url || "",
+          source_type: source.type || source.mimeType || "Textquelle"
+        })),
+        ...imageSources.map((source, index) => ({
+          title: source.name || source.fileName || `Bildquelle ${index + 1}`,
+          publisher: source.name || source.fileName || "",
+          url: "",
+          source_type: source.type || source.mimeType || "Bildquelle"
+        }))
+      ];
       await upsert("editorialContent", {
         id: articleId,
         title: cleanHeadline,
         headline: cleanHeadline,
-        subtitle: draft.subline || draft.subtitle || "",
-        subline: draft.subline || draft.subtitle || "",
-        introText: draft.subline || draft.subtitle || "",
-        shortText: draft.subline || draft.subtitle || "",
-        teaserText: draft.subline || draft.subtitle || "",
-        bodyText: draft.body || draft.bodyText || "",
+        subtitle: "",
+        subline: "",
+        introText: "",
+        shortText: "",
+        teaserText: "",
+        bodyText: rawText,
+        ai_original_suggested_text: rawText,
+        source_suggested_text: rawText,
+        imported_full_text: rawText,
+        source_full_text: rawText,
         page: "news",
         section: "news",
         key: `news.${articleId}`,
         slug: slugify(cleanHeadline),
-        category: draft.category || "News",
+        category: "KI-News-Import",
         tags,
         primary_keyword: tags[0] || "",
         keyword_json: tags.map((tag, index) => ({ keyword: tag, relevance_score: index === 0 ? 90 : 70 })),
         source_snapshot_json: sourceSnapshot,
-        thumbnail_idea: draft.thumbnail_idea || draft.thumbnailIdea || "",
-        thumbnail_prompt: draft.thumbnail_prompt || draft.thumbnailPrompt || "",
-        thumbnail_alt: draft.thumbnail_alt || draft.thumbnailAlt || cleanHeadline,
+        original_url: sourceUrl,
+        source_url: sourceUrl,
+        thumbnail_idea: "",
+        thumbnail_prompt: "",
+        thumbnail_alt: cleanHeadline,
         imageUrl,
         thumbnail_url: imageUrl,
         assetUrl: imageUrl,
@@ -6516,29 +7121,32 @@ function wireActions() {
         assetType: imageUrl ? "image" : "",
         assetStoragePath,
         galleryId,
-        gallery_suggestions: draft.gallery_suggestions || draft.gallerySuggestions || [],
+        gallery_suggestions: [],
         editorial_note: [
-          draft.editorial_note || draft.editorialNote || "",
+          "KI-News-Import: Inhalt wurde als Quellenbasis uebernommen. Keine automatische Veroeffentlichung.",
           unsupportedTextFiles.length ? `PDF/DOCX-Text bitte pruefen oder separat einfuegen: ${unsupportedTextFiles.join(", ")}` : ""
         ].filter(Boolean).join("\n\n"),
-        relevance_score: Number(draft.relevance_score || draft.relevanceScore || 0),
-        relevance_reason: draft.relevance_reason || draft.relevanceReason || "",
-        visible: true,
-        status: "published",
-        visibility: "public",
-        author_type: "ai",
-        author_name: "KI-Redaktion",
-        generation_origin: "manual_news_import",
+        relevance_score: 0,
+        relevance_reason: "",
+        visible: false,
+        status: "draft",
+        visibility: "internal",
+        author_type: "ki_news_import",
+        author_name: "KI-News-Import",
+        generation_origin: "ki_news_import",
         ai_log_json: {
-          import_flow: "manual_news_import",
+          import_flow: "ki_news_import",
+          raw_import_only: true,
+          no_ai_interpretation: true,
           no_status_logic: true,
-          visible: true,
+          visible: false,
+          sourceUrl,
           textSourceCount: textSources.length,
           imageSourceCount: imageFiles.length,
-          localOnly: Boolean(result.localOnly)
+          unsupportedTextFiles
         },
-        publishDate: now.slice(0, 10),
-        validFrom: now.slice(0, 10),
+        publishDate: "",
+        validFrom: importedUrl?.publishedAt || now.slice(0, 10),
         createdAt: now,
         updatedAt: now
       });
@@ -6550,7 +7158,7 @@ function wireActions() {
         domain: source.url ? domainFromUrl(source.url) : "",
         url: source.url || "",
         source_type: source.source_type || source.sourceType || "Importquelle",
-        relevance_note: "Aus dem manuellen News-Import uebernommen. Redaktionell pruefen.",
+        relevance_note: "Aus dem Rohimport uebernommen.",
         claim_reference: "",
         trust_score: 0,
         check_status: "ungeprueft",
@@ -6564,20 +7172,41 @@ function wireActions() {
         keyword_type: index === 0 ? "Hauptkeyword" : "Branchenkeyword",
         relevance_score: index === 0 ? 90 : 70,
         is_primary: index === 0,
-        explanation: "Aus dem manuellen News-Import abgeleitet.",
+        explanation: "Aus dem Rohimport uebernommen.",
         ai_generated: true,
         manually_confirmed: false,
         created_at: now,
         updated_at: now
       })));
-      if (output) output.innerHTML = `<div class="alert alert--success">News wurde importiert und ist im Newsbereich sichtbar. Der Editor wird geoeffnet.</div>`;
+      if (output) output.innerHTML = `<div class="alert alert--success">KI-News-Import wurde als Entwurf gespeichert. Redaktion > News bearbeiten wird geoeffnet.</div>`;
       window.location.hash = `#/cms/edit?module=editorialContent&id=${encodeURIComponent(articleId)}&section=news`;
     } catch (error) {
-      if (output) output.innerHTML = `<div class="alert alert--error">News-Import fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+      if (output) output.innerHTML = `<div class="alert alert--error">KI-News-Import fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
     } finally {
       if (submitButton) submitButton.disabled = false;
     }
   });
+
+  const newsImportForm = document.querySelector("#ai-news-import-form");
+  if (newsImportForm) {
+    const hashQuery = String(window.location.hash || "").split("?")[1] || "";
+    const query = new URLSearchParams(hashQuery);
+    const sourceUrl = normalizedImportUrl(query.get("sourceUrl") || "");
+    const autoImportKey = `ai-news-import:${sourceUrl}`;
+    if (sourceUrl && query.get("autoImport") === "1" && sessionStorage.getItem(autoImportKey) !== "1") {
+      sessionStorage.setItem(autoImportKey, "1");
+      window.setTimeout(async () => {
+        if (document.body.contains(newsImportForm)) {
+          try {
+            await importUrlIntoNewsImportForm(newsImportForm, sourceUrl);
+          } catch (error) {
+            const output = newsImportForm.querySelector("#ai-news-import-result");
+            if (output) output.innerHTML = `<div class="alert alert--error">URL konnte nicht in den KI-News-Import geladen werden: ${escapeHtml(error.message || String(error))}</div>`;
+          }
+        }
+      }, 120);
+    }
+  }
 
   document.querySelector("#ai-news-import-form input[name='sourceFiles']")?.addEventListener("change", (event) => {
     renderAiNewsImportFileList(event.currentTarget.closest("form"));
@@ -6606,27 +7235,119 @@ function wireActions() {
     const button = event.currentTarget;
     const output = document.querySelector("#ai-morning-briefing-result") || document.querySelector("#ai-editorial-run-result");
     const originalLabel = button.textContent;
+    const startedAt = Date.now();
+    let sourcePool = [];
+    let progressTimer = null;
+    let liveSourcePublications = 0;
+    let livePollRunning = false;
+    const refreshLiveFinds = async () => {
+      if (livePollRunning) return;
+      livePollRunning = true;
+      try {
+        liveSourcePublications = Math.max(liveSourcePublications, await countMorningRawFindsSince(startedAt));
+      } catch {
+        // Live-Zaehler ist Komfortanzeige; der eigentliche Scan laeuft unabhaengig weiter.
+      } finally {
+        livePollRunning = false;
+      }
+    };
+    const renderMorningStatus = (stepIndex = null, result = null, done = false) => {
+      if (!output) return;
+      const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+      const fallbackStep = elapsedSeconds < 2
+        ? 0
+        : elapsedSeconds < 6
+          ? 1
+          : elapsedSeconds < 35
+            ? 2
+            : elapsedSeconds < 55
+              ? 3
+              : elapsedSeconds < 90
+                ? 4
+                : 5;
+      const sourceIndex = Math.max(0, Math.floor(elapsedSeconds / 3));
+      const liveResult = {
+        ...(result || {}),
+        sourcePublications: Math.max(Number(result?.sourcePublications || result?.source_publications || 0), liveSourcePublications),
+        liveSourcePublications
+      };
+      output.innerHTML = `<div class="alert">${morningBriefingStatusMarkup({ startedAt, stepIndex: stepIndex ?? fallbackStep, sourcePool, sourceIndex, result: liveResult, done })}</div>`;
+    };
     button.disabled = true;
     button.textContent = "Briefing laeuft ...";
-    if (output) output.innerHTML = `<div class="alert">${progressMarkup("Vollrecherche startet: alle freigegebenen Quellen werden abgefragt ...", 25)}</div>`;
     try {
-      const research = await generateAiTopicSuggestions({ limit: 10, allSources: true, researchMode: "all_sources" });
+      sourcePool = await morningBriefingSourcePool();
+      renderMorningStatus(1);
+      await refreshLiveFinds();
+      progressTimer = window.setInterval(() => {
+        refreshLiveFinds().finally(() => renderMorningStatus());
+      }, 2500);
+      const research = await generateAiTopicSuggestions({ limit: 10, allSources: true, researchMode: "all_sources", requireLive: true });
+      if (progressTimer) window.clearInterval(progressTimer);
+      liveSourcePublications = Math.max(liveSourcePublications, Number(research?.sourcePublications || research?.source_publications || 0));
       if (output) {
-        const sourceLine = Number(research?.totalSources || 0)
-          ? `${Number(research.researchedSources || 0)} von ${Number(research.totalSources || 0)} Quellen abgearbeitet, ${Number(research.sourcePublications || 0)} Quellenfunde gespeichert.`
-          : "Quellenrecherche abgeschlossen.";
-        output.innerHTML = `<div class="alert">${progressMarkup(`${sourceLine} Briefing wird jetzt aus frischen Funden, Dublettenpruefung und Relevanzbewertung erstellt ...`, 70)}</div>`;
+        renderMorningStatus(4, research);
       }
+      progressTimer = window.setInterval(() => {
+        refreshLiveFinds().finally(() => renderMorningStatus(4, research));
+      }, 2500);
       const result = await runMorningBriefingTask({ mode: "manual" });
+      if (progressTimer) window.clearInterval(progressTimer);
+      liveSourcePublications = Math.max(liveSourcePublications, Number(result?.sourcePublications || result?.source_publications || 0));
       if (output) {
         const researchInfo = Number(research?.totalSources || 0)
           ? `<small>${escapeHtml(`${Number(research.researchedSources || 0)} von ${Number(research.totalSources || 0)} freigegebenen Quellen abgearbeitet. ${Number(research.sourcePublications || 0)} Quellenfunde gespeichert.${research.stoppedByTimeBudget ? " Zeitbudget erreicht; weitere Quellen folgen im naechsten Lauf." : ""}`)}</small>`
           : "";
-        output.innerHTML = `<div class="alert ${result.ok ? "alert--success" : "alert--warning"}">${escapeHtml(result.message || "Morgenbriefing abgeschlossen.")}${researchInfo}</div>`;
+        output.innerHTML = `<div class="alert ${result.ok ? "alert--success" : "alert--warning"}">${morningBriefingStatusMarkup({ startedAt, stepIndex: MORNING_BRIEFING_STEPS.length - 1, done: true, sourcePool, sourceIndex: Math.max(0, sourcePool.length - 1), result: { ...research, ...result, sourcePublications: Math.max(Number(research?.sourcePublications || 0), Number(result?.sourcePublications || 0), liveSourcePublications), liveSourcePublications } })}<strong>${escapeHtml(result.message || "Morgenbriefing abgeschlossen.")}</strong>${researchInfo}</div>`;
       }
       window.setTimeout(render, 900);
     } catch (error) {
+      if (progressTimer) window.clearInterval(progressTimer);
       if (output) output.innerHTML = `<div class="alert alert--error">Morgenbriefing konnte nicht erzeugt werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      if (progressTimer) window.clearInterval(progressTimer);
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  });
+
+  document.querySelector("[data-ai-morning-reset]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const output = document.querySelector("#ai-morning-briefing-result") || document.querySelector("#ai-editorial-run-result");
+    if (!window.confirm("Morgenbriefing-Arbeitsliste zuruecksetzen? Bestehende Artikel bleiben erhalten, Meldungen werden nur archiviert.")) return;
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "...";
+    if (output) output.innerHTML = `<div class="alert">${progressMarkup("Morgenbriefing-Arbeitsliste wird archiviert ...", 35)}</div>`;
+    try {
+      const now = new Date().toISOString();
+      const items = (await list("ai_topic_suggestions")).filter((item) => isMorningBriefingWorkItem(item));
+      const activeItems = items.filter((item) => !["archiviert", "ignoriert"].includes(normalizeMorningKey(item.morning_status || item.status)));
+      let done = 0;
+      for (const item of activeItems) {
+        await upsert("ai_topic_suggestions", {
+          ...item,
+          status: "Archiviert",
+          morning_status: "Archiviert",
+          reset_at: now,
+          updated_at: now
+        });
+        done += 1;
+        if (output) output.innerHTML = `<div class="alert">${progressMarkup(`${done} von ${activeItems.length} Morgenbriefing-Meldungen archiviert ...`, 20 + Math.round((done / Math.max(1, activeItems.length)) * 70))}</div>`;
+      }
+      await upsert("ai_editorial_logs", {
+        id: `ai-editorial-log-${crypto.randomUUID()}`,
+        article_id: "",
+        task_name: "Morgenbriefing_Reset",
+        status: "archived",
+        message: `${activeItems.length} Morgenbriefing-Meldung${activeItems.length === 1 ? "" : "en"} archiviert. Artikel bleiben erhalten.`,
+        found_topics_json: activeItems.map((item) => ({ id: item.id, headline: item.headline || item.title || "", previous_status: item.morning_status || item.status || "" })),
+        created_at: now
+      });
+      if (output) output.innerHTML = `<div class="alert alert--success">${activeItems.length} Morgenbriefing-Meldung${activeItems.length === 1 ? "" : "en"} archiviert. Bestehende Artikel bleiben erhalten.</div>`;
+      window.setTimeout(render, 700);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Reset fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
     } finally {
       button.disabled = false;
       button.textContent = originalLabel;
@@ -6639,37 +7360,37 @@ function wireActions() {
     const output = document.querySelector("#ai-morning-briefing-result");
     const submitButton = form.querySelector('button[type="submit"]');
     if (submitButton) submitButton.disabled = true;
-    if (output) output.innerHTML = `<div class="alert">${progressMarkup("Meldungen werden importiert und auf Dubletten geprueft ...", 55)}</div>`;
+    if (output) output.innerHTML = `<div class="alert">${progressMarkup("Meldungen werden importiert ...", 55)}</div>`;
     try {
-      const rows = parseMorningBriefingPipeRows(formObject(form).pipeText || "");
-      if (!rows.length) throw new Error("Bitte mindestens eine Pipe-Zeile einfuegen.");
-      const [existingTopics, existingArticles] = await Promise.all([
+      const parsedRows = parseMorningBriefingPipeRows(formObject(form).pipeText || "");
+      if (!parsedRows.length) throw new Error("Bitte mindestens eine Pipe-Zeile einfuegen.");
+      const [existingTopics, existingArticles, rawData] = await Promise.all([
         list("ai_topic_suggestions").catch(() => []),
-        list("editorialContent").catch(() => [])
+        list("editorialContent").catch(() => []),
+        list("ai_topic_raw_data").catch(() => [])
       ]);
-      const existing = [...existingTopics, ...existingArticles];
+      const rows = enrichMorningRowsWithRawText(parsedRows, rawData);
       const now = new Date().toISOString();
       const saved = [];
       for (const row of rows) {
-        const duplicate = findMorningDuplicate(row, existing.concat(saved));
-        const next = duplicate
-          ? { ...row, status: "Dublette", morning_status: "Dublette", duplicate_of: duplicate.id || duplicate.headline || duplicate.title || "", updated_at: now }
-          : row;
+        const next = { ...row, status: "Neu", morning_status: "Neu", duplicate_of: "", updated_at: now };
         await upsert("ai_topic_suggestions", next);
         saved.push(next);
       }
+      const fullTextCount = saved.filter((item) => normalizeMorningText(item.full_text || item.fullText || "").length > normalizeMorningText(item.summary || "").length + 80).length;
       await upsert("ai_editorial_logs", {
         id: `ai-editorial-log-${crypto.randomUUID()}`,
         article_id: "",
         task_name: "Morgenbriefing_Import",
-        status: saved.some((item) => item.status === "Dublette") ? "warning" : "imported",
-        message: `${saved.length} Morgenbriefing-Meldung${saved.length === 1 ? "" : "en"} importiert.`,
+        status: "imported",
+        message: `${saved.length} Morgenbriefing-Meldung${saved.length === 1 ? "" : "en"} importiert. ${fullTextCount} mit Quellenvolltext.`,
         found_topics_json: saved,
-        duplicate_check_json: { duplicates: saved.filter((item) => item.status === "Dublette").length },
-        ai_check_json: { status: "nicht freigegeben", publication_status: "pruefpflichtig" },
+        duplicate_check_json: { disabled: true },
+        source_ingest_json: { full_text_items: fullTextCount, raw_items_checked: rawData.length },
+        ai_check_json: { status: "vorbereitet", publication_status: "Entwurf" },
         created_at: now
       });
-      if (output) output.innerHTML = `<div class="alert alert--success">${saved.length} Meldung${saved.length === 1 ? "" : "en"} importiert. Dubletten wurden markiert.</div>`;
+      if (output) output.innerHTML = `<div class="alert alert--success">${saved.length} Meldung${saved.length === 1 ? "" : "en"} importiert. ${fullTextCount} mit Quellenvolltext verknuepft.</div>`;
       form.reset();
       window.setTimeout(render, 900);
     } catch (error) {
@@ -6681,7 +7402,7 @@ function wireActions() {
 
   document.querySelectorAll("[data-ai-morning-status]").forEach((button) => button.addEventListener("click", async () => {
     const id = button.dataset.aiMorningStatus;
-    const status = button.dataset.status || "Pruefpflichtig";
+    const status = button.dataset.status || "Neu";
     const output = document.querySelector("#ai-morning-briefing-result");
     if (!id) return;
     const originalLabel = button.textContent;
@@ -6701,6 +7422,70 @@ function wireActions() {
     }
   }));
 
+  document.querySelectorAll("[data-ai-morning-delete]").forEach((button) => button.addEventListener("click", async () => {
+    const id = button.dataset.aiMorningDelete;
+    const output = document.querySelector("#ai-morning-briefing-result");
+    if (!id) return;
+    if (!window.confirm("Diese Morgenbriefing-Meldung verwerfen und aus der Arbeitsliste loeschen? Bestehende Artikel bleiben erhalten.")) return;
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Loesche ...";
+    try {
+      const item = await getOne("ai_topic_suggestions", id).catch(() => null);
+      await remove("ai_topic_suggestions", id);
+      await upsert("ai_editorial_logs", {
+        id: `ai-editorial-log-${crypto.randomUUID()}`,
+        article_id: "",
+        task_name: "Morgenbriefing_Verwerfen",
+        status: "deleted",
+        message: "Morgenbriefing-Meldung verworfen und aus der Arbeitsliste geloescht.",
+        found_topics_json: item ? [{ id: item.id, headline: item.headline || item.title || "" }] : [{ id }],
+        created_at: new Date().toISOString()
+      });
+      if (output) output.innerHTML = `<div class="alert alert--success">Meldung verworfen und aus der Morgenbriefing-Arbeitsliste geloescht.</div>`;
+      window.setTimeout(render, 500);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Meldung konnte nicht verworfen werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
+
+  document.querySelectorAll("[data-ai-morning-article-delete]").forEach((button) => button.addEventListener("click", async () => {
+    const articleId = button.dataset.aiMorningArticleDelete;
+    const output = document.querySelector("#ai-morning-briefing-result");
+    if (!articleId) return;
+    if (!window.confirm("Diesen Briefing-Artikel aus der Liste entfernen? Der oeffentliche News-Beitrag wird geloescht, falls er nur als Entwurf existiert.")) return;
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "...";
+    try {
+      const article = await getOne("editorialContent", articleId).catch(() => null);
+      await remove("editorialContent", articleId);
+      const [sources, keywords] = await Promise.all([
+        list("article_sources").catch(() => []),
+        list("article_keywords").catch(() => [])
+      ]);
+      await Promise.all([
+        ...sources.filter((source) => source.article_id === articleId || source.articleId === articleId).map((source) => remove("article_sources", source.id)),
+        ...keywords.filter((keyword) => keyword.article_id === articleId || keyword.articleId === articleId).map((keyword) => remove("article_keywords", keyword.id))
+      ]);
+      const morningId = article?.morning_briefing_item_id || article?.topic_suggestion_id || article?.source_item_id || "";
+      if (morningId) {
+        const item = await getOne("ai_topic_suggestions", morningId).catch(() => null);
+        if (item) await upsert("ai_topic_suggestions", { ...item, article_id: "", articleId: "", status: "Briefing", morning_status: "Briefing", updated_at: new Date().toISOString() });
+      }
+      if (output) output.innerHTML = `<div class="alert alert--success">Briefing-Artikel wurde entfernt.</div>`;
+      window.setTimeout(render, 500);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Briefing-Artikel konnte nicht entfernt werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
+
   document.querySelectorAll("[data-ai-morning-create-article]").forEach((button) => button.addEventListener("click", async () => {
     const id = button.dataset.aiMorningCreateArticle;
     const output = document.querySelector("#ai-morning-briefing-result");
@@ -6712,11 +7497,36 @@ function wireActions() {
     try {
       const item = await getOne("ai_topic_suggestions", id);
       if (!item) throw new Error("Morgenbriefing-Meldung nicht gefunden.");
-      const normalizedStatus = normalizeMorningKey(item.morning_status || item.status);
-      if (normalizedStatus.includes("dublette") || normalizedStatus.includes("archiviert")) {
-        throw new Error("Aus Dubletten oder archivierten Meldungen wird kein Artikel erzeugt.");
+      let briefingItem = item;
+      const sourceUrl = normalizedImportUrl(item.original_url || item.originalUrl || item.source_url || item.sourceUrl || item.url || "");
+      if (sourceUrl) {
+        if (output) output.innerHTML = `<div class="alert">${progressMarkup("Quelle wird geoeffnet und Text wird importiert ...", 45)}</div>`;
+        try {
+          const imported = await importNewsUrlText(sourceUrl);
+          if (imported?.text) {
+            briefingItem = {
+              ...item,
+              headline: item.headline || item.title || imported.title || "",
+              title: item.title || item.headline || imported.title || "",
+              summary: item.summary || item.teaser || limitText(imported.text, 360),
+              teaser: item.teaser || item.summary || limitText(imported.text, 360),
+              full_text: imported.text,
+              fullText: imported.text,
+              source_full_text: imported.text,
+              imported_full_text: imported.text,
+              source: item.source || imported.source || domainFromUrl(sourceUrl),
+              source_name: item.source_name || item.sourceName || imported.source || domainFromUrl(sourceUrl),
+              original_url: sourceUrl,
+              source_url: sourceUrl,
+              first_seen: item.first_seen || item.firstSeen || imported.publishedAt || new Date().toISOString()
+            };
+          }
+        } catch (importError) {
+          console.warn("Morgenbriefing-Quelle konnte nicht live importiert werden, Kurzfassung wird genutzt.", importError);
+          if (output) output.innerHTML = `<div class="alert alert--warning">Quelle konnte nicht automatisch importiert werden. Es wird die gespeicherte Kurzfassung in den Editor uebernommen.</div>`;
+        }
       }
-      const article = await morningArticleDraftFromItem(item);
+      const article = await morningArticleDraftFromItem(briefingItem);
       const existingArticle = await getOne("editorialContent", article.id).catch(() => null);
       await upsert("editorialContent", { ...(existingArticle || {}), ...article, createdAt: existingArticle?.createdAt || article.createdAt, updatedAt: new Date().toISOString() });
       await Promise.all((article.source_snapshot_json || []).map((source, index) => upsert("article_sources", {
@@ -6730,7 +7540,7 @@ function wireActions() {
         relevance_note: "Aus Morgenbriefing-Meldung uebernommen. Redaktionell vor Veroeffentlichung pruefen.",
         claim_reference: item.summary || "",
         trust_score: Number(source.trust_score || 0),
-        check_status: source.check_status || "Pruefpflichtig",
+        check_status: source.check_status || "redaktionell pruefen",
         created_at: existingArticle?.createdAt || new Date().toISOString(),
         updated_at: new Date().toISOString()
       })));
@@ -6756,8 +7566,8 @@ function wireActions() {
         morning_status: "Artikel erstellt",
         updated_at: new Date().toISOString()
       });
-      if (output) output.innerHTML = `<div class="alert alert--success">Artikelentwurf wurde im vorhandenen Editor angelegt.</div>`;
-      window.location.hash = `#/cms/ai-editorial/editor?id=${encodeURIComponent(article.id)}`;
+      if (output) output.innerHTML = `<div class="alert alert--success">News-Entwurf wurde im vorhandenen Beitragseditor angelegt.</div>`;
+      window.location.hash = `#/cms/edit?module=editorialContent&id=${encodeURIComponent(article.id)}&section=news`;
     } catch (error) {
       if (output) output.innerHTML = `<div class="alert alert--error">Artikel konnte nicht erzeugt werden: ${escapeHtml(error.message || String(error))}</div>`;
     } finally {
@@ -6838,6 +7648,12 @@ function wireActions() {
           shortText,
           teaserText: shortText,
           bodyText,
+          ai_original_suggested_text: bodyText,
+          source_suggested_text: bodyText,
+          themenabsatz: suggestion.themenabsatz || suggestion.themen_absatz || "",
+          pdtv_ansatz: suggestion.pdtv_ansatz || suggestion.pdtvAnsatz || "",
+          quellenhinweis: suggestion.quellenhinweis || suggestion.quellen_hinweis || "",
+          quellenstatus: suggestion.quellenstatus || suggestion.quellen_status || suggestion.source_status || "",
           page: "news",
           section: "news",
           key: `news.${articleId}`,
@@ -6856,9 +7672,9 @@ function wireActions() {
           thumbnail_prompt: thumbnailPrompt,
           thumbnail_url: thumbnailUrl,
           imageUrl: thumbnailUrl,
-          source_status: (suggestion.source_candidates || []).length || (suggestion.source_ids || []).length ? "Quelle vorhanden" : "Recherche erforderlich",
-          duplicate_status: suggestion.duplicate_status ? `Hinweis: ${suggestion.duplicate_status}` : "nicht blockierend",
-          ai_check_status: "Warnung",
+          source_status: (suggestion.source_candidates || []).length || (suggestion.source_ids || []).length ? "Quelle vorhanden" : "Quelle bitte redaktionell pruefen",
+          duplicate_status: "nicht geprueft",
+          ai_check_status: "vorbereitet",
           legal_check_status: "offen",
           publication_status: "Entwurf",
           status: "draft",
@@ -6871,7 +7687,7 @@ function wireActions() {
           ai_log_json: {
             manual_flow: true,
             source_note: "Eine valide Quelle reicht fuer die Themenliste. Weitere Quellen koennen im Editor ergaenzt werden.",
-            note: "Aus redaktionell ausgewaehltem Themenvorschlag angelegt. Text, Quellen, Thumbnail, Audio, Keywords und Rubrik im Editor ausarbeiten. Dublettenhinweise blockieren die Themenliste nicht."
+            note: "Aus redaktionell ausgewaehltem Themenvorschlag angelegt. Text, Quellen, Thumbnail, Audio, Keywords und Rubrik im Editor ausarbeiten. Die Redaktion entscheidet ueber Verwerfen, Bearbeiten und Veroeffentlichen."
           },
           createdAt: now,
           updatedAt: now
@@ -6909,8 +7725,12 @@ function wireActions() {
           updated_at: now
         });
       }
-      if (output) output.innerHTML = `<div class="alert alert--success">${createdArticleIds.length} Beitrag/Beitraege wurden als Entwurf angelegt. Die Beitragsliste wird geoeffnet.</div>`;
-      window.setTimeout(() => { window.location.hash = "#/cms/ai-editorial/articles"; }, 700);
+      if (output) output.innerHTML = `<div class="alert alert--success">${createdArticleIds.length} Beitrag/Beitraege wurden als Entwurf angelegt. ${createdArticleIds.length === 1 ? "Der Beitragseditor wird geoeffnet." : "Die Beitragsliste wird geoeffnet."}</div>`;
+      window.setTimeout(() => {
+        window.location.hash = createdArticleIds.length === 1
+          ? `#/cms/ai-editorial/editor?id=${encodeURIComponent(createdArticleIds[0])}`
+          : "#/cms/ai-editorial/articles";
+      }, 700);
     } catch (error) {
       if (output) output.innerHTML = `<div class="alert alert--error">Queue konnte nicht aktualisiert werden: ${escapeHtml(error.message || String(error))}</div>`;
     }
@@ -7389,7 +8209,7 @@ function wireActions() {
     const action = button.dataset.aiArticleAction;
     const originalLabel = button.textContent;
     button.disabled = true;
-    button.textContent = "Pruefe ...";
+    button.textContent = "...";
     try {
       const article = await getOne("editorialContent", articleId);
       if (!article) throw new Error("Artikel wurde nicht gefunden.");
@@ -7412,7 +8232,11 @@ function wireActions() {
       let status = "warning";
 
       if (action === "preview") {
-        window.location.hash = `#/news/${articleId}`;
+        const publicSlug = article.slug || articleId;
+        const isPublicArticle = article.visible === true && article.visibility !== "internal" && !["draft", "archived"].includes(String(article.status || "").toLowerCase());
+        window.location.hash = isPublicArticle
+          ? `#/news/${encodeURIComponent(publicSlug)}`
+          : `#/cms/edit?module=editorialContent&id=${encodeURIComponent(articleId)}&section=news`;
         return;
       }
 
@@ -7488,16 +8312,16 @@ function wireActions() {
       }
 
       if (action === "sources") {
-        update.source_status = hasEnoughSources ? "geprueft" : "unzureichend";
-        message = hasEnoughSources ? "Quellenpruefung bestanden." : "Quellenlage unzureichend - mindestens zwei gepruefte Quellen mit Trust-Score ab 70 erforderlich.";
-        status = hasEnoughSources ? "success" : "blocked";
+        update.source_status = sources.length ? "Quelle vorhanden" : "Quelle bitte redaktionell pruefen";
+        message = sources.length ? "Quellenhinweise wurden als redaktionelle Information gespeichert." : "Quelle bitte redaktionell pruefen.";
+        status = "success";
       }
 
       if (action === "mapClaims") {
         if (!sources.length) {
-          update.source_status = "unzureichend";
-          message = "Keine Quellen vorhanden, Belege koennen nicht zugeordnet werden.";
-          status = "blocked";
+          update.source_status = "Quelle bitte redaktionell pruefen";
+          message = "Keine Quelle hinterlegt. Quelle bitte redaktionell pruefen.";
+          status = "warning";
         } else {
           const bodyLead = String(article.bodyText || article.body || "").split(/[.!?]\s/).filter(Boolean).slice(0, 2).join(". ");
           await Promise.all(sources.map((source, index) => upsert("article_sources", {
@@ -7511,10 +8335,10 @@ function wireActions() {
             check_status: Number(source.trust_score || 0) >= 70 ? "geprueft" : "teilweise geprueft",
             updated_at: new Date().toISOString()
           })));
-          update.source_status = hasEnoughSources ? "geprueft" : "teilweise geprueft";
-          update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "pruefpflichtig";
-          message = "Belegstellen wurden den Quellen zugeordnet. Bitte danach KI-Pruefung starten.";
-          status = hasEnoughSources ? "success" : "warning";
+          update.source_status = "Quelle vorhanden";
+          update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "Entwurf";
+          message = "Quellenhinweise wurden dem Beitrag zugeordnet.";
+          status = "success";
         }
       }
 
@@ -7552,6 +8376,52 @@ function wireActions() {
         status = "success";
       }
 
+      if (action === "compareRewrite") {
+        const editForm = document.querySelector("#ai-article-edit-form");
+        const formValues = editForm?.dataset.articleId === articleId ? formObject(editForm) : {};
+        const existingText = String(formValues.bodyText || article.bodyText || article.body || "").trim();
+        const suggestedText = String(article.ai_original_suggested_text || article.aiOriginalSuggestedText || article.source_suggested_text || "").trim();
+        const preparedText = existingText || suggestedText || safeLocalArticleDraft(article, sources, keywords);
+        if (output) output.innerHTML = `<div class="alert">${progressMarkup("Beitragstext-Prompt wird angewendet ...", 55)}</div>`;
+        let revisedText = "";
+        try {
+          revisedText = await generateAiArticleBodyWithNewsPrompt({
+            article: {
+              ...article,
+              bodyText: existingText || preparedText,
+              ai_original_suggested_text: suggestedText || preparedText,
+              source_suggested_text: article.source_suggested_text || suggestedText || preparedText
+            },
+            formValues: { ...formValues, bodyText: existingText || preparedText },
+            sources,
+            keywords
+          });
+        } catch (error) {
+          console.warn("Cloud-Neufassung nicht erreichbar, lokale Arbeitsfassung genutzt.", error);
+          revisedText = neutralEditorialRewrite({
+            sourceText: preparedText,
+            headline: formValues.headline || article.headline || article.title || "",
+            subline: formValues.subline || article.subline || article.subtitle || "",
+            targetWords: Math.max(180, Math.min(520, countWords(preparedText) || 360))
+          });
+          if (output) output.innerHTML = `<div class="alert">Cloud-KI ist gerade nicht erreichbar. Eine lokale Arbeitsfassung wurde geoeffnet.</div>`;
+        }
+        showAiArticleRewriteDialog({
+          article: {
+            ...article,
+            bodyText: existingText || preparedText,
+            ai_original_suggested_text: suggestedText || preparedText,
+            source_suggested_text: article.source_suggested_text || suggestedText || preparedText
+          },
+          formValues: { ...formValues, bodyText: existingText || preparedText },
+          sources,
+          keywords,
+          revisedText
+        });
+        if (output && revisedText) output.innerHTML = `<div class="alert alert--success">Neufassung wurde vorbereitet.</div>`;
+        return;
+      }
+
       if (action === "thumbnail") {
         if (output) output.innerHTML = `<div class="alert">${progressMarkup("Thumbnail wird erzeugt ...", 45)}</div>`;
         const editForm = document.querySelector("#ai-article-edit-form");
@@ -7579,7 +8449,7 @@ function wireActions() {
         update.thumbnail_url = thumbnailUrl;
         update.thumbnail_idea = articleForThumbnail.thumbnail_idea || "Serioeses redaktionelles Vorschaubild fuer die digitale Medienwirtschaft.";
         update.thumbnail_prompt = generatedPrompt || defaultAiEditorialThumbnailPrompt;
-        update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "pruefpflichtig";
+        update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "Entwurf";
         message = "Thumbnail wurde lokal erzeugt und am Artikel gespeichert.";
         status = "success";
       }
@@ -7589,22 +8459,22 @@ function wireActions() {
         const formValues = editForm?.dataset.articleId === articleId ? formObject(editForm) : {};
         const generatedKeywords = keywords.length ? keywords : localEditorialKeywords({ ...article, ...formValues }, article.tags || []);
         Object.assign(update, localSeoPayload({ ...article, ...formValues }, generatedKeywords));
-        update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "pruefpflichtig";
+        update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "Entwurf";
         message = "SEO-Titel, Meta-Beschreibung, Slug und SEO-Keywords wurden automatisch erzeugt.";
         status = "success";
       }
 
       if (action === "draftText") {
         update.bodyText = safeLocalArticleDraft(article, sources, keywords);
-        update.ai_check_status = "Warnung";
-        update.publication_status = "pruefpflichtig";
+        update.ai_check_status = "vorbereitet";
+        update.publication_status = "Entwurf";
         update.final_check_json = {
           status: "Warnung",
-          blockers: ["claim_level_source_mapping_required", "manual_review_required"],
-          note: "Lokaler Arbeitsentwurf erzeugt. Keine Veroeffentlichung ohne Aussage-zu-Quelle-Pruefung."
+          blockers: [],
+          note: "Lokaler Arbeitsentwurf erzeugt. Redaktion entscheidet ueber weitere Bearbeitung."
         };
-        message = "Redaktioneller Arbeitsentwurf wurde vorbereitet. Veroeffentlichung bleibt bis zur Belegstellenpruefung blockiert.";
-        status = "warning";
+        message = "Redaktioneller Arbeitsentwurf wurde vorbereitet.";
+        status = "success";
       }
 
       if (action === "headline") {
@@ -7616,7 +8486,7 @@ function wireActions() {
         update.title = cleanHeadline;
         update.headline = cleanHeadline;
         update.slug = article.slug || slugify(cleanHeadline);
-        update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "pruefpflichtig";
+        update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "Entwurf";
         message = "Headline wurde vorbereitet.";
         status = "success";
       }
@@ -7625,12 +8495,12 @@ function wireActions() {
         const optimized = optimizeLocalEditorialText(article.bodyText || article.body || "");
         if (!optimized) {
           message = "Textoptimierung nicht moeglich: Beitragstext fehlt.";
-          status = "blocked";
+          status = "warning";
         } else {
           update.bodyText = optimized;
-          update.ai_check_status = "Warnung";
-          update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "pruefpflichtig";
-          message = "Text wurde redaktionell geglaettet. Bitte Pruefung erneut starten.";
+          update.ai_check_status = "vorbereitet";
+          update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "Entwurf";
+          message = "Text wurde redaktionell geglaettet.";
           status = "success";
         }
       }
@@ -7641,19 +8511,19 @@ function wireActions() {
         update.subtitle = summary;
         update.seoDescription = localSeoDescription({ ...article, subline: summary });
         update.seo_description = update.seoDescription;
-        update.ai_check_status = "Warnung";
-        update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "pruefpflichtig";
+        update.ai_check_status = "vorbereitet";
+        update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "Entwurf";
         message = "Zusammenfassung wurde als Subline und Meta-Beschreibung vorbereitet.";
         status = "success";
       }
 
       if (action === "confirmClaims") {
         if (!hasEnoughSources) {
-          update.source_status = "unzureichend";
-          update.publication_status = "gesperrt wegen Quellenlage";
-          update.ai_check_status = "nicht bestanden";
-          message = "Belegpruefung blockiert: Es fehlen mindestens zwei gepruefte Quellen.";
-          status = "blocked";
+          update.source_status = sources.length ? "Quelle vorhanden" : "Quelle bitte redaktionell pruefen";
+          update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "Entwurf";
+          update.ai_check_status = "vorbereitet";
+          message = "Quelle bitte redaktionell pruefen.";
+          status = "warning";
         } else {
           const cleanBody = String(article.bodyText || "")
             .replace(/Dieser Arbeitsentwurf fasst noch keine externen Fakten als gesichert zusammen\.?\s*/i, "")
@@ -7666,55 +8536,33 @@ function wireActions() {
             blockers: [],
             note: "Manuelle Bestaetigung im lokalen CMS-Workflow."
           };
-          message = "Belegpruefung wurde manuell bestaetigt. Starte danach KI-Pruefung und Freigabe.";
+          message = "Quellenhinweise wurden redaktionell bestaetigt.";
           status = "success";
         }
       }
 
       if (action === "check") {
         const unresolvedDraft = /sicherer Themenvorschlag|lokale KI-Redaktion|Noch keine finale zentrale Aussage|Arbeitsentwurf|Belegstellen fehlen/i.test(String(article.bodyText || ""));
-        const blockers = [
-          hasEnoughSources ? "" : "Quellenlage unzureichend",
-          duplicateBlocked ? "Dublette erkannt" : "",
-          article.bodyText ? "" : "Beitragstext fehlt",
-          unresolvedDraft ? "Aussage-zu-Quelle-Pruefung fehlt" : "",
-          article.headline || article.title ? "" : "Headline fehlt",
-          article.subline || article.subtitle ? "" : "Subline fehlt",
-          article.primary_keyword || keywords.length ? "" : "Keywords fehlen"
-        ].filter(Boolean);
-        update.source_status = hasEnoughSources ? "geprueft" : "unzureichend";
-        update.ai_check_status = blockers.length ? "Warnung" : "bestanden";
-        update.publication_status = blockers.length ? "pruefpflichtig" : "freigegeben";
-        message = blockers.length ? `KI-Pruefung mit Warnungen: ${blockers.join(", ")}.` : "KI-Pruefung bestanden. Beitrag kann freigegeben werden.";
-        status = blockers.length ? "warning" : "success";
+        update.source_status = sources.length ? "Quelle vorhanden" : "Quelle bitte redaktionell pruefen";
+        update.ai_check_status = "vorbereitet";
+        update.publication_status = article.publication_status === "veroeffentlicht" ? article.publication_status : "Entwurf";
+        message = "Beitrag ist als Entwurf vorbereitet. Die Redaktion entscheidet ueber Bearbeitung und Veroeffentlichung.";
+        status = "success";
       }
 
       if (action === "approve") {
-        const unresolvedDraft = /sicherer Themenvorschlag|lokale KI-Redaktion|Noch keine finale zentrale Aussage|Arbeitsentwurf|Belegstellen fehlen/i.test(String(article.bodyText || ""));
-        if (!hasEnoughSources || duplicateBlocked || unresolvedDraft) {
-          update.publication_status = !hasEnoughSources ? "gesperrt wegen Quellenlage" : duplicateBlocked ? "gesperrt wegen Dublette" : "pruefpflichtig";
-          update.ai_check_status = "nicht bestanden";
-          message = !hasEnoughSources ? "Freigabe blockiert: Quellenlage unzureichend." : duplicateBlocked ? "Freigabe blockiert: Dublette erkannt." : "Freigabe blockiert: Aussage-zu-Quelle-Pruefung fehlt.";
-          status = "blocked";
-        } else {
-          update.source_status = "geprueft";
-          update.ai_check_status = "bestanden";
-          update.publication_status = "freigegeben";
-          message = "Beitrag wurde freigegeben.";
-          status = "success";
-        }
+        update.source_status = sources.length ? "Quelle vorhanden" : "Quelle bitte redaktionell pruefen";
+        update.ai_check_status = "vorbereitet";
+        update.publication_status = "freigegeben";
+        message = "Beitrag wurde redaktionell freigegeben.";
+        status = "success";
       }
 
       if (action === "publish") {
         const editForm = document.querySelector("#ai-article-edit-form");
         const formValues = editForm?.dataset.articleId === articleId ? formObject(editForm) : {};
         const publicationTarget = formValues.publication_target || article.publication_target || article.publicationTarget || "news";
-        const candidate = { ...article, ...update };
-        if (!articleCanPublish(candidate)) {
-          update.publication_status = "pruefpflichtig";
-          message = "Veroeffentlichung blockiert: Es fehlen noch bestandene Pruefungen oder Pflichtfelder.";
-          status = "blocked";
-        } else if (publicationTarget === "topic" || publicationTarget === "monthly_topic") {
+        if (publicationTarget === "topic" || publicationTarget === "monthly_topic") {
           const cleanTitle = String(formValues.headline || article.headline || article.title || "KI-Thema").replace(/^Themenvorschlag:\s*/i, "").trim();
           const topicId = article.published_topic_id || article.topic_id || article.slug || slugify(cleanTitle) || `ki-topic-${crypto.randomUUID()}`;
           await upsert("topics", {
@@ -7767,10 +8615,10 @@ function wireActions() {
       if (action === "block") {
         update.status = "draft";
         update.visibility = "internal";
-        update.publication_status = "gesperrt wegen redaktioneller Pruefung";
-        update.ai_check_status = "nicht bestanden";
-        message = "Beitrag wurde gesperrt.";
-        status = "blocked";
+        update.publication_status = "Entwurf";
+        update.ai_check_status = "vorbereitet";
+        message = "Beitrag wurde als interner Entwurf gespeichert.";
+        status = "success";
       }
 
       await upsert("editorialContent", { ...article, ...update });
@@ -7781,7 +8629,7 @@ function wireActions() {
         keywordResult: keywords,
         aiCheck: { status: update.ai_check_status || article.ai_check_status || "" }
       });
-      if (output) output.innerHTML = `<div class="alert ${status === "success" ? "alert--success" : status === "blocked" ? "alert--error" : "alert--warning"}">${escapeHtml(message)}</div>`;
+      if (output) output.innerHTML = `<div class="alert ${status === "success" ? "alert--success" : "alert--warning"}">${escapeHtml(message)}</div>`;
       window.setTimeout(render, 700);
     } catch (error) {
       if (output) output.innerHTML = `<div class="alert alert--error">${escapeHtml(error.message || String(error))}</div>`;
@@ -7814,6 +8662,8 @@ function wireActions() {
         key: article.key || `news.${articleId}`,
         primary_keyword: values.primary_keyword || "",
         bodyText: values.bodyText || "",
+        ai_original_suggested_text: article.ai_original_suggested_text || article.aiOriginalSuggestedText || article.source_suggested_text || article.bodyText || article.body || values.bodyText || "",
+        source_suggested_text: article.source_suggested_text || article.ai_original_suggested_text || article.aiOriginalSuggestedText || article.bodyText || article.body || values.bodyText || "",
         introText: values.introText || "",
         shortText: values.introText || "",
         teaserText: values.introText || "",
@@ -7826,16 +8676,16 @@ function wireActions() {
         seo_description: values.seoDescription || "",
         seoKeywords: values.seoKeywords || "",
         seo_keywords: values.seoKeywords || "",
-        publication_status: article.publication_status === "veroeffentlicht" ? article.publication_status : "pruefpflichtig",
-        ai_check_status: article.publication_status === "veroeffentlicht" ? article.ai_check_status : "Warnung",
+        publication_status: article.publication_status === "veroeffentlicht" ? article.publication_status : "Entwurf",
+        ai_check_status: article.publication_status === "veroeffentlicht" ? article.ai_check_status : "vorbereitet",
         updatedAt: new Date().toISOString()
       };
       await upsert("editorialContent", updated);
-      await writeAiArticleLog(articleId, "warning", "Artikel wurde manuell bearbeitet und wieder auf pruefpflichtig gesetzt.", {
+      await writeAiArticleLog(articleId, "success", "Artikel wurde manuell bearbeitet und als Entwurf gespeichert.", {
         aiCheck: { status: updated.ai_check_status },
         sourceCheck: { source_status: updated.source_status || "" }
       });
-      if (output) output.innerHTML = `<div class="alert alert--success">Aenderungen gespeichert. Bitte Pruefung erneut starten.</div>`;
+      if (output) output.innerHTML = `<div class="alert alert--success">Aenderungen gespeichert.</div>`;
       form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: { id: articleId } }));
       window.setTimeout(render, 700);
     } catch (error) {
@@ -7879,21 +8729,21 @@ function wireActions() {
       const article = await getOne("editorialContent", articleId);
       const articleSources = (await list("article_sources")).filter((source) => source.article_id === articleId || source.articleId === articleId);
       const checkedSources = articleSources.filter((source) => source.check_status === "geprueft" && Number(source.trust_score || 0) >= 70);
-      const sourceStatus = checkedSources.length >= 2 ? "geprueft" : articleSources.length ? "teilweise geprueft" : "Recherche erforderlich";
+      const sourceStatus = articleSources.length ? "Quelle vorhanden" : "Quelle bitte redaktionell pruefen";
 
       await upsert("editorialContent", {
         ...(article || { id: articleId }),
         source_status: sourceStatus,
-        publication_status: article?.publication_status === "veroeffentlicht" ? article.publication_status : "pruefpflichtig",
-        ai_check_status: article?.ai_check_status === "bestanden" && checkedSources.length >= 2 ? article.ai_check_status : "Warnung",
+        publication_status: article?.publication_status === "veroeffentlicht" ? article.publication_status : "Entwurf",
+        ai_check_status: article?.publication_status === "veroeffentlicht" ? article.ai_check_status : "vorbereitet",
         updatedAt: now
       });
-      await writeAiArticleLog(articleId, "warning", "Quelle wurde manuell erfasst. Quellenstatus aktualisiert.", {
+      await writeAiArticleLog(articleId, "success", "Quelle wurde manuell erfasst. Quellenhinweis aktualisiert.", {
         usedSources: articleSources,
         sourceCheck: { source_status: sourceStatus, checkedSources: checkedSources.length }
       });
       if (output) {
-        output.innerHTML = `<div class="alert alert--success">Quelle gespeichert. ${checkedSources.length >= 2 ? "Quellenstatus ist geprueft." : "Fuer die Freigabe sind mindestens zwei gepruefte Quellen mit Trust-Score ab 70 noetig."}</div>`;
+        output.innerHTML = `<div class="alert alert--success">Quelle gespeichert. Die Redaktion entscheidet ueber die weitere Verwendung.</div>`;
       }
       form.reset();
       window.setTimeout(render, 700);
@@ -8932,6 +9782,54 @@ function wireActions() {
     }
   }));
 
+  document.querySelectorAll("[data-news-publish-now]").forEach((button) => button.addEventListener("click", async () => {
+    const articleId = button.dataset.newsPublishNow;
+    const form = button.closest("form");
+    const result = form?.querySelector("#content-save-result");
+    const originalLabel = button.textContent;
+    if (!articleId) return;
+    button.disabled = true;
+    button.textContent = "Veroeffentliche ...";
+    if (result) result.innerHTML = `<div class="alert">Beitrag wird gespeichert und veroeffentlicht...</div>`;
+    try {
+      if (form?.matches("#content-edit-form")) {
+        await submitFormAndWait(form);
+      }
+      const existing = await getOne("editorialContent", articleId);
+      if (!existing) throw new Error("News-Beitrag nicht gefunden.");
+      const today = new Date().toISOString().slice(0, 10);
+      const titleForSlug = existing.title || existing.headline || existing.name || articleId;
+      const published = {
+        ...existing,
+        slug: existing.slug || String(titleForSlug)
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 90) || articleId,
+        page: "news",
+        section: "news",
+        status: "published",
+        visibility: "public",
+        visible: true,
+        publishDate: existing.publishDate || existing.validFrom || today,
+        validFrom: existing.validFrom || existing.publishDate || today,
+        updatedAt: new Date().toISOString()
+      };
+      await upsert("editorialContent", published);
+      if (result) {
+        result.innerHTML = `<div class="alert alert--success">Beitrag ist veroeffentlicht und im Redaktionsbereich unter News sichtbar. <a href="#/cms/editorial/news">Zur News-Liste</a> · <a href="/?real=1#/news/${escapeHtml(articleId)}" target="_blank" rel="noopener">Artikel anzeigen</a></div>`;
+        result.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+      window.setTimeout(render, 700);
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Veroeffentlichen fehlgeschlagen: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
+
   document.querySelector("[data-admin-member-select]")?.addEventListener("change", (event) => {
     const memberId = event.currentTarget.value || "";
     if (!memberId) return;
@@ -9249,6 +10147,87 @@ function wireActions() {
     await render();
   }));
 
+  const newsBulkItems = Array.from(document.querySelectorAll("[data-news-bulk-item]"));
+  if (newsBulkItems.length) {
+    const selectAllControls = Array.from(document.querySelectorAll("[data-news-bulk-select-all]"));
+    const clearButton = document.querySelector("[data-news-bulk-clear]");
+    const hideButton = document.querySelector("[data-news-bulk-hide]");
+    const deleteButton = document.querySelector("[data-news-bulk-delete]");
+    const countLabel = document.querySelector("[data-news-bulk-count]");
+    const result = document.querySelector("#news-bulk-result");
+    const selectedIds = () => newsBulkItems.filter((item) => item.checked).map((item) => item.dataset.newsBulkItem).filter(Boolean);
+    const syncBulkState = () => {
+      const ids = selectedIds();
+      const allSelected = ids.length > 0 && ids.length === newsBulkItems.length;
+      selectAllControls.forEach((control) => {
+        control.checked = allSelected;
+        control.indeterminate = ids.length > 0 && ids.length < newsBulkItems.length;
+      });
+      if (hideButton) hideButton.disabled = ids.length === 0;
+      if (deleteButton) deleteButton.disabled = ids.length === 0;
+      if (countLabel) countLabel.textContent = `${ids.length} ausgewaehlt`;
+    };
+    newsBulkItems.forEach((item) => item.addEventListener("change", syncBulkState));
+    selectAllControls.forEach((control) => control.addEventListener("change", () => {
+      newsBulkItems.forEach((item) => { item.checked = control.checked; });
+      syncBulkState();
+    }));
+    clearButton?.addEventListener("click", () => {
+      newsBulkItems.forEach((item) => { item.checked = false; });
+      syncBulkState();
+    });
+    hideButton?.addEventListener("click", async () => {
+      const ids = selectedIds();
+      if (!ids.length) return;
+      hideButton.disabled = true;
+      if (result) result.innerHTML = `<div class="alert">Ausgewaehlte News werden unsichtbar geschaltet ...</div>`;
+      try {
+        const now = new Date().toISOString();
+        await Promise.all(ids.map(async (id) => {
+          const existing = await getOne("editorialContent", id);
+          if (!existing) return;
+          await upsert("editorialContent", {
+            ...existing,
+            visible: false,
+            visibility: "internal",
+            status: "draft",
+            page: "news",
+            section: "news",
+            updatedAt: now
+          });
+        }));
+        if (result) result.innerHTML = `<div class="alert alert--success">${ids.length} News unsichtbar geschaltet.</div>`;
+        window.setTimeout(render, 350);
+      } catch (error) {
+        if (result) result.innerHTML = `<div class="alert alert--error">Sammelaktion fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+      } finally {
+        hideButton.disabled = false;
+      }
+    });
+    deleteButton?.addEventListener("click", async () => {
+      const ids = selectedIds();
+      if (!ids.length) return;
+      if (!window.confirm(`${ids.length} ausgewaehlte News wirklich loeschen?`)) return;
+      deleteButton.disabled = true;
+      if (result) result.innerHTML = `<div class="alert">Ausgewaehlte News werden geloescht ...</div>`;
+      try {
+        await Promise.all(ids.map(async (id) => {
+          const record = await getOne("editorialContent", id);
+          if (!record) return;
+          await deleteStoredAsset(record);
+          await remove("editorialContent", id);
+        }));
+        if (result) result.innerHTML = `<div class="alert alert--success">${ids.length} News geloescht.</div>`;
+        window.setTimeout(render, 350);
+      } catch (error) {
+        if (result) result.innerHTML = `<div class="alert alert--error">Loeschen fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+      } finally {
+        deleteButton.disabled = false;
+      }
+    });
+    syncBulkState();
+  }
+
   document.querySelectorAll("[data-event-status]").forEach((button) => button.addEventListener("click", async () => {
     const existing = await getOne("events", button.dataset.eventStatus);
     const updates = { ...existing, status: button.dataset.status };
@@ -9276,6 +10255,24 @@ function wireActions() {
     const registrations = (await list("registrations")).filter((item) => item.eventId === event.id);
     await downloadRegistrationsCsv(event, registrations);
   }));
+
+  const memberSearch = document.querySelector("[data-member-search]");
+  if (memberSearch) {
+    const applyMemberSearch = () => {
+      const term = String(memberSearch.value || "").trim().toLowerCase();
+      const cards = Array.from(document.querySelectorAll("[data-member-card]"));
+      let visibleCount = 0;
+      cards.forEach((card) => {
+        const match = !term || String(card.dataset.search || card.textContent || "").toLowerCase().includes(term);
+        card.hidden = !match;
+        if (match) visibleCount += 1;
+      });
+      const empty = document.querySelector("[data-member-empty]");
+      if (empty) empty.hidden = visibleCount > 0;
+    };
+    memberSearch.addEventListener("input", applyMemberSearch);
+    applyMemberSearch();
+  }
 
   document.querySelectorAll("[data-setup-action]").forEach((button) => button.addEventListener("click", async () => {
     const output = document.querySelector("#setup-result");
@@ -9307,11 +10304,25 @@ async function clearPreviewCaches() {
   }
 }
 
+async function resetInstalledAppCachesIfRequested() {
+  const params = new URLSearchParams(location.search || "");
+  if (!params.has("resetApp")) return false;
+  await clearPreviewCaches();
+  params.delete("resetApp");
+  params.set("v", "682");
+  const nextSearch = params.toString();
+  location.replace(`${location.origin}${location.pathname}${nextSearch ? `?${nextSearch}` : ""}${location.hash || "#/home"}`);
+  return true;
+}
+
 if (["localhost", "127.0.0.1"].includes(location.hostname)) {
   clearPreviewCaches();
 } else if ("serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
-onRouteChange(render);
-render();
-waitForAuthReady().finally(render);
+resetInstalledAppCachesIfRequested().then((didReset) => {
+  if (didReset) return;
+  onRouteChange(render);
+  render();
+  waitForAuthReady().finally(render);
+});

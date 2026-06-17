@@ -1,4 +1,4 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=464";
 import { list, getOne, upsert, resetLocalCollection } from "../firebase/dataService.js?v=466";
 import { localPreviewMode } from "../firebase/firebaseClient.js";
 import { authDebugState, currentUser, canUseCms } from "../firebase/authService.js?v=466";
@@ -89,15 +89,17 @@ function defaultSystemPrompt(type, label) {
       "Aufgabe: Erzeuge fuer die PROdigitalTV KI-Redaktion nur belastbare redaktionelle Nachrichtenthemen fuer die Themenliste.",
       "Strategie: Dies ist Stufe 1. Es entstehen keine fertigen Artikel. Die Ausgabe ist eine redaktionelle Auswahl echter aktueller Nachrichtenfunde. Der vollstaendige Beitrag wird erst in Stufe 2 nach manueller Auswahl im Editor erzeugt.",
       "Wenn aus den Quellen nur wenige ausreichend belegbare aktuelle Nachrichtenthemen ableitbar sind, liefere wenige. Keine Luecken mit schwachen, generischen oder technischen Crawler-Funden auffuellen.",
-      "Jeder Eintrag braucht eine journalistische Headline, eine kurze Subline und einen Teaser mit 1 bis 2 Saetzen zum Nachrichteninhalt selbst: Was ist passiert und warum ist es fuer die Medienbranche relevant?",
+      "Jeder Eintrag braucht eine journalistische Headline, eine kurze Subline, einen Themenabsatz mit 4 bis 6 Saetzen und einen eigenen PDTv-Ansatz mit 2 bis 4 Saetzen.",
+      "Der Themenabsatz erklaert: worum es geht, warum es aktuell ist, welche Akteure oder Bereiche betroffen sind und welche Bedeutung das Thema fuer die Medienbranche hat.",
+      "Der PDTv-Ansatz ordnet sachlich ein, warum das Thema fuer TV, Streaming, Produktion, Plattformen, Mediatheken, Distribution, Vermarktung, Technologie oder Regulierung relevant ist.",
       "Keine Meta-Sprache in sichtbaren Feldern: nicht Themenkandidat, nicht Vorschlag, nicht redaktionell pruefen, nicht Quellenfund, nicht erklaeren wie der Fund entstanden ist.",
       "Jeder Vorschlag muss ein konkretes Thema aus TV, Streaming, Digitalmedien, Medienrecht, Produktion, KI, Distribution, Vermarktung, HbbTV, OTT, FAST-Channels, Barrierefreiheit oder Plattformregulierung sein.",
       "Keine Boulevardmeldungen, keine reinen Personenmeldungen, keine Programmhinweise, keine Navigationstexte, keine Sitemaps, keine Presseportal-Startseiten, keine generischen Quellenbeschreibungen.",
       "Bewerte Aktualitaet, Branchenrelevanz und Gesamt-Relevanz jeweils 0-100.",
-      "Gib zusaetzlich Kategorie, 5-8 Keywords, Quellenkandidaten, Quellenstatus und Veroeffentlichungsdatum der Quelle falls bekannt aus.",
+      "Gib zusaetzlich Kategorie, 5-8 Keywords, Quellenhinweis, Quellenstatus, Quellenkandidaten und Veroeffentlichungsdatum der Quelle falls bekannt aus.",
       "Nur Themen, die ein Redakteur auswaehlt, duerfen in die Themen-Queue uebernommen und danach als Beitrag erzeugt werden.",
       "Keine Quellen, Zahlen, Studien, URLs oder Fakten erfinden. Wenn Live-Quellen fehlen, Quellenstatus als Recherche erforderlich kennzeichnen.",
-      "Ausgabeformat: JSON-Array mit maximal 10 Objekten, aber nur wenn sie Qualitaet haben: title, headline, subline, teaser, category, keywords, actuality_score, industry_score, relevance_score, source_status, reason, source_candidates, source_publication_date."
+      "Ausgabeformat: JSON-Array mit maximal 10 Objekten, aber nur wenn sie Qualitaet haben: title, headline, subline, themenabsatz, pdtv_ansatz, keywords, quellenhinweis, quellenstatus, category, priority, thumbnail_idea, actuality_score, industry_score, relevance_score, source_status, reason, source_candidates, source_publication_date."
     ].join("\n")
     : type === "Beitragstext"
       ? [
@@ -105,8 +107,9 @@ function defaultSystemPrompt(type, label) {
         "Ziel: Der Text soll wie ein von einem Redakteur geschriebener Branchenartikel wirken: konkrete Nachricht zuerst, danach Einordnung. Keine Platzhalter, keine allgemeinen Branchenfloskeln, kein Text ueber den Redaktionsprozess.",
         "Nutze nur die gelieferten Daten aus {{THEMA}}, {{KATEGORIE}}, {{QUELLEN}}, {{HEADLINE}}, {{SUBLINE}}, {{KEYWORDS}}, {{SPRACHSTIL}}, {{TEXTLAENGE}}, {{HEUTIGES_DATUM}} und vorhandene Quellenauszuege.",
         "Arbeite quellenorientiert: Identifiziere zuerst den Nachrichtenkern aus der Quelle. Uebernimm konkrete Akteure, Orte, Termine, Produkte, Entscheidungen, Zahlen, Verfahren, Zitate oder Rechtsfragen nur dann, wenn sie in den gelieferten Quellen stehen.",
-        "Wenn die Quellen nur Titel, URL oder Quellenname ohne inhaltlichen Auszug liefern, schreibe keinen scheinbar fertigen Beitrag. Gib dann stattdessen einen kurzen redaktionellen Arbeitsentwurf mit klarer Kennzeichnung: Quelleninhalt fehlt fuer fertigen Beitrag, und liste die fehlenden Informationen.",
+        "Wenn die Quellen nur Titel, URL oder Quellenname ohne inhaltlichen Auszug liefern, schreibe keinen scheinbar fertigen Beitrag. Gib dann nur den belegten Nachrichtenkern aus und lasse fehlende Abschnitte weg.",
         "Keine Fakten, Zahlen, Zitate, Namen, Studien, Quellen oder URLs erfinden. Wenn eine Information nicht belegbar ist, lasse sie weg. Nicht mit Saetzen wie Medienanbieter muessen einordnen oder die Entwicklung ist fuer die Branche relevant auffuellen, wenn kein konkreter Befund folgt.",
+        "Keine pauschalen Einschaetzungen und keine Fuellphrasen: nicht 'relevant fuer PROdigitalTV', nicht 'Einordnungsbedarf', nicht 'fuer die Branche wichtig', nicht 'Medienunternehmen sollten'. Nur konkrete Folgen nennen, wenn sie aus der Quelle belegbar sind.",
         "Der fertige Beitrag hat 300 bis 400 Woerter, aber nur wenn die Quellen genug Substanz liefern. Er beantwortet konkret: Was ist passiert? Wer ist beteiligt? Wann oder wo passiert es? Was aendert sich? Warum ist das fuer TV, Streaming, Produktion, Plattformen, Verlage oder digitale Distribution relevant?",
         "Den Haupttext eigenstaendig redaktionell strukturieren: Lead mit Nachricht, zweiter Absatz mit Quellenfakten, danach Einordnung und Folgen. Keine Satz-fuer-Satz-Paraphrase, aber auch keine abstrakte Nacherzaehlung.",
         "Beim Neuformulieren den Kern der Aussagen bewahren: konkrete Akteure, Daten, Verfahren, Zahlen, Rechtsfragen, Marktfolgen und zentrale Ursache-Wirkung-Beziehungen nicht verwässern und nicht durch allgemeine Branchenfloskeln ersetzen.",
@@ -120,7 +123,7 @@ function defaultSystemPrompt(type, label) {
         "Keine Meta-Sprache im Beitrag: nicht Arbeitsentwurf, nicht Themenkandidat, nicht Vorschlag, nicht Quellenfund, nicht redaktionell pruefen, nicht Freischaltung, nicht CMS, nicht Redakteur.",
         "Keine technischen oder organisatorischen Hinweise an die Redaktion. Die Aufgabe ist die Information des Beitrags, nicht die Beschreibung eines Workflows.",
         "Ausgabeformat: Headline, Subline, Beitragstext, Kategorie, Keywords, Thumbnail-Idee.",
-        "Wenn die Informationen duenn sind, schreibe keinen aufgeblasenen Artikel, sondern einen kurzen Arbeitsentwurf mit Recherchebedarf."
+        "Wenn die Informationen duenn sind, schreibe keinen aufgeblasenen Artikel. Kuerze den Beitrag auf die belegten Fakten statt mit allgemeinen Bewertungen oder Recherchehinweisen aufzufuellen."
       ].join("\n")
     : [
       `Aufgabe: ${label} fuer die PROdigitalTV KI-Redaktion.`,
@@ -408,7 +411,61 @@ function sourceCards(sources) {
   </article>`).join("");
 }
 
-function articleRows(articles) {
+function compactSourceLabel(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const host = raw.replace(/^https?:\/\//i, "").replace(/^www\./i, "").split(/[/?#]/)[0];
+  const base = host || raw;
+  return base
+    .replace(/\.(de|com|org|net|eu|co\.uk)$/i, "")
+    .split(".")
+    .filter(Boolean)
+    .pop()
+    ?.replace(/-/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase()) || raw;
+}
+
+function articleSourceLabel(article = {}) {
+  const sources = Array.isArray(article.source_snapshot_json)
+    ? article.source_snapshot_json
+    : Array.isArray(article.sourceSnapshotJson)
+      ? article.sourceSnapshotJson
+      : Array.isArray(article.sources)
+        ? article.sources
+        : [];
+  const primary = sources.find((source) => source?.publisher || source?.name || source?.source || source?.domain || source?.url) || {};
+  return primary.publisher
+    || primary.name
+    || primary.source
+    || compactSourceLabel(primary.domain || primary.url || article.source || article.publisher || article.original_url || article.source_url)
+    || "-";
+}
+
+function articleShortSummary(article = {}) {
+  const value = article.shortText || article.introText || article.subline || article.subtitle || article.summary || article.teaser || article.bodyText || article.body || "";
+  const clean = cleanPressDisplayText(value);
+  return clean.length > 220 ? `${clean.slice(0, 220).trim()}...` : clean;
+}
+
+function articleRows(articles, options = {}) {
+  if (options.compactArticles) {
+    return articles.map((article) => `<tr>
+      <td><a class="link editorial-title-link" href="#/cms/ai-editorial/editor?id=${encodeURIComponent(article.id)}">${escapeHtml(article.headline || article.title || "-")}</a><small>${escapeHtml(articleShortSummary(article))}</small></td>
+      <td><strong>${escapeHtml(articleSourceLabel(article))}</strong><small>${escapeHtml(articleOrigin(article).label)}</small></td>
+      <td>${escapeHtml(article.category || "-")}</td>
+      <td>${escapeHtml(formatShortDate(articleDisplayDate(article)))}</td>
+      <td><div class="actions ai-morning-row-actions"><a class="button button--secondary button--small" href="#/cms/ai-editorial/editor?id=${encodeURIComponent(article.id)}">Beitrag oeffnen</a><button class="icon-button icon-button--danger" type="button" data-delete-record="editorialContent" data-record-id="${escapeHtml(article.id)}" title="Entfernen" aria-label="Entfernen">${iconTrash}</button></div></td>
+    </tr>`).join("");
+  }
+  if (options.compactMorning) {
+    return articles.map((article) => `<tr>
+      <td><a class="link editorial-title-link" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(article.id)}&section=news">${escapeHtml(article.headline || article.title || "-")}</a><small>${escapeHtml(articleShortSummary(article))}</small></td>
+      <td><strong>${escapeHtml(articleSourceLabel(article))}</strong></td>
+      <td>${escapeHtml(article.category || "-")}</td>
+      <td>${escapeHtml(formatShortDate(articleDisplayDate(article)))}</td>
+      <td><div class="actions ai-morning-row-actions"><a class="button button--secondary button--small" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(article.id)}&section=news">Briefing oeffnen</a><button class="icon-button icon-button--danger" type="button" data-ai-morning-article-delete="${escapeHtml(article.id)}" title="Entfernen" aria-label="Entfernen">${iconTrash}</button></div></td>
+    </tr>`).join("");
+  }
   return articles.map((article) => `<tr>
     <td><a class="link editorial-title-link" href="#/cms/ai-editorial/editor?id=${encodeURIComponent(article.id)}">${escapeHtml(article.headline || article.title || "-")}</a><small>${escapeHtml(cleanPressDisplayText(article.subline || article.subtitle || ""))}</small></td>
     <td>${badge(articleOrigin(article).label)}<small>${escapeHtml(articleOrigin(article).shortNote)}</small></td>
@@ -524,17 +581,19 @@ function morningBriefingRows(items = [], articles = []) {
     const sourceUrl = morningBriefingSourceUrl(item);
     const status = morningBriefingStatus(item);
     const article = articleByItem.get(item.id) || articles.find((candidate) => candidate.id === item.article_id || candidate.id === item.articleId);
-    const disabled = normalizeText(status).includes("dublette") || normalizeText(status).includes("archiviert");
+    const headline = escapeHtml(item.headline || item.title || "-");
     return `<tr>
-      <td><strong>${escapeHtml(item.headline || item.title || "-")}</strong><small>${escapeHtml(item.summary || item.teaser || item.subline || "")}</small>${topicKeywordChips(item)}</td>
+      <td><strong>${sourceUrl ? `<a class="link editorial-title-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noreferrer">${headline}</a>` : headline}</strong><small>${escapeHtml(item.summary || item.teaser || item.subline || "")}</small>${topicKeywordChips(item)}</td>
       <td>${sourceUrl ? `<a class="link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(item.source || item.source_name || item.sourceName || item.publisher || "Quelle")}</a>` : escapeHtml(item.source || item.source_name || item.sourceName || "-")}<small>${escapeHtml(item.source_type || item.sourceType || "")}</small></td>
       <td>${escapeHtml(item.category || item.relevance || "-")}<small>Score ${Number(item.score || item.relevance_score || item.relevanceScore || 0)}</small></td>
       <td>${badge(status)}${item.duplicate_of || item.duplicateOf ? `<small>Dublette: ${escapeHtml(item.duplicate_of || item.duplicateOf)}</small>` : ""}</td>
-      <td><div class="ai-picto-row">
-        ${article ? linkPictogram("ART", "Artikel oeffnen", `#/cms/ai-editorial/editor?id=${encodeURIComponent(article.id)}`) : pictogram("ART", "Artikel erzeugen", `data-ai-morning-create-article="${escapeHtml(item.id)}"`, disabled)}
-        ${pictogram("OK", "Freigeben", `data-ai-morning-status="${escapeHtml(item.id)}" data-status="Freigegeben"`, normalizeText(status).includes("freigegeben"))}
-        ${pictogram("!", "Pruefpflichtig markieren", `data-ai-morning-status="${escapeHtml(item.id)}" data-status="Pruefpflichtig"`)}
-        ${pictogram("X", "Archivieren", `data-ai-morning-status="${escapeHtml(item.id)}" data-status="Archiviert"`)}
+      <td><div class="actions ai-morning-row-actions">
+        ${article
+          ? `<a class="button button--primary button--small" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(article.id)}&section=news">News erstellen</a>`
+          : sourceUrl
+            ? `<a class="button button--primary button--small" href="#/cms/ai-editorial/news-import?sourceUrl=${encodeURIComponent(sourceUrl)}&morningId=${encodeURIComponent(item.id)}&autoImport=1">News erstellen</a>`
+            : `<button class="button button--primary button--small" type="button" data-ai-morning-create-article="${escapeHtml(item.id)}">News erstellen</button>`}
+        <button class="icon-button icon-button--danger" type="button" data-ai-morning-delete="${escapeHtml(item.id)}" title="Verwerfen" aria-label="Verwerfen">${iconTrash}</button>
       </div></td>
     </tr>`;
   }).join("");
@@ -546,8 +605,6 @@ function morningBriefingPipeExample() {
 
 function morningBriefingPanel({ items = [], articles = [], sources = [], logs = [], settings = {} } = {}) {
   const usableItems = items.filter((item) => !["archiviert", "ignoriert"].includes(normalizeText(morningBriefingStatus(item))));
-  const duplicateItems = items.filter((item) => normalizeText(morningBriefingStatus(item)).includes("dublette") || item.duplicate_of || item.duplicateOf);
-  const reviewItems = items.filter((item) => normalizeText(morningBriefingStatus(item)).includes("pruef") || !morningBriefingSourceUrl(item));
   const latestBriefing = sortArticlesNewestFirst(articles.filter(isMorningBriefingArticle))[0];
   const approvedSources = sources.filter((source) => ["bevorzugt", "erlaubt"].includes(normalizeText(source.source_status || source.review_status || source.check_status)));
   const latestMorningLog = latest(logs.filter((log) => normalizeText([log.task_name, log.taskName, log.message].join(" ")).includes("morgenbriefing")), "created_at");
@@ -560,21 +617,24 @@ function morningBriefingPanel({ items = [], articles = [], sources = [], logs = 
           <h2>Morgenbriefing & KI-Redaktion</h2>
           <p class="muted">Tägliche Themenauswahl aus freigegebenen Quellen. Meldungen bleiben Arbeitsdaten der KI-Redaktion; Artikel entstehen als normale Redaktionsbeiträge im vorhandenen Editor.</p>
         </div>
-        <div class="ai-picto-row">${pictogram(">", "Morgenbriefing jetzt erzeugen", "data-ai-morning-briefing-run")}</div>
+        <div class="actions ai-morning-main-actions">
+          <button class="button button--primary" type="button" data-ai-morning-briefing-run>Morgenbriefing erzeugen</button>
+          <button class="button button--secondary" type="button" data-ai-morning-reset>Arbeitsliste resetten</button>
+        </div>
       </div>
       <div class="setup-steps">
         <div class="setup-step"><span>Freigegebene Quellen</span><strong>${approvedSources.length}</strong><small>nur erlaubt / bevorzugt</small></div>
         <div class="setup-step"><span>Arbeitsliste</span><strong>${usableItems.length}</strong><small>5 bis 10 fuer Briefing vorgesehen</small></div>
-        <div class="setup-step"><span>Pruefpflichtig</span><strong>${reviewItems.length}</strong><small>keine automatische Veroeffentlichung</small></div>
-        <div class="setup-step"><span>Dubletten</span><strong>${duplicateItems.length}</strong><small>blockiert</small></div>
+        <div class="setup-step"><span>Zusammenfassungen</span><strong>${articles.filter(isMorningBriefingArticle).length}</strong><small>Morgenbriefings</small></div>
+        <div class="setup-step"><span>Redaktion</span><strong>100%</strong><small>entscheidet selbst</small></div>
       </div>
       <div id="ai-morning-briefing-result"></div>
-      ${latestBriefing ? `<p class="muted">Letztes Briefing: <a class="link" href="#/cms/ai-editorial/editor?id=${encodeURIComponent(latestBriefing.id)}">${escapeHtml(latestBriefing.title || latestBriefing.headline || latestBriefing.id)}</a></p>` : ""}
+      ${latestBriefing ? `<p class="muted">Letztes Briefing: <a class="link" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(latestBriefing.id)}&section=news">${escapeHtml(latestBriefing.title || latestBriefing.headline || latestBriefing.id)}</a></p>` : ""}
       ${latestMorningLog ? `<p class="muted">Letzter Lauf: ${escapeHtml(formatDateTime(latestMorningLog.created_at || latestMorningLog.createdAt || ""))} - ${escapeHtml(latestMorningLog.message || "")}</p>` : ""}
     </section>
     <section class="panel">
       <h2>Pipe-Import fuer Meldungen</h2>
-      <p class="muted">Format: headline|summary|relevance|source|original_url|first_seen|meta. Neue Einträge werden als Morgenbriefing-Meldungen gespeichert und bleiben bis zur Freigabe pruefpflichtig.</p>
+      <p class="muted">Format: headline|summary|relevance|source|original_url|first_seen|meta. Neue Eintraege werden als Morgenbriefing-Meldungen gespeichert und koennen direkt als KI-News-Entwurf geoeffnet werden.</p>
       <form id="ai-morning-briefing-import-form" class="form-grid">
         <div class="field editorial-text-field editorial-text-field--body"><label>Meldungen einfuegen</label><textarea name="pipeText" rows="6" placeholder="${escapeHtml(morningBriefingPipeExample())}"></textarea></div>
         <div class="actions"><button class="button button--primary">Meldungen importieren</button></div>
@@ -585,12 +645,8 @@ function morningBriefingPanel({ items = [], articles = [], sources = [], logs = 
       <div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Meldung</th><th>Quelle</th><th>Kategorie / Score</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${usableItems.length ? morningBriefingRows(usableItems.slice(0, 120), articles) : `<tr><td colspan="5">Noch keine Morgenbriefing-Meldungen vorhanden.</td></tr>`}</tbody></table></div>
     </section>
     <section class="panel">
-      <h2>Pruefpflichtig & Dubletten</h2>
-      <div class="table-wrap"><table class="table"><thead><tr><th>Meldung</th><th>Quelle</th><th>Kategorie / Score</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${[...reviewItems, ...duplicateItems].length ? morningBriefingRows([...reviewItems, ...duplicateItems].slice(0, 80), articles) : `<tr><td colspan="5">Keine blockierten Meldungen.</td></tr>`}</tbody></table></div>
-    </section>
-    <section class="panel">
-      <h2>Vorhandene Briefing-Artikel</h2>
-      <div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Beitrag</th><th>Herkunft</th><th>Kategorie</th><th>Quellen</th><th>Dubletten</th><th>KI-Pruefung</th><th>Status</th><th>Datum</th></tr></thead><tbody>${articles.filter(isMorningBriefingArticle).length ? articleRows(sortArticlesNewestFirst(articles.filter(isMorningBriefingArticle)).slice(0, 40)) : `<tr><td colspan="8">Noch keine Artikel aus Morgenbriefings.</td></tr>`}</tbody></table></div>
+      <h2>Vorhandene Morgenbriefings</h2>
+      <div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Briefing / Short Text</th><th>Quelle</th><th>Kategorie</th><th>Datum</th><th>Aktion</th></tr></thead><tbody>${articles.filter(isMorningBriefingArticle).length ? articleRows(sortArticlesNewestFirst(articles.filter(isMorningBriefingArticle)).slice(0, 40), { compactMorning: true }) : `<tr><td colspan="5">Noch keine Morgenbriefing-Zusammenfassungen.</td></tr>`}</tbody></table></div>
     </section>`;
 }
 
@@ -817,7 +873,7 @@ function fallbackNewsTeaser(topic = {}) {
 }
 
 function topicTeaserText(topic = {}) {
-  const explicit = topic.teaser || topic.teaser_text || topic.teaserText || topic.short_text || topic.shortText || topic.summary;
+  const explicit = topic.teaser || topic.teaser_text || topic.teaserText || topic.themenabsatz || topic.themen_absatz || topic.short_text || topic.shortText || topic.summary;
   const text = String(explicit || "").trim();
   if (text && !/themenkandidat|themenvorschlag|redaktionell pruefen|quellenfund|vorschlag basiert/i.test(text)) return text;
   return fallbackNewsTeaser(topic);
@@ -845,15 +901,20 @@ function topicSuggestionRows(suggestions = [], verifiedSources = [], options = {
       `topic-suggestion-row--${topicDecision(topic)}`,
       publicationState.hasArticle ? "topic-suggestion-row--article" : ""
     ].filter(Boolean).join(" ");
+    const sourceUrl = topicPrimarySourceUrl(topic);
+    const importHref = sourceUrl ? `#/cms/ai-editorial/news-import?sourceUrl=${encodeURIComponent(sourceUrl)}&topicId=${encodeURIComponent(topic.id)}&autoImport=1` : "";
     const actionCell = options.readonly
       ? `<span class="muted">${publicationState.hasArticle ? "Beitrag vorhanden" : "Nicht in Arbeitsliste"}</span>`
       : publicationState.hasArticle
         ? `<span class="ai-status ai-status--success">Beitrag erstellt</span>`
-        : `<button class="button button--primary button--small" type="button" data-ai-topic-create-article="${escapeHtml(topic.id)}">Beitrag erstellen</button>`;
+        : importHref
+          ? `<a class="button button--primary button--small" href="${escapeHtml(importHref)}">News importieren</a>`
+          : `<button class="button button--primary button--small" type="button" data-ai-topic-create-article="${escapeHtml(topic.id)}">News importieren</button>`;
     return `<tr class="${rowClasses}">
     <td>
       ${options.readonly ? `${topicHeadlineLink(topic)}<small>${escapeHtml(topic.subline || topic.headline || "")}</small>` : `<label class="checkbox topic-checkbox"><input type="checkbox" name="topicSuggestionIds" value="${escapeHtml(topic.id)}"><span>${topicHeadlineLink(topic)}<small>${escapeHtml(topic.subline || topic.headline || "")}</small></span></label>`}
       <p class="topic-suggestion-reason">${escapeHtml(topicTeaserText(topic))}</p>
+      ${topic.pdtv_ansatz || topic.pdtvAnsatz ? `<p class="topic-suggestion-reason"><strong>PDTv-Ansatz:</strong> ${escapeHtml(topic.pdtv_ansatz || topic.pdtvAnsatz)}</p>` : ""}
       ${topicKeywordChips(topic)}
     </td>
     <td><strong>${escapeHtml(topic.category || "-")}</strong>${topicSourceSummary(topic, verifiedSources)}</td>
@@ -1007,9 +1068,12 @@ function keywordTopicRows(topics = [], articles = []) {
 }
 
 function isAiEditorialArticle(item = {}) {
-  if (item.generation_origin === "manual_news_import" || item.ai_log_json?.import_flow === "manual_news_import") return false;
   return item.author_type === "ai"
     || item.authorType === "ai"
+    || item.author_type === "ki_news_import"
+    || item.authorType === "ki_news_import"
+    || item.generation_origin === "ki_news_import"
+    || item.ai_log_json?.import_flow === "ki_news_import"
     || item.aiGenerated === true
     || Boolean(item.source_snapshot_json)
     || Boolean(item.sourceSnapshotJson)
@@ -1115,10 +1179,7 @@ function editor(article, sources, keywords, logs) {
   const createLabel = localPreviewMode() ? "Demo-Beitrag erzeugen" : "Neu erzeugen";
   const thumbnailUrl = article.thumbnail_url || article.thumbnailUrl || article.imageUrl || "";
   const audioUrl = article.audioUrl || article.audio_url || "";
-  const canPublish = article.source_status === "geprueft"
-    && !String(article.duplicate_status || "").toLowerCase().includes("dublette")
-    && article.ai_check_status === "bestanden"
-    && ["freigegeben", "geplant", "published", "veroeffentlicht"].includes(article.publication_status || article.status);
+  const canPublish = true;
   return `<div class="ai-editor-shell ai-editor-shell--news-layout">
     <div class="ai-editor-main">
       <div class="ai-editor-head">
@@ -1128,8 +1189,7 @@ function editor(article, sources, keywords, logs) {
       <div class="ai-editor-actions">
         ${pictogram("+", createLabel, 'data-ai-editorial-run="manual"')}
         ${pictogram("O", "Vorschau", `data-ai-article-action="preview" data-article-id="${escapeHtml(article.id)}"`)}
-        ${pictogram("OK", "Pruefen & freigeben", `data-ai-article-action="reviewRelease" data-article-id="${escapeHtml(article.id)}"`)}
-        ${pictogram("!", "Beitrag sperren", `data-ai-article-action="block" data-article-id="${escapeHtml(article.id)}"`)}
+        ${pictogram("OK", "Speichern", `data-ai-article-action="check" data-article-id="${escapeHtml(article.id)}"`)}
       </div>
       <div id="ai-editorial-run-result"></div>
       <div id="ai-article-action-result"></div>
@@ -1139,14 +1199,14 @@ function editor(article, sources, keywords, logs) {
             <div class="editorial-workspace__main">
               <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Titel / Headline</label><div class="ai-field-actions">${pictogram("+", "Headline erzeugen", `data-ai-article-action="headline" data-article-id="${escapeHtml(article.id)}"`)}</div></div><textarea name="headline" rows="2">${escapeHtml(displayHeadline || displayTitle)}</textarea></div>
               <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Subline</label><div class="ai-field-actions">${pictogram("=", "Subline erzeugen", `data-ai-article-action="summary" data-article-id="${escapeHtml(article.id)}"`)}</div></div><textarea name="subline" rows="2" maxlength="90">${escapeHtml(article.subline || article.subtitle || "")}</textarea></div>
-              <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Haupttext</label><div class="ai-field-actions">${pictogram("+", "Text vorbereiten", `data-ai-article-action="draftText" data-article-id="${escapeHtml(article.id)}"`)}${pictogram("R", "Text optimieren", `data-ai-article-action="optimizeText" data-article-id="${escapeHtml(article.id)}"`)}</div></div><textarea name="bodyText">${escapeHtml(article.body || article.bodyText || "")}</textarea></div>
+              <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Haupttext</label><div class="ai-field-actions">${pictogram("R", "Text vorbereiten / vergleichen", `data-ai-article-action="compareRewrite" data-article-id="${escapeHtml(article.id)}"`)}</div></div><textarea name="bodyText">${escapeHtml(article.body || article.bodyText || "")}</textarea></div>
               <div class="field editorial-text-field"><div class="editorial-field-head"><label>Shorttext / Intro</label><div class="ai-field-actions">${pictogram("=", "Kurztext erzeugen", `data-ai-article-action="summary" data-article-id="${escapeHtml(article.id)}"`)}</div></div><textarea name="introText">${escapeHtml(article.introText || article.shortText || article.teaserText || "")}</textarea></div>
             </div>
             <aside class="editorial-tools">
               <section class="editorial-meta-panel">
                 <div class="editorial-tools__head"><p class="eyebrow">Meta</p><h3>Veroeffentlichung</h3></div>
                 <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(article.category || "")}"></div>
-                <div class="field"><label>Status</label><select name="publication_status"><option value="Entwurf" ${article.publication_status === "Entwurf" ? "selected" : ""}>Entwurf</option><option value="pruefpflichtig" ${article.publication_status === "pruefpflichtig" ? "selected" : ""}>Pruefpflichtig</option><option value="freigegeben" ${article.publication_status === "freigegeben" ? "selected" : ""}>Freigegeben</option><option value="veroeffentlicht" ${article.publication_status === "veroeffentlicht" ? "selected" : ""}>Veroeffentlicht</option></select></div>
+                <div class="field"><label>Status</label><select name="publication_status"><option value="Entwurf" ${article.publication_status === "Entwurf" ? "selected" : ""}>Entwurf</option><option value="freigegeben" ${article.publication_status === "freigegeben" ? "selected" : ""}>Freigegeben</option><option value="veroeffentlicht" ${article.publication_status === "veroeffentlicht" ? "selected" : ""}>Veroeffentlicht</option></select></div>
                 <div class="field"><label>Redaktionelles Format</label><select name="publication_target"><option value="news" ${publicationTarget === "news" ? "selected" : ""}>Daily News</option><option value="topic" ${publicationTarget === "topic" ? "selected" : ""}>Langfristiges Thema</option><option value="monthly_topic" ${publicationTarget === "monthly_topic" ? "selected" : ""}>Thema des Monats</option></select></div>
                 <div class="meta-date-row"><div class="field"><label>Geplant fuer</label><input type="date" name="scheduled_date" value="${escapeHtml((article.scheduled_at || article.scheduledAt || "").slice(0, 10))}"></div><div class="field"><label>Veroeffentlicht</label><input type="date" name="published_date" value="${escapeHtml((article.published_at || article.publishedAt || "").slice(0, 10))}"></div></div>
                 <div class="ai-picto-row">${pictogram("UP", "Veroeffentlichen", `data-ai-article-action="publish" data-article-id="${escapeHtml(article.id)}"`, !canPublish)}</div>
@@ -1184,13 +1244,13 @@ function editor(article, sources, keywords, logs) {
               </details>
             </aside>
           </div>
-          <div class="actions"><button class="button button--primary" type="submit">Aenderungen speichern</button><span class="muted">Speichern setzt den Beitrag wieder auf pruefpflichtig.</span></div>
+          <div class="actions"><button class="button button--primary" type="submit">Aenderungen speichern</button><span class="muted">Speichern aktualisiert den Entwurf.</span></div>
           <div id="ai-article-save-result"></div>
         </form>
       </section>
       <section class="panel" id="ai-editor-section-sources" data-ai-editor-section="sources">
         <h2>Quellen</h2>
-        <div class="alert alert--warning">Keine Freigabe ohne mindestens zwei belastbare, gepruefte Quellen. URLs duerfen nicht erfunden werden.</div>
+        <div class="alert">Quellen sind redaktionelle Hinweise. Fehlende oder unklare Quellen bitte im Editor pruefen.</div>
         <div class="ai-picto-row">${pictogram("OK", "Quellen pruefen", `data-ai-article-action="sources" data-article-id="${escapeHtml(article.id)}"`)}${pictogram("Q", "Belege bestaetigen", `data-ai-article-action="confirmClaims" data-article-id="${escapeHtml(article.id)}"`)}</div>
         ${articleSources.length ? `<div class="ai-source-grid">${sourceCards(articleSources)}</div>` : `<p class="muted">Noch keine Quellen gespeichert. Bitte echte Quellen mit erreichbarer URL erfassen.</p>`}
         <form id="ai-article-source-form" data-article-id="${escapeHtml(article.id)}" class="form-grid ai-source-entry-form">
@@ -1211,7 +1271,7 @@ function editor(article, sources, keywords, logs) {
         <div class="table-wrap"><table class="table"><thead><tr><th>Quelle</th><th>Typ</th><th>Status</th><th>Trust</th><th>Link</th></tr></thead><tbody>${articleSources.length ? sourceRows(articleSources) : `<tr><td colspan="5">Noch keine Quellen gespeichert.</td></tr>`}</tbody></table></div>
       </section>
       <section class="panel" id="ai-editor-section-keywords" data-ai-editor-section="keywords"><h2>Keywords</h2><div class="ai-picto-row">${pictogram("+", "Keywords erzeugen", `data-ai-article-action="keywords" data-article-id="${escapeHtml(article.id)}"`)}${pictogram("SEO", "SEO erzeugen", `data-ai-article-action="seo" data-article-id="${escapeHtml(article.id)}"`)}</div><div class="ai-keyword-cloud">${articleKeywords.length ? articleKeywords.map((keyword) => `<span>${escapeHtml(keyword.keyword)} <strong>${Number(keyword.relevance_score || 0)}</strong></span>`).join("") : `<p class="muted">Noch keine Keywords gespeichert.</p>`}</div></section>
-      <section class="panel" id="ai-editor-section-status" data-ai-editor-section="status"><h2>Status & Pruefung</h2><div class="ai-status-stack">${badge(article.source_status || "-")}${badge(article.duplicate_status || "-")}${badge(article.ai_check_status || "-")}${badge(article.legal_check_status || "offen")}${badge(article.publication_status || article.status || "Entwurf")}</div></section>
+      <section class="panel" id="ai-editor-section-status" data-ai-editor-section="status"><h2>Status</h2><div class="ai-status-stack">${badge(article.source_status || "-")}${badge(article.ai_check_status || "-")}${badge(article.publication_status || article.status || "Entwurf")}</div></section>
       <section class="panel" id="ai-editor-section-history" data-ai-editor-section="history"><h2>Verlauf</h2><div class="table-wrap"><table class="table"><thead><tr><th>Zeit</th><th>Aufgabe</th><th>Status</th><th>Meldung</th></tr></thead><tbody>${articleLogs.length ? logRows(articleLogs) : `<tr><td colspan="4">Noch kein Verlauf.</td></tr>`}</tbody></table></div></section>
     </div>
   </div>`;
@@ -1276,6 +1336,9 @@ function demoModeNotice() {
 }
 
 function newsImportPageContent(active) {
+  const hashQuery = String(window.location.hash || "").split("?")[1] || "";
+  const query = new URLSearchParams(hashQuery);
+  const prefillSourceUrl = query.get("sourceUrl") || "";
   return `${cmsTitle("KI-Redaktion", "News importieren")}
     ${nav(active)}
     <section class="panel ai-news-import-panel">
@@ -1283,14 +1346,19 @@ function newsImportPageContent(active) {
         <div>
           <p class="eyebrow">Quellenimport</p>
           <h2>News importieren</h2>
-          <p>Fuegen Sie Text ein oder laden Sie Bild- und Textdateien hoch. Die KI analysiert das Material und erstellt daraus einen redaktionellen News-Beitrag.</p>
+          <p>Fuegen Sie Text ein, tragen Sie eine einzelne URL ein oder laden Sie Bild- und Textdateien hoch. Der Import holt das Material zuerst in diesen KI-News-Importbereich. Erst danach wird daraus ein KI-News-Entwurf erstellt.</p>
         </div>
-        <div class="ai-news-import-badge">visible = false</div>
+        <div class="ai-news-import-badge">KI-News-Import</div>
       </div>
       <form id="ai-news-import-form" class="form-grid">
         <div class="field editorial-text-field editorial-text-field--body">
           <label>Textquelle einfuegen</label>
           <textarea name="sourceText" placeholder="Pressemitteilung, Webseiten-Text, Notizen, Interview, E-Mail oder andere Textquelle hier einfuegen ..."></textarea>
+        </div>
+        <div class="field">
+          <label>Nur URL importieren</label>
+          <input name="sourceUrl" type="url" placeholder="https://..." value="${escapeHtml(prefillSourceUrl)}">
+          <p class="muted">Oeffnet die URL serverseitig und importiert den sichtbaren Beitragstext unveraendert als Quelle. Keine Interpretation, keine Umformulierung.</p>
         </div>
         <label class="ai-news-dropzone" data-ai-news-dropzone>
           <strong>Text- oder Bilddateien hier ablegen</strong>
@@ -1302,7 +1370,7 @@ function newsImportPageContent(active) {
         </div>
         <div class="actions">
           <button class="button button--secondary" type="button" data-ai-news-add-source>+ Quelle hinzufuegen</button>
-          <button class="button button--primary" type="submit">Analysieren & neu formulieren</button>
+          <button class="button button--primary" type="submit">KI-News erstellen</button>
         </div>
         <div id="ai-news-import-result"></div>
       </form>
@@ -1392,7 +1460,7 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
     }).join("");
   const secondaryTopicSection = secondaryTopicSuggestions.length ? `<details class="press-hidden-details topic-secondary-details"><summary><strong>Gespeicherte Themen ausserhalb der Arbeitsliste</strong><span>${secondaryTopicSuggestions.length} uebernommen oder zurueckgestellt</span></summary><p class="muted">Diese Themen bleiben gespeichert, werden aber nicht fuer die direkte Beitragserstellung angeboten.</p><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema / Einordnung</th><th>Kategorie / Quellenhinweis</th><th>Einschaetzung</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${topicSuggestionRows(secondaryTopicSuggestions.slice(0, 120), sources, { readonly: true, articles: aiArticles })}</tbody></table></div></details>` : "";
   const filteredTopicSection = filteredTopicSuggestions.length ? `<details class="press-hidden-details topic-secondary-details"><summary><strong>Aus Keywords/Quellen vorhandene, aber ausgefilterte Themen</strong><span>${filteredTopicSuggestions.length} gespeichert</span></summary><p class="muted">Diese Eintraege sind nicht weg. Sie liegen in den gespeicherten Themenvorschlaegen, werden aber wegen Filterregeln nicht in der Arbeitsliste angezeigt, zum Beispiel Presse-, Event-, Termin-, Navigations- oder unpassende Treffer.</p><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema / Keywords</th><th>Kategorie</th><th>Filtergrund</th><th>Datum</th></tr></thead><tbody>${filteredTopicRows(filteredTopicSuggestions.slice(0, 160))}</tbody></table></div></details>` : "";
-  const topicResearchPanel = `<section class="panel ai-topic-research-panel"><div class="ai-topic-research-hero"><div class="ai-topic-research-copy"><p class="eyebrow">KI-Redaktion</p><h2>Themenrecherche</h2><p>Erstellt Themenvorschlaege aus den hinterlegten Quellen. Eine valide Quelle reicht fuer die Themenliste; Dubletten blockieren die Auswahl nicht.</p><div class="ai-topic-research-facts"><span>1 valide Quelle</span><span>Aktualitaet</span><span>Branchenrelevanz</span></div></div><div class="ai-topic-research-card"><div class="ai-topic-research-controls ai-topic-research-controls--compact"><div class="field"><label>Themenbereich</label><select id="ai-topic-research-category">${topicResearchCategories.map((category) => `<option value="${category === "Alle Themenbereiche" ? "" : escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}</select></div><div class="field"><label>Quelle</label><select id="ai-topic-research-source"><option value="">Alle passenden Quellen</option>${sourceOptions}</select></div><div class="field"><label>Stichworte</label><input id="ai-topic-research-keywords" placeholder="z. B. FAST, GEMA, Voice-Cloning"></div><div class="ai-picto-row ai-topic-research-actions">${pictogram(">", "Recherche starten", "data-ai-topic-research")}</div></div></div></div><div id="ai-topic-research-result"></div><div class="ai-topic-subtools">${rawTopicDataTable}</div>${openSuggestions.length ? `<form id="ai-topic-suggestions-form"><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema / Einordnung</th><th>Kategorie / Quellenhinweis</th><th>Einschaetzung</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${topicSuggestionRows(openSuggestions.slice(0, 120), sources, { articles: aiArticles })}</tbody></table></div><div class="actions"><button class="button button--primary">Ausgewaehlte in Beitragsliste uebernehmen</button></div></form>` : `<div class="alert">Noch keine offenen Themenvorschlaege. Starte eine Themenrecherche.</div>`}${secondaryTopicSection}${filteredTopicSection}</section><section class="panel"><h2>Themen-Queue</h2><div class="table-wrap"><table class="table"><thead><tr><th>Thema</th><th>Kategorie</th><th>Aktualitaet</th><th>Status</th><th>Datum</th></tr></thead><tbody>${queuedTopics.length ? topicQueueRows(queuedTopics) : `<tr><td colspan="5">Noch keine Themen in der Queue.</td></tr>`}</tbody></table></div></section>`;
+  const topicResearchPanel = `<section class="panel ai-topic-research-panel"><div class="ai-topic-research-hero"><div class="ai-topic-research-copy"><p class="eyebrow">KI-Redaktion</p><h2>Themenrecherche</h2><p>Erstellt Themenvorschlaege aus den hinterlegten Quellen. Die KI bereitet vor; die Redaktion entscheidet ueber Bearbeitung und Veroeffentlichung.</p><div class="ai-topic-research-facts"><span>Quellenhinweis</span><span>Aktualitaet</span><span>Branchenrelevanz</span></div></div><div class="ai-topic-research-card"><div class="ai-topic-research-controls ai-topic-research-controls--compact"><div class="field"><label>Themenbereich</label><select id="ai-topic-research-category">${topicResearchCategories.map((category) => `<option value="${category === "Alle Themenbereiche" ? "" : escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}</select></div><div class="field"><label>Quelle</label><select id="ai-topic-research-source"><option value="">Alle passenden Quellen</option>${sourceOptions}</select></div><div class="field"><label>Stichworte</label><input id="ai-topic-research-keywords" placeholder="z. B. FAST, GEMA, Voice-Cloning"></div><div class="ai-picto-row ai-topic-research-actions">${pictogram(">", "Recherche starten", "data-ai-topic-research")}</div></div></div></div><div id="ai-topic-research-result"></div><div class="ai-topic-subtools">${rawTopicDataTable}</div>${openSuggestions.length ? `<form id="ai-topic-suggestions-form"><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema / Einordnung</th><th>Kategorie / Quellenhinweis</th><th>Einschaetzung</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${topicSuggestionRows(openSuggestions.slice(0, 120), sources, { articles: aiArticles })}</tbody></table></div><div class="actions"><button class="button button--primary">KI-News erstellen</button></div></form>` : `<div class="alert">Noch keine offenen Themenvorschlaege. Starte eine Themenrecherche.</div>`}${secondaryTopicSection}${filteredTopicSection}</section><section class="panel"><h2>Themen-Queue</h2><div class="table-wrap"><table class="table"><thead><tr><th>Thema</th><th>Kategorie</th><th>Aktualitaet</th><th>Status</th><th>Datum</th></tr></thead><tbody>${queuedTopics.length ? topicQueueRows(queuedTopics) : `<tr><td colspan="5">Noch keine Themen in der Queue.</td></tr>`}</tbody></table></div></section>`;
   const pressListNotice = sortedPressReleases.length
     ? duplicatePressReleases.length ? `<p class="muted">${duplicatePressReleases.length} Dubletten sind gespeichert, werden aber nicht in der verwertbaren Presseliste angezeigt.</p>` : ""
     : duplicatePressReleases.length ? `<p class="muted">Keine verwertbaren Pressemitteilungen in der Liste. ${duplicatePressReleases.length} gespeicherte Dubletten werden nicht angezeigt.</p>` : "";
@@ -1410,7 +1478,7 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
       <div id="ai-editorial-run-result"></div>`,
     "news-import": newsImportPageContent(active),
     "morning-briefing": morningBriefingPanel({ items: morningBriefingItems, articles, sources, logs, settings }),
-    articles: `${cmsTitle("KI-Redaktion", "Beitraege")}${nav(active)}${demoModeNotice()}<section class="panel"><p class="muted">Neueste Beitraege zuerst.</p><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Beitrag</th><th>Herkunft</th><th>Kategorie</th><th>Quellen</th><th>Dubletten</th><th>KI-Pruefung</th><th>Status</th><th>Datum</th></tr></thead><tbody>${aiArticles.length ? articleRows(aiArticles) : `<tr><td colspan="8">Noch keine KI-Beitraege.</td></tr>`}</tbody></table></div></section><div id="ai-editorial-run-result"></div>`,
+    articles: `${cmsTitle("KI-Redaktion", "Beitraege")}${nav(active)}${demoModeNotice()}<section class="panel"><p class="muted">Neueste Beitraege zuerst.</p><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Beitrag / Short Text</th><th>Quelle</th><th>Kategorie</th><th>Datum</th><th>Aktion</th></tr></thead><tbody>${aiArticles.length ? articleRows(aiArticles, { compactArticles: true }) : `<tr><td colspan="5">Noch keine KI-Beitraege.</td></tr>`}</tbody></table></div></section><div id="ai-editorial-run-result"></div>`,
     press: pressPanel,
     sources: `${cmsTitle("KI-Redaktion", "Quellen")}${nav(active)}<section class="panel"><details class="source-management-details"><summary><strong>Quellen verwalten</strong><span>manuell hinzufuegen, automatisch erweitern, loeschen</span></summary><p class="muted">Quellen koennen manuell ergaenzt oder aus dem Systemkatalog automatisch in die verifizierte Quellenliste uebernommen werden.</p>${verifiedSourceForm()}</details></section><section class="panel"><h2>Quellen nach Themenbereich</h2><p class="muted">Orientierungsliste fuer die Themenrecherche. Die Quellen sind noch keine Belege fuer einen Artikel; die konkrete Belegpruefung erfolgt im Editor.</p>${sourceCategoryBlocks(sources)}</section><section class="panel"><h2>Alle verifizierten Quellen</h2><div class="table-wrap"><table class="table"><thead><tr><th>Nr.</th><th>Quelle</th><th>Typ</th><th>Status</th><th>Trust</th><th>Link</th><th>Aktion</th></tr></thead><tbody>${sources.length ? sourceRows(sources, { numbered: true, manageable: true }) : `<tr><td colspan="7">Noch keine Quellen erfasst.</td></tr>`}</tbody></table></div></section>`,
     suggestions: `${cmsTitle("KI-Redaktion", "Quellenvorschlaege")}${nav(active)}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Quelle</th><th>Typ</th><th>Status</th><th>Trust</th><th>Aktion</th></tr></thead><tbody>${sourceSuggestions.length ? sourceSuggestions.map((source) => `<tr><td><strong>${escapeHtml(source.name || source.title || "-")}</strong><small>${escapeHtml(source.suggestion_reason || source.domain || "")}</small></td><td>${escapeHtml(source.source_type || "-")}</td><td>${badge(source.review_status || "vorgeschlagen")}</td><td>${Number(source.suggested_trust_score || source.trust_score || 0)}</td><td><button class="button button--secondary button--small" data-ai-source-review="${escapeHtml(source.id)}" data-review-status="in Pruefung">in Pruefung</button></td></tr>`).join("") : `<tr><td colspan="5">Keine neuen Quellenvorschlaege.</td></tr>`}</tbody></table></div></section><div id="ai-source-review-result"></div>`,

@@ -1,9 +1,9 @@
-import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=467";
-import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=466";
-import { firebaseEnabled, localPreviewMode, realDataMode } from "../firebase/firebaseClient.js";
-import { publicShell, logo } from "../components/layout.js?v=4";
+import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=469";
+import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=467";
+import { firebaseEnabled, localPreviewMode, realDataMode } from "../firebase/firebaseClient.js?v=2";
+import { publicShell, logo } from "../components/layout.js?v=5";
 import { eventCard, topicCard } from "../components/cards.js?v=2";
-import { accessLabels, lifecycleLabels, members as fallbackMembers } from "../data/demoData.js";
+import { accessLabels, lifecycleLabels } from "../data/demoData.js";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
 
 function editorialThumbDataUrl(title = "", label = "", context = "") {
@@ -179,38 +179,56 @@ function publicEventMediaAsset(event = {}, mediaAssets = []) {
     })[0];
 }
 
-const currentMemberFallbackIds = new Set([
-  "bibel-tv",
+const currentMemberIds = new Set([
+  "bibel-tv-stiftung",
   "channel-21",
-  "dsc",
-  "ors",
-  "moderne-werbung",
+  "kj-technical-consulting-klaus-juli",
+  "dsc-dietmar-schickel-consulting",
+  "ors-comm",
+  "buero-fuer-moderne-werbung-tv",
+  "markus-vogelbacher",
   "blu-tec-one",
   "house-of-research",
+  "goldvisite-media",
   "schneider-enterprise",
   "fashion-tv-production",
-  "stingray-music",
-  "eutelsat",
+  "stingray-digital-international",
+  "eutelsat-services-beteiligungen",
   "farbi-flora",
   "anixe-hd",
   "js-consult",
+  "thorsten-lork",
   "red-bull-media-house",
   "hardy-heine",
   "no-limits-media",
   "itsmaxsuhr",
+  "major-seven-consulting",
+  "sebastian-labonte",
+  "michael-kayser",
   "idee-medien",
-  "labcom",
-  "3q"
+  "conrad-heberling",
+  "tv-2000plus",
+  "3q",
+  "johannes-kors",
+  "claudio-malasomma-bellavista"
 ]);
 
+function publicMemberTypeKey(member = {}) {
+  const value = String(member.membershipType || member.membership_type || member.membershipLabel || member.memberType || member.membershipKind || member.category || "").toLowerCase();
+  if (/(unternehmens|firmen|company|um\b)/i.test(value)) return "company";
+  if (/(einzel|individual|em\b)/i.test(value)) return "individual";
+  return "";
+}
+
 async function publicManagedMembers() {
-  const liveMembers = (await list("members"))
-    .filter((member) => ["company", "individual"].includes(member.membershipType || "") && member.visible !== false && !memberAccessBlocked(member) && !["inactive", "cancelled", "archived"].includes(member.status || ""))
+  const liveMembers = (await list("members").catch(() => []))
+    .filter((member) => publicMemberTypeKey(member)
+      && member.visible !== false
+      && !memberAccessBlocked(member)
+      && !["inactive", "cancelled", "archived"].includes(member.status || ""))
     .sort((a, b) => Number(a.sortOrder ?? 999) - Number(b.sortOrder ?? 999) || String(a.name || "").localeCompare(String(b.name || ""), "de"));
   if (liveMembers.length) return liveMembers;
-  return fallbackMembers
-    .filter((member) => currentMemberFallbackIds.has(member.id))
-    .sort((a, b) => Number(a.sortOrder ?? 999) - Number(b.sortOrder ?? 999) || String(a.name || "").localeCompare(String(b.name || ""), "de"));
+  return [];
 }
 
 function publicEditorialMediaAsset(item = {}, mediaAssets = []) {
@@ -351,7 +369,8 @@ function articleParagraphs(text = "") {
 function archiveEventImageUrl(event = {}, mediaAssets = []) {
   const asset = publicEventMediaAsset(event, mediaAssets);
   const currentUrl = mediaAssetUrl(asset || {}) || versionedAssetUrl(event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "", event);
-  if (currentUrl && !blockedLegacyEventImageUrl(currentUrl)) return currentUrl;
+  if (validEventImageUrl(currentUrl)) return currentUrl;
+  if (!isPastEvent(event)) return "";
   const fallback = eventFallbackImageUrl(event);
   if (fallback) return fallback;
   const archivePhotoExtensions = {
@@ -387,6 +406,14 @@ function blockedLegacyEventImageUrl(url = "") {
   return /DSC06819\.jpg|Images%2FDSC06819\.jpg|Images\/DSC06819\.jpg/i.test(String(url || ""));
 }
 
+function validEventImageUrl(url = "") {
+  const value = String(url || "").trim();
+  if (!value) return false;
+  if (/^data:image\//i.test(value)) return false;
+  if (blockedLegacyEventImageUrl(value)) return false;
+  return true;
+}
+
 function blockedHomeEventImageUrl(url = "") {
   return blockedLegacyEventImageUrl(url);
 }
@@ -396,7 +423,8 @@ function eventDetailImageUrl(event = {}, mediaAssets = [], blockedUrls = []) {
   const candidate = archiveEventImageUrl(event, mediaAssets);
   if (candidate && !blocked.has(candidate)) return candidate;
   const direct = event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "";
-  if (direct && !blocked.has(direct)) return direct;
+  if (validEventImageUrl(direct) && !blocked.has(direct)) return direct;
+  if (!isPastEvent(event)) return "";
   const fallback = eventFallbackImageUrl(event);
   if (fallback && !blocked.has(fallback)) return fallback;
   return "";
@@ -542,7 +570,7 @@ function isPublicInternalBlock(item = {}, bereich) {
 }
 
 async function internalBlocks(bereich) {
-  return (await list("editorialContent"))
+  return (await listPublicContent("editorialContent"))
     .filter((item) => isPublicInternalBlock(item, bereich))
     .map(canonicalInternalBlock)
     .sort((a, b) => Number(a.sortierung || 0) - Number(b.sortierung || 0));
@@ -799,6 +827,30 @@ function newsDetailSources(item = {}) {
   return `<div class="news-detail-source"><p class="eyebrow">Quelle${sources.length > 1 ? "n" : ""}</p>${sources.map((source) => `<a class="link" href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.publisher || source.name || "Quelle")}${source.title ? `: ${escapeHtml(source.title)}` : ""}</a>`).join("")}</div>`;
 }
 
+function articleKeywords(item = {}) {
+  const keywords = [];
+  const add = (value) => {
+    const keyword = typeof value === "string" ? value : value?.keyword || value?.name || "";
+    const clean = String(keyword || "").trim();
+    if (!clean) return;
+    if (keywords.some((entry) => entry.toLowerCase() === clean.toLowerCase())) return;
+    keywords.push(clean);
+  };
+  if (Array.isArray(item.tags)) item.tags.forEach(add);
+  else String(item.tags || "").split(/[,;]+/).forEach(add);
+  if (Array.isArray(item.keyword_json)) item.keyword_json.forEach(add);
+  if (Array.isArray(item.keywords)) item.keywords.forEach(add);
+  String(item.seoKeywords || item.seo_keywords || "").split(/[,;]+/).forEach(add);
+  add(item.primary_keyword || item.primaryKeyword || "");
+  return keywords.slice(0, 12);
+}
+
+function newsDetailKeywords(item = {}) {
+  const keywords = articleKeywords(item);
+  if (!keywords.length) return "";
+  return `<div class="news-detail-keywords"><p class="eyebrow">Keywords</p><div>${keywords.map((keyword) => `<span>${escapeHtml(keyword)}</span>`).join("")}</div></div>`;
+}
+
 function cleanNewsDetailTitle(item = {}) {
   let title = String(item.title || item.headline || "").trim();
   const slug = String(item.slug || item.key || item.id || "").trim();
@@ -1026,17 +1078,18 @@ export async function homePage() {
   const leanMobile = mobileLeanStart();
   const [events, rawMembers, editorial, mediaAssets] = await Promise.all([
     listPublicEvents(),
-    leanMobile ? Promise.resolve([]) : publicManagedMembers(),
+    publicManagedMembers(),
     listPublicContent("editorialContent"),
     leanMobile ? Promise.resolve([]) : list("media_assets").catch(() => [])
   ]);
-  const members = leanMobile ? [] : await withPublicMemberLogos(rawMembers);
+  const members = await withPublicMemberLogos(rawMembers);
   const upcoming = events.filter((event) => !isPastEvent(event) && event.visibility === "public").sort((a, b) => a.date.localeCompare(b.date));
   const next = upcoming[0];
   const latestNewsItems = publicNewsItems(editorial)
     .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")))
     .slice(0, 6);
-  const featuredMembers = shuffledItems(members.filter((member) => member.featured || member.logoDisplayUrl || member.logoUrl)).slice(0, 3);
+  const logoMembers = members.filter((member) => member.logoDisplayUrl || member.logoUrl);
+  const featuredMembers = shuffledItems(logoMembers.length >= 3 ? logoMembers : members).slice(0, 3);
   const memberCount = "30+";
   const quickCards = [
     ["#/events", "events", "Events", "Medienfruehstuecke, Veranstaltungen und Rueckblicke", "Alle Events ansehen"],
@@ -1134,7 +1187,8 @@ export async function homePage() {
   `);
 }
 export async function eventsPage() {
-  const [events, sponsors, mediaAssets] = await Promise.all([listPublicEvents(isMember()), listPublicContent("sponsors"), list("media_assets").catch(() => [])]);
+  const leanMobile = mobileLeanStart();
+  const [events, sponsors, mediaAssets] = await Promise.all([listPublicEvents(isMember()), listPublicContent("sponsors"), leanMobile ? Promise.resolve([]) : list("media_assets").catch(() => [])]);
   const user = currentUser();
   const visible = events.filter((event) => event.accessType !== "invitation_only" && (event.visibility === "public" || isMember(user) || event.showPublicTeaser));
   const upcoming = visible
@@ -1166,7 +1220,8 @@ export async function eventDetailPage(id) {
     return publicShell("events", `${subhero("Geschuetzter Bereich", "Login erforderlich", "Dieses Event ist nur fuer berechtigte Personen sichtbar.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
   }
   if (!event) return notFoundPage();
-  const [speakers, sponsors, topics, galleries, mediaAssets] = await Promise.all([listPublicContent("speakers"), listPublicContent("sponsors"), listPublicContent("topics"), listPublicContent("galleries"), list("media_assets").catch(() => [])]);
+  const leanMobile = mobileLeanStart();
+  const [speakers, sponsors, topics, galleries, mediaAssets] = await Promise.all([listPublicContent("speakers"), listPublicContent("sponsors"), listPublicContent("topics"), listPublicContent("galleries"), leanMobile ? Promise.resolve([]) : list("media_assets").catch(() => [])]);
   const restricted = event.accessType === "members_only" && !isMember();
   if (restricted && !event.showPublicTeaser) return publicShell("events", subhero("Geschuetzter Bereich", "Nur fuer Mitglieder", "Bitte melden Sie sich an, um dieses Event zu sehen."));
   const coHost = sponsors.find((sponsor) => sponsor.id === event.hostId) || null;
@@ -1248,7 +1303,7 @@ export async function topicsPage() {
 }
 
 export async function newsPage(query = new URLSearchParams()) {
-  const cmsNews = publicNewsItems(await list("editorialContent"));
+  const cmsNews = publicNewsItems(await listPublicContent("editorialContent"));
   const fallbackNews = realDataMode() ? [] : editorialFallbackNews;
   const news = mergeNewsWithFallback(cmsNews, fallbackNews)
     .sort(editorialPrioritySort);
@@ -1313,7 +1368,8 @@ export async function newsDetailPage(id) {
   const isRetrospective = isRetrospectiveArticle(item);
   if (!item || (item.page !== "news" && item.section !== "news" && !isRetrospective)) return notFoundPage();
   if (!isRetrospective && !publicNewsItems([item]).length) return notFoundPage();
-  const [sponsors, galleries, events, mediaAssets] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries"), listPublicEvents(), list("media_assets").catch(() => [])]);
+  const leanMobile = mobileLeanStart();
+  const [sponsors, galleries, events, mediaAssets] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries"), listPublicEvents(), leanMobile ? Promise.resolve([]) : list("media_assets").catch(() => [])]);
   const date = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   const text = item.longDescription || item.articleText || item.bodyText || item.mainText || item.text || item.fullText || item.longText || item.shortText || item.teaserText || "";
   const displayTitle = cleanNewsDetailTitle(item);
@@ -1345,6 +1401,7 @@ export async function newsDetailPage(id) {
           ${ttsReader({ rubric: item.category || "News", title: displayTitle || "", label: "Vorlesen", text: [item.subtitle, displayText].filter(Boolean).join("\n\n"), inlineOffsetText: [displayTitle, item.subtitle].filter(Boolean).join("\n\n"), audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
           <div class="editorial-text">${articleParagraphs(displayText)}</div>
           ${newsDetailSources(item)}
+          ${newsDetailKeywords(item)}
         </div>
       </article>
     </div></section>`);
@@ -1413,10 +1470,11 @@ export async function membersPage() {
   const members = await withPublicMemberLogos(await publicManagedMembers());
   const memberRows = members.map((member) => {
     const teaser = member.description || "";
-    return `<article class="member-directory-card"><div class="member-tile">${memberLogo(member)}</div><div class="member-directory-card__body"><h3>${escapeHtml(member.name)}</h3>${teaser ? `<p>${escapeHtml(teaser)}</p>` : ""}<span class="member-directory-card__meta">${escapeHtml(member.city || "")}${member.country ? ` · ${escapeHtml(member.country)}` : ""}</span></div>${member.website ? `<a class="button button--secondary button--small" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Website</a>` : ""}</article>`;
+    const searchText = [member.name, teaser, member.city, member.country, member.website].filter(Boolean).join(" ");
+    return `<article class="member-directory-card" data-member-card data-search="${escapeHtml(searchText.toLowerCase())}"><div class="member-tile">${memberLogo(member)}</div><div class="member-directory-card__body"><h3>${escapeHtml(member.name)}</h3>${teaser ? `<p>${escapeHtml(teaser)}</p>` : ""}<span class="member-directory-card__meta">${escapeHtml(member.city || "")}${member.country ? ` · ${escapeHtml(member.country)}` : ""}</span></div>${member.website ? `<a class="button button--secondary button--small" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Website</a>` : ""}</article>`;
   }).join("");
   return publicShell("members", `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform fuer Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
-    <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input placeholder="Mitglieder suchen"></div></div><div class="member-directory-list">${memberRows}</div></div></section>`);
+    <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input data-member-search placeholder="Mitglieder suchen" aria-label="Mitglieder suchen"></div></div><div class="member-directory-list">${memberRows}</div><div class="alert" data-member-empty hidden>Keine passenden sichtbaren Mitglieder gefunden.</div></div></section>`);
   return publicShell("members", `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform fuer Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
     <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input placeholder="Mitglieder suchen"></div></div><div class="card-grid card-grid--three">${members.map((member) => `<article class="card card__body"><div class="member-tile" style="margin-bottom:16px">${memberLogo(member)}</div><h3 style="margin:15px 0 8px">${escapeHtml(member.name)}</h3><p>${escapeHtml(member.description || "")}</p><p style="margin-top:12px">${escapeHtml(member.city)}${member.country ? ` Â· ${escapeHtml(member.country)}` : ""}</p>${member.website ? `<a class="link" style="display:inline-block;margin-top:14px" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Zur Website â†’</a>` : ""}</article>`).join("")}</div></div></section>`);
 }
@@ -1428,7 +1486,8 @@ export async function boardPage() {
 }
 
 export async function archivePage() {
-  const [allEvents, sponsors, editorial, mediaAssets] = await Promise.all([listPublicEvents(), listPublicContent("sponsors"), listPublicContent("editorialContent"), list("media_assets").catch(() => [])]);
+  const leanMobile = mobileLeanStart();
+  const [allEvents, sponsors, editorial, mediaAssets] = await Promise.all([listPublicEvents(), listPublicContent("sponsors"), listPublicContent("editorialContent"), leanMobile ? Promise.resolve([]) : list("media_assets").catch(() => [])]);
   const events = allEvents.filter((event) => isPastEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
   const retrospectives = editorial

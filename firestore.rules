@@ -36,6 +36,21 @@ service cloud.firestore {
           || memberData.membershipAccessEffectiveAt <= request.time
         );
     }
+    function publicMemberRecord(memberData) {
+      return (
+          !memberData.keys().hasAny(["status"])
+          || (
+            memberData.status != "inactive"
+            && memberData.status != "cancelled"
+            && memberData.status != "archived"
+          )
+        )
+        && (
+          !memberData.keys().hasAny(["visible"])
+          || memberData.visible != false
+        )
+        && !memberAccessBlocked(memberData);
+    }
     function memberRecordActive(memberId) {
       return exists(/databases/$(database)/documents/members/$(memberId))
         && get(/databases/$(database)/documents/members/$(memberId)).data.status == "active"
@@ -88,7 +103,8 @@ service cloud.firestore {
       return roleIs("admin");
     }
     function publicPublished() {
-      return resource.data.status == "published" && resource.data.visibility == "public";
+      return (resource.data.status == "published" || resource.data.status == "aktiv")
+        && (resource.data.visibility == "public" || resource.data.sichtbarkeit == "oeffentlich");
     }
     function registrationEvent() {
       return get(/databases/$(database)/documents/events/$(request.resource.data.eventId)).data;
@@ -121,7 +137,7 @@ service cloud.firestore {
     }
 
     match /members/{id} {
-      allow read: if resource.data.visibility == "public" && resource.data.status == "active"
+      allow read: if publicMemberRecord(resource.data)
         || editor()
         || ownMember(id);
       allow create, delete: if editor();

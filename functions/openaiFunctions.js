@@ -309,6 +309,10 @@ function normalizeTopicSuggestion(item = {}, index = 0, context = {}) {
   const title = String(item.title || item.thema || item.topic || "").trim().slice(0, 180);
   const headline = String(item.headline || title || "").trim().slice(0, 180);
   const subline = String(item.subline || item.thubline || item.summary || "").trim().slice(0, 220);
+  const themenabsatz = String(item.themenabsatz || item.themen_absatz || item.editorial_paragraph || item.topic_paragraph || item.teaser || item.summary || "").trim().slice(0, 1400);
+  const pdtvAnsatz = String(item.pdtv_ansatz || item.pdtvAnsatz || item.pdtv_approach || item.pdtvApproach || "").trim().slice(0, 900);
+  const quellenhinweis = String(item.quellenhinweis || item.quellen_hinweis || item.source_note || item.sourceNote || item.quellenbedarf || item.source_status || "").trim().slice(0, 800);
+  const quellenstatus = String(item.quellenstatus || item.quellen_status || item.source_status || "Quelle bitte redaktionell pruefen").trim().slice(0, 120);
   const rawKeywords = safeArray(item.keywords || item.tags).map((keyword) => String(keyword || "").trim()).filter(Boolean).slice(0, 10);
   const keyBase = title || headline || `KI-Thema ${index + 1}`;
   const topicKey = String(item.topic_key || keyBase)
@@ -326,6 +330,10 @@ function normalizeTopicSuggestion(item = {}, index = 0, context = {}) {
     title: title || headline || `KI-Thema ${index + 1}`,
     headline: headline || title || `KI-Thema ${index + 1}`,
     subline,
+    themenabsatz,
+    pdtv_ansatz: pdtvAnsatz,
+    quellenhinweis,
+    quellenstatus,
     category: String(item.category || context.category || "Medienbranche").trim().slice(0, 120),
     keywords: rawKeywords,
     thumbnail_idea: String(item.thumbnail_idea || item.thumbnailIdea || "").trim().slice(0, 500),
@@ -335,7 +343,7 @@ function normalizeTopicSuggestion(item = {}, index = 0, context = {}) {
     quality_status: String(item.quality_status || "empfohlen").slice(0, 80),
     quality_score: Math.max(0, Math.min(100, Number(item.quality_score ?? item.qualityScore ?? item.relevance_score ?? item.relevanz ?? 75))),
     duplicate_status: String(item.duplicate_status || "noch nicht geprueft").slice(0, 80),
-    source_status: String(item.source_status || "Recherche erforderlich").slice(0, 100),
+    source_status: quellenstatus,
     status: "vorgeschlagen",
     queue_status: "nicht uebernommen",
     rank: index + 1,
@@ -588,9 +596,11 @@ async function fetchText(url = "", timeoutMs = 6000) {
   try {
     const response = await fetch(url, {
       signal: controller.signal,
+      redirect: "follow",
       headers: {
-        "User-Agent": "PROdigitalTV-KI-Redaktion/1.0",
-        Accept: "application/rss+xml, application/xml, text/xml, text/html, application/xhtml+xml"
+        "User-Agent": "Mozilla/5.0 (compatible; PROdigitalTV-KI-Redaktion/1.0; +https://prodigitaltv.de)",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,application/rss+xml;q=0.8,text/xml;q=0.8,*/*;q=0.5",
+        "Accept-Language": "de-DE,de;q=0.9,en;q=0.5"
       }
     });
     if (!response.ok) return "";
@@ -1077,6 +1087,8 @@ async function writeRawTopicPublications({ runId, publications = [], category = 
       url: publication.url || "",
       published_at: publication.published_at || "",
       summary: publication.summary || "",
+      full_text: publication.full_text || publication.fullText || publication.summary || "",
+      text_length: String(publication.full_text || publication.fullText || publication.summary || "").length,
       category_filter: category,
       keyword_filter: keywords,
       suggested_topic_ids: matchedSuggestions.map((suggestion) => suggestion.id),
@@ -1246,11 +1258,20 @@ function fallbackTopicSuggestionsFromPublications(publications = [], context = {
       const title = cleanPublicationTitle(publication.title).slice(0, 160);
       const thematicHub = isThematicHubUrl(publication.url || "");
       const teaser = editorialTeaserFromTitle(title, sourceName, context.category).slice(0, 320);
+      const sourceStatus = publication.published_at ? "Quelle vorhanden" : thematicHub ? "Quelle bitte redaktionell pruefen" : "Quelle vorhanden";
       return normalizeTopicSuggestion({
         title,
         headline: title,
         subline: [sourceName, publication.published_at ? `veroeffentlicht am ${publication.published_at}` : thematicHub ? "Themenhub als Recherchespur" : "redaktionelle Einordnung offen"].filter(Boolean).join(" - "),
         teaser,
+        themenabsatz: [
+          teaser,
+          publication.summary ? String(publication.summary).replace(/\s+/g, " ").trim() : "",
+          `Die Meldung stammt aus ${sourceLabel} und kann als Grundlage fuer eine redaktionelle Einordnung der Medienbranche dienen.`
+        ].filter(Boolean).join(" "),
+        pdtv_ansatz: `Der PDTv-Ansatz liegt in moeglichen Folgen fuer TV, Streaming, Plattformen, Produktion, Distribution, Vermarktung oder Regulierung. Die Redaktion kann den Fund anhand der Originalquelle vertiefen und in einen sachlichen Branchenbeitrag ueberfuehren.`,
+        quellenhinweis: `${sourceLabel}${publication.url ? ` - ${publication.url}` : ""}`,
+        quellenstatus: sourceStatus,
         category: context.category || "Medienbranche",
         keywords: editorialKeywordsFromContext({
           title,
@@ -1262,7 +1283,7 @@ function fallbackTopicSuggestionsFromPublications(publications = [], context = {
         industry_score: thematicHub ? 74 : 70,
         relevance_score: publication.published_at ? 74 : thematicHub ? 72 : 60,
         duplicate_status: "noch nicht geprueft",
-        source_status: publication.published_at ? "Quellenfund vorhanden - redaktionell pruefen" : thematicHub ? "Themenhub gefunden - Relevanz redaktionell konkretisieren" : "Quellenfund vorhanden - redaktionell pruefen",
+        source_status: sourceStatus,
         reason: `Echter Quellenfund aus ${sourceLabel}. Der Vorschlag basiert auf einer gefundenen Veroeffentlichung und muss vor Artikel-Erstellung redaktionell geprueft und bei Bedarf ins Deutsche uebertragen werden.`,
         source_candidates: [{
           id: publication.source_id || "",
@@ -1378,10 +1399,33 @@ async function crawlSourcePublications(source = {}) {
     }
     if (candidates.length >= 10) break;
   }
-  return uniquePublicationCandidates(candidates)
+  const selected = uniquePublicationCandidates(candidates)
     .filter(isEditorialPublicationCandidate)
     .sort((a, b) => String(b.published_at || "").localeCompare(String(a.published_at || "")))
     .slice(0, 5);
+  const enriched = [];
+  for (const candidate of selected) {
+    let fullText = String(candidate.full_text || candidate.fullText || "").trim();
+    let title = candidate.title || "";
+    let publishedAt = candidate.published_at || "";
+    if (!fullText && /^https?:\/\//i.test(candidate.url || "")) {
+      const detailHtml = await fetchText(candidate.url, 4500);
+      if (detailHtml) {
+        fullText = stripHtmlForFullText(detailHtml).slice(0, 30000);
+        title = cleanPublicationTitle(firstMatch(detailHtml, /<h1[^>]*>([\s\S]*?)<\/h1>/i) || title);
+        publishedAt = detectPressDate(detailHtml, publishedAt) || publishedAt;
+      }
+    }
+    enriched.push({
+      ...candidate,
+      title: title || candidate.title,
+      published_at: publishedAt,
+      full_text: fullText || candidate.summary || "",
+      summary: candidate.summary || pressSummaryFromText(title || candidate.title || "", fullText || "").slice(0, 900),
+      text_length: String(fullText || candidate.summary || "").length
+    });
+  }
+  return enriched;
 }
 
 async function crawlSourcePublicationsWithTimeout(source = {}, timeoutMs = 45000) {
@@ -1530,6 +1574,30 @@ function stripHtmlForFullText(html = "") {
     || withoutNoise.match(/<main\b[\s\S]*?<\/main>/i)?.[0]
     || withoutNoise;
   return cleanImportedPressText(decodeBasicEntities(stripTags(article)));
+}
+
+function importedUrlTitle(html = "", url = "") {
+  const h1 = firstMatch(html, /<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const og = firstMatch(html, /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["'][^>]*>/i)
+    || firstMatch(html, /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["'][^>]*>/i);
+  const title = firstMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
+  const fallback = (() => {
+    try {
+      return new URL(url).hostname.replace(/^www\./i, "");
+    } catch {
+      return "Importierte News";
+    }
+  })();
+  return cleanImportedPressText(h1 || og || title || fallback).slice(0, 180);
+}
+
+function importedUrlDate(html = "") {
+  return normalizeDate(
+    firstMatch(html, /<meta[^>]+property=["']article:published_time["'][^>]+content=["']([^"']+)["'][^>]*>/i)
+    || firstMatch(html, /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']article:published_time["'][^>]*>/i)
+    || firstMatch(html, /<time[^>]+datetime=["']([^"']+)["'][^>]*>/i)
+    || firstMatch(html, /<meta[^>]+name=["']date["'][^>]+content=["']([^"']+)["'][^>]*>/i)
+  );
 }
 
 function cleanImportedPressText(value = "") {
@@ -1941,26 +2009,26 @@ exports.generateAiEditorialTopicSuggestions = onCall({ region, secrets: [openAiA
   await writeRawSourceScans({ runId: logRef.id, scans: crawlResult.sourceScans, category, keywords, profile });
   await writeRawTopicPublications({ runId: logRef.id, publications: sourcePublications, category, keywords, profile });
   const prompt = [
-    `Erzeuge fuer die PROdigitalTV KI-Redaktion bis zu ${limit} redaktionelle Nachrichtenthemen fuer die Themenliste, aber nur wenn sie belastbar sind.`,
-    "Strategie: Dies ist Stufe 1. Es entstehen keine fertigen Artikel. Die Ausgabe ist eine redaktionelle Auswahl echter aktueller Nachrichtenfunde. Der vollstaendige Beitrag wird erst in Stufe 2 nach manueller Auswahl im Editor erzeugt.",
-    "Wenn aus den Quellen nur wenige ausreichend belegbare aktuelle Nachrichtenthemen ableitbar sind, liefere wenige. Keine Luecken mit schwachen, generischen oder technischen Crawler-Funden auffuellen.",
-    "Nutze ausschliesslich deutsche oder deutschsprachige Quellen. Keine franzoesischen, britischen, US-amerikanischen oder rein internationalen Quellen als Themenbasis verwenden.",
-    "Alle sichtbaren redaktionellen Felder muessen deutsch sein: title, headline, subline, teaser, category, keywords, thumbnail_idea, reason und source_status. Wenn eine Quelle englisch ist, uebersetze die Themenformulierung sinngemaess ins Deutsche. Der Originaltitel darf nur als Quellenhinweis oder note erhalten bleiben.",
-    "Headline: kurze journalistische Ueberschrift zur Nachricht. Subline: ein kurzer erklaerender Satz. Teaser: 1 bis 2 Saetze zum Nachrichteninhalt selbst: Was ist passiert und warum ist es fuer die Medienbranche relevant?",
-    "Keine Meta-Sprache in title, headline, subline oder teaser: nicht 'Themenkandidat', nicht 'Vorschlag', nicht 'redaktionell pruefen', nicht 'Quellenfund', nicht erklaeren wie der Fund entstanden ist.",
-    "Die Nachrichtenthemen muessen aus den unten gelieferten Quellenveroeffentlichungen abgeleitet werden. Wenn keine passende Veroeffentlichung vorhanden ist, markiere source_status als 'Quellenlage unzureichend' und erzeuge keinen scheinbar aktuellen Listeneintrag.",
-    "Wenn eine Quelle in der bisherigen Themenliste bereits ein Thema geliefert hat, soll der naechste Vorschlag bevorzugt aus einer anderen Quelle kommen. Maximal ein Vorschlag pro primary_source_id.",
-    "Die Vorschlaege sollen fuer TV, Streaming, Digitalmedien, Medienrecht, Produktion, KI, Distribution, Vermarktung, HbbTV, OTT, FAST-Channels, Barrierefreiheit oder Plattformregulierung geeignet sein.",
-    "Keine Boulevardmeldungen, keine reinen Personenmeldungen, keine Programmhinweise, keine Navigationstexte, keine Sitemaps, keine Presseportal-Startseiten, keine generischen Quellenbeschreibungen.",
-    category ? `Lenke die Recherche auf die Kategorie: ${category}` : "Nutze eine ausgewogene Rotation ueber die relevanten Themenbereiche.",
+    `AUFGABE: Erstelle eine redaktionell kuratierte Themenvorschau mit bis zu ${limit} aktuellen PROdigitalTV-Beitragsthemen. Ziel sind 10 Themen, aber nur soweit die gelieferten Quellenfunde belastbar genug sind. Keine Luecken mit erfundenen oder generischen Themen auffuellen.`,
+    "ROLLE: Du bist redaktioneller Themenkurator fuer PROdigitalTV. Du arbeitest quellenbasiert, sachlich und ohne Halluzinationen. Du erzeugst keine erfundenen Fakten, Quellen, URLs, Zahlen, Fristen, Studien, Urteile, Zitate oder Namen.",
+    "ZIELGRUPPE: TV-Sender, Streaminganbieter, Produzenten, Plattformbetreiber, Mediatheken, Verlage, Medienhaeuser, Dienstleister, Technologieanbieter, Verbaende sowie Entscheider aus Medienpolitik, Regulierung und Vermarktung.",
+    "PDTv-ANSATZ: Jedes Thema muss einen klaren Branchenbezug fuer TV, Streaming, Produktion, Plattformen, Mediatheken, digitale Distribution, Regulierung, Vermarktung oder Technologie enthalten. Keine politische Meinung, keine PR-Sprache, keine Uebertreibung.",
+    "THEMENBEREICHE: Medienpolitik, Streaming, lineares Fernsehen, Bewegtbild, Mediatheken, Plattformregulierung, KI in der Medienbranche, KI-Kennzeichnung, Urheberrecht, Verwertungsrecht, Produktion, Postproduktion, Distribution, Smart TV, HbbTV, Barrierefreiheit, Untertitelung, Audiodeskription, Medienkompetenz, Desinformation, Deepfakes, Werbung, Vermarktung, neue Geschaeftsmodelle, regionale Medien, oeffentlich-rechtlicher Rundfunk, private Medienanbieter, europaeische Medienregulierung, Datenschutz, digitale Identitaet, Content-Strategien und Automatisierung.",
+    "FORMAT JE THEMA: headline = klare redaktionelle Ueberschrift ohne Clickbait. subline = maximal 1 bis 2 Saetze. themenabsatz = 4 bis 6 Saetze: worum es geht, warum aktuell, welche Akteure/Bereiche betroffen sind und welche Bedeutung fuer die Medienbranche besteht. pdtv_ansatz = 2 bis 4 Saetze zur konkreten Relevanz fuer PROdigitalTV. keywords = 5 bis 8 CMS-taugliche Keywords. quellenhinweis = konkrete Quelle oder Art der Quelle. quellenstatus/source_status = 'Quelle vorhanden' oder 'Quelle bitte redaktionell pruefen'.",
+    "SPRACHE: Deutsch, serioes, journalistisch, sachlich, leicht verstaendlich, professionell, klar strukturiert, ohne Floskeln, ohne PR-Sprache, ohne Eigenlob, ohne Saetze wie 'dieser Beitrag zeigt', 'wir beleuchten' oder 'spannend ist'.",
+    "AKTUALITAET: Nutze nur aktuelle oder zeitnah relevante Entwicklungen aus den gelieferten Quellenveroeffentlichungen. Keine veralteten Themen verwenden, wenn aktuellere Entwicklungen vorhanden sind.",
+    "AUSSCHLUSS: Keine reine Produktwerbung, keine PR-Texte ohne journalistische Relevanz, keine rein lokalen Meldungen ohne Branchenbezug, keine Spekulationen, keine Sitemaps, keine Presseportal-Startseiten, keine generischen Quellenbeschreibungen.",
+    "Keine Meta-Sprache in sichtbaren Feldern: nicht 'Themenkandidat', nicht 'Vorschlag', nicht 'Quellenfund', nicht erklaeren wie der Fund entstanden ist. Quellenstatus ist ein interner Hinweis, aber kein Blocker.",
+    "Wenn die Quellenlage unklar ist, erzeuge kein Scheinwissen. Lasse unsichere Details weg und setze quellenstatus/source_status auf 'Quelle bitte redaktionell pruefen'.",
+    "Wenn eine Quelle in der bisherigen Themenliste bereits ein Thema geliefert hat, soll der naechste Vorschlag bevorzugt aus einer anderen Quelle kommen. Maximal ein Vorschlag pro primary_source_id, soweit moeglich.",
+    category ? `Lenke die Recherche auf die Kategorie: ${category}` : "Nutze eine ausgewogene Rotation ueber Regulierung, Technologie, Markt, Produktion, Plattformen und gesellschaftliche Medienrelevanz.",
     keywords ? `Beruecksichtige diese Stichworte: ${keywords}` : "",
     `Quellen fuer diese Recherche (${researchSources.length} geplant, ${crawlResult.researchedSources} abgearbeitet): ${JSON.stringify(researchSourceSummary)}`,
-    `Gefundene Quellenveroeffentlichungen mit Datum: ${JSON.stringify(sourcePublications)}`,
-    "Keine konkreten Zahlen, Studien, URLs, Zitate oder tagesaktuellen Fakten erfinden. Wenn ein Thema Quellenrecherche braucht, markiere source_status als 'Recherche erforderlich'.",
-    "Nenne pro Thema mindestens eine Hauptquelle als primary_source_id und bis zu 4 plausible Quellenkandidaten als source_candidates mit id, name, publisher, url falls sicher bekannt, und kurzer note. Eine valide Quelle reicht fuer die Themenliste. Erfinde keine URLs. Wenn keine sichere URL bekannt ist, lasse url leer.",
-    "Wenn ein Vorschlag auf einer konkreten Veroeffentlichung der Quelle basiert, gib source_publication_date an. Wenn das Datum unbekannt ist, lasse source_publication_date leer und setze source_date_status auf 'Datum nicht ermittelt'.",
+    `Gefundene Quellenveroeffentlichungen mit Datum und Auszug: ${JSON.stringify(sourcePublications)}`,
+    "Nenne pro Thema mindestens eine Hauptquelle als primary_source_id und bis zu 4 Quellenkandidaten als source_candidates mit id, name, publisher, url falls sicher bekannt, und kurzer note. Erfinde keine URLs. Wenn keine sichere URL bekannt ist, lasse url leer.",
+    "Wenn ein Vorschlag auf einer konkreten Veroeffentlichung basiert, gib source_publication_date an. Wenn das Datum unbekannt ist, lasse source_publication_date leer und setze source_date_status auf 'Datum nicht ermittelt'.",
     "Bewerte Aktualitaet, Branchenrelevanz und Gesamt-Relevanz jeweils von 0 bis 100.",
-    `Antworte ausschliesslich als valides JSON-Objekt mit dem Feld suggestions. suggestions ist ein Array mit maximal ${limit} Objekten mit: title, headline, subline, teaser, category, keywords, thumbnail_idea, actuality_score, industry_score, relevance_score, source_status, reason, possible_sources, source_candidates, primary_source_id, source_ids, source_names, source_publication_date, source_date_status.`
+    `Antworte ausschliesslich als valides JSON-Objekt mit dem Feld suggestions. suggestions ist ein Array mit maximal ${limit} Objekten mit exakt diesen Feldern: title, headline, subline, themenabsatz, pdtv_ansatz, keywords, quellenhinweis, quellenstatus, category, priority, thumbnail_idea, actuality_score, industry_score, relevance_score, source_status, reason, possible_sources, source_candidates, primary_source_id, source_ids, source_names, source_publication_date, source_date_status.`
   ].filter(Boolean).join("\n\n");
   let rawSuggestions = [];
   let fallbackReason = "";
@@ -1975,7 +2043,7 @@ exports.generateAiEditorialTopicSuggestions = onCall({ region, secrets: [openAiA
         body: JSON.stringify({
           model: settings.model || "gpt-4.1-mini",
           temperature: Number(settings.temperature ?? 0.3),
-          max_output_tokens: 3600,
+          max_output_tokens: 6500,
           text: { format: { type: "json_object" } },
           input: [
             { role: "system", content: SYSTEM_PROMPT },
@@ -2071,6 +2139,41 @@ exports.generateAiEditorialTopicSuggestions = onCall({ region, secrets: [openAiA
   await batch.commit();
   await writeAiLog({ profile, settings, action: "generateAiEditorialTopicSuggestions", payload, result: { suggestions, rejectedQualitySuggestions, researchedSources: crawlResult.researchedSources, totalSources: crawlResult.totalSources, sourcePublications: sourcePublications.length, stoppedByTimeBudget: crawlResult.stoppedByTimeBudget, fallbackReason }, status: fallbackReason ? "warning" : "success" }).catch(() => {});
   return { ok: true, suggestions, rejectedQualitySuggestions, researchedSources: crawlResult.researchedSources, totalSources: crawlResult.totalSources, sourcePublications: sourcePublications.length, stoppedByTimeBudget: crawlResult.stoppedByTimeBudget, fallbackReason, message: `${suggestions.length} Themenvorschlag${suggestions.length === 1 ? "" : "e"} wurden qualitaetsgeprueft erstellt. ${crawlResult.researchedSources} von ${crawlResult.totalSources} Quellen wurden abgearbeitet, ${sourcePublications.length} Veroeffentlichungen als Rawdaten gespeichert.${rejectedQualitySuggestions.length ? ` ${rejectedQualitySuggestions.length} Rohfund${rejectedQualitySuggestions.length === 1 ? "" : "e"} wegen Qualitaet verworfen.` : ""}${fallbackReason ? " KI-Auswertung abgebrochen; sichere Fallback-Themen aus Rawdaten genutzt." : ""}${crawlResult.stoppedByTimeBudget ? " Zeitbudget erreicht; weitere Quellen folgen im naechsten Lauf." : ""}` };
+});
+
+exports.importNewsUrlText = onCall({ region, timeoutSeconds: 60, memory: "512MiB" }, async (request) => {
+  await requireAiAccess(request);
+  try {
+    const url = String(request.data?.url || "").trim();
+    if (!/^https?:\/\//i.test(url)) {
+      throw new HttpsError("invalid-argument", "Bitte eine gueltige http- oder https-URL uebergeben.");
+    }
+    const html = await fetchText(url, 22000);
+    if (!html) {
+      throw new HttpsError("not-found", "Die URL konnte nicht abgerufen werden oder lieferte keinen HTML-Text.");
+    }
+    const text = stripHtmlForFullText(html).slice(0, 60000);
+    if (!text || text.length < 180) {
+      throw new HttpsError("failed-precondition", "Auf der URL konnte kein verwertbarer Beitragstext extrahiert werden.");
+    }
+    let hostname = "";
+    try {
+      hostname = new URL(url).hostname.replace(/^www\./i, "");
+    } catch {}
+    return {
+      ok: true,
+      url,
+      title: importedUrlTitle(html, url),
+      text,
+      publishedAt: importedUrlDate(html),
+      source: hostname,
+      domain: hostname,
+      chars: text.length
+    };
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError("internal", `URL-Import konnte nicht abgeschlossen werden: ${error.message || String(error)}`);
+  }
 });
 
 exports.improveText = callable("improveText");

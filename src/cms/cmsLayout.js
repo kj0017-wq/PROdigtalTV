@@ -2,13 +2,30 @@ import { currentUser, isAdmin } from "../firebase/authService.js?v=466";
 import { logo } from "../components/layout.js";
 
 const sections = [
-  ["cms", "Dashboard"], ["cms/events", "Events"], ["cms/registrations", "Anmeldungen"], ["cms/followup", "Event Rückblick"],
-  ["cms/sponsors", "Sponsoren / Gastgeber"], ["cms/members", "Mitglieder"], ["cms/membership-applications", "Mitgliedsantraege"], ["cms/board", "Vorstand"],
-  ["cms/users", "User"],
-  ["cms/member-documents", "Mitglieder-Dokumente"],
+  ["cms", "Dashboard"],
+  {
+    route: "cms/events",
+    title: "Events",
+    children: [
+      ["cms/events", "Events"],
+      ["cms/registrations", "Anmeldungen"],
+      ["cms/followup", "Event Rueckblick"],
+      ["cms/sponsors", "Sponsoren / Gastgeber"]
+    ]
+  },
+  {
+    route: "cms/members",
+    title: "Mitglieder",
+    children: [
+      ["cms/members", "Mitglieder"],
+      ["cms/membership-applications", "Mitgliedsantraege"],
+      ["cms/member-documents", "Dokumente"],
+      ["cms/board", "Vorstand"]
+    ]
+  },
   {
     route: "cms/editorial/press",
-    title: "Redaktionelle Artikel",
+    title: "Redaktion",
     children: [
       ["cms/editorial/press", "Presse"],
       ["cms/topics", "Themen"],
@@ -16,15 +33,13 @@ const sections = [
       ["cms/editorial/interna", "Interna"]
     ]
   },
-  ["cms/audio", "Audio & Barrierefreiheit"],
   {
     route: "cms/media/library",
-    title: "Medien & Thumbnails",
+    title: "Medien",
     children: [
       ["cms/media/library", "Mediathek"],
-      ["cms/media/edit", "Bild bearbeiten"],
-      ["cms/media/ai", "KI-Grafik erstellen"],
-      ["cms/media/variants", "Varianten"]
+      ["cms/galleries", "Bildergalerien"],
+      ["cms/audio", "Audio & Barrierefreiheit"]
     ]
   },
   {
@@ -41,8 +56,25 @@ const sections = [
       ["cms/ai-editorial/logs", "Logs"]
     ]
   },
-  ["cms/galleries", "Bildergalerien"],
-  ["cms/mail", "Mail-Queue"], ["cms/mail-admin", "Mail-Verwaltung"], ["cms/chatgpt", "ChatGPT"], ["cms/ai-access", "KI-Zugaenge"], ["cms/ai-settings", "ChatGPT-Einstellungen"], ["cms/setup", "System / Einrichtung"]
+  {
+    route: "cms/mail",
+    title: "Kommunikation",
+    children: [
+      ["cms/mail", "Mail-Queue"],
+      ["cms/mail-admin", "Mail-Verwaltung"]
+    ]
+  },
+  {
+    route: "cms/ai-access",
+    title: "System",
+    children: [
+      ["cms/users", "User"],
+      ["cms/ai-access", "KI-Zugaenge"],
+      ["cms/chatgpt", "ChatGPT"],
+      ["cms/ai-settings", "ChatGPT-Einstellungen"],
+      ["cms/setup", "System / Einrichtung"]
+    ]
+  }
 ];
 
 export function cmsShell(active, content) {
@@ -53,11 +85,12 @@ export function cmsShell(active, content) {
       if (route === "cms/setup" && !isAdmin(user)) return "";
       return `<a href="#/${route}" class="${active === route ? "active" : ""}">${title}</a>`;
     }
-    const childActive = item.children.some(([route]) => active === route);
-    return `<div class="cms-side-group ${active === item.route || childActive ? "is-open" : ""}">
-      <a href="#/${item.route}" class="${active === item.route ? "active" : ""}">${item.title}</a>
-      <div class="cms-side-sub">${item.children.map(([route, title]) => `<a href="#/${route}" class="${active === route ? "active" : ""}">${title}</a>`).join("")}</div>
-    </div>`;
+    const visibleChildren = item.children.filter(([route]) => route !== "cms/setup" || isAdmin(user));
+    const childActive = visibleChildren.some(([route]) => active === route);
+    return `<details class="cms-side-group" ${active === item.route || childActive ? "open" : ""}>
+      <summary class="${active === item.route || childActive ? "active" : ""}"><span>${item.title}</span></summary>
+      <div class="cms-side-sub">${visibleChildren.map(([route, title]) => `<a href="#/${route}" class="${active === route ? "active" : ""}">${title}</a>`).join("")}</div>
+    </details>`;
   };
   return `<div class="cms-shell"><header class="cms-header"><button type="button" class="cms-menu-toggle" data-cms-menu-toggle aria-label="CMS-Menue oeffnen" aria-controls="cms-side-nav" aria-expanded="false"><span></span><span></span><span></span></button>${logo()}<div class="actions"><span class="tag">${user?.role || "Gast"}</span><a href="#/home" class="button button--secondary button--small">Website</a><a class="mobile-qr mobile-qr--cms" href="#/home" data-mobile-qr-link target="_blank" rel="noreferrer" aria-label="Passende Mobilseite oeffnen"><img data-mobile-qr-code alt="QR-Code fuer die passende Mobilseite"></a></div></header>
   <div class="cms-menu-backdrop" data-cms-menu-close></div>

@@ -1,5 +1,5 @@
 import { demoDatabase } from "../data/demoData.js";
-import { getFirebaseServices, getFirestoreServices, firebaseEnabled, realDataMode } from "./firebaseClient.js";
+import { getFirebaseServices, getFirestoreServices, firebaseEnabled, realDataMode } from "./firebaseClient.js?v=2";
 
 const STORE_KEY = "prodigitaltv-demo-db-official-assets-v4";
 const PUBLIC_LIST_CACHE_MS = 45000;
@@ -229,7 +229,7 @@ function isEventVisible(event) {
 }
 
 function isPublicLiveMember(member) {
-  return member.status === "active"
+  return !["inactive", "cancelled", "archived"].includes(member.status || "")
     && (member.visibility || "public") === "public"
     && member.visible !== false
     && member.isLive !== false
@@ -245,11 +245,20 @@ function memberAccessBlocked(member = {}, now = new Date()) {
 }
 
 export async function listPublicContent(collectionName) {
+  if (collectionName === "editorialContent") {
+    const [published, activeManaged] = await Promise.all([
+      cachedConstrainedList(collectionName, [["status", "==", "published"], ["visibility", "==", "public"]]).catch(() => []),
+      cachedConstrainedList(collectionName, [["status", "==", "aktiv"], ["sichtbarkeit", "==", "oeffentlich"]]).catch(() => [])
+    ]);
+    const merged = new Map();
+    [...published, ...activeManaged].forEach((record) => merged.set(record.id, record));
+    return Array.from(merged.values());
+  }
   const filters = {
     topics: [["status", "==", "active"]],
     speakers: [["status", "==", "published"]],
     sponsors: [["status", "==", "published"]],
-    members: [["status", "==", "active"], ["visibility", "==", "public"]],
+    members: [],
     boardMembers: [["status", "==", "active"], ["visibility", "==", "public"]],
     editorialContent: [["status", "==", "published"], ["visibility", "==", "public"]],
     galleries: [["status", "==", "published"], ["visibility", "==", "public"]],

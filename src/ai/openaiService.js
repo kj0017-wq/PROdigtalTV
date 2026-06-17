@@ -191,6 +191,7 @@ export async function generateAiTopicSuggestions(options = {}) {
   const keywordFilter = String(options.keywords || "").trim();
   const sourceFilter = String(options.sourceId || options.source_id || "").trim();
   const requestedLimit = Math.max(1, Math.min(10, Number(options.limit || 6)));
+  const requireLive = options.requireLive === true;
   const keywordParts = keywordFilter.toLowerCase().split(/[,;\s]+/).map((item) => item.trim()).filter(Boolean);
   const firebase = await getFirebaseServices();
   if (firebase && !localPreviewMode()) {
@@ -209,8 +210,12 @@ export async function generateAiTopicSuggestions(options = {}) {
       }
       return result.data;
     } catch (error) {
+      if (requireLive) throw error;
       if (!["functions/not-found", "functions/unavailable", "functions/internal", "functions/unauthenticated", "functions/permission-denied"].includes(error?.code)) throw error;
     }
+  }
+  if (requireLive) {
+    throw new Error("Live-Quellenrecherche ist nicht erreichbar. Kein Demo- oder Fallback-Themenpool wird fuer das Morgenbriefing verwendet.");
   }
   const { list, upsert: localUpsert } = await import("../firebase/dataService.js?v=466");
   const now = new Date().toISOString();
@@ -591,6 +596,19 @@ export async function importNewsFromSources(payload = {}) {
     article: localImportedNewsDraft(payload),
     message: "Lokaler redaktioneller Vorschlag wurde aus den gelieferten Quellen vorbereitet."
   };
+}
+
+export async function importNewsUrlText(url = "") {
+  const cleanUrl = String(url || "").trim();
+  if (!cleanUrl) throw new Error("URL fehlt.");
+  const firebase = await getFirebaseServices();
+  if (!firebase || localPreviewMode()) {
+    throw new Error("URL-Import braucht die serverseitige Firebase Function, damit der Webseiten-Text abgerufen werden kann.");
+  }
+  await ensureCallableLogin("URL-Import");
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "importNewsUrlText", { timeout: 60000 });
+  const result = await callable({ url: cleanUrl });
+  return result.data;
 }
 
 function rotateLocalSources(sources = [], existingSuggestions = [], category = "", keywords = "") {

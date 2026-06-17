@@ -433,7 +433,7 @@ async function writeAiEditorialLog(payload) {
   const ref = await db.collection("ai_editorial_logs").add({
     article_id: payload.article_id || "",
     task_name: payload.task_name || AI_EDITORIAL_TASK,
-    status: payload.status || "blocked",
+    status: payload.status || "info",
     message: payload.message || "",
     found_topics_json: payload.found_topics_json || [],
     rejected_topics_json: payload.rejected_topics_json || [],
@@ -484,6 +484,19 @@ function chooseTopic(existingArticles = []) {
   return topics.find((topic) => !normalizedTitles.some((title) => title.includes(normalizeStatus(topic.title).slice(0, 16)))) || topics[0];
 }
 
+function topicMessageText(topic = {}, sources = []) {
+  const primarySource = sources[0] || {};
+  const sourceLabel = primarySource.name || primarySource.title || primarySource.domain || "Quelle";
+  const sourceUrl = primarySource.url || "";
+  const title = String(topic.title || "Themenmeldung").replace(/^Themenvorschlag:\s*/i, "").trim();
+  const keywords = Array.isArray(topic.keywords) ? topic.keywords.filter(Boolean).join(", ") : "";
+  return [
+    `${title}`,
+    keywords ? `Stichworte: ${keywords}.` : "",
+    sourceUrl ? `Quelle: ${sourceLabel} (${sourceUrl})` : "Quelle bitte redaktionell pruefen."
+  ].filter(Boolean).join("\n\n");
+}
+
 async function runAiEditorialPipeline({ manual = false, actor = "scheduler" } = {}) {
   const settings = await aiEditorialSettings();
   if (!manual && !settings.automationEnabled) {
@@ -503,28 +516,14 @@ async function runAiEditorialPipeline({ manual = false, actor = "scheduler" } = 
   const missingPrompts = REQUIRED_PROMPT_TYPES.filter((type) => !prompts.some((prompt) => prompt.prompt_type === type));
   if (missingPrompts.length) {
     await writeAiEditorialLog({
-      status: "blocked",
-      message: `Abbruch: aktive Prompts fehlen (${missingPrompts.join(", ")}).`,
-      ai_check_json: { status: "nicht bestanden", blockers: ["active_prompt_missing"], missingPrompts }
+      status: "warning",
+      message: `Hinweis: aktive Prompts fehlen (${missingPrompts.join(", ")}). System-Fallback wird genutzt.`,
+      ai_check_json: { status: "Hinweis", missingPrompts }
     });
-    return { ok: false, status: "blocked", message: "Aktive Pflicht-Prompts fehlen. Kein Beitrag wurde erzeugt." };
   }
 
   const topic = chooseTopic(existingArticles);
   const duplicate = existingArticles.find((article) => normalizeStatus(article.title || article.headline).includes(normalizeStatus(topic.title).slice(0, 18)));
-
-  if (sources.length < Number(settings.minimumSources || 1)) {
-    await writeAiEditorialLog({
-      status: "blocked",
-      message: "Keine valide Quelle vorhanden - redaktionelle Pruefung erforderlich.",
-      found_topics_json: [topic],
-      used_sources_json: sources,
-      source_check_json: { source_status: "unzureichend", trustedSources: sources.length, required: Number(settings.minimumSources || 1) },
-      duplicate_check_json: duplicate ? { duplicate_status: "Hinweis", duplicateArticleId: duplicate.id } : {},
-      ai_check_json: { status: "nicht bestanden", blockers: ["insufficient_sources"] }
-    });
-    return { ok: false, status: "blocked", message: "Keine valide Quelle vorhanden - kein Beitrag wurde erzeugt." };
-  }
 
   const articleRef = db.collection("editorialContent").doc();
   const sourceSnapshot = sources.slice(0, 3).map((source) => ({
@@ -537,11 +536,13 @@ async function runAiEditorialPipeline({ manual = false, actor = "scheduler" } = 
     check_status: "geprueft"
   }));
   const article = {
-    title: `Themenvorschlag: ${topic.title}`,
-    headline: `Themenvorschlag: ${topic.title}`,
-    subtitle: "Quellen sind vorhanden, Text muss redaktionell erstellt und geprueft werden.",
-    subline: "Quellen sind vorhanden, Text muss redaktionell geprueft werden.",
-    bodyText: "Dieser Datensatz ist ein gesperrter Themenvorschlag der KI-Redaktion. Es wurde bewusst kein fertiger Beitragstext erzeugt, weil vor der Texterstellung eine aktuelle Quellenrecherche mit Belegstellen erforderlich ist.",
+    title: topic.title,
+    headline: topic.title,
+    subtitle: sources.length ? `Quelle: ${sources[0].name || sources[0].domain || "Quelle"}` : "Quelle bitte redaktionell pruefen.",
+    subline: sources.length ? `Quelle: ${sources[0].name || sources[0].domain || "Quelle"}` : "Quelle bitte redaktionell pruefen.",
+    bodyText: topicMessageText(topic, sourceSnapshot),
+    ai_original_suggested_text: topicMessageText(topic, sourceSnapshot),
+    source_suggested_text: topicMessageText(topic, sourceSnapshot),
     page: "news",
     section: "news",
     category: topic.category,
@@ -549,20 +550,20 @@ async function runAiEditorialPipeline({ manual = false, actor = "scheduler" } = 
     primary_keyword: topic.keywords[0],
     thumbnail_idea: "Serioeses redaktionelles Vorschaubild zur digitalen Medienwirtschaft.",
     thumbnail_prompt: "Professionelles redaktionelles Vorschaubild fuer ein Medienbranchen-Portal, klare moderne Komposition, TV-, Streaming- und Regulierungskontext, 16:9, keine Logos, keine realen Personen.",
-    source_status: "teilweise geprueft",
-    duplicate_status: duplicate ? "Hinweis: aehnliches Thema vorhanden" : "nicht blockierend",
-    ai_check_status: "Warnung",
+    source_status: sources.length ? "Quelle vorhanden" : "Quelle bitte redaktionell pruefen",
+    duplicate_status: "nicht geprueft",
+    ai_check_status: "vorbereitet",
     legal_check_status: "offen",
-    publication_status: "pruefpflichtig",
+    publication_status: "Entwurf",
     status: "draft",
     visibility: "internal",
     relevance_score: 70,
     author_type: "ai",
     author_name: "KI-Redaktion",
     source_snapshot_json: sourceSnapshot,
-    ai_log_json: { actor, rule: "safe_topic_proposal_only" },
-    duplicate_check_json: duplicate ? { duplicate_status: "Hinweis", duplicateArticleId: duplicate.id } : { duplicate_status: "nicht blockierend" },
-    final_check_json: { status: "Warnung", blockers: ["manual_article_text_required", "claim_level_source_mapping_required"] },
+    ai_log_json: { actor, rule: "editor_decides" },
+    duplicate_check_json: { disabled: true },
+    final_check_json: { status: "vorbereitet", blockers: [] },
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp()
   };
@@ -605,16 +606,16 @@ async function runAiEditorialPipeline({ manual = false, actor = "scheduler" } = 
   await batch.commit();
   await writeAiEditorialLog({
     article_id: articleRef.id,
-    status: "warning",
-    message: "Sicherer Themenvorschlag erstellt. Keine automatische Veroeffentlichung.",
+    status: "success",
+    message: "KI-News als Entwurf erstellt.",
     found_topics_json: [topic],
     used_sources_json: sourceSnapshot,
-    source_check_json: { source_status: "teilweise geprueft" },
-    duplicate_check_json: duplicate ? { duplicate_status: "Hinweis", duplicateArticleId: duplicate.id } : { duplicate_status: "nicht blockierend" },
+    source_check_json: { source_status: sources.length ? "Quelle vorhanden" : "Quelle bitte redaktionell pruefen" },
+    duplicate_check_json: { disabled: true },
     keyword_result_json: topic.keywords,
-    ai_check_json: { status: "Warnung", publication_status: "pruefpflichtig" }
+    ai_check_json: { status: "vorbereitet", publication_status: "Entwurf" }
   });
-  return { ok: true, status: "warning", articleId: articleRef.id, message: "Sicherer Themenvorschlag erstellt. Keine automatische Veroeffentlichung." };
+  return { ok: true, status: "success", articleId: articleRef.id, message: "KI-News als Entwurf erstellt." };
 }
 
 exports.runAiEditorialTask = onCall({ region, timeoutSeconds: 180 }, async (request) => {
@@ -689,11 +690,11 @@ function topicToBriefingItem(topic = {}, sources = [], existing = [], index = 0)
     first_seen: topic.created_at || topic.createdAt || new Date().toISOString(),
     category: topic.category || "Morgenbriefing",
     score: Number(topic.relevance_score || topic.quality_score || topic.industry_score || 0),
-    status: duplicate ? "Dublette" : approvedSource && sourceUrl ? "Briefing" : "Pruefpflichtig",
-    morning_status: duplicate ? "Dublette" : approvedSource && sourceUrl ? "Briefing" : "Pruefpflichtig",
+    status: "Briefing",
+    morning_status: "Briefing",
     source_type: approvedSource?.source_type || "verifizierte Quelle",
     is_regulator: /behoerde|bundestag|bundesnetzagentur|eu|parlament|zak|dlm|medienanstalt/i.test([approvedSource?.source_type, sourceName, topic.category].join(" ")),
-    duplicate_of: duplicate?.id || "",
+    duplicate_of: "",
     keywords: Array.isArray(topic.keywords) ? topic.keywords : [],
     topic_suggestion_id: topic.id || "",
     origin: "scheduled_morning_briefing",
@@ -706,7 +707,6 @@ function pressReleaseToBriefingItem(release = {}, sources = [], existing = [], i
   const headline = String(release.title || "").trim();
   const sourceName = release.source_name || release.sourceName || release.source_domain || release.sourceDomain || sourceNameFromUrl(release.url || "");
   const approvedSource = briefingSourceApproved({ source: sourceName, original_url: release.url }, sources);
-  const duplicate = briefingDuplicate({ headline, original_url: release.url }, existing);
   const id = `morning-item-${safeSlug([release.id, headline].filter(Boolean).join("-")) || createHash("sha1").update(headline || String(index)).digest("hex").slice(0, 16)}`;
   return {
     id,
@@ -722,17 +722,30 @@ function pressReleaseToBriefingItem(release = {}, sources = [], existing = [], i
     first_seen: release.published_at || release.imported_at || new Date().toISOString(),
     category: release.category || "Presse / Branche",
     score: approvedSource ? 72 : 45,
-    status: duplicate ? "Dublette" : approvedSource && release.url ? "Briefing" : "Pruefpflichtig",
-    morning_status: duplicate ? "Dublette" : approvedSource && release.url ? "Briefing" : "Pruefpflichtig",
+    status: "Briefing",
+    morning_status: "Briefing",
     source_type: approvedSource?.source_type || "Pressebereich",
     is_regulator: false,
-    duplicate_of: duplicate?.id || "",
+    duplicate_of: "",
     keywords: [],
     press_release_id: release.id || "",
     origin: "scheduled_morning_briefing",
     created_at: FieldValue.serverTimestamp(),
     updated_at: FieldValue.serverTimestamp()
   };
+}
+
+function briefingItemSummary(item = {}, index = 0) {
+  const headline = String(item.headline || item.title || `Meldung ${index + 1}`).trim();
+  const summary = String(item.summary || item.teaser || "").replace(/\s+/g, " ").trim();
+  const source = String(item.source || item.source_name || "Quelle offen").trim();
+  const category = String(item.category || item.relevance || "Morgenbriefing").trim();
+  const url = String(item.original_url || item.url || "").trim();
+  return [
+    `${index + 1}. ${headline}`,
+    summary ? `Kurz: ${summary}` : "",
+    `Quelle: ${source}${category ? ` | Rubrik: ${category}` : ""}${url ? ` | ${url}` : ""}`
+  ].filter(Boolean).join("\n");
 }
 
 async function runMorningBriefingPipeline({ manual = false, actor = "scheduler" } = {}) {
@@ -757,15 +770,6 @@ async function runMorningBriefingPipeline({ manual = false, actor = "scheduler" 
   const existingTopics = topicsSnapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
   const pressReleases = pressSnapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
   const sourcePool = sources.filter(sourceApprovedForBriefing);
-  if (!sourcePool.length) {
-    await writeAiEditorialLog({
-      task_name: "Morgenbriefing",
-      status: "blocked",
-      message: "Keine freigegebenen Quellen fuer Morgenbriefing vorhanden.",
-      ai_check_json: { status: "nicht bestanden", blockers: ["approved_sources_missing"] }
-    });
-    return { ok: false, status: "blocked", message: "Keine freigegebenen Quellen vorhanden." };
-  }
   const candidates = [
     ...existingTopics
       .filter((topic) => !["abgelehnt", "archiviert", "uebernommen"].includes(normalizeStatus(topic.status || topic.queue_status)))
@@ -792,20 +796,22 @@ async function runMorningBriefingPipeline({ manual = false, actor = "scheduler" 
   candidates.forEach((item) => batch.set(db.collection("ai_topic_suggestions").doc(item.id), item, { merge: true }));
   const today = new Date().toISOString().slice(0, 10);
   const briefingId = `morgenbriefing-${today}`;
-  const bodyText = candidates.map((item, index) => [
-    `${index + 1}. ${item.headline}`,
-    item.summary,
-    `Quelle: ${item.source || "-"} | Kategorie: ${item.category || "-"} | Relevanz: ${item.relevance || "-"} | Status: ${item.status || "-"}`
-  ].join("\n")).join("\n\n");
+  const shortText = `${candidates.length} Meldungen aus freigegebenen Quellen als kurze redaktionelle Uebersicht.`;
+  const bodyText = [
+    `Morgenbriefing ${today}`,
+    shortText,
+    "",
+    ...candidates.map((item, index) => briefingItemSummary(item, index))
+  ].join("\n\n").trim();
   batch.set(db.collection("editorialContent").doc(briefingId), {
     id: briefingId,
     title: `Morgenbriefing ${today}`,
     headline: `Morgenbriefing ${today}`,
-    subtitle: `${candidates.length} quellenbasierte Meldungen fuer die PROdigitalTV-Redaktion.`,
-    subline: `${candidates.length} quellenbasierte Meldungen fuer die PROdigitalTV-Redaktion.`,
-    introText: "Automatisch vorbereitete Morgenbriefing-Arbeitsfassung. Keine automatische Veroeffentlichung ohne redaktionelle Freigabe.",
-    shortText: "Automatisch vorbereitete Morgenbriefing-Arbeitsfassung.",
-    teaserText: "Automatisch vorbereitete Morgenbriefing-Arbeitsfassung.",
+    subtitle: shortText,
+    subline: shortText,
+    introText: shortText,
+    shortText,
+    teaserText: shortText,
     bodyText,
     page: "news",
     section: "news",
@@ -814,17 +820,17 @@ async function runMorningBriefingPipeline({ manual = false, actor = "scheduler" 
     category: "Morgenbriefing",
     tags: ["Morgenbriefing", "KI-Redaktion", "Medienwirtschaft"],
     source_snapshot_json: candidates.map((item) => ({ title: item.source, url: item.original_url, check_status: item.status, source_type: item.source_type })),
-    source_status: candidates.some((item) => item.status === "Pruefpflichtig") ? "Pruefpflichtig" : "geprueft",
-    duplicate_status: candidates.some((item) => item.status === "Dublette") ? "Dublette enthalten" : "nicht blockierend",
-    ai_check_status: "Warnung",
+    source_status: "Quelle vorhanden",
+    duplicate_status: "nicht geprueft",
+    ai_check_status: "vorbereitet",
     legal_check_status: "offen",
-    publication_status: "pruefpflichtig",
+    publication_status: "Zusammenfassung",
     status: "draft",
     visibility: "internal",
     author_type: "ai",
     author_name: "KI-Redaktion",
     generation_origin: "morning_briefing",
-    content_type: "morning_briefing",
+    content_type: "morning_briefing_summary",
     editorialType: "morning_briefing",
     ai_log_json: { workflow: "morning_briefing", actor, itemIds: candidates.map((item) => item.id) },
     publishDate: today,
@@ -841,14 +847,14 @@ async function runMorningBriefingPipeline({ manual = false, actor = "scheduler" 
   await writeAiEditorialLog({
     article_id: briefingId,
     task_name: "Morgenbriefing",
-    status: "warning",
-    message: `${candidates.length} Meldungen fuer Morgenbriefing vorbereitet. Keine automatische Veroeffentlichung.`,
+    status: "success",
+    message: `${candidates.length} Meldungen fuer Morgenbriefing vorbereitet.`,
     found_topics_json: logItems,
     used_sources_json: sourcePool.slice(0, 20),
-    duplicate_check_json: { duplicates: candidates.filter((item) => item.status === "Dublette").length },
-    ai_check_json: { status: "Warnung", publication_status: "pruefpflichtig" }
+    duplicate_check_json: { disabled: true },
+    ai_check_json: { status: "vorbereitet", publication_status: "Entwurf" }
   });
-  return { ok: true, status: "warning", briefingId, items: candidates.length, message: `${candidates.length} Meldungen fuer Morgenbriefing vorbereitet.` };
+  return { ok: true, status: "success", briefingId, items: candidates.length, message: `${candidates.length} Meldungen fuer Morgenbriefing vorbereitet.` };
 }
 
 exports.runMorningBriefingTask = onCall({ region, timeoutSeconds: 300 }, async (request) => {

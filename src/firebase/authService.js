@@ -1,4 +1,4 @@
-import { getFirebaseServices, localPreviewMode, realDataMode } from "./firebaseClient.js";
+import { getFirebaseServices, localPreviewMode, realDataMode } from "./firebaseClient.js?v=2";
 
 const USER_KEY = "prodigitaltv-user";
 let authReadyPromise;

@@ -1,4 +1,4 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=461";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=464";
 import { list, getOne } from "../firebase/dataService.js?v=466";
 import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=466";
 import { accessLabels, lifecycleLabels, members as publicMemberProfiles } from "../data/demoData.js";
@@ -75,6 +75,21 @@ function editorialListStatus(item) {
 function editorialVisibilityListStatus(item) {
   const isPublished = !["draft", "archived"].includes(item.status);
   return status(isPublished && item.visible === true ? "active" : "inactive");
+}
+
+function newsBulkToolbar(records = []) {
+  return `<div class="cms-bulk-toolbar" data-news-bulk-toolbar>
+    <div class="cms-bulk-toolbar__select">
+      <label class="cms-bulk-checkbox"><input type="checkbox" data-news-bulk-select-all ${records.length ? "" : "disabled"}> <span>Alle</span></label>
+      <button class="button button--secondary button--small" type="button" data-news-bulk-clear>Auswahl aufheben</button>
+      <span class="muted" data-news-bulk-count>0 ausgewaehlt</span>
+    </div>
+    <div class="actions">
+      <button class="button button--secondary button--small news-bulk-action news-bulk-action--icon" type="button" data-news-bulk-hide disabled>${iconImage("eyeOff")}<span>Unsichtbar</span></button>
+      <button class="button button--danger button--small news-bulk-action news-bulk-action--icon" type="button" data-news-bulk-delete disabled>${iconImage("trash")}<span>Loeschen</span></button>
+    </div>
+    <div id="news-bulk-result"></div>
+  </div>`;
 }
 
 function memberIsLive(item) {
@@ -375,6 +390,22 @@ function galleryListStatus(item) {
 function listDate(item) {
   const value = item.publishDate || item.validFrom || item.date || item.submittedAt || item.updatedAt || item.createdAt || "";
   return value ? formatShortDate(value) : "-";
+}
+
+function listDateSortValue(item = {}) {
+  const value = item.publishDate || item.validFrom || item.date || item.submittedAt || item.updatedAt || item.createdAt || "";
+  if (!value) return 0;
+  if (typeof value.toDate === "function") {
+    const date = value.toDate();
+    return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+  }
+  if (typeof value === "object" && typeof value.seconds === "number") return value.seconds * 1000;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? 0 : value.getTime();
+  const raw = String(value || "").trim();
+  const german = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:,\s*(\d{1,2}):(\d{2}))?/);
+  if (german) return new Date(Number(german[3]), Number(german[2]) - 1, Number(german[1]), Number(german[4] || 0), Number(german[5] || 0)).getTime();
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
 }
 
 function mailQueueDate(value) {
@@ -1478,9 +1509,9 @@ export async function moduleListPage(module, section = "all") {
         if (sortA !== sortB) return sortA - sortB;
         return String(a.name || "").localeCompare(String(b.name || ""), "de", { sensitivity: "base" });
       }
-      const dateA = a.publishDate || a.date || a.validFrom || a.updatedAt || a.createdAt || "";
-      const dateB = b.publishDate || b.date || b.validFrom || b.updatedAt || b.createdAt || "";
-      if (dateA || dateB) return String(dateB).localeCompare(String(dateA));
+      const dateA = listDateSortValue(a);
+      const dateB = listDateSortValue(b);
+      if (dateA || dateB) return dateB - dateA;
       return Number(b.sortOrder || 0) - Number(a.sortOrder || 0);
     });
   const memberMediaAssets = module === "members" ? await list("media_assets").catch(() => []) : [];
@@ -1502,7 +1533,11 @@ export async function moduleListPage(module, section = "all") {
   }
   if (module === "editorialContent") {
     const actionButtons = section === "interna" ? lockedEditorialActionButtons : editorialVisibilityActionButtons;
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--with-audio${section === "press" ? " table--press" : ""}${section === "news" ? " table--news" : ""}"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td><td>${audioListCell("editorialContent", item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    const isNewsList = section === "news";
+    const selectHead = isNewsList ? `<th class="cms-bulk-select-col"><input type="checkbox" data-news-bulk-select-all ${records.length ? "" : "disabled"} aria-label="Alle News auswaehlen"></th>` : "";
+    const selectCell = (item) => isNewsList ? `<td class="cms-bulk-select-col"><input type="checkbox" data-news-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "News")} auswaehlen"></td>` : "";
+    const emptyColspan = isNewsList ? 7 : 6;
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${isNewsList ? newsBulkToolbar(records) : ""}<div class="table-wrap"><table class="table table--editorial table--with-audio${section === "press" ? " table--press" : ""}${section === "news" ? " table--news" : ""}"><thead><tr>${selectHead}<th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr>${selectCell(item)}<td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td><td>${audioListCell("editorialContent", item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${emptyColspan}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "members") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--members"><thead><tr><th>Logo</th><th>Mitglied</th><th>Ansprechperson</th><th>Kontakt</th><th>Art</th><th>Ort</th><th>Visible</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table member-logo-thumb--table">${memberLogoThumb(item, memberMediaAssets, section)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a></td><td>${escapeHtml(shortText(item.contactName || [item.firstName, item.lastName].filter(Boolean).join(" ") || "-", 70))}</td><td>${memberContactCell(item)}</td><td class="member-type-short" title="${escapeHtml(memberMembershipTypeTitle(item))}">${escapeHtml(memberMembershipTypeLabel(item))}</td><td>${escapeHtml([item.postalCode, item.city].filter(Boolean).join(" ") || "-")}</td><td>${memberVisibleToggleCell(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
@@ -1728,7 +1763,6 @@ Ausgangstext:
           <div class="editorial-workspace__main">
             <div class="editorial-workflow-actions">
               <button class="button button--secondary button--small" type="button" data-editorial-preview-layer>Vorschau</button>
-              <a class="button button--secondary button--small" href="${publicArticleHref}" target="_blank" rel="noopener">Artikel anzeigen</a>
               <button class="button button--secondary button--small" type="button" data-editor-tool-open="audio">Audio</button>
               <button class="button button--secondary button--small" type="button" data-editor-tool-open="gallery">Galerie</button>
             </div>
@@ -1736,7 +1770,10 @@ Ausgangstext:
             <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Subline</label>${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Subline erzeugen", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div><textarea name="subtitle" rows="2">${escapeHtml(item.subtitle || "")}</textarea></div>
             <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Haupttext</label>${aiFieldActions(sectionKey === "press" ? [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }, { action: "rewritePressRetrospective", target: "bodyText", label: "Rückblick aus Pressemitteilung", entityType: module, entityId: item.id, fieldName: "bodyText", promptField: "retrospectivePrompt" }] : [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div><textarea name="bodyText" required>${escapeHtml(item.bodyText || "")}</textarea></div>
             <div class="field editorial-text-field"><div class="editorial-field-head"><label>Shorttext / Intro</label>${aiFieldActions([{ action: "shortenText", target: "introText", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "introText" }])}</div><textarea name="introText">${escapeHtml(item.introText || "")}</textarea></div>
-            <div class="actions editorial-save-inline"><button class="button button--primary">Speichern</button></div><div id="content-save-result"></div>
+            <div class="actions editorial-save-inline">
+              <button class="button button--primary">Speichern</button>
+              ${sectionKey === "news" ? `<button class="button button--secondary" type="button" data-news-publish-now="${escapeHtml(item.id)}">Veroeffentlichen</button>` : ""}
+            </div><div id="content-save-result"></div>
           </div>
           <aside class="editorial-tools">
             <section class="editorial-meta-panel">
