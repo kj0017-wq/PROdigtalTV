@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#071a33">
     <meta name="description" content="PROdigitalTV CMS">
     <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/src/styles/main.css?v=695">
+    <link rel="stylesheet" href="/src/styles/main.css?v=747">
     <title>PROdigitalTV | CMS</title>
   </head>
   <body>
@@ -29,7 +29,87 @@
       } else if (!window.location.hash.replace(/^#\/?/, "").startsWith("cms")) {
         window.location.replace(`${window.location.origin}/${window.location.search}${window.location.hash}`);
       }
+      (() => {
+        const local = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+        const hash = String(window.location.hash || "");
+        if (!local) return;
+        const app = document.getElementById("app");
+        if (!app) return;
+        const canReplace = !app.innerHTML || /Lade Inhalte|CMS-Ladevorgang|Bitte neu laden/.test(app.innerText || "");
+        if (!canReplace) return;
+        const escapeLocal = (value = "") => String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;" }[char]));
+        const cmsFrame = (active, title, body) => `<main class="cms-app"><aside class="cms-sidebar"><a class="cms-logo" href="#/cms">PROdigitalTV</a><nav><a class="${active === "members" ? "active" : ""}" href="#/cms/members">Mitglieder</a><a href="#/cms/media/library">Medien</a><a href="#/cms">Dashboard</a></nav></aside><section class="cms-main"><div class="cms-title"><div><p class="eyebrow">Lokaler Notfallmodus</p><h1>${title}</h1><p>Direkte lokale Ansicht, damit die Seite nicht im Ladezustand haengt.</p></div></div>${body}</section></main>`;
+        if (false && (hash === "#/cms/members" || hash.startsWith("#/cms/members?"))) {
+          const seedMembers = [
+            ["bibel-tv-stiftung", "Bibel TV Stiftung gGmbH", "Hamburg"],
+            ["channel-21", "Channel 21 GmbH", "Hannover"],
+            ["kj-technical-consulting", "KJ Technical Consulting Klaus Juli", "Berlin"],
+            ["dsc-dietmar-schickel-consulting", "DSC Dietmar Schickel Consulting GmbH", "Berlin"],
+            ["ors", "ORS Comm GmbH & Co KG", "Wien"],
+            ["moderne-werbung-tv", "B�ro f�r moderne Werbung.tv", "Hamburg"],
+            ["markus-vogelbacher", "Markus Vogelbacher", "M�nchen"],
+            ["blu-tec-one", "BLU TEC ONE GmbH", "Tangstedt"],
+            ["house-of-research", "HOR House of Research GmbH", "Berlin"],
+            ["goldvisite-media", "Goldvisite Media GmbH", "Unterf�hring"],
+            ["schneider-enterprise", "Schneider-Enterprise", "Koblenz"],
+            ["fashion-tv", "Fashion TV Production UG", "Hamburg"],
+            ["stingray-digital-international", "STINGRAY Digital International LTD", "London"],
+            ["eutelsat", "Eutelsat Services und Beteiligungen GmbH", "K�ln"],
+            ["farbi-flora", "Farbi Flora GmbH", "Gosen-Neu Zittau"],
+            ["anixe-hd", "ANIXE HD TELEVISION GmbH & Co KG", "M�nchen"],
+            ["js-consult", "JS Consult Ing.-b�ro und Medienberatung", "Pulheim"],
+            ["thorsten-lork", "Thorsten Lork", "M�nchen"],
+            ["red-bull-media-house", "RED Bull Media House GmbH", "Wals-Siezenheim"],
+            ["hardy-heine", "Hardy Heine", "Bad Nenndorf"],
+            ["no-limits-media", "No Limits Media GmbH", "Berlin"],
+            ["itsmaxsuhr", "itsmaxsuhr", "Hamburg"],
+            ["major-seven-consulting", "Major Seven Consulting", "Frankfurt / Main"],
+            ["sebastian-labonte", "Sebastian Labonte", "Mainz"],
+            ["michael-kayser", "Michael Kayser", "M�nchen"],
+            ["idee-medien", "Idee Medien UG", "Delmenhorst"],
+            ["prof-dr-conrad-heberling", "Prof. Dr Conrad Heberling", "Potsdam"],
+            ["tv-2000plus", "TV.2000plus GmbH", "Leinfelden-Echterdingen"],
+            ["3q-medien", "3Q Medien", "M�nchen"],
+            ["johannes-kors", "Johannes Kors", "M�nchen"],
+            ["claudio-malasomma-bellavista", "Claudio Malasomma BellaVista", "Frankfurt / Main"]
+          ].map(([id, name, city]) => ({ id, name, city, status: "active", visible: true, visibility: "public" }));
+          let members = [];
+          try {
+            members = JSON.parse(localStorage.getItem("prodigitaltv-demo-db-official-assets-v7") || "{}").members || [];
+          } catch {}
+          if (!members.length) {
+            try {
+              for (let index = 0; index < localStorage.length; index += 1) {
+                const key = localStorage.key(index);
+                const value = JSON.parse(localStorage.getItem(key) || "{}");
+                if (Array.isArray(value.members) && value.members.length) {
+                  members = value.members;
+                  break;
+                }
+              }
+            } catch {}
+          }
+          if (!members.length) members = seedMembers;
+          const activeMembers = members.filter((member) => !["archived", "deleted"].includes(String(member.status || "").toLowerCase()));
+          const rows = activeMembers.length ? activeMembers
+            .sort((a, b) => String(a.name || a.title || "").localeCompare(String(b.name || b.title || ""), "de"))
+            .map((member) => `<tr><td>${escapeLocal(member.name || member.title || member.id)}</td><td>${escapeLocal([member.postalCode, member.city].filter(Boolean).join(" ") || "-")}</td><td>${escapeLocal(member.membershipType || member.membership_type || "-")}</td><td>${member.visible === false ? "nicht sichtbar" : "sichtbar"}</td><td><a class="button button--secondary button--small" href="#/cms/edit?module=members&id=${encodeURIComponent(member.id)}&section=all">Bearbeiten</a></td></tr>`)
+            .join("")
+            : `<tr><td colspan="5">Keine lokalen Mitglieder gefunden.</td></tr>`;
+          app.dataset.localFallback = "members";
+          app.innerHTML = cmsFrame("members", "Mitglieder", `<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Mitglied</th><th>Ort</th><th>Art</th><th>Visible</th><th>Aktion</th></tr></thead><tbody>${rows}</tbody></table></div></section>`);
+          return;
+        }
+        if (new URLSearchParams(window.location.search).get("lite") !== "1") return;
+        if (!hash.startsWith("#/cms/edit")) return;
+        const query = new URLSearchParams(hash.split("?")[1] || "");
+        if (query.get("module") !== "members") return;
+        const id = query.get("id") || "member";
+        const title = id.split("-").filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+        app.dataset.localFallback = "member-edit";
+        app.innerHTML = `<main class="cms-app"><aside class="cms-sidebar"><a class="cms-logo" href="#/cms">PROdigitalTV</a><nav><a href="#/cms/members">Mitglieder</a><a href="#/cms/media/library">Medien</a><a href="#/cms">Dashboard</a></nav></aside><section class="cms-main"><div class="cms-title"><div><p class="eyebrow">Lokaler Notfallmodus</p><h1>Mitglied bearbeiten</h1><p>Der Editor wird direkt aus cms.html geoeffnet, damit die Seite nicht im Ladezustand haengt.</p></div><a class="button button--secondary button--small" href="#/cms/members">Zurueck</a></div><section class="panel"><form id="content-edit-form" data-module="members" data-id="${id}" class="form-grid form-grid--two member-edit-form"><div class="member-edit-form__column member-edit-form__column--identity"><section class="member-edit-card"><p class="eyebrow">Stammdaten</p><div class="form-grid form-grid--member-base"><div class="field"><label>Mitgliedstyp</label><select name="membershipType"><option value="company" selected>Firmenmitglied</option><option value="individual">Einzelmitglied</option></select></div><div class="field"><label>Firma / Name</label><input name="name" value="${title}"></div><div class="field"><label>Straße</label><input name="street"></div><div class="field"><label>Hausnummer</label><input name="houseNumber"></div><div class="field"><label>PLZ</label><input name="postalCode"></div><div class="field"><label>Ort</label><input name="city"></div><div class="field"><label>Land</label><input name="country"></div></div></section><div class="member-edit-form__event-contacts"><p class="eyebrow">Kontaktdaten</p>${Array.from({ length: 5 }, (_, index) => `<fieldset class="member-event-contact-row"><legend>Kontakt ${index + 1}</legend><div class="form-grid form-grid--member-contact"><div class="field"><label>Vorname</label><input name="eventContactFirstName${index}"></div><div class="field"><label>Nachname</label><input name="eventContactLastName${index}"></div><div class="field"><label>Funktion</label><select name="eventContactRole${index}"><option value="">Funktion wählen</option><option>Buchhaltung</option><option>Geschäftsleitung</option><option>Marketing</option><option>Sales / Verkauf</option><option>Kommunikation / PR</option><option>Technik</option></select></div><div class="field"><label>Mail</label><input name="eventContactEmail${index}" type="email"></div><div class="field"><label>Tel. mit Landesvorwahl</label><input name="eventContactPhone${index}" type="tel" placeholder="+49 ..."></div></div></fieldset>`).join("")}</div></div><div class="member-edit-form__column member-edit-form__column--content"><section class="member-edit-card member-edit-card--profile"><p class="eyebrow">Profil</p><div class="field"><label>Beschreibung</label><textarea name="description"></textarea></div><div class="field"><label>Website</label><input name="website"></div><label class="checkbox-line"><input type="checkbox" name="visible" checked> Im Portal sichtbar</label></section></div><div class="member-edit-savebar"><button class="button button--primary">Speichern</button><div id="content-save-result"></div></div></form></section></section></main>`;
+      })();
     </script>
-    <script type="module" src="/src/main.js?v=695"></script>
+    <script type="module" src="/src/main.js?v=759"></script>
   </body>
 </html>

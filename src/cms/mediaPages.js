@@ -1,10 +1,11 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=464";
-import { list, getOne } from "../firebase/dataService.js?v=466";
-import { currentUser, canUseCms, waitForAuthReady } from "../firebase/authService.js?v=467";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=467";
+import { list, getOne } from "../firebase/dataService.js?v=487";
+import { currentUser, canUseCms, waitForAuthReady } from "../firebase/authService.js?v=470";
 import { escapeHtml } from "../utils/format.js";
 
 const mediaSections = [
-  ["library", "Mediathek"]
+  ["library", "Bilder"],
+  ["videos", "Videos"]
 ];
 
 const mediaTypeLabels = {
@@ -55,7 +56,7 @@ function mediaUsagePreset(type = "upload") {
 
 function mediaPresetSummary(type = "upload") {
   const preset = mediaUsagePreset(type);
-  return `${preset.aspect} Â· ${preset.width} x ${preset.height}px Â· ${preset.portal} Â· ${preset.mobile}`;
+  return `${preset.aspect} · ${preset.width} x ${preset.height}px · ${preset.portal} · ${preset.mobile}`;
 }
 
 function lastMediaAssetId() {
@@ -66,7 +67,12 @@ function lastMediaAssetId() {
   }
 }
 
+function localCmsAccessBypass() {
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+}
+
 function protect(content) {
+  if (localCmsAccessBypass()) return content;
   const user = currentUser();
   if (!canUseCms(user)) {
     if (user) {
@@ -243,7 +249,7 @@ function inferredMediaType(asset = {}, usedIn = []) {
     }),
     ...usedIn.map(mediaTypeFromLinkedRecord)
   ].find(Boolean);
-  if (linkedType && ["upload", "thumb", "thumbnail", "ai", "article"].includes(current)) return linkedType;
+  if (linkedType && ["upload", "thumb", "thumbnail", "ai", "article", "person"].includes(current)) return linkedType;
   if (current !== "upload") return current;
   const values = mediaUrlValues(asset).join(" ");
   if (/assets(?:%2F|\/)official(?:%2F|\/)members/i.test(values)) return "logo";
@@ -289,13 +295,19 @@ function mediaMemberAccessBlocked(member = {}, now = new Date()) {
 }
 
 function mediaMemberIsCurrent(member = {}) {
-  const type = member.membershipType || "";
-  return ["company", "individual"].includes(type)
-    && !["inactive", "cancelled", "archived"].includes(member.status || "")
-    && (member.visibility || "public") === "public"
-    && member.visible !== false
-    && member.isLive !== false
+  const status = String(member.status || "active").toLowerCase();
+  const accessStatus = String(member.membershipAccessStatus || "active").toLowerCase();
+  return !["inactive", "cancelled", "archived", "deleted"].includes(status)
+    && !["inactive", "cancelled", "archived", "deleted"].includes(accessStatus)
     && !mediaMemberAccessBlocked(member);
+}
+
+function mediaMemberIsFormer(member = {}) {
+  const status = String(member.status || "").toLowerCase();
+  const accessStatus = String(member.membershipAccessStatus || "").toLowerCase();
+  return ["inactive", "cancelled", "archived", "deleted"].includes(status)
+    || ["inactive", "cancelled", "archived", "deleted"].includes(accessStatus)
+    || mediaMemberAccessBlocked(member);
 }
 
 function mediaPreferredMemberLogoAsset(member = {}, assets = []) {
@@ -306,7 +318,9 @@ function mediaPreferredMemberLogoAsset(member = {}, assets = []) {
       const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
       return directIds.includes(asset.id)
         || (asset.target_collection === "members" && asset.target_id === member.id && (asset.target_field || "logoUrl") === "logoUrl")
+        || (asset.targetCollection === "members" && asset.targetId === member.id && (asset.targetField || "logoUrl") === "logoUrl")
         || (asset.linked_collection === "members" && asset.linked_record_id === member.id && (asset.linked_field || "logoUrl") === "logoUrl")
+        || (asset.linkedCollection === "members" && asset.linkedRecordId === member.id && (asset.linkedField || "logoUrl") === "logoUrl")
         || (logoUrl && urls.includes(logoUrl));
     })
     .filter((asset) => mediaUrl(asset))
@@ -314,7 +328,9 @@ function mediaPreferredMemberLogoAsset(member = {}, assets = []) {
       const score = (asset = {}) => [
         directIds.includes(asset.id) ? "5" : "0",
         asset.target_collection === "members" && asset.target_id === member.id && (asset.target_field || "logoUrl") === "logoUrl" ? "4" : "0",
+        asset.targetCollection === "members" && asset.targetId === member.id && (asset.targetField || "logoUrl") === "logoUrl" ? "4" : "0",
         asset.linked_collection === "members" && asset.linked_record_id === member.id && (asset.linked_field || "logoUrl") === "logoUrl" ? "3" : "0",
+        asset.linkedCollection === "members" && asset.linkedRecordId === member.id && (asset.linkedField || "logoUrl") === "logoUrl" ? "3" : "0",
         asset.source_type === "edited" ? "2" : "0",
         asset.status === "active" ? "2" : "1",
         asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
@@ -322,6 +338,81 @@ function mediaPreferredMemberLogoAsset(member = {}, assets = []) {
       ].join("|");
       return score(b).localeCompare(score(a));
     })[0];
+}
+
+function mediaAssetMatchesMemberLogo(asset = {}, member = {}) {
+  if (!asset?.id || !member?.id) return false;
+  const directIds = [
+    member.logo_media_asset_id,
+    member.logoMediaAssetId,
+    member.thumbnail_media_asset_id,
+    member.mediaAssetId,
+    member.media_asset_id
+  ].filter(Boolean);
+  if (directIds.includes(asset.id)) return true;
+  const targetCollection = asset.target_collection || asset.targetCollection || "";
+  const targetId = asset.target_id || asset.targetId || "";
+  const targetField = asset.target_field || asset.targetField || "";
+  const linkedCollection = asset.linked_collection || asset.linkedCollection || "";
+  const linkedRecordId = asset.linked_record_id || asset.linkedRecordId || "";
+  const linkedField = asset.linked_field || asset.linkedField || "";
+  if (targetCollection === "members" && targetId === member.id && (!targetField || targetField === "logoUrl")) return true;
+  if (linkedCollection === "members" && linkedRecordId === member.id && (!linkedField || linkedField === "logoUrl")) return true;
+  const assetUrls = mediaUrlValues(asset).map(normalizedMediaUrl).filter(Boolean);
+  const memberUrls = [
+    member.logoUrl,
+    member.imageUrl,
+    member.thumbnail_url,
+    member.thumbnailUrl,
+    member.assetUrl
+  ].map(normalizedMediaUrl).filter(Boolean);
+  return memberUrls.some((url) => assetUrls.includes(url));
+}
+
+function memberLogoVirtualAssets(members = [], assets = []) {
+  const existingKeys = new Set(assets.flatMap((asset) => [
+    asset.id,
+    ...mediaUrlValues(asset).map(normalizedMediaUrl)
+  ].filter(Boolean)));
+  return members
+    .filter((member) => mediaMemberIsCurrent(member))
+    .map((member) => {
+      const logoUrl = member.logoUrl || member.logoDisplayUrl || member.imageUrl || "";
+      if (!logoUrl) return null;
+      const normalizedUrl = normalizedMediaUrl(logoUrl);
+      const id = `member-logo-${member.id}`;
+      if (existingKeys.has(id) || existingKeys.has(normalizedUrl)) return null;
+      return {
+        id,
+        title: member.name || member.title || member.id,
+        alt_text: `Logo ${member.name || member.title || member.id}`,
+        description: member.description || "",
+        media_type: "logo",
+        source_type: "official",
+        source_note: "Aktuelles Mitgliederlogo aus der Mitgliederverwaltung.",
+        aspect_ratio: "logo",
+        status: "active",
+        visibility: "public",
+        imageUrl: logoUrl,
+        file_path_original_url: logoUrl,
+        file_path_web_url: logoUrl,
+        file_path_thumb_url: logoUrl,
+        filename_original: logoUrl.split("/").pop() || `${member.id}.png`,
+        filename_web: logoUrl.split("/").pop() || `${member.id}.png`,
+        target_collection: "members",
+        target_id: member.id,
+        target_field: "logoUrl",
+        target_title: member.name || member.title || member.id,
+        linked_collection: "members",
+        linked_record_id: member.id,
+        linked_field: "logoUrl",
+        linked_title: member.name || member.title || member.id,
+        created_at: member.updatedAt || member.createdAt || "2026-06-18T00:00:00.000Z",
+        updated_at: member.updatedAt || member.createdAt || "2026-06-18T00:00:00.000Z",
+        virtual_asset: true
+      };
+    })
+    .filter(Boolean);
 }
 
 function mediaAspectStyle(format = "16x9") {
@@ -487,7 +578,7 @@ function mediaVariantChooser(asset = {}, variants = [], assets = []) {
     const label = variant.variant_label || mediaTypeLabels[variant.variant_type] || variant.variant_type || "Variante";
     const format = variant.format || asset.aspect_ratio || mediaDisplayAspect(asset) || "16x9";
     const url = mediaVariantUrl(variant);
-    return `<button class="media-variant-choice" type="button" data-media-load-variant data-media-variant-src="${escapeHtml(url)}" data-media-variant-format="${escapeHtml(format)}" aria-pressed="false"><img src="${escapeHtml(url)}" alt=""><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml([format, variant.version, variant.filename].filter(Boolean).join(" Â· "))}</small></span></button>`;
+    return `<button class="media-variant-choice" type="button" data-media-load-variant data-media-variant-src="${escapeHtml(url)}" data-media-variant-format="${escapeHtml(format)}" aria-pressed="false"><img src="${escapeHtml(url)}" alt=""><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml([format, variant.version, variant.filename].filter(Boolean).join(" · "))}</small></span></button>`;
   }).join("");
   return `<div class="media-editor-variants"><p>Varianten</p><div>${original}${options}</div></div>`;
 }
@@ -515,6 +606,22 @@ function mediaEditIcon() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M16.9 3.6 20.4 7 8.7 18.7 4 20l1.3-4.7L16.9 3.6Zm1.4-1.4a1.6 1.6 0 0 1 2.2 0l1.3 1.3a1.6 1.6 0 0 1 0 2.2l-.8.8-3.5-3.5.8-.8Z"></path></svg>`;
 }
 
+function mediaEyeIcon() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5c5 0 8.6 4.2 10 7-1.4 2.8-5 7-10 7s-8.6-4.2-10-7c1.4-2.8 5-7 10-7Zm0 2C8.8 7 6.2 9.3 4.3 12c1.9 2.7 4.5 5 7.7 5s5.8-2.3 7.7-5C17.8 9.3 15.2 7 12 7Zm0 2.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6Z"></path></svg>`;
+}
+
+function mediaEyeOffIcon() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m3.3 2 18.7 18.7-1.3 1.3-3.2-3.2A10.6 10.6 0 0 1 12 20c-5 0-8.6-4.2-10-7a15.3 15.3 0 0 1 4-4.9L2 3.3 3.3 2Zm4.1 7.5A13 13 0 0 0 4.3 13c1.9 2.7 4.5 5 7.7 5 1.5 0 2.9-.5 4.2-1.3l-2-2a2.8 2.8 0 0 1-3.9-3.9L7.4 9.5ZM12 6c5 0 8.6 4.2 10 7a15.8 15.8 0 0 1-2.9 4l-1.4-1.4a13.5 13.5 0 0 0 2-2.6c-1.9-2.7-4.5-5-7.7-5-1 0-2 .2-2.9.7L7.6 7.2A10.5 10.5 0 0 1 12 6Zm2.8 7.1-3.9-3.9A2.8 2.8 0 0 1 14.8 13.1Z"></path></svg>`;
+}
+
+function mediaPlayIcon() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 5v14l11-7L8 5Z"></path></svg>`;
+}
+
+function mediaRestoreIcon() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5a7 7 0 1 1-6.4 4.2H3l4-4 4 4H8a5 5 0 1 0 4-2V5Zm-1 4h2v4.2l3 1.8-1 1.7-4-2.4V9Z"></path></svg>`;
+}
+
 function mediaFullscreenIcon() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4h7v2H7.4l4.3 4.3-1.4 1.4L6 7.4V11H4V4Zm9 0h7v7h-2V7.4l-4.3 4.3-1.4-1.4L16.6 6H13V4ZM4 13h2v3.6l4.3-4.3 1.4 1.4L7.4 18H11v2H4v-7Zm14 0h2v7h-7v-2h3.6l-4.3-4.3 1.4-1.4 4.3 4.3V13Z"></path></svg>`;
 }
@@ -534,8 +641,8 @@ function mediaMetadataBox(asset = {}) {
     ["Format", asset.image_format || asset.mime_type || ""],
     ["Groesse", asset.file_size_label || (asset.file_size ? `${Math.round(Number(asset.file_size) / 1024)} KB` : "")],
     ["Pixel", asset.image_width && asset.image_height ? `${asset.image_width} x ${asset.image_height}px` : ""],
-    ["Web-Datei", asset.web_image_width && asset.web_image_height ? `${asset.web_image_width} x ${asset.web_image_height}px Â· ${asset.web_file_size_label || ""} Â· ${asset.web_codec || asset.web_mime_type || ""}` : ""],
-    ["Thumb", asset.thumb_image_width && asset.thumb_image_height ? `${asset.thumb_image_width} x ${asset.thumb_image_height}px Â· ${asset.thumb_file_size_label || ""} Â· ${asset.thumb_codec || asset.thumb_mime_type || ""}` : ""],
+    ["Web-Datei", asset.web_image_width && asset.web_image_height ? `${asset.web_image_width} x ${asset.web_image_height}px · ${asset.web_file_size_label || ""} · ${asset.web_codec || asset.web_mime_type || ""}` : ""],
+    ["Thumb", asset.thumb_image_width && asset.thumb_image_height ? `${asset.thumb_image_width} x ${asset.thumb_image_height}px · ${asset.thumb_file_size_label || ""} · ${asset.thumb_codec || asset.thumb_mime_type || ""}` : ""],
     ["Speicherpfad", asset.file_path_web || asset.file_path_original || ""],
     ["Geaendert", assetDate(asset)]
   ].filter(([, value]) => value);
@@ -572,29 +679,37 @@ async function mediaUsageMap(assets = []) {
     .filter(Boolean));
   assets.forEach((asset) => {
     const usedIn = [];
-    if (asset.target_collection && asset.target_id) {
-      const targetRecord = (recordsByCollection[asset.target_collection] || []).find((record) => record.id === asset.target_id);
+    const targetCollection = asset.target_collection || asset.targetCollection || "";
+    const targetId = asset.target_id || asset.targetId || "";
+    const targetField = asset.target_field || asset.targetField || "";
+    const linkedCollection = asset.linked_collection || asset.linkedCollection || "";
+    const linkedRecordId = asset.linked_record_id || asset.linkedRecordId || "";
+    if (targetCollection && targetId) {
+      const targetRecord = (recordsByCollection[targetCollection] || []).find((record) => record.id === targetId);
       usedIn.push({
-        collection: asset.target_collection,
-        id: asset.target_id,
-        title: asset.target_title || asset.linked_title || targetRecord?.title || targetRecord?.name || asset.target_id,
+        collection: targetCollection,
+        id: targetId,
+        title: asset.target_title || asset.targetTitle || asset.linked_title || asset.linkedTitle || targetRecord?.title || targetRecord?.name || targetId,
         page: asset.target_page || asset.linked_page || asset.page,
         section: asset.target_section || asset.linked_section || asset.section,
         publication_target: asset.publication_target,
+        field: targetField,
         actual_reference: false,
-        member_current: asset.target_collection === "members" ? mediaMemberIsCurrent(targetRecord || {}) : undefined
+        member_former: targetCollection === "members" ? mediaMemberIsFormer(targetRecord || {}) : undefined,
+        member_current: targetCollection === "members" ? mediaMemberIsCurrent(targetRecord || {}) : undefined
       });
-    } else if (asset.linked_collection && asset.linked_record_id) {
-      const linkedRecord = (recordsByCollection[asset.linked_collection] || []).find((record) => record.id === asset.linked_record_id);
+    } else if (linkedCollection && linkedRecordId) {
+      const linkedRecord = (recordsByCollection[linkedCollection] || []).find((record) => record.id === linkedRecordId);
       usedIn.push({
-        collection: asset.linked_collection,
-        id: asset.linked_record_id,
-        title: asset.linked_title || linkedRecord?.title || linkedRecord?.name || asset.linked_record_id,
+        collection: linkedCollection,
+        id: linkedRecordId,
+        title: asset.linked_title || asset.linkedTitle || linkedRecord?.title || linkedRecord?.name || linkedRecordId,
         page: asset.linked_page || asset.page,
         section: asset.linked_section || asset.section,
         publication_target: asset.publication_target,
         actual_reference: false,
-        member_current: asset.linked_collection === "members" ? mediaMemberIsCurrent(linkedRecord || {}) : undefined
+        member_former: linkedCollection === "members" ? mediaMemberIsFormer(linkedRecord || {}) : undefined,
+        member_current: linkedCollection === "members" ? mediaMemberIsCurrent(linkedRecord || {}) : undefined
       });
     }
     collectionRecords.forEach(([collection, records]) => {
@@ -608,6 +723,7 @@ async function mediaUsageMap(assets = []) {
           section: match.section,
           publication_target: match.publication_target,
           actual_reference: true,
+          member_former: collection === "members" ? mediaMemberIsFormer(match) : undefined,
           member_current: collection === "members" ? mediaMemberIsCurrent(match) : undefined
         });
       } else if (match) {
@@ -615,8 +731,21 @@ async function mediaUsageMap(assets = []) {
         if (existing) {
           existing.actual_reference = true;
           if (collection === "members") existing.member_current = mediaMemberIsCurrent(match);
+          if (collection === "members") existing.member_former = mediaMemberIsFormer(match);
         }
       }
+    });
+    currentMembers.forEach((member) => {
+      if (!mediaAssetMatchesMemberLogo(asset, member)) return;
+      if (usedIn.some((entry) => entry.collection === "members" && entry.id === member.id)) return;
+      usedIn.push({
+        collection: "members",
+        id: member.id,
+        title: member.name || member.title || member.id,
+        field: "logoUrl",
+        actual_reference: true,
+        member_current: true
+      });
     });
     usage.set(asset.id, usedIn);
   });
@@ -644,6 +773,40 @@ function mediaUsageLabel(usedIn = []) {
   return `${collectionLabels[first.collection] || first.collection}${suffix}`;
 }
 
+function mediaCardTypeLabel(type = "") {
+  const labels = {
+    event: "Event",
+    news: "News",
+    board: "Vorstand",
+    logo: "Logo",
+    member: "Mitglied",
+    topic: "Thema",
+    article: "Artikel",
+    person: "Person",
+    upload: "Upload",
+    ai: "KI-Grafik"
+  };
+  return labels[type] || mediaTypeLabels[type] || type || "Bild";
+}
+
+function mediaLogoFlags(asset = {}, usedIn = [], usageMap = new Map()) {
+  if (inferredMediaType(asset, usedIn) !== "logo") return { className: "", label: "" };
+  const memberUses = usedIn.filter((entry) => entry.collection === "members");
+  const currentMemberIds = usageMap.currentMemberIds || new Set();
+  const preferredMemberLogoIds = usageMap.preferredMemberLogoIds || new Set();
+  const linkedCurrentMember = memberUses.some((entry) => entry.id && currentMemberIds.has(entry.id));
+  const explicitlyFormerMember = memberUses.length > 0 && memberUses.every((entry) => entry.member_former === true);
+  const title = String(asset.title || asset.filename_original || asset.original_filename || "").toLowerCase();
+  const protectedActiveLogo = title.includes("flame") && title.includes("media");
+  if (explicitlyFormerMember && !linkedCurrentMember && !protectedActiveLogo) {
+    return { className: "media-asset-card--former-logo", label: "Ausgeschieden" };
+  }
+  if (linkedCurrentMember && preferredMemberLogoIds.size && !preferredMemberLogoIds.has(asset.id)) {
+    return { className: "media-asset-card--duplicate-logo", label: "Doppelt" };
+  }
+  return { className: "", label: "" };
+}
+
 function mediaCardInfoRows(asset = {}, usedIn = []) {
   const displayType = inferredMediaType(asset, usedIn);
   const sourceGroup = mediaAssetSourceGroup(asset);
@@ -666,7 +829,7 @@ function mediaCardInfoRows(asset = {}, usedIn = []) {
   return `<dl class="media-card-info-table">${rows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl>`;
 }
 
-function mediaAssetCard(asset, contextQuery = "", usageMap = new Map()) {
+function mediaAssetCard(asset, contextQuery = "", usageMap = new Map(), options = {}) {
   const usedIn = usageMap.get(asset.id) || [];
   const isUsed = usedIn.length > 0;
   const usageLabel = mediaUsageLabel(usedIn);
@@ -679,7 +842,19 @@ function mediaAssetCard(asset, contextQuery = "", usageMap = new Map()) {
     : "";
   const sourceGroup = mediaAssetSourceGroup(asset);
   const displayType = inferredMediaType(asset, usedIn);
-  return `<article class="media-asset-card ${isUsed ? "media-asset-card--used" : "media-asset-card--free"}" data-media-card data-media-edit-link="${editHref}"${selectAttrs} data-search="${escapeHtml([asset.title, asset.filename_original, asset.filename_web, asset.filename_thumb, asset.tags, asset.description].flat().filter(Boolean).join(" ").toLowerCase())}" data-source="${escapeHtml(sourceGroup)}" data-type="${escapeHtml(displayType)}" data-format="${escapeHtml(asset.aspect_ratio || "")}" tabindex="0" role="button" aria-label="${escapeHtml(asset.title || asset.filename_original || "Bild")} ${contextQuery ? "auswaehlen" : "bearbeiten"}">
+  const isBoardImage = displayType === "board"
+    || usedIn.some((entry) => entry.collection === "boardMembers")
+    || asset.target_collection === "boardMembers"
+    || asset.targetCollection === "boardMembers"
+    || asset.linked_collection === "boardMembers"
+    || asset.linkedCollection === "boardMembers";
+  const titleLabel = asset.title || asset.filename_original || "Bild";
+  const titleMarkup = `<h3>${escapeHtml(titleLabel)}</h3>`;
+  const typeLabel = mediaCardTypeLabel(isBoardImage ? "board" : displayType);
+  const logoFlag = mediaLogoFlags(asset, usedIn, usageMap);
+  const typeLine = [typeLabel, logoFlag.label].filter(Boolean).join(" ? ");
+  const allowTrash = !isUsed || options.trashMode || Boolean(logoFlag.className);
+  return `<article class="media-asset-card ${isUsed ? "media-asset-card--used" : "media-asset-card--free"} ${logoFlag.className}" data-media-card data-media-edit-link="${editHref}"${selectAttrs} data-search="${escapeHtml([asset.title, asset.filename_original, asset.filename_web, asset.filename_thumb, asset.tags, asset.description, logoFlag.label].flat().filter(Boolean).join(" ").toLowerCase())}" data-source="${escapeHtml(sourceGroup)}" data-type="${escapeHtml(displayType)}" data-format="${escapeHtml(asset.aspect_ratio || "")}" tabindex="0" role="button" aria-label="${escapeHtml(asset.title || asset.filename_original || "Bild")} ${contextQuery ? "auswaehlen" : "bearbeiten"}">
       <figure style="--media-card-aspect:${mediaAspectStyle(mediaDisplayAspect(asset, usedIn))}">
         <a class="media-card-edit-picto" href="${editHref}" title="Bild bearbeiten" aria-label="Bild bearbeiten">${mediaEditIcon()}</a>
         ${mediaThumb(asset)}
@@ -687,8 +862,11 @@ function mediaAssetCard(asset, contextQuery = "", usageMap = new Map()) {
         <div class="media-asset-card__body">
         <div class="media-asset-card__title-row">
           <div>
-            <h3>${escapeHtml(asset.title || asset.filename_original || "Bild")}</h3>
+            ${titleMarkup}
           </div>
+        </div>
+        <div class="media-card-type-row">
+          <span>${escapeHtml(typeLine)}</span>
           <div class="media-card-actions-top">
             <details class="media-card-info">
               <summary class="media-card-info-picto" title="Bildinformationen" aria-label="Bildinformationen">${mediaInfoIcon()}</summary>
@@ -697,12 +875,9 @@ function mediaAssetCard(asset, contextQuery = "", usageMap = new Map()) {
                 <div class="media-asset-card__meta">${asset.media_code ? `<span class="media-code">ID ${escapeHtml(asset.media_code)}</span>` : ""}<span>${escapeHtml(mediaTypeLabels[displayType] || displayType || "Bild")}</span><span>${escapeHtml(mediaDisplayAspect(asset, usedIn) || "-")}</span>${asset.image_width && asset.image_height ? `<span>${escapeHtml(`${asset.image_width} x ${asset.image_height}px`)}</span>` : ""}${asset.file_size_label ? `<span>${escapeHtml(asset.file_size_label)}</span>` : ""}${assetDate(asset) ? `<span>${escapeHtml(assetDate(asset))}</span>` : ""}</div>
               </div>
             </details>
-            ${isUsed
-              ? `<span class="media-asset-used" title="Bild wird verwendet">${escapeHtml(usageLabel || "Verwendet")}</span>`
-              : `<span class="media-asset-free" title="Keine aktuelle Verlinkung">Nicht verlinkt</span><button class="media-trash-button" type="button" data-media-delete="${escapeHtml(asset.id)}" data-media-title="${escapeHtml(asset.title || asset.filename_original || "Bild")}" title="Sofort loeschen" aria-label="Bild sofort loeschen">${mediaTrashIcon()}</button>`}
+            ${allowTrash ? `<button class="media-trash-button" type="button" data-media-delete="${escapeHtml(asset.id)}" data-media-delete-mode="${options.trashMode ? "permanent" : "trash"}" data-media-title="${escapeHtml(titleLabel)}" title="${options.trashMode ? "Endgueltig loeschen" : "In den Papierkorb verschieben"}" aria-label="${options.trashMode ? "Bild endgueltig loeschen" : "Bild in den Papierkorb verschieben"}">${mediaTrashIcon()}</button>` : ""}
           </div>
         </div>
-        <div class="media-card-auto-assignment"><span>${escapeHtml(mediaTypeLabels[displayType] || displayType || "Bild")}</span><small>${isUsed ? escapeHtml(usageLabel || "Automatisch verlinkt") : "Keine Verlinkung"}</small></div>
         ${selectButton}
       </div>
     </article>`;
@@ -745,25 +920,83 @@ function mediaSourceFilterOptions(assets = []) {
 function mediaAssetVisibleInLibrary(asset = {}, usageMap = new Map()) {
   if (asset.status === "archived") return false;
   const usedIn = usageMap.get(asset.id) || [];
+  if (inferredMediaType(asset, usedIn) === "logo") return true;
   const memberIds = new Set([
     asset.target_collection === "members" ? asset.target_id : "",
+    asset.targetCollection === "members" ? asset.targetId : "",
     asset.linked_collection === "members" ? asset.linked_record_id : "",
+    asset.linkedCollection === "members" ? asset.linkedRecordId : "",
     ...usedIn.filter((entry) => entry.collection === "members").map((entry) => entry.id)
   ].filter(Boolean));
   if (memberIds.size) {
     const currentMemberIds = usageMap.currentMemberIds || new Set();
-    const preferredMemberLogoIds = usageMap.preferredMemberLogoIds || new Set();
     const belongsToCurrentMember = Array.from(memberIds).some((id) => currentMemberIds.has(id));
     if (!belongsToCurrentMember) return false;
-    return preferredMemberLogoIds.has(asset.id);
+    return true;
   }
   if (!asset.parent_media_asset_id) return true;
   return Boolean(usedIn.length || asset.target_collection || asset.linked_collection);
 }
 
+function trashAssetRow(asset = {}, usageMap = new Map()) {
+  const usedIn = usageMap.get(asset.id) || [];
+  const displayType = inferredMediaType(asset, usedIn);
+  const title = asset.title || asset.filename_original || asset.original_filename || "Bild";
+  const date = asset.deleted_at || asset.archivedAt || asset.updated_at || asset.updatedAt || "";
+  const reason = asset.trash_reason || "Papierkorb";
+  const linked = asset.linked_title || asset.target_title || mediaUsageLabel(usedIn) || [asset.linked_collection || asset.target_collection, asset.linked_record_id || asset.target_id].filter(Boolean).join(" / ") || "-";
+  const dataSearch = [title, asset.filename_original, asset.filename_web, asset.tags, reason, linked].flat().filter(Boolean).join(" ").toLowerCase();
+  return `<article class="media-trash-item" data-media-card data-search="${escapeHtml(dataSearch)}" data-type="${escapeHtml(displayType)}" data-format="${escapeHtml(asset.aspect_ratio || "")}">
+    <figure class="media-trash-item__thumb">${mediaThumb(asset)}</figure>
+    <div class="media-trash-item__body">
+      <div>
+        <strong>${escapeHtml(title)}</strong>
+        <small>${escapeHtml(asset.filename_web || asset.filename_original || asset.original_filename || asset.id)}</small>
+      </div>
+      <span>${escapeHtml(mediaTypeLabels[displayType] || displayType || "Bild")}</span>
+      <span>${escapeHtml(reason)}${date ? ` ? ${escapeHtml(assetDate({ updated_at: date }))}` : ""}</span>
+      <span>${escapeHtml(linked)}</span>
+    </div>
+    <div class="media-trash-item__actions">
+      <button class="media-video-icon-button media-video-icon-button--visible" type="button" data-media-restore="${escapeHtml(asset.id)}" data-media-title="${escapeHtml(title)}" title="Wiederherstellen" aria-label="Bild wiederherstellen">${mediaRestoreIcon()}</button>
+      <button class="media-video-icon-button media-video-icon-button--danger" type="button" data-media-delete="${escapeHtml(asset.id)}" data-media-delete-mode="permanent" data-media-title="${escapeHtml(title)}" title="Endgueltig loeschen" aria-label="Bild endgueltig loeschen">${mediaTrashIcon()}</button>
+    </div>
+  </article>`;
+}
+
 function libraryPage(assets = [], query = new URLSearchParams(), usageMap = new Map()) {
-  const visibleAssets = newestMediaAssetsFirst(uniqueMediaAssets(assets.filter((asset) => mediaAssetVisibleInLibrary(asset, usageMap))));
+  const trashMode = query.get("trash") === "1";
+  const visibleAssets = newestMediaAssetsFirst(uniqueMediaAssets(assets.filter((asset) => trashMode ? asset.status === "archived" : mediaAssetVisibleInLibrary(asset, usageMap))));
   const contextQuery = mediaContextQuery(query);
+  if (trashMode) {
+    const stats = visibleAssets.reduce((acc, asset) => {
+      const type = inferredMediaType(asset, usageMap.get(asset.id) || []) || "Bild";
+      acc[type] = (acc[type] || 0) + 1;
+      return acc;
+    }, {});
+    const statLine = Object.entries(stats).map(([type, count]) => `<span>${escapeHtml(mediaTypeLabels[type] || type)}: <strong>${count}</strong></span>`).join("");
+    return `<section class="panel media-trash-tool">
+      <div class="media-trash-tool__head">
+        <div>
+          <p class="eyebrow">Papierkorb</p>
+          <h2>Geloeschte Bilder</h2>
+          <p class="muted">Gel?schte Bilder koennen wiederhergestellt oder endgueltig entfernt werden.</p>
+        </div>
+        <a class="button button--secondary" href="#/cms/media/library">Zurueck zu Bilder</a>
+      </div>
+      <div class="media-trash-tool__stats">
+        <span>Gesamt: <strong>${visibleAssets.length}</strong></span>
+        ${statLine}
+      </div>
+      <div class="media-trash-toolbar">
+        <div class="field"><label>Suche</label><input data-media-search placeholder="Titel, Datei, Schlagwort"></div>
+        <div class="field"><label>Format</label><select data-media-filter="format"><option value="">Alle</option><option value="16x9">16x9</option><option value="4x3">4x3</option><option value="1x1">1x1</option><option value="4x5">4x5</option><option value="9x16">9x16</option></select></div>
+        <div class="field"><label>Zuordnung</label><select data-media-filter="type">${mediaTypeFilterOptions(visibleAssets, usageMap)}</select></div>
+      </div>
+      <div class="media-trash-list">${visibleAssets.length ? visibleAssets.map((asset) => trashAssetRow(asset, usageMap)).join("") : `<div class="alert">Papierkorb ist leer.</div>`}</div>
+      <div id="media-trash-result"></div>
+    </section>`;
+  }
   return `<section class="panel media-library-panel">
     <div class="media-library-layout">
       <aside class="media-library-sidebar">
@@ -794,9 +1027,11 @@ function libraryPage(assets = [], query = new URLSearchParams(), usageMap = new 
         <div class="media-library-upload media-library-sync">
           <button class="button button--secondary button--small" type="button" data-sync-local-media-assets>Codex-Bilder nach Firestore uebertragen</button>
           <button class="button button--secondary button--small" type="button" data-auto-classify-media-assets>Zuordnung automatisch aktualisieren</button>
+          ${trashMode ? `<a class="button button--secondary button--small" href="#/cms/media/library">Zurueck zu Bilder</a>` : `<button class="button button--secondary button--small" type="button" data-archive-marked-media-assets>Markierte in Papierkorb</button>`}
           <p class="muted media-paste-hint">Gleicht lokale Browser-Bilder mit Firestore und Storage ab, damit Codex und externer Browser dieselben Bilder sehen.</p>
           <div id="local-media-sync-result"></div>
           <div id="media-auto-classify-result"></div>
+          <div id="media-archive-marked-result"></div>
         </div>
       </aside>
       <div class="media-library-main">
@@ -805,7 +1040,7 @@ function libraryPage(assets = [], query = new URLSearchParams(), usageMap = new 
           <div class="field"><label>Format</label><select data-media-filter="format"><option value="">Alle</option><option value="16x9">16x9</option><option value="4x3">4x3</option><option value="1x1">1x1</option><option value="4x5">4x5</option><option value="9x16">9x16</option></select></div>
           <div class="field"><label>Zuordnung</label><select data-media-filter="type">${mediaTypeFilterOptions(visibleAssets, usageMap)}</select></div>
         </div>
-        <div class="media-library-grid">${visibleAssets.length ? visibleAssets.map((asset) => mediaAssetCard(asset, contextQuery, usageMap)).join("") : `<div class="alert">Noch keine Bilder gespeichert.</div>`}</div>
+        <div class="media-library-grid">${visibleAssets.length ? visibleAssets.map((asset) => mediaAssetCard(asset, contextQuery, usageMap, { trashMode })).join("") : `<div class="alert">${trashMode ? "Papierkorb ist leer." : "Noch keine Bilder gespeichert."}</div>`}</div>
       </div>
     </div>
   </section>`;
@@ -918,9 +1153,9 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
           </div>
           <div class="media-crop-actions">
             <button class="button button--secondary button--small" type="button" data-media-crop-fit>Original einpassen</button>
-            <button class="button button--secondary button--small" type="button" data-media-crop-cover>Rahmen fÃ¼llen</button>
-            <button class="button button--primary button--small" type="button" data-media-crop-apply>OK Ã¼bernehmen</button>
-            <button class="button button--secondary button--small" type="button" data-media-crop-reset>ZurÃ¼cksetzen</button>
+            <button class="button button--secondary button--small" type="button" data-media-crop-cover>Rahmen füllen</button>
+            <button class="button button--primary button--small" type="button" data-media-crop-apply>OK übernehmen</button>
+            <button class="button button--secondary button--small" type="button" data-media-crop-reset>Zurücksetzen</button>
           </div>
         </div>
         <div class="field media-editor-assignment"><label>Bildzuordnung</label><select name="media_type" data-media-editor-type-update>${mediaTypeOptions(asset.media_type || "upload")}</select><p class="media-preset-hint" data-media-preset-hint>${escapeHtml(mediaPresetSummary(asset.media_type || "upload"))}</p></div>
@@ -990,8 +1225,211 @@ function variantsPage(assets = [], variants = []) {
   }).join("") : `<tr><td colspan="6">Noch keine Varianten gespeichert.</td></tr>`}</tbody></table></div></section>`;
 }
 
+function youtubeVideoIdFromValue(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^[A-Za-z0-9_-]{11}$/.test(text)) return text;
+  const match = text.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/|live\/))([A-Za-z0-9_-]{11})/i)
+    || text.match(/[?&]v=([A-Za-z0-9_-]{11})/i);
+  return match?.[1] || "";
+}
+
+function normalizedVideoAttachments(item = {}) {
+  const raw = Array.isArray(item.videoAttachments)
+    ? item.videoAttachments
+    : Array.isArray(item.videos)
+      ? item.videos
+      : [];
+  return raw
+    .map((video, index) => {
+      const youtubeVideoId = video.youtubeVideoId || video.youtube_id || youtubeVideoIdFromValue(video.youtubeUrl || video.url || video.embedUrl || "");
+      const youtubeUrl = video.youtubeUrl || video.url || (youtubeVideoId ? `https://www.youtube.com/watch?v=${youtubeVideoId}` : "");
+      return {
+        id: video.id || `video-${index + 1}`,
+        youtubeVideoId,
+        youtubeUrl,
+        title: video.title || "",
+        caption: video.caption || "",
+        description: video.description || "",
+        posterImageUrl: video.posterImageUrl || video.poster || video.thumbnailUrl || video.youtubeThumbnailUrl || "",
+        posterImageAlt: video.posterImageAlt || video.alt || video.title || "Video starten",
+        privacyStatus: video.privacyStatus || "unlisted",
+        status: video.status || "ready",
+        sortOrder: Number(video.sortOrder || index + 1)
+      };
+    })
+    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+}
+
+function videoAreaLabel(item = {}) {
+  const section = String(item.section || item.page || item.publication_target || item.category || "").toLowerCase();
+  if (item.isRetrospective || item.linkedEventId || section.includes("rueckblick") || section.includes("rückblick")) return "Rückblick";
+  if (section.includes("news")) return "News";
+  if (section.includes("press") || section.includes("presse")) return "Presse";
+  if (section.includes("topic") || section.includes("thema")) return "Themen";
+  if (section.includes("interna") || section.includes("about")) return "Interna";
+  return "Redaktion";
+}
+
+function videoAttachmentRow(video = {}, index = 0) {
+  return `<fieldset class="video-attachment-row" data-video-attachment-row>
+    <legend>Video ${index + 1}</legend>
+    <input type="hidden" name="videoId${index}" value="${escapeHtml(video.id || `video-${index + 1}`)}">
+    <div class="form-grid form-grid--video-attachment">
+      <div class="field"><label>YouTube-URL oder ID</label><input name="videoYoutubeUrl${index}" value="${escapeHtml(video.youtubeUrl || video.youtubeVideoId || "")}" placeholder="https://www.youtube.com/watch?v=..."></div>
+      <div class="field"><label>Titel</label><input name="videoTitle${index}" value="${escapeHtml(video.title || "")}"></div>
+      <div class="field"><label>Caption</label><input name="videoCaption${index}" value="${escapeHtml(video.caption || "")}"></div>
+      <div class="field"><label>Startbild / Posterbild</label><input name="videoPosterImageUrl${index}" value="${escapeHtml(video.posterImageUrl || "")}" placeholder="Bild-URL oder YouTube-Thumbnail"></div>
+      <div class="field"><label>Alt-Text Startbild</label><input name="videoPosterImageAlt${index}" value="${escapeHtml(video.posterImageAlt || "")}"></div>
+      <div class="field"><label>Sortierung</label><input name="videoSortOrder${index}" type="number" min="1" value="${escapeHtml(video.sortOrder || index + 1)}"></div>
+      <div class="field"><label>Privacy</label><select name="videoPrivacyStatus${index}">
+        ${["unlisted", "private", "public", "unknown"].map((value) => `<option value="${value}" ${value === (video.privacyStatus || "unlisted") ? "selected" : ""}>${value}</option>`).join("")}
+      </select></div>
+      <div class="field"><label>Status</label><select name="videoStatus${index}">
+        ${["ready", "draft", "published", "hidden", "error"].map((value) => `<option value="${value}" ${value === (video.status || "ready") ? "selected" : ""}>${value}</option>`).join("")}
+      </select></div>
+      <div class="field field--wide"><label>Beschreibung</label><textarea name="videoDescription${index}">${escapeHtml(video.description || "")}</textarea></div>
+    </div>
+    <button class="icon-button icon-button--danger" type="button" data-remove-video-attachment title="Video entfernen" aria-label="Video entfernen">×</button>
+  </fieldset>`;
+}
+
+function videoEditorPage(item = {}) {
+  const videos = normalizedVideoAttachments(item);
+  const rows = (videos.length ? videos : [{}]).map(videoAttachmentRow).join("");
+  const title = item.title || item.headline || item.name || item.id || "Beitrag";
+  return `<section class="panel media-video-editor">
+    <div class="media-video-editor__head">
+      <div>
+        <p class="eyebrow">${escapeHtml(videoAreaLabel(item))}</p>
+        <h2>${escapeHtml(title)}</h2>
+        <p class="muted">Videos werden am bestehenden Beitrag gespeichert und im Frontend dort ausgespielt.</p>
+      </div>
+      <div class="actions">
+        <a class="button button--secondary button--small" href="#/cms/media/videos">Zur Videoliste</a>
+        <a class="button button--secondary button--small" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(item.id)}&section=${encodeURIComponent(item.section || item.page || "news")}">Beitrag öffnen</a>
+      </div>
+    </div>
+    <form id="media-video-form" data-content-id="${escapeHtml(item.id || "")}">
+      <div class="video-attachment-editor" data-video-attachments>
+        <div data-video-attachment-list>${rows}</div>
+        <button class="button button--secondary button--small" type="button" data-add-video-attachment>Video hinzufügen</button>
+      </div>
+      <div class="sticky-actions sticky-actions--member">
+        <button class="button button--primary" type="submit">Videos speichern</button>
+        <div id="media-video-result"></div>
+      </div>
+    </form>
+  </section>`;
+}
+
+function normalizedLibraryVideo(video = {}) {
+  const youtubeVideoId = video.youtubeVideoId || youtubeVideoIdFromValue(video.youtubeUrl || video.url || video.embedUrl || "");
+  const youtubeUrl = video.youtubeUrl || video.url || (youtubeVideoId ? `https://www.youtube.com/watch?v=${youtubeVideoId}` : "");
+  const posterImageUrl = video.posterImageUrl || video.thumbnailUrl || video.youtubeThumbnailUrl || (youtubeVideoId ? `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg` : "");
+  return {
+    ...video,
+    youtubeVideoId,
+    youtubeUrl,
+    embedUrl: youtubeVideoId ? `https://www.youtube.com/embed/${youtubeVideoId}` : video.embedUrl || "",
+    posterImageUrl,
+    title: video.title || "",
+    caption: video.caption || "",
+    description: video.description || "",
+    posterImageAlt: video.posterImageAlt || video.title || "Video starten",
+    status: video.status || "ready",
+    privacyStatus: video.privacyStatus || "unlisted"
+  };
+}
+
+function attachedVideosFromContent(records = [], collection = "editorialContent") {
+  return records.flatMap((record) => normalizedVideoAttachments(record).map((video, index) => ({
+    ...video,
+    id: video.id && !String(video.id).startsWith("video-")
+      ? video.id
+      : `${collection}-${record.id || index}-video-${index + 1}`,
+    sourceCollection: collection,
+    sourceId: record.id || "",
+    sourceTitle: record.title || record.headline || record.name || record.id || "",
+    title: video.title || record.title || record.headline || "Video",
+    createdAt: record.createdAt || record.created_at || "",
+    updatedAt: record.updatedAt || record.updated_at || ""
+  })));
+}
+
+function uniqueVideos(videos = []) {
+  const seen = new Set();
+  return videos.filter((video) => {
+    const key = video.youtubeVideoId || video.youtubeUrl || video.id;
+    if (!key) return false;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function videoFormPage(video = {}, query = new URLSearchParams()) {
+  const normalized = normalizedLibraryVideo(video);
+  const id = normalized.id || `media-video-${crypto.randomUUID()}`;
+  return `<section class="panel media-video-editor">
+    <div class="media-video-editor__head">
+      <div><p class="eyebrow">Videothek</p><h2>${video.id ? "Video bearbeiten" : "Video anlegen"}</h2><p class="muted">Minimaler Workflow: YouTube-Link eintragen, Metadaten laden, speichern.</p></div>
+      <a class="button button--secondary button--small" href="#/cms/media/videos">Zur Videothek</a>
+    </div>
+    <form id="media-video-library-form" data-video-id="${escapeHtml(id)}" data-target-collection="${escapeHtml(query.get("targetCollection") || "")}" data-target-id="${escapeHtml(query.get("targetId") || "")}" data-return-to="${escapeHtml(query.get("returnTo") || "#/cms/media/videos")}">
+      <div class="form-grid form-grid--two">
+        <div class="field"><label>YouTube-URL oder ID</label><input name="youtubeUrl" value="${escapeHtml(normalized.youtubeUrl || "")}" placeholder="https://www.youtube.com/watch?v=..." required></div>
+        <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(normalized.title || "")}" required></div>
+        <div class="field"><label>Beschreibung</label><input name="description" value="${escapeHtml(normalized.description || normalized.caption || "")}" placeholder="wird soweit moeglich aus YouTube uebernommen"></div>
+        <div class="field"><label>Coverbild</label><input name="posterImageUrl" value="${escapeHtml(normalized.posterImageUrl || "")}" placeholder="wird aus YouTube-Thumbnail gesetzt"></div>
+        <div class="field"><label>Status</label><select name="status">${["ready", "draft", "hidden"].map((value) => `<option value="${value}" ${normalized.status === value ? "selected" : ""}>${value}</option>`).join("")}</select></div>
+        <div class="field"><label>Alt-Text Cover</label><input name="posterImageAlt" value="${escapeHtml(normalized.posterImageAlt || "")}"></div>
+      </div>
+      <div class="actions"><button class="button button--secondary button--small" type="button" data-video-oembed>Aus YouTube laden</button></div>
+      <div class="media-video-preview" data-video-preview>${normalized.youtubeVideoId ? `<iframe src="https://www.youtube.com/embed/${escapeHtml(normalized.youtubeVideoId)}" title="${escapeHtml(normalized.title || "Video Vorschau")}" loading="lazy" allowfullscreen></iframe>` : `<span>Nach Eingabe einer YouTube-URL erscheint hier die Vorschau.</span>`}</div>
+      <div class="sticky-actions sticky-actions--member"><button class="button button--primary" type="submit">${query.get("targetId") ? "Speichern und zuordnen" : "Video speichern"}</button><div id="media-video-library-result"></div></div>
+    </form>
+  </section>`;
+}
+
+function videosPage(videoLibrary = [], query = new URLSearchParams()) {
+  const editId = query.get("id") || "";
+  if (query.get("mode") === "new" || editId === "new") return videoFormPage({}, query);
+  const selected = editId ? videoLibrary.find((video) => video.id === editId) : null;
+  if (editId) return selected ? videoFormPage(selected, query) : `<section class="panel"><div class="alert alert--error">Video wurde nicht gefunden.</div><a class="button button--secondary" href="#/cms/media/videos">Zur Videothek</a></section>`;
+  const targetCollection = query.get("targetCollection") || "";
+  const targetId = query.get("targetId") || "";
+  const returnTo = query.get("returnTo") || "#/cms/media/videos";
+  const targetQuery = targetCollection && targetId ? `&targetCollection=${encodeURIComponent(targetCollection)}&targetId=${encodeURIComponent(targetId)}&returnTo=${encodeURIComponent(returnTo)}` : "";
+  const rows = videoLibrary
+    .map(normalizedLibraryVideo)
+    .filter((video) => !["archived", "deleted"].includes(String(video.status || "").toLowerCase()) && video.trash_status !== "paperkorb")
+    .sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")))
+    .map((video) => {
+      const isVisible = video.visible !== false && !["hidden", "draft", "archived", "deleted"].includes(String(video.status || "").toLowerCase());
+      const title = video.title || video.youtubeVideoId || "Video";
+      return `<tr>
+        <td>${video.posterImageUrl ? `<img class="media-video-table-thumb" src="${escapeHtml(video.posterImageUrl)}" alt="${escapeHtml(video.posterImageAlt || title)}">` : `<span class="media-video-table-thumb media-video-table-thumb--empty">Video</span>`}</td>
+        <td><strong>${escapeHtml(title)}</strong><br><small>${escapeHtml(video.youtubeUrl || "")}</small></td>
+        <td><span class="media-video-status ${isVisible ? "is-visible" : "is-hidden"}">${isVisible ? "sichtbar" : "ausgeblendet"}</span></td>
+        <td class="actions media-video-actions">
+          ${video.youtubeVideoId ? `<a class="media-video-icon-button media-video-icon-button--preview" href="https://www.youtube.com/watch?v=${encodeURIComponent(video.youtubeVideoId)}" target="_blank" rel="noopener" title="Vorschau" aria-label="Vorschau">${mediaPlayIcon()}</a>` : ""}
+          ${targetCollection && targetId ? `<button class="button button--primary button--small" type="button" data-assign-video="${escapeHtml(video.id)}" data-target-collection="${escapeHtml(targetCollection)}" data-target-id="${escapeHtml(targetId)}" data-return-to="${escapeHtml(returnTo)}">Zuordnen</button>` : ""}
+          <a class="media-video-icon-button media-video-icon-button--edit" href="#/cms/media/videos?id=${encodeURIComponent(video.id)}${targetQuery}" title="Video bearbeiten" aria-label="Video bearbeiten">${mediaEditIcon()}</a>
+          <button class="media-video-icon-button ${isVisible ? "media-video-icon-button--visible" : "media-video-icon-button--hidden"}" type="button" data-video-visible-toggle="${escapeHtml(video.id)}" data-next-visible="${isVisible ? "false" : "true"}" title="${isVisible ? "Video ausblenden" : "Video sichtbar schalten"}" aria-label="${isVisible ? "Video ausblenden" : "Video sichtbar schalten"}">${isVisible ? mediaEyeIcon() : mediaEyeOffIcon()}</button>
+          <button class="media-video-icon-button media-video-icon-button--danger" type="button" data-video-trash="${escapeHtml(video.id)}" data-video-title="${escapeHtml(title)}" title="In den Papierkorb verschieben" aria-label="Video in den Papierkorb verschieben">${mediaTrashIcon()}</button>
+        </td>
+      </tr>`;
+    }).join("");
+  return `<section class="panel">
+    <div class="media-library-summary"><div><strong>Zentrale Videothek</strong><br><span class="muted">Keine Beitragsliste: nur Videos zentral pflegen und bei Bedarf zuordnen.</span></div><a class="button button--primary button--small" href="#/cms/media/videos?mode=new${targetQuery}">Neues Video</a></div>
+    <div class="table-wrap"><table class="table table--media-videos"><thead><tr><th>Cover</th><th>Video</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${rows || `<tr><td colspan="4">Noch keine Videos angelegt.</td></tr>`}</tbody></table></div>
+    <div id="media-video-assign-result"></div>
+  </section>`;
+}
+
 export async function mediaPage(section = "library", query = new URLSearchParams()) {
-  const allowedSections = ["library", "edit", "ai", "variants"];
+  const allowedSections = ["library", "edit", "ai", "variants", "videos"];
   const activeSection = allowedSections.includes(section) ? section : "library";
   await waitForAuthReady();
   if (!canUseCms(currentUser())) return protect("");
@@ -1003,8 +1441,12 @@ export async function mediaPage(section = "library", query = new URLSearchParams
   } catch (error) {
     mediaAccessError = error.message || String(error);
   }
+  const membersForMedia = activeSection === "library" || activeSection === "edit"
+    ? await list("members").catch(() => [])
+    : [];
+  assets = [...assets, ...memberLogoVirtualAssets(membersForMedia, assets)];
   variants = await list("media_variants").catch(() => []);
-  if (mediaAccessError) {
+  if (mediaAccessError && activeSection !== "videos") {
     return protect(cmsShell("cms/media/library", `${cmsTitle("Bilder", "Mediathek")}<section class="panel"><div class="alert alert--error"><strong>Mediathek konnte nicht geoeffnet werden.</strong><br>${escapeHtml(mediaAccessError)}<br><small>Bitte Firestore-Regeln fuer <code>media_assets</code> pruefen: Admins und Redakteure muessen lesen duerfen.</small></div></section>`));
   }
   const targetRecord = query.get("targetCollection") && query.get("targetId")
@@ -1014,6 +1456,13 @@ export async function mediaPage(section = "library", query = new URLSearchParams
   const selectedAsset = requestedAssetId ? assets.find((asset) => asset.id === requestedAssetId) : null;
   const shouldLoadEventTargets = activeSection === "edit" && selectedAsset && !query.get("targetCollection") && !query.get("targetId");
   const eventTargets = shouldLoadEventTargets ? await list("events").catch(() => []) : [];
+  const videoItems = activeSection === "videos"
+    ? uniqueVideos([
+        ...(await list("media_videos").catch(() => [])),
+        ...attachedVideosFromContent(await list("editorialContent").catch(() => []), "editorialContent"),
+        ...attachedVideosFromContent(await list("events").catch(() => []), "events")
+      ])
+    : [];
   const shouldInferEventTarget = activeSection === "edit"
     && selectedAsset
     && !query.get("targetCollection")
@@ -1032,7 +1481,13 @@ export async function mediaPage(section = "library", query = new URLSearchParams
     upload: uploadPage(),
     ai: aiPage(query, targetRecord),
     edit: editPage(selectedAsset, query, variants, assets, inferredTarget, eventTargets),
-    variants: variantsPage(assets, variants)
+    variants: variantsPage(assets, variants),
+    videos: videosPage(videoItems, query)
   }[activeSection];
-  return protect(cmsShell(`cms/media/${activeSection}`, `${cmsTitle("Bilder", title)}${mediaTabs(activeSection)}${content}<p class="muted media-note">Einfaches Bildtool: hochladen, finden, bearbeiten und Varianten behalten.</p>`));
+  const note = activeSection === "videos"
+    ? `<p class="muted media-note">Videos werden zentral verwaltet und in Beitr?gen nur zugeordnet.</p>`
+    : `<p class="muted media-note">Einfaches Bildtool: hochladen, finden, bearbeiten und Varianten behalten.</p>`;
+  const activeRoute = activeSection === "library" && query.get("trash") === "1" ? "cms/media/library?trash=1" : `cms/media/${activeSection}`;
+  const trashMode = activeSection === "library" && query.get("trash") === "1";
+  return protect(cmsShell(activeRoute, `${cmsTitle(trashMode ? "System" : "Medien", trashMode ? "Papierkorb" : title)}${trashMode ? "" : mediaTabs(activeSection)}${content}${trashMode ? "" : note}`));
 }

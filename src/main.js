@@ -1,21 +1,18 @@
 import { route, onRouteChange, go } from "./utils/router.js";
-import {
-  homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
-  newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage, downloadsPage, joinPage, loginPage, memberPortalPage, legalPage, notFoundPage, webappQrPage
-} from "./pages/publicPages.js?v=530";
-import { currentUser, canUseCms, isAdmin, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=467";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=470";
+import { currentUser, canUseCms, isAdmin, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=470";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=487";
 import { escapeHtml, formatDate } from "./utils/format.js";
 
 const root = document.querySelector("#app");
 const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
-const localCodexStoreKey = "prodigitaltv-demo-db-official-assets-v4";
+const localCodexStoreKey = "prodigitaltv-demo-db-official-assets-v7";
 
 const lazy = {};
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=540");
-const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=485");
-const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=64");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=551");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=558");
+const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=489");
+const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=88");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=5");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
@@ -87,7 +84,241 @@ function mobileCmsPlaceholder() {
   </div></section>`;
 }
 
+function localCmsHost() {
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+}
+
+function localOption(value, label, selectedValue = "") {
+  const selected = String(value || "") === String(selectedValue || "") ? " selected" : "";
+  return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(label || value)}</option>`;
+}
+
+function localMemberContacts(item = {}) {
+  const contacts = Array.isArray(item.eventContacts) && item.eventContacts.length
+    ? item.eventContacts
+    : [{
+      firstName: item.firstName || "",
+      lastName: item.lastName || "",
+      name: item.contactName || item.profileContactName || "",
+      role: item.contactRole || "",
+      email: item.contactEmail || item.email || "",
+      phone: item.contactPhone || item.phone || item.contactMobile || item.mobile || ""
+    }];
+  return Array.from({ length: 5 }, (_, index) => contacts[index] || {});
+}
+
+function splitLocalContactName(contact = {}) {
+  const firstName = contact.firstName || "";
+  const lastName = contact.lastName || "";
+  if (firstName || lastName) return { firstName, lastName };
+  const parts = String(contact.name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return { firstName: parts[0] || "", lastName: "" };
+  return { firstName: parts.slice(0, -1).join(" "), lastName: parts.slice(-1).join(" ") };
+}
+
+function localMemberEditorFallback(query = new URLSearchParams(), itemOverride = null) {
+  const id = query.get("id") || itemOverride?.id || "member";
+  const seedTitle = id.split("-").filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+  const item = itemOverride || localStoredMembers().find((member) => member.id === id) || { id, name: seedTitle, visible: true };
+  const title = item.name || item.title || seedTitle;
+  const membershipType = item.membershipType || item.membership_type || item.memberType || "company";
+  const contacts = localMemberContacts(item);
+  const roles = ["", "Buchhaltung", "Geschaeftsleitung", "Marketing", "Sales / Verkauf", "Kommunikation / PR", "Technik", "Vorstand", "Assistenz", "Sonstige"];
+  return `<main class="cms-app">
+    <aside class="cms-sidebar"><a class="cms-logo" href="#/cms">PROdigitalTV</a><nav><a href="#/cms/members">Mitglieder</a><a href="#/cms/media/library">Medien</a><a href="#/cms">Dashboard</a></nav></aside>
+    <section class="cms-main">
+      <div class="cms-title"><div><p class="eyebrow">Lokaler Notfallmodus</p><h1>Mitglied bearbeiten</h1><p>Schlanker Mitgliedereditor, ohne den grossen CMS-Import zu laden.</p></div><a class="button button--secondary button--small" href="#/cms/members">Zurueck</a></div>
+      <section class="panel">
+        <form id="content-edit-form" data-module="members" data-id="${escapeHtml(id)}" class="form-grid form-grid--two member-edit-form">
+          <div class="member-edit-form__column member-edit-form__column--identity">
+            <section class="member-edit-card">
+              <p class="eyebrow">Stammdaten</p>
+              <div class="form-grid form-grid--member-base">
+                <div class="field"><label>Mitgliedstyp</label><select name="membershipType">${localOption("company", "Firmenmitglied", membershipType)}${localOption("individual", "Einzelmitglied", membershipType)}</select></div>
+                <div class="field"><label>Firma / Name</label><input name="name" value="${escapeHtml(title)}"></div>
+                <div class="field"><label>Strasse</label><input name="street" value="${escapeHtml(item.street || "")}"></div>
+                <div class="field"><label>Hausnummer</label><input name="houseNumber" value="${escapeHtml(item.houseNumber || "")}"></div>
+                <div class="field"><label>PLZ</label><input name="postalCode" value="${escapeHtml(item.postalCode || item.zip || "")}"></div>
+                <div class="field"><label>Ort</label><input name="city" value="${escapeHtml(item.city || "")}"></div>
+                <div class="field"><label>Land</label><input name="country" value="${escapeHtml(item.country || "")}"></div>
+              </div>
+            </section>
+            <div class="member-edit-form__event-contacts">
+              <p class="eyebrow">Kontaktdaten</p>
+              ${contacts.map((contact, index) => {
+                const nameParts = splitLocalContactName(contact);
+                return `<fieldset class="member-event-contact-row"><legend>Kontakt ${index + 1}</legend><div class="form-grid form-grid--member-contact">
+                  <div class="field"><label>Vorname</label><input name="eventContactFirstName${index}" value="${escapeHtml(nameParts.firstName)}"></div>
+                  <div class="field"><label>Nachname</label><input name="eventContactLastName${index}" value="${escapeHtml(nameParts.lastName)}"></div>
+                  <div class="field"><label>Funktion</label><select name="eventContactRole${index}">${roles.map((role) => localOption(role, role || "Funktion waehlen", contact.role || "")).join("")}</select></div>
+                  <div class="field"><label>Mail</label><input name="eventContactEmail${index}" type="email" value="${escapeHtml(contact.email || "")}"></div>
+                  <div class="field"><label>Tel. mit Landesvorwahl</label><input name="eventContactPhone${index}" type="tel" placeholder="+49 ..." value="${escapeHtml(contact.phone || "")}"></div>
+                </div></fieldset>`;
+              }).join("")}
+            </div>
+          </div>
+          <div class="member-edit-form__column member-edit-form__column--content">
+            <section class="member-edit-card member-edit-card--profile">
+              <p class="eyebrow">Profil</p>
+              <div class="field"><label>Beschreibung</label><textarea name="description">${escapeHtml(item.description || item.shortDescription || "")}</textarea></div>
+              <div class="field"><label>Website</label><input name="website" value="${escapeHtml(item.website || item.url || "")}"></div>
+              <label class="checkbox-line"><input type="checkbox" name="visible"${item.visible === false || item.visibility === "internal" || item.isLive === false ? "" : " checked"}> Im Portal sichtbar</label>
+            </section>
+          </div>
+          <div class="member-edit-savebar"><button class="button button--primary">Speichern</button><div id="content-save-result"></div></div>
+        </form>
+      </section>
+    </section>
+  </main>`;
+}
+
+function localSeedMembers() {
+  return [
+    ["bibel-tv-stiftung", "Bibel TV Stiftung gGmbH", "Hamburg"],
+    ["channel-21", "Channel 21 GmbH", "Hannover"],
+    ["kj-technical-consulting", "KJ Technical Consulting Klaus Juli", "Berlin"],
+    ["dsc-dietmar-schickel-consulting", "DSC Dietmar Schickel Consulting GmbH", "Berlin"],
+    ["ors", "ORS Comm GmbH & Co KG", "Wien"],
+    ["moderne-werbung-tv", "Buero fuer moderne Werbung.tv", "Hamburg"],
+    ["markus-vogelbacher", "Markus Vogelbacher", "Muenchen"],
+    ["blu-tec-one", "BLU TEC ONE GmbH", "Tangstedt"],
+    ["house-of-research", "HOR House of Research GmbH", "Berlin"],
+    ["goldvisite-media", "Goldvisite Media GmbH", "Unterfoehring"],
+    ["schneider-enterprise", "Schneider-Enterprise", "Koblenz"],
+    ["fashion-tv", "Fashion TV Production UG", "Hamburg"],
+    ["stingray-digital-international", "STINGRAY Digital International LTD", "London"],
+    ["eutelsat", "Eutelsat Services und Beteiligungen GmbH", "Koeln"],
+    ["farbi-flora", "Farbi Flora GmbH", "Gosen-Neu Zittau"],
+    ["anixe-hd", "ANIXE HD TELEVISION GmbH & Co KG", "Muenchen"],
+    ["js-consult", "JS Consult Ing.-buero und Medienberatung", "Pulheim"],
+    ["thorsten-lork", "Thorsten Lork", "Muenchen"],
+    ["red-bull-media-house", "RED Bull Media House GmbH", "Wals-Siezenheim"],
+    ["hardy-heine", "Hardy Heine", "Bad Nenndorf"],
+    ["no-limits-media", "No Limits Media GmbH", "Berlin"],
+    ["itsmaxsuhr", "itsmaxsuhr", "Hamburg"],
+    ["major-seven-consulting", "Major Seven Consulting", "Frankfurt / Main"],
+    ["sebastian-labonte", "Sebastian Labonte", "Mainz"],
+    ["michael-kayser", "Michael Kayser", "Muenchen"],
+    ["idee-medien", "Idee Medien UG", "Delmenhorst"],
+    ["prof-dr-conrad-heberling", "Prof. Dr Conrad Heberling", "Potsdam"],
+    ["tv-2000plus", "TV.2000plus GmbH", "Leinfelden-Echterdingen"],
+    ["3q-medien", "3Q Medien", "Muenchen"],
+    ["johannes-kors", "Johannes Kors", "Muenchen"],
+    ["claudio-malasomma-bellavista", "Claudio Malasomma BellaVista", "Frankfurt / Main"]
+  ].map(([id, name, city]) => ({ id, name, city, status: "active", visible: true, visibility: "public" }));
+}
+
+function localStoredMembers() {
+  try {
+    const primary = JSON.parse(localStorage.getItem(localCodexStoreKey) || "{}").members || [];
+    if (primary.length) return primary;
+  } catch {}
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const value = JSON.parse(localStorage.getItem(localStorage.key(index)) || "{}");
+      if (Array.isArray(value.members) && value.members.length) return value.members;
+    }
+  } catch {}
+  return localSeedMembers();
+}
+
+function localMembersListFallback(records = null) {
+  const source = Array.isArray(records) && records.length ? records : localStoredMembers();
+  const members = source
+    .filter((member) => !["archived", "deleted"].includes(String(member.status || "").toLowerCase()))
+    .sort((a, b) => String(a.name || a.title || "").localeCompare(String(b.name || b.title || ""), "de"));
+  const rows = members.length
+    ? members.map((member) => {
+      const id = member.id || member.slug || "";
+      const type = member.membershipType || member.membership_type || member.memberType || member.type || "-";
+      const visible = member.visible === false || member.visibility === "internal" || member.isLive === false ? "nicht sichtbar" : "sichtbar";
+      return `<tr><td>${escapeHtml(member.name || member.title || id)}</td><td>${escapeHtml([member.postalCode, member.city].filter(Boolean).join(" ") || "-")}</td><td>${escapeHtml(type)}</td><td>${visible}</td><td><a class="button button--secondary button--small" href="#/cms/edit?module=members&id=${encodeURIComponent(id)}&section=all">Bearbeiten</a></td></tr>`;
+    }).join("")
+    : `<tr><td colspan="5">Keine lokalen Mitglieder gefunden.</td></tr>`;
+  return `<main class="cms-app">
+    <aside class="cms-sidebar"><a class="cms-logo" href="#/cms">PROdigitalTV</a><nav><a class="active" href="#/cms/members">Mitglieder</a><a href="#/cms/media/library">Medien</a><a href="#/cms">Dashboard</a></nav></aside>
+    <section class="cms-main"><div class="cms-title"><div><p class="eyebrow">Lokaler Notfallmodus</p><h1>Mitglieder</h1><p>Direkte lokale Ansicht, damit die Seite nicht im Ladezustand haengt.</p></div></div>
+      <section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Mitglied</th><th>Ort</th><th>Art</th><th>Visible</th><th>Aktion</th></tr></thead><tbody>${rows}</tbody></table></div></section>
+    </section>
+  </main>`;
+}
+
+async function localMembersListPage() {
+  window.__pdtCmsStage = "local:members:list";
+  const members = await list("members").catch(() => localStoredMembers());
+  return localMembersListFallback(members);
+}
+async function localMemberEditorPage(query = new URLSearchParams()) {
+  window.__pdtCmsStage = "local:members:edit";
+  const id = query.get("id") || "member";
+  const item = await getOne("members", id).catch(() => null)
+    || (await list("members").catch(() => localStoredMembers())).find((member) => member.id === id)
+    || localStoredMembers().find((member) => member.id === id)
+    || null;
+  return localMemberEditorFallback(query, item);
+}
+
 async function viewForRoute(current) {
+  window.__pdtCmsStage = `route:${current.path}/${current.id || ""}`;
+  if (current.path === "cms" && mobileCmsDisabled()) return mobileCmsPlaceholder();
+  if (current.path === "cms" && current.id === "members" && current.query.get("lite") === "1" && localCmsHost()) return localMembersListPage();
+  if (current.path === "cms" && current.id === "edit" && current.query.get("module") === "members" && current.query.get("lite") === "1" && localCmsHost()) return localMemberEditorPage(current.query);
+  if (current.path === "cms" && current.id === "media") {
+    const { mediaPage } = await mediaPages();
+    return mediaPage(current.section || "library", current.query);
+  }
+  if (current.path === "cms" && current.id === "ai-editorial") {
+    const { aiEditorialPage } = await aiEditorialPages();
+    return aiEditorialPage(current.section || "dashboard", current.query);
+  }
+  if (current.path === "cms") {
+    window.__pdtCmsStage = "import:cmsPages";
+    const {
+      dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage,
+      moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, aiAccessPage, mailAdminPage, audioAdminPage
+    } = await cmsPages();
+    window.__pdtCmsStage = `cms:${current.id || "dashboard"}`;
+    if (!current.id) return dashboardPage();
+    if (current.id === "events") return eventsAdminPage();
+    if (current.id === "event") {
+      try {
+        sessionStorage.setItem("pdt-last-event-editor-id", current.section || "");
+        sessionStorage.setItem("pdt-last-event-editor-tab", current.query.get("tab") || "base");
+        sessionStorage.setItem("pdt-last-event-editor-at", String(Date.now()));
+      } catch {}
+      return eventEditPage(current.section, current.query.get("tab") || "base", current.query);
+    }
+    if (current.id === "registrations") return registrationsPage();
+    if (current.id === "followup") return eventFollowUpPage();
+    if (current.id === "topics") return moduleListPage("topics");
+    if (current.id === "galleries") return moduleListPage("galleries");
+    if (current.id === "speakers") return moduleListPage("speakers");
+    if (current.id === "sponsors") return moduleListPage("sponsors");
+    if (current.id === "members") {
+      window.__pdtCmsStage = "cms:members:list";
+      return moduleListPage("members");
+    }
+    if (current.id === "membership-applications") return moduleListPage("membershipApplications");
+    if (current.id === "member-documents") return moduleListPage("memberDocuments");
+    if (current.id === "member-directories") return moduleListPage("memberDirectories");
+    if (current.id === "users") return moduleListPage("users");
+    if (current.id === "board") return moduleListPage("boardMembers");
+    if (current.id === "editorial") return moduleListPage("editorialContent", current.section || "press");
+    if (current.id === "mail") return moduleListPage("mailQueue");
+    if (current.id === "audio") return audioAdminPage();
+    if (current.id === "mail-admin") return mailAdminPage();
+    if (current.id === "chatgpt") return chatGptPage();
+    if (current.id === "ai-access") return aiAccessPage();
+    if (current.id === "ai-settings") return aiSettingsPage();
+    if (current.id === "edit") return contentEditPage(current.query.get("module"), current.query.get("id"), current.query);
+    if (current.id === "setup") return setupPage();
+  }
+  const {
+    homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
+    newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage,
+    downloadsPage, joinPage, loginPage, memberPortalPage, memberArticleDetailPage, legalPage,
+    notFoundPage, webappQrPage
+  } = await publicPages();
   if (current.path === "home") return homePage();
   if (current.path === "events") return eventsPage();
   if (current.path === "event") return eventDetailPage(current.id);
@@ -111,66 +342,49 @@ async function viewForRoute(current) {
   if (current.path === "archive") return archivePage();
   if (current.path === "webapp-qr") return webappQrPage();
   if (current.path === "login") return loginPage();
+  if (current.path === "portal" && current.id === "article") return memberArticleDetailPage(current.section);
   if (current.path === "portal") return memberPortalPage();
   if (current.path === "imprint") return legalPage("imprint");
   if (current.path === "privacy") return legalPage("privacy");
-  if (current.path === "cms" && mobileCmsDisabled()) return mobileCmsPlaceholder();
-  if (current.path === "cms" && current.id === "media") {
-    const { mediaPage } = await mediaPages();
-    return mediaPage(current.section || "library", current.query);
-  }
-  if (current.path === "cms" && current.id === "ai-editorial") {
-    const { aiEditorialPage } = await aiEditorialPages();
-    return aiEditorialPage(current.section || "dashboard", current.query);
-  }
-  if (current.path === "cms") {
-    const {
-      dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage,
-      moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, aiAccessPage, mailAdminPage, audioAdminPage
-    } = await cmsPages();
-    if (!current.id) return dashboardPage();
-    if (current.id === "events") return eventsAdminPage();
-    if (current.id === "event") {
-      try {
-        sessionStorage.setItem("pdt-last-event-editor-id", current.section || "");
-        sessionStorage.setItem("pdt-last-event-editor-tab", current.query.get("tab") || "base");
-        sessionStorage.setItem("pdt-last-event-editor-at", String(Date.now()));
-      } catch {}
-      return eventEditPage(current.section, current.query.get("tab") || "base", current.query);
-    }
-    if (current.id === "registrations") return registrationsPage();
-    if (current.id === "followup") return eventFollowUpPage();
-    if (current.id === "topics") return moduleListPage("topics");
-    if (current.id === "galleries") return moduleListPage("galleries");
-    if (current.id === "speakers") return moduleListPage("speakers");
-    if (current.id === "sponsors") return moduleListPage("sponsors");
-    if (current.id === "members") return moduleListPage("members");
-    if (current.id === "membership-applications") return moduleListPage("membershipApplications");
-    if (current.id === "member-documents") return moduleListPage("memberDocuments");
-    if (current.id === "member-directories") return moduleListPage("memberDirectories");
-    if (current.id === "users") return moduleListPage("users");
-    if (current.id === "board") return moduleListPage("boardMembers");
-    if (current.id === "editorial") return moduleListPage("editorialContent", current.section || "press");
-    if (current.id === "mail") return moduleListPage("mailQueue");
-    if (current.id === "audio") return audioAdminPage();
-    if (current.id === "mail-admin") return mailAdminPage();
-    if (current.id === "chatgpt") return chatGptPage();
-    if (current.id === "ai-access") return aiAccessPage();
-    if (current.id === "ai-settings") return aiSettingsPage();
-    if (current.id === "edit") return contentEditPage(current.query.get("module"), current.query.get("id"), current.query);
-    if (current.id === "setup") return setupPage();
-  }
   return notFoundPage();
+}
+
+function redirectPublicRouteOutOfCms(current) {
+  if (current.path === "cms") return false;
+  if (!String(window.location.pathname || "").endsWith("/cms.html")) return false;
+  window.location.replace(`${window.location.origin}/${window.location.search}${window.location.hash || "#/home"}`);
+  return true;
 }
 
 async function render() {
   try {
     applyTheme();
     stopAllAudioPlayback();
+    const currentRoute = route();
+    if (redirectPublicRouteOutOfCms(currentRoute)) return;
+    if (root?.dataset?.localFallback && currentRoute.path === "cms" && localCmsHost()) {
+      const fallback = root.dataset.localFallback;
+      const stillCurrent = fallback === "members" && currentRoute.id === "members"
+        || fallback === "member-edit" && currentRoute.id === "edit" && currentRoute.query.get("module") === "members";
+      if (stillCurrent) return;
+      delete root.dataset.localFallback;
+    }
     if (root && !root.innerHTML) {
       root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS</p><h1>Lade Inhalte ...</h1></div></section>`;
     }
-    root.innerHTML = await viewForRoute(route());
+    if (currentRoute.path === "cms" && localCmsHost()) {
+      window.setTimeout(() => {
+        if (/Lade Inhalte/.test(root?.innerText || "")) {
+          root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS Diagnose</p><h1>Ladevorgang haengt</h1><p style="margin:14px 0 24px">Stufe: ${escapeHtml(window.__pdtCmsStage || "unbekannt")}</p><button class="button button--primary" type="button" onclick="location.reload()">Neu laden</button></div></section>`;
+        }
+      }, 1800);
+    }
+    const viewPromise = viewForRoute(currentRoute);
+    const timeoutPromise = new Promise((_, reject) => {
+      if (currentRoute.path !== "cms" || !localCmsHost()) return;
+      window.setTimeout(() => reject(new Error("CMS-Ladevorgang hat lokal zu lange gedauert.")), 4500);
+    });
+    root.innerHTML = await Promise.race([viewPromise, timeoutPromise]);
     wireActions();
     updateMobileQrCode();
     window.scrollTo({ top: 0 });
@@ -179,7 +393,8 @@ async function render() {
   } catch (error) {
     clearRoutePending();
     console.error(error);
-    root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Seite konnte nicht geladen werden</p><h1>Bitte neu laden</h1><p style="margin:14px 0 24px">${escapeHtml(error.message || String(error))}</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
+    const isLocalCmsRoute = currentRoute?.path === "cms" && ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+    root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Seite konnte nicht geladen werden</p><h1>Bitte neu laden</h1><p style="margin:14px 0 24px">${escapeHtml(error.message || String(error))}</p>${isLocalCmsRoute ? `<button class="button button--primary" type="button" onclick="window.location.reload()">Neu laden</button>` : `<a class="button button--primary" href="#/login">Zum Login</a>`}</div></section>`;
   }
 }
 
@@ -253,6 +468,19 @@ function clearRoutePending() {
 
 function clickedAnchor(event) {
   return event.target?.closest?.("a[href]") || null;
+}
+
+function linkTargetHash(link) {
+  try {
+    return new URL(link.getAttribute("href") || "", window.location.href).hash;
+  } catch {
+    return link?.getAttribute("href") || "";
+  }
+}
+
+function isCurrentInternalRouteLink(link) {
+  const targetHash = linkTargetHash(link) || "#/home";
+  return targetHash === (window.location.hash || "#/home");
 }
 
 function isExternalPortalLink(link) {
@@ -653,6 +881,13 @@ document.addEventListener("click", (event) => {
 document.addEventListener("click", (event) => {
   const link = clickedAnchor(event);
   if (!link || !link.matches('a[href^="#/"]')) return;
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  if (isCurrentInternalRouteLink(link)) {
+    event.preventDefault();
+    clearRoutePending();
+    window.scrollTo({ top: 0 });
+    return;
+  }
   stopAllAudioPlayback();
   showRoutePending(link);
 });
@@ -672,6 +907,57 @@ function formObject(form) {
   return data;
 }
 
+function youtubeVideoIdFromValue(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^[A-Za-z0-9_-]{11}$/.test(text)) return text;
+  const match = text.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/|live\/))([A-Za-z0-9_-]{11})/i)
+    || text.match(/[?&]v=([A-Za-z0-9_-]{11})/i);
+  return match?.[1] || "";
+}
+
+function collectVideoAttachments(form, values = {}) {
+  const rows = Array.from(form.querySelectorAll("[data-video-attachment-row]"));
+  const videos = rows.map((row, index) => {
+    const url = String(values[`videoYoutubeUrl${index}`] || "").trim();
+    const youtubeVideoId = youtubeVideoIdFromValue(url);
+    const poster = String(values[`videoPosterImageUrl${index}`] || "").trim()
+      || (youtubeVideoId ? `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg` : "");
+    const title = String(values[`videoTitle${index}`] || "").trim();
+    const caption = String(values[`videoCaption${index}`] || "").trim();
+    const description = String(values[`videoDescription${index}`] || "").trim();
+    const sortOrder = Number(values[`videoSortOrder${index}`] || index + 1);
+    if (!youtubeVideoId && !title && !caption && !poster && !description) return null;
+    return {
+      id: String(values[`videoId${index}`] || `video-${crypto.randomUUID()}`),
+      youtubeVideoId,
+      youtubeUrl: url,
+      embedUrl: youtubeVideoId ? `https://www.youtube.com/embed/${youtubeVideoId}` : "",
+      title,
+      caption,
+      description,
+      posterImageUrl: poster,
+      posterImageAlt: String(values[`videoPosterImageAlt${index}`] || title || caption || "Video starten").trim(),
+      posterImageCaption: String(values[`videoPosterImageCaption${index}`] || "").trim(),
+      posterImageSource: poster && youtubeVideoId && poster.includes(youtubeVideoId) ? "youtube_thumbnail" : poster ? "custom" : "",
+      youtubeThumbnailUrl: youtubeVideoId ? `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg` : "",
+      sourceType: "youtube_import",
+      privacyStatus: String(values[`videoPrivacyStatus${index}`] || "unlisted"),
+      visibility: String(values[`videoVisibility${index}`] || "public"),
+      status: String(values[`videoStatus${index}`] || "ready"),
+      uploadStatus: youtubeVideoId ? "ready" : "not_uploaded",
+      sortOrder: Number.isFinite(sortOrder) ? sortOrder : index + 1,
+      updatedAt: new Date().toISOString()
+    };
+  }).filter(Boolean);
+  Object.keys(values).forEach((key) => {
+    if (/^video(?:Id|YoutubeUrl|Title|Caption|Description|PosterImageUrl|PosterImageAlt|PosterImageCaption|SortOrder|PrivacyStatus|Visibility|Status)\d+$/.test(key)) {
+      delete values[key];
+    }
+  });
+  return videos.sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+}
+
 function countWords(value = "") {
   return String(value || "")
     .trim()
@@ -687,7 +973,7 @@ function normalizeFourKeywords(values = "", fallbackText = "") {
   ];
   const seen = new Set();
   return raw
-    .map((word) => word.replace(/[^A-Za-z0-9Ã„Ã–ÃœÃ¤Ã¶Ã¼ÃŸ-]/g, "").replace(/^-+|-+$/g, "").trim())
+    .map((word) => word.replace(/[^A-Za-z0-9ÄÖÜäöüß-]/g, "").replace(/^-+|-+$/g, "").trim())
     .filter((word) => word.length >= 4 && word.length <= 22)
     .filter((word) => !stop.has(word.toLowerCase()))
     .filter((word) => !/^(gepr|pruef|redakt|quelle|quellen|status)$/i.test(word))
@@ -715,14 +1001,14 @@ function cleanNewsSentence(value = "") {
   return String(value || "")
     .replace(/\s+/g, " ")
     .replace(/^(und|oder|aber|denn|weil|dass)\s+/i, "")
-    .replace(/[â€œâ€"']+/g, "")
+    .replace(/[“”"']+/g, "")
     .trim();
 }
 
 function keyNewsFacts(sourceText = "", limit = 5) {
   const sentences = newsSourceSentences(sourceText);
   const scored = sentences.map((sentence, index) => {
-    const score = (/\b\d{4}|\b\d{1,2}\.\s*[A-ZÃ„Ã–Ãœa-zÃ¤Ã¶Ã¼]+|\b[A-ZÃ„Ã–Ãœ]{2,}\b|Landgericht|GEMA|Suno|EU|AI|KI|Urteil|Klage|Pflicht|Recht|Lizenz|Verguetung|Streaming|TV|Medien|Plattform|Musik|Urheber/i.test(sentence) ? 30 : 0)
+    const score = (/\b\d{4}|\b\d{1,2}\.\s*[A-ZÄÖÜa-zäöü]+|\b[A-ZÄÖÜ]{2,}\b|Landgericht|GEMA|Suno|EU|AI|KI|Urteil|Klage|Pflicht|Recht|Lizenz|Verguetung|Streaming|TV|Medien|Plattform|Musik|Urheber/i.test(sentence) ? 30 : 0)
       + Math.max(0, 12 - index)
       + Math.min(18, Math.round(sentence.length / 18));
     return { sentence: cleanNewsSentence(sentence), score };
@@ -755,7 +1041,7 @@ function trimTextToWordGoal(value = "", targetWords = 300) {
   let text = kept.join("\n\n").trim();
   if (countWords(text) <= target + 20) return text;
   const words = text.split(/\s+/).slice(0, target);
-  text = words.join(" ").replace(/[,:;â€“-]\s*$/, "").trim();
+  text = words.join(" ").replace(/[,:;–-]\s*$/, "").trim();
   const lastSentenceEnd = Math.max(text.lastIndexOf("."), text.lastIndexOf("!"), text.lastIndexOf("?"));
   if (lastSentenceEnd > text.length * 0.75) return text.slice(0, lastSentenceEnd + 1).trim();
   return /[.!?]$/.test(text) ? text : `${text}.`;
@@ -770,16 +1056,16 @@ function rewriteNewsBodyClient({ sourceText = "", headline = "", subline = "", t
   const secondTag = tags[1] || "digitale Medien";
   const fact = (index, fallback) => cleanNewsSentence(facts[index] || sentences[index] || fallback);
   let body = [
-    `Die Entwicklung rund um ${subject} rÃ¼ckt eine konkrete Frage fÃ¼r die digitale Medienwirtschaft in den Mittelpunkt. ${fact(0, subline || `${mainTag} gewinnt fÃ¼r Anbieter, Plattformen und Partner der Medienbranche an Bedeutung.`)} Damit geht es nicht um eine abstrakte Trendmeldung, sondern um eine Entwicklung mit praktischen Folgen fÃ¼r Produktion, Verbreitung, Rechte, Refinanzierung und strategische Positionierung.`,
-    `Der Kern der Meldung bleibt dabei klar: ${fact(1, `die Verbindung von ${mainTag} und ${secondTag} verÃ¤ndert die Rahmenbedingungen fÃ¼r Medienanbieter.`)} FÃ¼r Sender, Produzenten, Streaminganbieter, Vermarkter und regionale Medien ist wichtig, welche Akteure betroffen sind, welche Regeln oder Marktbewegungen dahinterstehen und welche Entscheidungen daraus entstehen kÃ¶nnen.`,
-    `Besonders relevant ist auch dieser Punkt: ${fact(2, `Medienunternehmen mÃ¼ssen neue Entwicklungen frÃ¼h einordnen, ohne die konkreten Aussagen des Ausgangsmaterials zu verwischen.`)} Daraus ergibt sich ein Branchenbezug, weil digitale Medienangebote heute stark von Plattformlogik, Daten, Regulierung, Lizenzmodellen und neuen Nutzungsformen geprÃ¤gt werden.`,
-    `Die Einordnung darf den Inhalt nicht verallgemeinern. ${fact(3, `Entscheidend bleibt, welche unmittelbaren Folgen sich aus dem beschriebenen Vorgang ergeben.`)} Genau deshalb sollte die weitere Bewertung an den belegten Aussagen ansetzen: Was wurde beschlossen, verhandelt, angekÃ¼ndigt oder kritisiert? Welche Fristen, Verfahren, Unternehmen oder Rechte sind genannt? Und welche Bedeutung hat das fÃ¼r die praktische Arbeit der Medienbranche?`,
-    `FÃ¼r PROdigitalTV liegt die Relevanz des Themas darin, diese konkreten Punkte fÃ¼r die Branche nutzbar zu machen. ${fact(4, `Die Entwicklung zeigt, dass technische Innovation, rechtliche Sicherheit und wirtschaftliche TragfÃ¤higkeit zusammen betrachtet werden mÃ¼ssen.`)} So entsteht ein Beitrag, der den Kern der Ausgangsinformation bewahrt und zugleich erklÃ¤rt, warum er fÃ¼r digitale Medienanbieter wichtig ist.`
+    `Die Entwicklung rund um ${subject} rückt eine konkrete Frage für die digitale Medienwirtschaft in den Mittelpunkt. ${fact(0, subline || `${mainTag} gewinnt für Anbieter, Plattformen und Partner der Medienbranche an Bedeutung.`)} Damit geht es nicht um eine abstrakte Trendmeldung, sondern um eine Entwicklung mit praktischen Folgen für Produktion, Verbreitung, Rechte, Refinanzierung und strategische Positionierung.`,
+    `Der Kern der Meldung bleibt dabei klar: ${fact(1, `die Verbindung von ${mainTag} und ${secondTag} verändert die Rahmenbedingungen für Medienanbieter.`)} Für Sender, Produzenten, Streaminganbieter, Vermarkter und regionale Medien ist wichtig, welche Akteure betroffen sind, welche Regeln oder Marktbewegungen dahinterstehen und welche Entscheidungen daraus entstehen können.`,
+    `Besonders relevant ist auch dieser Punkt: ${fact(2, `Medienunternehmen müssen neue Entwicklungen früh einordnen, ohne die konkreten Aussagen des Ausgangsmaterials zu verwischen.`)} Daraus ergibt sich ein Branchenbezug, weil digitale Medienangebote heute stark von Plattformlogik, Daten, Regulierung, Lizenzmodellen und neuen Nutzungsformen geprägt werden.`,
+    `Die Einordnung darf den Inhalt nicht verallgemeinern. ${fact(3, `Entscheidend bleibt, welche unmittelbaren Folgen sich aus dem beschriebenen Vorgang ergeben.`)} Genau deshalb sollte die weitere Bewertung an den belegten Aussagen ansetzen: Was wurde beschlossen, verhandelt, angekündigt oder kritisiert? Welche Fristen, Verfahren, Unternehmen oder Rechte sind genannt? Und welche Bedeutung hat das für die praktische Arbeit der Medienbranche?`,
+    `Für PROdigitalTV liegt die Relevanz des Themas darin, diese konkreten Punkte für die Branche nutzbar zu machen. ${fact(4, `Die Entwicklung zeigt, dass technische Innovation, rechtliche Sicherheit und wirtschaftliche Tragfähigkeit zusammen betrachtet werden müssen.`)} So entsteht ein Beitrag, der den Kern der Ausgangsinformation bewahrt und zugleich erklärt, warum er für digitale Medienanbieter wichtig ist.`
   ].join("\n\n");
   let index = 4;
   while (countWords(body) < goal) {
-    const extra = fact(index, `Zugleich bleibt ${secondTag} ein Feld, in dem technische MÃ¶glichkeiten, wirtschaftliche Interessen und publizistische Verantwortung zusammen gedacht werden mÃ¼ssen.`);
-    body += `\n\n${extra} FÃ¼r die Branche ist deshalb entscheidend, nicht nur auf einzelne Schlagworte zu reagieren, sondern den konkreten Nutzen, die rechtlichen Rahmenbedingungen und die Auswirkungen auf Nutzerinnen und Nutzer mitzudenken.`;
+    const extra = fact(index, `Zugleich bleibt ${secondTag} ein Feld, in dem technische Möglichkeiten, wirtschaftliche Interessen und publizistische Verantwortung zusammen gedacht werden müssen.`);
+    body += `\n\n${extra} Für die Branche ist deshalb entscheidend, nicht nur auf einzelne Schlagworte zu reagieren, sondern den konkreten Nutzen, die rechtlichen Rahmenbedingungen und die Auswirkungen auf Nutzerinnen und Nutzer mitzudenken.`;
     index += 1;
     if (index > 12 && countWords(body) > goal) break;
   }
@@ -788,22 +1074,22 @@ function rewriteNewsBodyClient({ sourceText = "", headline = "", subline = "", t
 
 const AI_EDITORIAL_BANNED_PHRASES = [
   /\bFuer PROdigitalTV liegt die Relevanz des Themas darin[^.?!]*[.?!]\s*/gi,
-  /\bFÃ¼r PROdigitalTV liegt die Relevanz des Themas darin[^.?!]*[.?!]\s*/gi,
+  /\bFür PROdigitalTV liegt die Relevanz des Themas darin[^.?!]*[.?!]\s*/gi,
   /\bDie Meldung ist fuer PROdigitalTV relevant[^.?!]*[.?!]\s*/gi,
-  /\bDie Meldung ist fÃ¼r PROdigitalTV relevant[^.?!]*[.?!]\s*/gi,
+  /\bDie Meldung ist für PROdigitalTV relevant[^.?!]*[.?!]\s*/gi,
   /\bFuer die Branche ist deshalb entscheidend[^.?!]*[.?!]\s*/gi,
-  /\bFÃ¼r die Branche ist deshalb entscheidend[^.?!]*[.?!]\s*/gi,
+  /\bFür die Branche ist deshalb entscheidend[^.?!]*[.?!]\s*/gi,
   /\bDamit geht es nicht um eine abstrakte Trendmeldung[^.?!]*[.?!]\s*/gi,
   /\bDaraus ergibt sich ein Branchenbezug[^.?!]*[.?!]\s*/gi,
   /\bDie Einordnung darf den Inhalt nicht verallgemeinern[^.?!]*[.?!]\s*/gi,
   /\bGenau deshalb sollte die weitere Bewertung[^.?!]*[.?!]\s*/gi,
   /\bSo entsteht ein Beitrag[^.?!]*[.?!]\s*/gi,
   /\bVor einer Veroeffentlichung[^.?!]*[.?!]\s*/gi,
-  /\bVor einer VerÃ¶ffentlichung[^.?!]*[.?!]\s*/gi,
+  /\bVor einer Veröffentlichung[^.?!]*[.?!]\s*/gi,
   /\bredaktionell pruefen\b/gi,
-  /\bredaktionell prÃ¼fen\b/gi,
+  /\bredaktionell prüfen\b/gi,
   /\bPruefpflichtig\b/gi,
-  /\bPrÃ¼fpflichtig\b/gi,
+  /\bPrüfpflichtig\b/gi,
   /\bArbeitsentwurf\b/gi,
   /\bMorgenbriefing-Meldung\b/gi,
   /\bThemenkandidat\b/gi,
@@ -817,13 +1103,13 @@ function stripEditorialProcessPhrases(value = "") {
   });
   return text
     .replace(/\bKI-Redaktion\b/g, "Redaktion")
-    .replace(/\bVeroeffentlichung\b/g, "VerÃ¶ffentlichung")
-    .replace(/\bFuer\b/g, "FÃ¼r")
-    .replace(/\bfuer\b/g, "fÃ¼r")
-    .replace(/\bkoennen\b/g, "kÃ¶nnen")
-    .replace(/\bmuessen\b/g, "mÃ¼ssen")
-    .replace(/\bwaere\b/g, "wÃ¤re")
-    .replace(/\bhaette\b/g, "hÃ¤tte")
+    .replace(/\bVeroeffentlichung\b/g, "Veröffentlichung")
+    .replace(/\bFuer\b/g, "Für")
+    .replace(/\bfuer\b/g, "für")
+    .replace(/\bkoennen\b/g, "können")
+    .replace(/\bmuessen\b/g, "müssen")
+    .replace(/\bwaere\b/g, "wäre")
+    .replace(/\bhaette\b/g, "hätte")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -833,7 +1119,7 @@ function neutralEditorialRewrite({ sourceText = "", headline = "", subline = "",
   const cleaned = stripEditorialProcessPhrases(sourceText);
   const sentences = cleaned
     .replace(/\n+/g, " ")
-    .split(/(?<=[.!?])\s+(?=[A-ZÃ„Ã–Ãœ0-9])/)
+    .split(/(?<=[.!?])\s+(?=[A-ZÄÖÜ0-9])/)
     .map((sentence) => cleanNewsSentence(sentence))
     .filter((sentence) => sentence.length > 18)
     .filter((sentence) => !/^(Quelle|Status|Kategorie|Relevanz|Keywords?)\s*:/i.test(sentence))
@@ -841,7 +1127,7 @@ function neutralEditorialRewrite({ sourceText = "", headline = "", subline = "",
   const unique = [];
   const seen = new Set();
   sentences.forEach((sentence) => {
-    const key = sentence.toLowerCase().replace(/[^a-z0-9Ã¤Ã¶Ã¼ÃŸ]+/gi, " ").slice(0, 90);
+    const key = sentence.toLowerCase().replace(/[^a-z0-9äöüß]+/gi, " ").slice(0, 90);
     if (seen.has(key)) return;
     seen.add(key);
     unique.push(sentence);
@@ -942,19 +1228,19 @@ function showAiArticleRewriteDialog({ article = {}, formValues = {}, sources = [
   wrapper.innerHTML = `<div class="ai-dialog ai-dialog--news-review" role="dialog" aria-modal="true">
     <div class="actions" style="justify-content:space-between"><div><p class="eyebrow">KI-Redaktion</p><h2>Vorschlag und Neufassung vergleichen</h2></div><button type="button" class="link-button" data-ai-close>Schliessen</button></div>
     <div class="ai-dialog-grid ai-dialog-grid--review">
-      <div class="field"><label>Ãœbernommener Vorschlag <span>${countWords(sourceText || currentText)} WÃ¶rter</span></label><textarea readonly>${escapeHtml(sourceText || currentText || "Noch kein Vorschlag gespeichert.")}</textarea></div>
-      <div class="field"><label>Neu formuliert <span data-ai-rewrite-count>${countWords(revised)} WÃ¶rter</span></label><textarea data-ai-article-rewrite>${escapeHtml(revised)}</textarea></div>
+      <div class="field"><label>Übernommener Vorschlag <span>${countWords(sourceText || currentText)} Wörter</span></label><textarea readonly>${escapeHtml(sourceText || currentText || "Noch kein Vorschlag gespeichert.")}</textarea></div>
+      <div class="field"><label>Neu formuliert <span data-ai-rewrite-count>${countWords(revised)} Wörter</span></label><textarea data-ai-article-rewrite>${escapeHtml(revised)}</textarea></div>
     </div>
     <div class="alert"><strong>Leitlinie:</strong> keine Eigenphrasen, keine Bewertungen ohne Quelle, keine beitragsfremden Formulierungen.${sourceNames ? ` Quellenhinweise: ${escapeHtml(sourceNames)}.` : ""}</div>
     <div class="actions"><button type="button" class="button button--primary" data-ai-rewrite-accept>Neufassung uebernehmen</button><button type="button" class="button button--secondary" data-ai-rewrite-regenerate>Nochmals neutral formulieren</button><button type="button" class="button button--secondary" data-ai-close>Verwerfen</button></div>
-    <p class="muted">Erst â€žNeufassung uebernehmenâ€œ schreibt den Text in den Beitragseditor. Danach bitte speichern.</p>
+    <p class="muted">Erst „Neufassung uebernehmen“ schreibt den Text in den Beitragseditor. Danach bitte speichern.</p>
   </div>`;
   document.body.append(wrapper);
   wrapper.querySelectorAll("[data-ai-close]").forEach((item) => item.addEventListener("click", () => wrapper.remove()));
   const outputField = wrapper.querySelector("[data-ai-article-rewrite]");
   const countNode = wrapper.querySelector("[data-ai-rewrite-count]");
   const updateCount = () => {
-    if (countNode) countNode.textContent = `${countWords(outputField?.value || "")} WÃ¶rter`;
+    if (countNode) countNode.textContent = `${countWords(outputField?.value || "")} Wörter`;
   };
   outputField?.addEventListener("input", updateCount);
   wrapper.querySelector("[data-ai-rewrite-regenerate]")?.addEventListener("click", async (event) => {
@@ -1302,7 +1588,7 @@ function collectMemberEventContacts(form, membershipType = "") {
     const phone = String(form.querySelector(`[name="eventContactPhone${index}"]`)?.value || "").trim();
     if (!firstName && !lastName && !legacyName && !role && !email && !phone) continue;
     if (!firstName || !lastName || !email || !phone) {
-      throw new Error(`Eventkontakt ${index + 1} bitte mit Name, E-Mail und Telefon vollstÃ¤ndig ausfÃ¼llen.`);
+      throw new Error(`Eventkontakt ${index + 1} bitte mit Name, E-Mail und Telefon vollständig ausfüllen.`);
     }
     contacts.push({ firstName, lastName, name, role, email, phone });
   }
@@ -1748,7 +2034,7 @@ function loginReturnTarget() {
 
 function cleanEditorialSentence(value = "") {
   return String(value || "")
-    .replace(/\b(redaktioneller Themenkandidat|Themenkandidat|Vorschlag|Quellenfund|redaktionell pruefen|redaktionell prÃ¼fen)\b/gi, "")
+    .replace(/\b(redaktioneller Themenkandidat|Themenkandidat|Vorschlag|Quellenfund|redaktionell pruefen|redaktionell prüfen)\b/gi, "")
     .replace(/\s+/g, " ")
     .replace(/\s+([.,;:!?])/g, "$1")
     .trim();
@@ -1903,10 +2189,10 @@ function generateLocalEditorialThumbnail(article = {}) {
 function slugify(value = "") {
   return String(value || "")
     .toLowerCase()
-    .replace(/Ã¤/g, "ae")
-    .replace(/Ã¶/g, "oe")
-    .replace(/Ã¼/g, "ue")
-    .replace(/ÃŸ/g, "ss")
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
@@ -1923,12 +2209,12 @@ function eventRetrospectiveBody(event = {}) {
     [event.locationName, event.city].filter(Boolean).length ? `Veranstaltungsort war ${[event.locationName, event.city].filter(Boolean).join(", ")}.` : "",
     event.subtitle ? `Im Mittelpunkt stand: ${event.subtitle}` : ""
   ].filter(Boolean).join(" ");
-  const closing = "Der RÃ¼ckblick dokumentiert die wichtigsten Impulse, EindrÃ¼cke und AnknÃ¼pfungspunkte fÃ¼r die digitale Medienwirtschaft.";
+  const closing = "Der Rückblick dokumentiert die wichtigsten Impulse, Eindrücke und Anknüpfungspunkte für die digitale Medienwirtschaft.";
   return [summary, facts, closing].filter(Boolean).join("\n\n");
 }
 
 function eventRetrospectiveIntro(event = {}) {
-  return event.postEventSummary || event.postEventummary || event.description || event.subtitle || "Redaktioneller RÃ¼ckblick auf ein PROdigitalTV-Event.";
+  return event.postEventSummary || event.postEventummary || event.description || event.subtitle || "Redaktioneller Rückblick auf ein PROdigitalTV-Event.";
 }
 
 function eventRetrospectiveImageUrl(event = {}) {
@@ -2042,7 +2328,7 @@ function generatedThumbTitle(context = {}, variantNumber = 1) {
 
 function mediaPresetSummary(type = "upload") {
   const preset = mediaUsagePreset(type);
-  return `${preset.aspect} Â· ${preset.width} x ${preset.height}px Â· ${preset.portal} Â· ${preset.mobile}`;
+  return `${preset.aspect} · ${preset.width} x ${preset.height}px · ${preset.portal} · ${preset.mobile}`;
 }
 
 function mediaShortCode() {
@@ -3058,7 +3344,7 @@ function localArticleKeywords(article = {}, fallbackKeywords = []) {
     ...(Array.isArray(article.tags) ? article.tags : []),
     article.primary_keyword || article.primaryKeyword || "",
     category,
-    ...(`${title} ${subline}`).match(/[A-Za-zÃ„Ã–ÃœÃ¤Ã¶Ã¼ÃŸ][A-Za-zÃ„Ã–ÃœÃ¤Ã¶Ã¼ÃŸ-]{3,}/g) || []
+    ...(`${title} ${subline}`).match(/[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß-]{3,}/g) || []
   ];
   const stopWords = new Set([
     "eine", "einer", "eines", "einem", "einen", "auch", "oder", "und", "fuer", "mit", "auf", "aus", "das", "der", "die",
@@ -3073,7 +3359,7 @@ function localArticleKeywords(article = {}, fallbackKeywords = []) {
     if (stopWords.has(normalized)) return;
     frequency.set(keyword, (frequency.get(keyword) || 0) + 1);
   });
-  String(body).match(/[A-ZÃ„Ã–Ãœ][A-Za-zÃ„Ã–ÃœÃ¤Ã¶Ã¼ÃŸ-]{4,}(?:\s+[A-ZÃ„Ã–Ãœ][A-Za-zÃ„Ã–ÃœÃ¤Ã¶Ã¼ÃŸ-]{3,})?/g)?.slice(0, 18).forEach((keyword) => {
+  String(body).match(/[A-ZÄÖÜ][A-Za-zÄÖÜäöüß-]{4,}(?:\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöüß-]{3,})?/g)?.slice(0, 18).forEach((keyword) => {
     const clean = keyword.trim();
     if (!stopWords.has(clean.toLowerCase())) frequency.set(clean, (frequency.get(clean) || 0) + 1);
   });
@@ -3860,7 +4146,7 @@ function pressImportStatusMarkup({ startedAt = Date.now(), run = null, stepIndex
     ${progressMarkup(headline, percent)}
     <div class="ai-research-status__meta"><strong>Status:</strong> ${escapeHtml(PRESS_IMPORT_STEPS[boundedStep])}<span>${elapsedSeconds}s</span></div>
     ${currentScan ? `<div class="ai-research-current-source"><span>Aktuelles Portal ${scanned || recentScans.length} von ${planned || "?"}</span><strong>${escapeHtml(currentScan.source_name || currentScan.source_domain || "Portal")}</strong><small>${escapeHtml(currentScan.reason || currentScan.status || "")}</small></div>` : ""}
-    ${recentScans.length ? `<div class="ai-research-source-strip">${recentScans.map((scan) => `<span>${escapeHtml(scan.source_name || scan.source_domain || "Portal")} Â· ${Number(scan.count || 0)}</span>`).join("")}</div>` : ""}
+    ${recentScans.length ? `<div class="ai-research-source-strip">${recentScans.map((scan) => `<span>${escapeHtml(scan.source_name || scan.source_domain || "Portal")} · ${Number(scan.count || 0)}</span>`).join("")}</div>` : ""}
     <ol class="ai-research-steps">${PRESS_IMPORT_STEPS.map((step, index) => `<li class="${done || index < boundedStep ? "is-done" : index === boundedStep ? "is-active" : ""}"><span>${index + 1}</span>${escapeHtml(step)}</li>`).join("")}</ol>
     <div class="ai-press-progress__stats"><span>Importiert: ${Number(run?.imported || 0)}</span><span>Dubletten: ${Number(run?.duplicates || 0)}</span><span>Ausgespart: ${Number(run?.skipped_sources || 0)}</span></div>
     <p class="muted">Hinweis: Importierte Pressemitteilungen werden nicht automatisch geloescht oder als Beitrag angelegt.</p>
@@ -3919,7 +4205,7 @@ function showAiDialog({ button, originalText, result, sourceField }) {
       const note = wrapper.querySelector(".muted");
       acceptButton.disabled = true;
       acceptButton.textContent = "Speichert ...";
-      if (note) note.textContent = "KI-Vorschlag wird Ã¼bernommen und der RÃ¼ckblicktext gespeichert.";
+      if (note) note.textContent = "KI-Vorschlag wird übernommen und der Rückblicktext gespeichert.";
       try {
         await submitFormAndWait(postEventForm);
       } catch (error) {
@@ -3963,9 +4249,9 @@ function confirmAiNewsImportDraft({ sourceText = "", draft = {}, regenerateDraft
     const initialTargetWords = Math.max(120, Math.min(900, Number(draft.targetWords || bodyWords || 300)));
     wrapper.className = "ai-dialog-backdrop";
     wrapper.innerHTML = `<div class="ai-dialog ai-dialog--news-review" role="dialog" aria-modal="true">
-      <div class="actions" style="justify-content:space-between"><div><p class="eyebrow">News-Import</p><h2>Textvorschlag abstimmen</h2></div><button type="button" class="link-button" data-ai-news-cancel>SchlieÃŸen</button></div>
+      <div class="actions" style="justify-content:space-between"><div><p class="eyebrow">News-Import</p><h2>Textvorschlag abstimmen</h2></div><button type="button" class="link-button" data-ai-news-cancel>Schließen</button></div>
       <div class="ai-dialog-grid ai-dialog-grid--review">
-        <div class="field"><label>Ausgangstext / Quelle <span data-word-count-source>${sourceWords} WÃ¶rter</span></label><textarea readonly>${escapeHtml(sourceText || "Keine Textquelle eingefÃ¼gt.")}</textarea></div>
+        <div class="field"><label>Ausgangstext / Quelle <span data-word-count-source>${sourceWords} Wörter</span></label><textarea readonly>${escapeHtml(sourceText || "Keine Textquelle eingefügt.")}</textarea></div>
         <form class="ai-news-review-fields">
           <div class="field"><label>Headline</label><input name="headline" value="${escapeHtml(headline)}"></div>
           <div class="field"><label>Subline</label><textarea name="subline" rows="3">${escapeHtml(subline)}</textarea></div>
@@ -3973,14 +4259,14 @@ function confirmAiNewsImportDraft({ sourceText = "", draft = {}, regenerateDraft
             <div class="field"><label>Wortmenge neuer Text</label><input name="targetWords" type="number" min="120" max="900" step="25" value="${initialTargetWords}"></div>
             <button type="button" class="button button--secondary" data-ai-news-rewrite>Neu formulieren</button>
           </div>
-          <div class="field"><label>Beitragstext <span data-word-count-body>${bodyWords} WÃ¶rter${bodyWords < 300 ? " - mindestens 300" : ""}</span></label><textarea name="body" rows="12">${escapeHtml(body)}</textarea></div>
+          <div class="field"><label>Beitragstext <span data-word-count-body>${bodyWords} Wörter${bodyWords < 300 ? " - mindestens 300" : ""}</span></label><textarea name="body" rows="12">${escapeHtml(body)}</textarea></div>
           <div class="form-grid form-grid--compact">
             <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(category)}"></div>
             <div class="field"><label>Keywords</label><input name="tags" value="${escapeHtml(tags)}"></div>
           </div>
         </form>
       </div>
-      <div class="actions"><button type="button" class="button button--primary" data-ai-news-accept>Ãœbernehmen und speichern</button><button type="button" class="button button--secondary" data-ai-news-cancel>Verwerfen</button></div>
+      <div class="actions"><button type="button" class="button button--primary" data-ai-news-accept>Übernehmen und speichern</button><button type="button" class="button button--secondary" data-ai-news-cancel>Verwerfen</button></div>
       <p class="muted">Neu formulieren nutzt immer die linke Datenbasis. Gespeichert wird erst nach deiner Auswahl.</p>
     </div>`;
     const close = (value) => {
@@ -3995,7 +4281,7 @@ function confirmAiNewsImportDraft({ sourceText = "", draft = {}, regenerateDraft
     const updateBodyCount = () => {
       const words = countWords(bodyField?.value || "");
       const target = readTargetWords();
-      bodyCount.textContent = `${words} WÃ¶rter - Ziel ${target}${words > target + 25 ? " - zu lang" : words < target - 25 ? " - zu kurz" : ""}`;
+      bodyCount.textContent = `${words} Wörter - Ziel ${target}${words > target + 25 ? " - zu lang" : words < target - 25 ? " - zu kurz" : ""}`;
     };
     bodyField?.addEventListener("input", () => {
       updateBodyCount();
@@ -4343,7 +4629,7 @@ function wireImageDropzones() {
         if (form?.elements?.thumbnail_alt && !String(form.elements.thumbnail_alt.value || "").trim()) {
           form.elements.thumbnail_alt.value = asset.thumbnail_alt || asset.alt_text || "";
         }
-        status.innerHTML = `<span>KI-Thumb Variante ${variantNumber} wurde gespeichert, dem Beitrag zugeordnet und ist in der Mediathek auswÃ¤hlbar.</span>`;
+        status.innerHTML = `<span>KI-Thumb Variante ${variantNumber} wurde gespeichert, dem Beitrag zugeordnet und ist in der Mediathek auswählbar.</span>`;
       } catch (error) {
         status.textContent = `KI-Bild konnte nicht erzeugt werden: ${error.message || String(error)}`;
       } finally {
@@ -4364,7 +4650,7 @@ function wireImageDropzones() {
       preview.innerHTML = `<span>${emptyText}</span>`;
       preview.classList.remove("has-image");
       if (removeButton) removeButton.hidden = true;
-      status.textContent = "Bild zum LÃ¶schen markiert. Bitte speichern.";
+      status.textContent = "Bild zum Löschen markiert. Bitte speichern.";
     });
     updateResolution();
   });
@@ -4463,12 +4749,12 @@ function openGalleryPlayer(gallery) {
   const renderSlide = () => {
     const image = images[index];
     overlay.innerHTML = `<div class="gallery-player__panel">
-      <div class="gallery-player__top"><strong>${escapeHtml(gallery.title || "Bildergalerie")}</strong><button class="gallery-player__close" type="button" data-gallery-close aria-label="Schliessen">Ã—</button></div>
+      <div class="gallery-player__top"><strong>${escapeHtml(gallery.title || "Bildergalerie")}</strong><button class="gallery-player__close" type="button" data-gallery-close aria-label="Schliessen">×</button></div>
       <figure class="gallery-player__stage"><img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.altText || image.caption || "Galeriebild")}">${image.caption ? `<figcaption>${escapeHtml(image.caption)}</figcaption>` : ""}</figure>
       <div class="gallery-player__controls">
-        <button type="button" data-gallery-prev aria-label="Vorheriges Bild">â€¹</button>
+        <button type="button" data-gallery-prev aria-label="Vorheriges Bild">‹</button>
         <span>${index + 1} / ${images.length}</span>
-        <button type="button" data-gallery-next aria-label="Naechstes Bild">â€º</button>
+        <button type="button" data-gallery-next aria-label="Naechstes Bild">›</button>
         <button type="button" data-gallery-toggle>${timer ? "Pause" : "Play"}</button>
       </div>
     </div>`;
@@ -4526,6 +4812,178 @@ function wireGalleryPlayers() {
     } catch (error) {
       console.error("Galerie konnte nicht geoeffnet werden", error);
     }
+    });
+  });
+}
+
+function videoAttachmentRowTemplate(index = 0) {
+  return `<fieldset class="video-attachment-row" data-video-attachment-row>
+    <legend>Video ${index + 1}</legend>
+    <input type="hidden" name="videoId${index}" value="video-${crypto.randomUUID()}">
+    <div class="form-grid form-grid--video-attachment">
+      <div class="field"><label>YouTube-URL oder ID</label><input name="videoYoutubeUrl${index}" placeholder="https://www.youtube.com/watch?v=..."></div>
+      <div class="field"><label>Titel</label><input name="videoTitle${index}"></div>
+      <div class="field"><label>Caption</label><input name="videoCaption${index}"></div>
+      <div class="field"><label>Startbild / Posterbild</label><input name="videoPosterImageUrl${index}" placeholder="Bild-URL oder YouTube-Thumbnail"></div>
+      <div class="field"><label>Alt-Text Startbild</label><input name="videoPosterImageAlt${index}"></div>
+      <div class="field"><label>Sortierung</label><input name="videoSortOrder${index}" type="number" min="1" value="${index + 1}"></div>
+      <div class="field"><label>Privacy</label><select name="videoPrivacyStatus${index}"><option value="unlisted" selected>unlisted</option><option value="private">private</option><option value="public">public</option><option value="unknown">unknown</option></select></div>
+      <div class="field"><label>Status</label><select name="videoStatus${index}"><option value="ready" selected>ready</option><option value="draft">draft</option><option value="published">published</option><option value="hidden">hidden</option><option value="error">error</option></select></div>
+      <div class="field field--wide"><label>Beschreibung</label><textarea name="videoDescription${index}"></textarea></div>
+    </div>
+    <button class="icon-button icon-button--danger" type="button" data-remove-video-attachment title="Video entfernen" aria-label="Video entfernen">×</button>
+  </fieldset>`;
+}
+
+function normalizedVideoLibraryPayload(video = {}, index = 0) {
+  const youtubeVideoId = video.youtubeVideoId || youtubeVideoIdFromValue(video.youtubeUrl || video.url || video.embedUrl || "");
+  const youtubeUrl = video.youtubeUrl || video.url || (youtubeVideoId ? `https://www.youtube.com/watch?v=${youtubeVideoId}` : "");
+  const posterImageUrl = video.posterImageUrl || video.thumbnailUrl || video.youtubeThumbnailUrl || (youtubeVideoId ? `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg` : "");
+  return {
+    id: video.id || `video-${crypto.randomUUID()}`,
+    youtubeVideoId,
+    youtubeUrl,
+    embedUrl: youtubeVideoId ? `https://www.youtube.com/embed/${youtubeVideoId}` : video.embedUrl || "",
+    title: video.title || "Video",
+    caption: video.caption || video.description || "",
+    description: video.description || video.caption || "",
+    posterImageUrl,
+    posterImageAlt: video.posterImageAlt || video.title || "Video starten",
+    privacyStatus: video.privacyStatus || "unlisted",
+    status: video.status || "ready",
+    sortOrder: Number(video.sortOrder || index + 1)
+  };
+}
+
+function videoAssignmentRowTemplate(video = {}, index = 0) {
+  const item = normalizedVideoLibraryPayload(video, index);
+  return `<div class="video-assignment-row" data-video-attachment-row>
+    <input type="hidden" name="videoId${index}" value="${escapeHtml(item.id)}">
+    <input type="hidden" name="videoYoutubeUrl${index}" value="${escapeHtml(item.youtubeUrl)}">
+    <input type="hidden" name="videoTitle${index}" value="${escapeHtml(item.title)}">
+    <input type="hidden" name="videoCaption${index}" value="${escapeHtml(item.caption)}">
+    <input type="hidden" name="videoPosterImageUrl${index}" value="${escapeHtml(item.posterImageUrl)}">
+    <input type="hidden" name="videoPosterImageAlt${index}" value="${escapeHtml(item.posterImageAlt)}">
+    <input type="hidden" name="videoSortOrder${index}" value="${escapeHtml(item.sortOrder)}">
+    <input type="hidden" name="videoPrivacyStatus${index}" value="${escapeHtml(item.privacyStatus)}">
+    <input type="hidden" name="videoStatus${index}" value="${escapeHtml(item.status)}">
+    <input type="hidden" name="videoDescription${index}" value="${escapeHtml(item.description)}">
+    ${item.posterImageUrl ? `<img src="${escapeHtml(item.posterImageUrl)}" alt="">` : `<span class="video-assignment-row__empty">Video</span>`}
+    <div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.youtubeUrl || item.youtubeVideoId || "")}</small></div>
+    <button class="icon-button icon-button--danger" type="button" data-remove-video-attachment title="Video entfernen" aria-label="Video entfernen">×</button>
+  </div>`;
+}
+
+function renumberVideoAttachmentRows(container) {
+  Array.from(container.querySelectorAll("[data-video-attachment-row]")).forEach((row, index) => {
+    const legend = row.querySelector("legend");
+    if (legend) legend.textContent = `Video ${index + 1}`;
+    row.querySelectorAll("[name]").forEach((field) => {
+      field.name = field.name.replace(/\d+$/, String(index));
+    });
+  });
+}
+
+function wireVideoAttachmentEditor() {
+  document.querySelectorAll("[data-video-attachments]").forEach((box) => {
+    if (box.dataset.videoAttachmentsWired === "1") return;
+    box.dataset.videoAttachmentsWired = "1";
+    const listBox = box.querySelector("[data-video-attachment-list]");
+    box.querySelector("[data-add-video-attachment]")?.addEventListener("click", () => {
+      const index = listBox.querySelectorAll("[data-video-attachment-row]").length;
+      listBox.insertAdjacentHTML("beforeend", videoAttachmentRowTemplate(index));
+    });
+    box.querySelector("[data-add-video-from-library]")?.addEventListener("click", () => {
+      const select = box.querySelector("[data-video-library-select]");
+      const option = select?.selectedOptions?.[0];
+      if (!option?.dataset.videoPayload || !listBox) return;
+      let payload = null;
+      try {
+        payload = JSON.parse(option.dataset.videoPayload);
+      } catch (error) {
+        console.error("Video konnte nicht gelesen werden", error);
+      }
+      if (!payload) return;
+      const existingIds = Array.from(listBox.querySelectorAll('input[name^="videoId"]')).map((field) => field.value);
+      if (payload.id && existingIds.includes(payload.id)) return;
+      listBox.querySelector(".muted")?.remove();
+      const index = listBox.querySelectorAll("[data-video-attachment-row]").length;
+      listBox.insertAdjacentHTML("beforeend", videoAssignmentRowTemplate(payload, index));
+    });
+    box.addEventListener("click", (event) => {
+      const removeButton = event.target.closest("[data-remove-video-attachment]");
+      if (!removeButton) return;
+      const rows = listBox.querySelectorAll("[data-video-attachment-row]");
+      const row = removeButton.closest("[data-video-attachment-row]");
+      if (row?.classList.contains("video-assignment-row")) {
+        row.remove();
+        renumberVideoAttachmentRows(listBox);
+      } else if (rows.length <= 1) {
+        row.querySelectorAll("input, textarea").forEach((field) => { field.value = ""; });
+        row.querySelectorAll("select").forEach((field) => { field.selectedIndex = 0; });
+      } else {
+        row.remove();
+        renumberVideoAttachmentRows(listBox);
+      }
+      if (!listBox.querySelector("[data-video-attachment-row]")) {
+        listBox.innerHTML = `<p class="muted">Noch kein Video zugeordnet.</p>`;
+      }
+    });
+  });
+}
+
+async function requestVideoFullscreen(element) {
+  if (!element) return;
+  const mobileLike = window.matchMedia?.("(max-width: 820px), (pointer: coarse)")?.matches;
+  if (!mobileLike) return;
+  try {
+    const fullscreen =
+      element.requestFullscreen?.bind(element)
+      || element.webkitRequestFullscreen?.bind(element)
+      || element.msRequestFullscreen?.bind(element);
+    if (fullscreen) await fullscreen({ navigationUI: "hide" });
+  } catch {}
+  try {
+    if (screen.orientation?.lock) await screen.orientation.lock("landscape");
+  } catch {}
+}
+
+function wireArticleVideos() {
+  document.querySelectorAll("[data-youtube-video]").forEach((box) => {
+    if (box.dataset.youtubeVideoWired === "1") return;
+    box.dataset.youtubeVideoWired = "1";
+    const start = async () => {
+      const id = box.dataset.youtubeVideo || "";
+      if (!id) return;
+      let iframe = box.querySelector("iframe");
+      if (!iframe) {
+        iframe = document.createElement("iframe");
+        const origin = window.location?.origin ? `&origin=${encodeURIComponent(window.location.origin)}` : "";
+        iframe.src = `https://www.youtube.com/embed/${encodeURIComponent(id)}?enablejsapi=1&autoplay=1&rel=0&fs=1&playsinline=0${origin}`;
+        iframe.title = box.dataset.youtubeTitle || "Video";
+        iframe.loading = "eager";
+        iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen";
+        iframe.allowFullscreen = true;
+        box.appendChild(iframe);
+      }
+      box.classList.add("is-playing", "is-fullscreen-requested");
+      box.appendChild(iframe);
+      iframe.focus();
+      try {
+        iframe.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "playVideo", args: [] }), "*");
+      } catch {}
+      await requestVideoFullscreen(box);
+      window.setTimeout(() => {
+        try {
+          iframe.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "playVideo", args: [] }), "*");
+        } catch {}
+      }, 250);
+    };
+    box.addEventListener("click", start);
+    box.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      start();
     });
   });
 }
@@ -4734,7 +5192,7 @@ async function saveEventTopicSpeakerForm(form) {
   form.dataset.speakerId = speakerId;
   form.querySelector("#event-topic-speaker-result").innerHTML = `<div class="alert alert--success">Referent wurde gespeichert.</div>`;
   const imageStatus = form.querySelector("[data-image-status]");
-  if (imageStatus) imageStatus.textContent = imageUpdate.photoUrl ? "Bild wurde gespeichert." : imageUpdate.photoUrl === "" ? "Bild wurde gelÃ¶scht." : imageStatus.textContent;
+  if (imageStatus) imageStatus.textContent = imageUpdate.photoUrl ? "Bild wurde gespeichert." : imageUpdate.photoUrl === "" ? "Bild wurde gelöscht." : imageStatus.textContent;
   form.classList.add("is-saved");
   if (!new URLSearchParams(location.hash.split("?")[1] || "").get("speaker")) {
     history.replaceState(null, "", `#/cms/event/${form.dataset.eventId}?tab=topics&mode=referent&topic=${form.dataset.topicId}&speaker=${speakerId}`);
@@ -5448,7 +5906,7 @@ async function importExistingThumbsToMediaLibrary(result) {
   let created = 0;
   let linked = 0;
   for (const [index, candidate] of candidates.entries()) {
-    if (result) result.innerHTML = `<div class="alert">${progressMarkup(`Thumb ${index + 1} von ${candidates.length} wird in die Mediathek Ã¼bernommen ...`, 25 + Math.round(((index + 1) / Math.max(1, candidates.length)) * 65))}</div>`;
+    if (result) result.innerHTML = `<div class="alert">${progressMarkup(`Thumb ${index + 1} von ${candidates.length} wird in die Mediathek übernommen ...`, 25 + Math.round(((index + 1) / Math.max(1, candidates.length)) * 65))}</div>`;
     const dimensions = await imageDimensionsFromUrl(candidate.url);
     const aspect = detectMediaAspectRatio(dimensions);
     const mediaCode = mediaShortCode();
@@ -5515,7 +5973,7 @@ async function importExistingThumbsToMediaLibrary(result) {
     }
   }
   if (result) {
-    result.innerHTML = `<div class="alert alert--success">${created} Thumb${created === 1 ? "" : "s"} in die Mediathek Ã¼bernommen, ${linked} VerknÃ¼pfung${linked === 1 ? "" : "en"} aktualisiert.</div>`;
+    result.innerHTML = `<div class="alert alert--success">${created} Thumb${created === 1 ? "" : "s"} in die Mediathek übernommen, ${linked} Verknüpfung${linked === 1 ? "" : "en"} aktualisiert.</div>`;
   }
   return { created, linked, skipped: collectExistingThumbCandidates(recordsByCollection).length - created };
 }
@@ -6356,25 +6814,121 @@ function wireMediaDelete() {
       const assetId = button.dataset.mediaDelete;
       const title = button.dataset.mediaTitle || "Bild";
       if (!assetId) return;
-      if (!window.confirm(`Bild "${title}" wirklich loeschen?`)) return;
+      const permanent = button.dataset.mediaDeleteMode === "permanent";
+      if (!window.confirm(permanent ? `Bild "${title}" endgueltig loeschen?` : `Bild "${title}" in den Papierkorb verschieben?`)) return;
       button.disabled = true;
       const originalText = button.textContent;
-      button.textContent = "Loesche ...";
+      button.textContent = "...";
       try {
         const asset = await getOne("media_assets", assetId);
-        if (asset) await deleteStoredAsset(asset);
-        const variants = (await list("media_variants")).filter((variant) => variant.media_asset_id === assetId);
-        await Promise.all(variants.map((variant) => remove("media_variants", variant.id)));
-        await remove("media_assets", assetId);
+        if (!asset) throw new Error("Bild wurde nicht gefunden.");
+        if (permanent) {
+          await deleteStoredAsset(asset);
+          const variants = (await list("media_variants")).filter((variant) => variant.media_asset_id === assetId);
+          await Promise.all(variants.map((variant) => remove("media_variants", variant.id)));
+          await remove("media_assets", assetId);
+        } else {
+          await upsert("media_assets", {
+            ...asset,
+            status: "archived",
+            deleted_at: new Date().toISOString(),
+            trash_status: "paperkorb",
+            updatedAt: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+        }
         const card = button.closest("[data-media-card]");
         if (card) card.remove();
       } catch (error) {
-        window.alert(`Loeschen fehlgeschlagen: ${error.message || String(error)}`);
+        window.alert(`Papierkorb fehlgeschlagen: ${error.message || String(error)}`);
       } finally {
         button.disabled = false;
         button.textContent = originalText;
       }
     });
+  });
+}
+
+function wireMediaRestore() {
+  document.querySelectorAll("[data-media-restore]").forEach((button) => {
+    if (button.dataset.mediaRestoreWired === "1") return;
+    button.dataset.mediaRestoreWired = "1";
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const assetId = button.dataset.mediaRestore;
+      const title = button.dataset.mediaTitle || "Bild";
+      const result = document.querySelector("#media-trash-result");
+      if (!assetId) return;
+      if (!window.confirm(`Bild "${title}" wiederherstellen?`)) return;
+      button.disabled = true;
+      if (result) result.innerHTML = `<div class="alert">Bild wird wiederhergestellt...</div>`;
+      try {
+        const asset = await getOne("media_assets", assetId);
+        if (!asset) throw new Error("Bild wurde nicht gefunden.");
+        await upsert("media_assets", {
+          ...asset,
+          status: asset.restore_status || "ready",
+          trash_status: "",
+          trash_reason: "",
+          deleted_at: "",
+          archivedAt: "",
+          updatedAt: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+        const row = button.closest("[data-media-card]");
+        if (row) row.remove();
+        if (result) result.innerHTML = `<div class="alert alert--success">Bild wurde wiederhergestellt.</div>`;
+      } catch (error) {
+        if (result) result.innerHTML = `<div class="alert alert--error">Wiederherstellen fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+}
+
+function wireArchiveMarkedMediaAssets() {
+  const button = document.querySelector("[data-archive-marked-media-assets]");
+  if (!button || button.dataset.archiveMarkedMediaWired === "1") return;
+  button.dataset.archiveMarkedMediaWired = "1";
+  button.addEventListener("click", async () => {
+    const result = document.querySelector("#media-archive-marked-result");
+    const cards = Array.from(document.querySelectorAll(".media-asset-card--duplicate-logo, .media-asset-card--former-logo"));
+    const ids = [...new Set(cards.map((card) => card.querySelector("[data-media-delete]")?.dataset.mediaDelete || card.dataset.mediaEditLink?.match(/id=([^&]+)/)?.[1] || "").map((id) => decodeURIComponent(id)).filter(Boolean))];
+    if (!ids.length) {
+      if (result) result.innerHTML = `<div class="alert">Keine markierten Logos fuer den Papierkorb gefunden.</div>`;
+      return;
+    }
+    if (!window.confirm(`${ids.length} markierte Logo-Datei${ids.length === 1 ? "" : "en"} in den Papierkorb verschieben?`)) return;
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Verschiebe ...";
+    if (result) result.innerHTML = `<div class="alert">Markierte Logos werden in den Papierkorb verschoben ...</div>`;
+    try {
+      let done = 0;
+      for (const id of ids) {
+        const asset = await getOne("media_assets", id);
+        if (asset) {
+          await upsert("media_assets", {
+            ...asset,
+            status: "archived",
+            deleted_at: new Date().toISOString(),
+            trash_status: "paperkorb",
+            updatedAt: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+          done += 1;
+        }
+      }
+      if (result) result.innerHTML = `<div class="alert alert--success">${done} Logo-Datei${done === 1 ? "" : "en"} in den Papierkorb verschoben.</div>`;
+      window.setTimeout(render, 700);
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Papierkorb fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
   });
 }
 
@@ -6512,7 +7066,7 @@ function openEditorialPreviewLayer(form) {
       <button type="button" class="link-button" data-editorial-preview-close>Schliessen</button>
     </div>
     <article class="editorial-preview-article">
-      ${imageUrl ? `<figure class="editorial-preview-hero"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}"><figcaption><p class="eyebrow">${escapeHtml(category)}${date ? ` Â· ${escapeHtml(date)}` : ""}</p><h1>${escapeHtml(title)}</h1></figcaption></figure>` : `<p class="eyebrow">${escapeHtml(category)}${date ? ` Â· ${escapeHtml(date)}` : ""}</p><h1>${escapeHtml(title)}</h1>`}
+      ${imageUrl ? `<figure class="editorial-preview-hero"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}"><figcaption><p class="eyebrow">${escapeHtml(category)}${date ? ` · ${escapeHtml(date)}` : ""}</p><h1>${escapeHtml(title)}</h1></figcaption></figure>` : `<p class="eyebrow">${escapeHtml(category)}${date ? ` · ${escapeHtml(date)}` : ""}</p><h1>${escapeHtml(title)}</h1>`}
       ${subtitle ? `<p class="editorial-preview-subline">${escapeHtml(subtitle)}</p>` : ""}
       ${intro ? `<p class="editorial-preview-intro">${escapeHtml(intro)}</p>` : ""}
       <div class="editorial-preview-body">${editorialPreviewParagraphs(body)}</div>
@@ -6593,11 +7147,13 @@ function wireActions() {
   wireExistingThumbImport();
   wireLocalMediaAssetSync();
   wireMediaAutoClassify();
+  wireArchiveMarkedMediaAssets();
   wireMediaCardLinks();
   wireCentralMediaUpload();
   wireMediaAiDraft();
   wireMediaEdit();
   wireMediaDelete();
+  wireMediaRestore();
   wireMediaTypeUpdates();
   wireMediaourceUpdates();
   wireMediaFullscreenViewer();
@@ -6607,6 +7163,8 @@ function wireActions() {
   wireImageDropzones();
   wireGalleryEditor();
   wireGalleryPlayers();
+  wireVideoAttachmentEditor();
+  wireArticleVideos();
   wireEditorGallerySelects();
   wireGalleryLinkSaves();
   wireLinkedMediaClears();
@@ -7901,11 +8459,11 @@ function wireActions() {
       });
       form.querySelector("[data-prompt-meta-name]").textContent = prompt.name || "Neuer Prompt";
       form.querySelector("[data-prompt-meta-type]").textContent = prompt.prompt_type || "Prompt";
-      form.querySelector("[data-prompt-meta-system]").textContent = `${prompt.model || "gpt-4.1-mini"} Â· Temp. ${prompt.temperature ?? 0.2} Â· ${prompt.max_tokens ?? 1200} Tokens`;
+      form.querySelector("[data-prompt-meta-system]").textContent = `${prompt.model || "gpt-4.1-mini"} · Temp. ${prompt.temperature ?? 0.2} · ${prompt.max_tokens ?? 1200} Tokens`;
       if (form.elements.is_active) form.elements.is_active.checked = Boolean(prompt.is_active);
       form.querySelector(".ai-advanced-prompt-fields")?.setAttribute("open", "");
       form.scrollIntoView({ behavior: "smooth", block: "start" });
-      if (output) output.innerHTML = `<div class="alert">Prompt geladen. Aendern und mit â€žPrompt speichernâ€œ als neue Version sichern.</div>`;
+      if (output) output.innerHTML = `<div class="alert">Prompt geladen. Aendern und mit „Prompt speichern“ als neue Version sichern.</div>`;
     } catch (error) {
       if (output) output.innerHTML = `<div class="alert alert--error">${escapeHtml(error.message || String(error))}</div>`;
     }
@@ -7996,10 +8554,10 @@ function wireActions() {
     });
     form.querySelector("[data-prompt-meta-name]").textContent = name;
     form.querySelector("[data-prompt-meta-type]").textContent = type;
-    form.querySelector("[data-prompt-meta-system]").textContent = `${values.model || "gpt-4.1-mini"} Â· Temp. ${values.temperature ?? 0.2} Â· ${values.max_tokens ?? 1200} Tokens`;
+    form.querySelector("[data-prompt-meta-system]").textContent = `${values.model || "gpt-4.1-mini"} · Temp. ${values.temperature ?? 0.2} · ${values.max_tokens ?? 1200} Tokens`;
     form.querySelector(".ai-advanced-prompt-fields")?.setAttribute("open", "");
     form.scrollIntoView({ behavior: "smooth", block: "start" });
-    if (output) output.innerHTML = `<div class="alert">System-Prompt â€ž${escapeHtml(name)}â€œ vorbereitet. Bitte testen und speichern.</div>`;
+    if (output) output.innerHTML = `<div class="alert">System-Prompt „${escapeHtml(name)}“ vorbereitet. Bitte testen und speichern.</div>`;
   }));
 
   document.querySelectorAll("[data-ai-prompt-delete]").forEach((button) => button.addEventListener("click", async () => {
@@ -8265,7 +8823,7 @@ function wireActions() {
           <div class="ai-release-grid">
             <section class="ai-release-card"><h3>Pflichtstatus</h3><div class="ai-status-stack"><span class="ai-status ${checkedSources.length >= 2 ? "ai-status--success" : "ai-status--danger"}">Quellen ${checkedSources.length}/2</span><span class="ai-status ${duplicateBlocked ? "ai-status--danger" : "ai-status--success"}">${duplicateBlocked ? "Dublette" : "Keine Dublette"}</span><span class="ai-status ${blockers.length ? "ai-status--warning" : "ai-status--success"}">${blockers.length ? "Pruefpflichtig" : "Freigabefaehig"}</span></div></section>
             <section class="ai-release-card"><h3>Veroeffentlichungsziel</h3><p>${escapeHtml(targetLabel)}</p><small>Veroeffentlicht wird danach im Meta-Bereich oder ueber die redaktionelle News-/Themenverwaltung.</small></section>
-            <section class="ai-release-card"><h3>Quellen</h3>${sources.length ? sources.map((source) => `<p><strong>${escapeHtml(source.publisher || source.title || "Quelle")}</strong><br><small>${escapeHtml(source.domain || source.url || "")} Â· Trust ${Number(source.trust_score || 0)} Â· ${escapeHtml(source.check_status || "ungeprueft")}</small></p>`).join("") : `<p class="muted">Keine Quellen gespeichert.</p>`}</section>
+            <section class="ai-release-card"><h3>Quellen</h3>${sources.length ? sources.map((source) => `<p><strong>${escapeHtml(source.publisher || source.title || "Quelle")}</strong><br><small>${escapeHtml(source.domain || source.url || "")} · Trust ${Number(source.trust_score || 0)} · ${escapeHtml(source.check_status || "ungeprueft")}</small></p>`).join("") : `<p class="muted">Keine Quellen gespeichert.</p>`}</section>
             <section class="ai-release-card"><h3>Keywords</h3>${keywords.length ? `<div class="ai-keyword-cloud">${keywords.slice(0, 8).map((keyword) => `<span>${escapeHtml(keyword.keyword)} <strong>${Number(keyword.relevance_score || 0)}</strong></span>`).join("")}</div>` : `<p class="muted">Keine Keywords gespeichert.</p>`}</section>
           </div>
           ${blockers.length ? `<div class="alert alert--warning"><strong>Freigabe noch blockiert:</strong><ul>${blockers.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : `<div class="alert alert--success">Alle zentralen Freigaberegeln sind erfuellt. Der Beitrag kann redaktionell freigegeben werden.</div>`}
@@ -8987,13 +9545,13 @@ function wireActions() {
     card.addEventListener("dragleave", () => card.classList.remove("is-drop-target"));
   });
 
-  async function upsertEventRetrospectiveArticle(sourceEvent = {}) {
+  async function upsertEventRetrospectiveArticle(sourceEvent = {}, videoAttachments = null) {
     if (!sourceEvent?.id) throw new Error("Event wurde nicht gefunden.");
     const articleId = document.querySelector("[data-retrospective-article-id]")?.value
       || sourceEvent.retrospectiveArticleId
       || eventRetrospectiveArticleId(sourceEvent.id);
     const existingArticle = await getOne("editorialContent", articleId).catch(() => null);
-    const title = existingArticle?.title || `RÃ¼ckblick: ${sourceEvent.title || "PROdigitalTV Event"}`;
+    const title = sourceEvent.retrospectiveTitle || existingArticle?.title || `Rückblick: ${sourceEvent.title || "PROdigitalTV Event"}`;
     const eventBodyText = sourceEvent.longDescription || sourceEvent.bodyText || sourceEvent.articleText || sourceEvent.archiveText || "";
     const bodyText = eventBodyText || existingArticle?.longDescription || existingArticle?.articleText || existingArticle?.bodyText || eventRetrospectiveBody(sourceEvent);
     const eventImage = eventRetrospectiveImageUrl(sourceEvent);
@@ -9006,7 +9564,7 @@ function wireActions() {
       page: "press",
       section: "pressRelease",
       key: existingArticle?.key || `press.${articleId}`,
-      category: "RÃ¼ckblicke",
+      category: "Rückblicke",
       title,
       headline: title,
       subtitle: existingArticle?.subtitle || sourceEvent.subtitle || "",
@@ -9032,6 +9590,7 @@ function wireActions() {
       thumbnail_media_asset_id: articleAssetId,
       mediaAssetId: articleAssetId,
       thumbnail_alt: existingArticle?.thumbnail_alt || sourceEvent.thumbnail_alt || sourceEvent.thumbnailAlt || `Eventbild ${sourceEvent.title || ""}`.trim(),
+      videoAttachments: Array.isArray(videoAttachments) ? videoAttachments : (existingArticle?.videoAttachments || []),
       isRetrospective: true,
       showGallery: existingArticle?.showGallery ?? true,
       updatedAt: now
@@ -9040,6 +9599,7 @@ function wireActions() {
     await upsert("events", {
       ...sourceEvent,
       lifecyclePhase: sourceEvent.lifecyclePhase === "archived" ? "archive_published" : (sourceEvent.lifecyclePhase || "archive_published"),
+      retrospectiveTitle: title,
       retrospectiveArticleId: articleId,
       updatedAt: now
     });
@@ -9052,13 +9612,13 @@ function wireActions() {
     const originalLabel = button.textContent;
     button.disabled = true;
     button.textContent = "Erstelle ...";
-    if (result) result.innerHTML = `<div class="alert">Redaktioneller RÃ¼ckblick wird vorbereitet ...</div>`;
+    if (result) result.innerHTML = `<div class="alert">Redaktioneller Rückblick wird vorbereitet ...</div>`;
     try {
       const sourceEvent = await getOne("events", eventId);
       if (!sourceEvent) throw new Error("Event wurde nicht gefunden.");
       const articleId = document.querySelector("[data-retrospective-article-id]")?.value || eventRetrospectiveArticleId(eventId);
       const existingArticle = await getOne("editorialContent", articleId).catch(() => null);
-      const title = existingArticle?.title || `RÃ¼ckblick: ${sourceEvent.title || "PROdigitalTV Event"}`;
+      const title = existingArticle?.title || `Rückblick: ${sourceEvent.title || "PROdigitalTV Event"}`;
       const eventBodyText = sourceEvent.longDescription || sourceEvent.bodyText || sourceEvent.articleText || sourceEvent.archiveText || "";
       const bodyText = eventBodyText || existingArticle?.longDescription || existingArticle?.articleText || existingArticle?.bodyText || eventRetrospectiveBody(sourceEvent);
       const eventImage = eventRetrospectiveImageUrl(sourceEvent);
@@ -9071,7 +9631,7 @@ function wireActions() {
         page: "press",
         section: "pressRelease",
         key: existingArticle?.key || `press.${articleId}`,
-        category: "RÃ¼ckblicke",
+        category: "Rückblicke",
         title,
         headline: title,
         subtitle: existingArticle?.subtitle || sourceEvent.subtitle || "",
@@ -9107,9 +9667,9 @@ function wireActions() {
         retrospectiveArticleId: articleId,
         updatedAt: now
       });
-      if (result) result.innerHTML = `<div class="alert alert--success">RÃ¼ckblick-Beitrag wurde gespeichert. <a class="link" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(articleId)}&section=press">Beitrag Ã¶ffnen</a></div>`;
+      if (result) result.innerHTML = `<div class="alert alert--success">Rückblick-Beitrag wurde gespeichert. <a class="link" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(articleId)}&section=press">Beitrag öffnen</a></div>`;
     } catch (error) {
-      if (result) result.innerHTML = `<div class="alert alert--error">RÃ¼ckblick konnte nicht erstellt werden: ${escapeHtml(error.message || String(error))}</div>`;
+      if (result) result.innerHTML = `<div class="alert alert--error">Rückblick konnte nicht erstellt werden: ${escapeHtml(error.message || String(error))}</div>`;
     } finally {
       button.disabled = false;
       button.textContent = originalLabel;
@@ -9127,6 +9687,9 @@ function wireActions() {
     try {
       const existing = (await getOne("events", form.dataset.eventId)) || { id: form.dataset.eventId, topicIds: [], speakerIds: [], sponsorIds: [], status: "draft" };
       const values = formObject(form);
+      const formVideoAttachments = form.dataset.eventFormSection === "post" && form.querySelector("[data-video-attachments]")
+        ? collectVideoAttachments(form, values)
+        : null;
       if (form.dataset.eventFormSection === "pre") {
         const preStatus = values.preStatus || "save_the_date";
         await upsert("events", {
@@ -9200,12 +9763,12 @@ function wireActions() {
       const savedEvent = await upsert("events", { ...existing, ...values });
       let retrospectiveArticleId = "";
       if (form.dataset.eventFormSection === "post") {
-        const retrospective = await upsertEventRetrospectiveArticle(savedEvent);
+        const retrospective = await upsertEventRetrospectiveArticle(savedEvent, formVideoAttachments);
         retrospectiveArticleId = retrospective.articleId;
       }
       if (image || removeEventImageRequested) updateDropzoneSavedImage(form, savedEvent.imageUrl || "");
       if (result && !silent) result.innerHTML = retrospectiveArticleId
-        ? `<div class="alert alert--success">RÃ¼ckblicktext und Ã¶ffentlicher RÃ¼ckblick wurden gespeichert. <a class="link" href="#/retrospective/${encodeURIComponent(retrospectiveArticleId)}">RÃ¼ckblick ansehen</a></div>`
+        ? `<div class="alert alert--success">Rückblicktext und öffentlicher Rückblick wurden gespeichert. <a class="link" href="#/retrospective/${encodeURIComponent(retrospectiveArticleId)}">Rückblick ansehen</a></div>`
         : `<div class="alert alert--success">Event wurde gespeichert.</div>`;
       form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: { id: savedEvent.id || form.dataset.eventId, section: form.dataset.eventFormSection || "base", retrospectiveArticleId } }));
       return true;
@@ -9332,7 +9895,7 @@ function wireActions() {
     await upsert("events", { ...existingEvent, topicIds, updatedAt: new Date().toISOString() });
     form.querySelector("#event-topic-editor-result").innerHTML = `<div class="alert alert--success">Vortrag wurde gespeichert.</div>`;
     const imageStatus = form.querySelector("[data-image-status]");
-    if (imageStatus) imageStatus.textContent = imageUpdate.imageUrl ? "Bild wurde gespeichert." : imageUpdate.imageUrl === "" ? "Bild wurde gelÃ¶scht." : imageStatus.textContent;
+    if (imageStatus) imageStatus.textContent = imageUpdate.imageUrl ? "Bild wurde gespeichert." : imageUpdate.imageUrl === "" ? "Bild wurde gelöscht." : imageStatus.textContent;
     if (Object.prototype.hasOwnProperty.call(imageUpdate, "imageUrl")) {
       updateDropzoneSavedImage(form, imageUpdate.imageUrl);
       updateTopicThumbInList(topicId, imageUpdate.imageUrl);
@@ -9590,6 +10153,7 @@ function wireActions() {
       const existing = (await getOne(form.dataset.module, form.dataset.id)) || { id: form.dataset.id, createdAt: new Date().toISOString() };
       let values = formObject(form);
       if (form.dataset.module === "editorialContent") {
+        values.videoAttachments = collectVideoAttachments(form, values);
         ["category", "linkedEventId", "galleryId", "sponsorId", "retrospectivePrompt", "galleryEventId"].forEach((name) => {
           if (!Object.prototype.hasOwnProperty.call(values, name)) {
             const field = document.querySelector(`[name="${name}"]`);
@@ -9698,6 +10262,236 @@ function wireActions() {
     } finally {
       if (submitButton && !submitButton.classList.contains("is-save-success") && !submitButton.classList.contains("is-save-error")) submitButton.disabled = false;
     }
+  });
+
+  document.querySelector("#media-video-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = form.querySelector("#media-video-result");
+    const submitButton = form.querySelector('button[type="submit"], button:not([type])');
+    const contentId = form.dataset.contentId || "";
+    if (!contentId) return;
+    if (submitButton) submitButton.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Speichere Videos...</div>`;
+    try {
+      const existing = await getOne("editorialContent", contentId);
+      if (!existing) throw new Error("Beitrag wurde nicht gefunden.");
+      const values = formObject(form);
+      const videoAttachments = collectVideoAttachments(form, values);
+      await upsert("editorialContent", {
+        ...existing,
+        videoAttachments,
+        updatedAt: new Date().toISOString()
+      });
+      if (result) result.innerHTML = `<div class="alert alert--success">Videos gespeichert.</div>`;
+      window.setTimeout(render, 350);
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Videos konnten nicht gespeichert werden: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+
+  const navigateToCmsReturn = (returnTo = "#/cms/media/videos") => {
+    const target = returnTo || "#/cms/media/videos";
+    if (target.startsWith("#/")) {
+      go(target.slice(2));
+      return;
+    }
+    if (target.startsWith("#")) {
+      window.location.hash = target;
+      return;
+    }
+    go(target.replace(/^\/+/, ""));
+  };
+
+  const videoFromLibraryForm = (form) => {
+    const values = formObject(form);
+    const youtubeVideoId = youtubeVideoIdFromValue(values.youtubeUrl || "");
+    const youtubeUrl = values.youtubeUrl || (youtubeVideoId ? `https://www.youtube.com/watch?v=${youtubeVideoId}` : "");
+    const posterImageUrl = values.posterImageUrl || (youtubeVideoId ? `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg` : "");
+    return {
+      id: form.dataset.videoId || `media-video-${crypto.randomUUID()}`,
+      sourceType: "youtube",
+      youtubeVideoId,
+      youtubeUrl,
+      url: youtubeUrl,
+      embedUrl: youtubeVideoId ? `https://www.youtube.com/embed/${youtubeVideoId}` : "",
+      title: values.title || "YouTube-Video",
+      description: values.description || "",
+      caption: values.description || "",
+      posterImageUrl,
+      posterImageAlt: values.posterImageAlt || values.title || "Video starten",
+      thumbnailUrl: posterImageUrl,
+      privacyStatus: values.privacyStatus || "unlisted",
+      status: values.status || "ready",
+      updatedAt: new Date().toISOString()
+    };
+  };
+
+  const assignVideoToTarget = async (targetCollection, targetId, video) => {
+    if (!targetCollection || !targetId) return;
+    const existing = await getOne(targetCollection, targetId);
+    if (!existing) throw new Error("Zielbeitrag wurde nicht gefunden.");
+    const snapshot = normalizedVideoLibraryPayload(video, (existing.videoAttachments || []).length);
+    const current = Array.isArray(existing.videoAttachments) ? existing.videoAttachments : [];
+    const filtered = current.filter((item) => (item.id || item.youtubeVideoId || item.youtubeUrl) !== (snapshot.id || snapshot.youtubeVideoId || snapshot.youtubeUrl));
+    await upsert(targetCollection, {
+      ...existing,
+      videoAttachments: [...filtered, snapshot].map((item, index) => ({ ...item, sortOrder: index + 1 })),
+      updatedAt: new Date().toISOString()
+    });
+  };
+
+  document.querySelectorAll("[data-video-oembed]").forEach((button) => {
+    if (button.dataset.videoOembedWired === "1") return;
+    button.dataset.videoOembedWired = "1";
+    button.addEventListener("click", async () => {
+      const form = button.closest("form");
+      const result = form?.querySelector("#media-video-library-result");
+      const urlField = form?.querySelector('[name="youtubeUrl"]');
+      const titleField = form?.querySelector('[name="title"]');
+      const descriptionField = form?.querySelector('[name="description"]');
+      const posterField = form?.querySelector('[name="posterImageUrl"]');
+      const altField = form?.querySelector('[name="posterImageAlt"]');
+      const preview = form?.querySelector("[data-video-preview]");
+      const youtubeVideoId = youtubeVideoIdFromValue(urlField?.value || "");
+      if (!youtubeVideoId) {
+        if (result) result.innerHTML = `<div class="alert alert--error">Bitte eine gueltige YouTube-URL eintragen.</div>`;
+        return;
+      }
+      const youtubeUrl = `https://www.youtube.com/watch?v=${youtubeVideoId}`;
+      const poster = `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`;
+      if (urlField) urlField.value = youtubeUrl;
+      if (posterField) posterField.value = poster;
+      if (preview) preview.innerHTML = `<iframe src="https://www.youtube.com/embed/${encodeURIComponent(youtubeVideoId)}" title="Video Vorschau" loading="lazy" allowfullscreen></iframe>`;
+      if (result) result.innerHTML = `<div class="alert">YouTube-Daten werden geladen...</div>`;
+      try {
+        const response = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(youtubeUrl)}&format=json`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.title && titleField && !titleField.value.trim()) titleField.value = data.title;
+          if (data.title && descriptionField && !descriptionField.value.trim()) descriptionField.value = data.title;
+          if (data.thumbnail_url && posterField) posterField.value = data.thumbnail_url;
+          if (data.title && altField && !altField.value.trim()) altField.value = data.title;
+        }
+        if (result) result.innerHTML = `<div class="alert alert--success">YouTube-Daten uebernommen.</div>`;
+      } catch (error) {
+        if (result) result.innerHTML = `<div class="alert alert--success">Cover und Vorschau wurden gesetzt. Titel/Beschreibung bitte pruefen.</div>`;
+      }
+    });
+  });
+
+  document.querySelector("#media-video-library-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = form.querySelector("#media-video-library-result");
+    const submitButton = form.querySelector('button[type="submit"], button:not([type])');
+    if (submitButton) submitButton.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Video wird gespeichert...</div>`;
+    try {
+      const video = videoFromLibraryForm(form);
+      if (!video.youtubeVideoId) throw new Error("Bitte eine gueltige YouTube-URL eintragen.");
+      const existing = await getOne("media_videos", video.id).catch(() => null);
+      await upsert("media_videos", {
+        ...existing,
+        ...video,
+        createdAt: existing?.createdAt || new Date().toISOString()
+      });
+      const targetCollection = form.dataset.targetCollection || "";
+      const targetId = form.dataset.targetId || "";
+      if (targetCollection && targetId) {
+        await assignVideoToTarget(targetCollection, targetId, video);
+        if (result) result.innerHTML = `<div class="alert alert--success">Video gespeichert und zugeordnet.</div>`;
+        window.setTimeout(() => navigateToCmsReturn(form.dataset.returnTo), 350);
+      } else {
+        if (result) result.innerHTML = `<div class="alert alert--success">Video gespeichert.</div>`;
+        window.setTimeout(render, 350);
+      }
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Video konnte nicht gespeichert werden: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+
+  document.querySelectorAll("[data-assign-video]").forEach((button) => {
+    if (button.dataset.assignVideoWired === "1") return;
+    button.dataset.assignVideoWired = "1";
+    button.addEventListener("click", async () => {
+      const result = document.querySelector("#media-video-assign-result");
+      button.disabled = true;
+      if (result) result.innerHTML = `<div class="alert">Video wird zugeordnet...</div>`;
+      try {
+        const video = await getOne("media_videos", button.dataset.assignVideo);
+        if (!video) throw new Error("Video wurde nicht gefunden.");
+        await assignVideoToTarget(button.dataset.targetCollection, button.dataset.targetId, video);
+        if (result) result.innerHTML = `<div class="alert alert--success">Video zugeordnet.</div>`;
+        window.setTimeout(() => navigateToCmsReturn(button.dataset.returnTo), 300);
+      } catch (error) {
+        if (result) result.innerHTML = `<div class="alert alert--error">Video konnte nicht zugeordnet werden: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+        button.disabled = false;
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-video-visible-toggle]").forEach((button) => {
+    if (button.dataset.videoVisibleWired === "1") return;
+    button.dataset.videoVisibleWired = "1";
+    button.addEventListener("click", async () => {
+      const result = document.querySelector("#media-video-assign-result");
+      const videoId = button.dataset.videoVisibleToggle;
+      const nextVisible = button.dataset.nextVisible === "true";
+      if (!videoId) return;
+      button.disabled = true;
+      if (result) result.innerHTML = `<div class="alert">Sichtbarkeit wird gespeichert...</div>`;
+      try {
+        const video = await getOne("media_videos", videoId);
+        if (!video) throw new Error("Video wurde nicht gefunden.");
+        await upsert("media_videos", {
+          ...video,
+          visible: nextVisible,
+          status: nextVisible ? "ready" : "hidden",
+          updatedAt: new Date().toISOString()
+        });
+        if (result) result.innerHTML = `<div class="alert alert--success">${nextVisible ? "Video ist sichtbar." : "Video ist ausgeblendet."}</div>`;
+        window.setTimeout(render, 300);
+      } catch (error) {
+        if (result) result.innerHTML = `<div class="alert alert--error">Sichtbarkeit konnte nicht gespeichert werden: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+        button.disabled = false;
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-video-trash]").forEach((button) => {
+    if (button.dataset.videoTrashWired === "1") return;
+    button.dataset.videoTrashWired = "1";
+    button.addEventListener("click", async () => {
+      const result = document.querySelector("#media-video-assign-result");
+      const videoId = button.dataset.videoTrash;
+      const title = button.dataset.videoTitle || "Video";
+      if (!videoId) return;
+      if (!window.confirm(`"${title}" in den Papierkorb verschieben?`)) return;
+      button.disabled = true;
+      if (result) result.innerHTML = `<div class="alert">Video wird in den Papierkorb verschoben...</div>`;
+      try {
+        const video = await getOne("media_videos", videoId);
+        if (!video) throw new Error("Video wurde nicht gefunden.");
+        await upsert("media_videos", {
+          ...video,
+          visible: false,
+          status: "archived",
+          trash_status: "paperkorb",
+          deleted_at: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        if (result) result.innerHTML = `<div class="alert alert--success">Video wurde in den Papierkorb verschoben.</div>`;
+        window.setTimeout(render, 300);
+      } catch (error) {
+        if (result) result.innerHTML = `<div class="alert alert--error">Video konnte nicht verschoben werden: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+        button.disabled = false;
+      }
+    });
   });
 
   document.querySelectorAll("[data-clear-member-logo]").forEach((button) => {
@@ -9819,7 +10613,7 @@ function wireActions() {
       };
       await upsert("editorialContent", published);
       if (result) {
-        result.innerHTML = `<div class="alert alert--success">Beitrag ist veroeffentlicht und im Redaktionsbereich unter News sichtbar. <a href="#/cms/editorial/news">Zur News-Liste</a> Â· <a href="/?real=1#/news/${escapeHtml(articleId)}" target="_blank" rel="noopener">Artikel anzeigen</a></div>`;
+        result.innerHTML = `<div class="alert alert--success">Beitrag ist veroeffentlicht und im Redaktionsbereich unter News sichtbar. <a href="#/cms/editorial/news">Zur News-Liste</a> · <a href="/?real=1#/news/${escapeHtml(articleId)}" target="_blank" rel="noopener">Artikel anzeigen</a></div>`;
         result.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
       window.setTimeout(render, 700);
@@ -10290,6 +11084,11 @@ function wireActions() {
 }
 
 async function clearPreviewCaches() {
+  try {
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith("prodigitaltv-demo-db-official-assets-"))
+      .forEach((key) => localStorage.removeItem(key));
+  } catch {}
   if ("serviceWorker" in navigator) {
     await navigator.serviceWorker.getRegistrations?.()
       .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
@@ -10315,14 +11114,14 @@ async function resetInstalledAppCachesIfRequested() {
   return true;
 }
 
-if (["localhost", "127.0.0.1"].includes(location.hostname)) {
-  clearPreviewCaches();
-} else if ("serviceWorker" in navigator && location.protocol !== "file:") {
+if (!["localhost", "127.0.0.1"].includes(location.hostname) && "serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 resetInstalledAppCachesIfRequested().then((didReset) => {
   if (didReset) return;
   onRouteChange(render);
   render();
-  waitForAuthReady().finally(render);
+  if (!["localhost", "127.0.0.1"].includes(location.hostname)) {
+    waitForAuthReady().finally(render);
+  }
 });

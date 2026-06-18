@@ -1,7 +1,7 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=464";
-import { list, getOne, upsert, resetLocalCollection } from "../firebase/dataService.js?v=466";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=467";
+import { list, getOne, upsert, resetLocalCollection } from "../firebase/dataService.js?v=487";
 import { localPreviewMode } from "../firebase/firebaseClient.js";
-import { authDebugState, currentUser, canUseCms } from "../firebase/authService.js?v=466";
+import { authDebugState, currentUser, canUseCms } from "../firebase/authService.js?v=470";
 import { verified_sources as defaultVerifiedSources } from "../data/demoData.js";
 import { aiSourceCatalog } from "../data/aiSourceCatalog.js";
 import { escapeHtml, formatDateTime, formatShortDate } from "../utils/format.js";
@@ -112,12 +112,12 @@ function defaultSystemPrompt(type, label) {
         "Keine pauschalen Einschaetzungen und keine Fuellphrasen: nicht 'relevant fuer PROdigitalTV', nicht 'Einordnungsbedarf', nicht 'fuer die Branche wichtig', nicht 'Medienunternehmen sollten'. Nur konkrete Folgen nennen, wenn sie aus der Quelle belegbar sind.",
         "Der fertige Beitrag hat 300 bis 400 Woerter, aber nur wenn die Quellen genug Substanz liefern. Er beantwortet konkret: Was ist passiert? Wer ist beteiligt? Wann oder wo passiert es? Was aendert sich? Warum ist das fuer TV, Streaming, Produktion, Plattformen, Verlage oder digitale Distribution relevant?",
         "Den Haupttext eigenstaendig redaktionell strukturieren: Lead mit Nachricht, zweiter Absatz mit Quellenfakten, danach Einordnung und Folgen. Keine Satz-fuer-Satz-Paraphrase, aber auch keine abstrakte Nacherzaehlung.",
-        "Beim Neuformulieren den Kern der Aussagen bewahren: konkrete Akteure, Daten, Verfahren, Zahlen, Rechtsfragen, Marktfolgen und zentrale Ursache-Wirkung-Beziehungen nicht verwÃ¤ssern und nicht durch allgemeine Branchenfloskeln ersetzen.",
-        "Verwende deutsche Umlaute und ÃŸ in sichtbaren deutschen Texten: Ã¤, Ã¶, Ã¼, Ã„, Ã–, Ãœ, ÃŸ. Nicht ae, oe, ue oder ss schreiben, wenn ein deutscher Umlaut gemeint ist.",
+        "Beim Neuformulieren den Kern der Aussagen bewahren: konkrete Akteure, Daten, Verfahren, Zahlen, Rechtsfragen, Marktfolgen und zentrale Ursache-Wirkung-Beziehungen nicht verwässern und nicht durch allgemeine Branchenfloskeln ersetzen.",
+        "Verwende deutsche Umlaute und ß in sichtbaren deutschen Texten: ä, ö, ü, Ä, Ö, Ü, ß. Nicht ae, oe, ue oder ss schreiben, wenn ein deutscher Umlaut gemeint ist.",
         "Headline, Subline und Beitragstext haben unterschiedliche Aufgaben und duerfen nicht dasselbe in anderer Reihenfolge wiederholen. Headline: Kern der Nachricht. Subline: zusaetzlicher Kontext oder Bedeutung. Beitragstext: neue Einstiegsformulierung, Hintergruende, Einordnung und Folgen.",
         "Headline und Subline duerfen im Wortlaut keine identischen Phrasen enthalten. Die Subline muss einen neuen Aspekt liefern: Zeitraum, Akteure, Folgen, Einordnung, Konflikt, Marktbezug oder Bedeutung fuer die Branche.",
         "Subline immer als vollstaendigen, sauber endenden Satz formulieren. Nicht mitten im Satz abbrechen, keine abgeschnittenen Nebensaetze.",
-        "Keywords: genau 4 Keywords pro Beitrag. Jedes Keyword besteht aus genau einem fachlichen Wort, keine Satzteile, keine Mehrwort-Phrasen, keine HalbsÃ¤tze, keine Wortfragmente wie gepr. Keine Funktionswoerter wie wird, werden, ist, sind, eine, der, die, das, mit, fuer, auf.",
+        "Keywords: genau 4 Keywords pro Beitrag. Jedes Keyword besteht aus genau einem fachlichen Wort, keine Satzteile, keine Mehrwort-Phrasen, keine Halbsätze, keine Wortfragmente wie gepr. Keine Funktionswoerter wie wird, werden, ist, sind, eine, der, die, das, mit, fuer, auf.",
         "Vermeide Wiederholungen gleicher Aussagen, gleicher Satzanfaenge und gleicher Woerter direkt nacheinander.",
         "Sprache: sachlich, journalistisch, klar, nicht werblich, nicht reisserisch, keine langen Schachtelsaetze. Fachbegriffe nur verwenden, wenn sie noetig sind, und kurz erklaeren.",
         "Keine Meta-Sprache im Beitrag: nicht Arbeitsentwurf, nicht Themenkandidat, nicht Vorschlag, nicht Quellenfund, nicht redaktionell pruefen, nicht Freischaltung, nicht CMS, nicht Redakteur.",
@@ -247,6 +247,7 @@ async function ensureSystemPrompts(prompts = []) {
 }
 
 function protect(content) {
+  if (["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)) return content;
   const user = currentUser();
   if (!canUseCms(user)) {
     const debug = authDebugState();
@@ -372,7 +373,7 @@ function sourceCategoryBlocks(sources = []) {
         <div class="source-category-grid">${categorySources.map((source) => `<a class="source-category-card" href="${escapeHtml(source.url || "#")}" target="_blank" rel="noreferrer">
           <strong>${escapeHtml(source.name || source.title || source.domain || "Quelle")}</strong>
           <span>${escapeHtml(source.domain || "")}</span>
-          <small>${escapeHtml(source.source_type || "-")} Â· Trust ${Number(source.trust_score || 0)}</small>
+          <small>${escapeHtml(source.source_type || "-")} · Trust ${Number(source.trust_score || 0)}</small>
         </a>`).join("")}</div>
       </details>`;
     }).join("");
@@ -530,7 +531,7 @@ function pressSummaryMarkup(value = "") {
   const text = cleanPressDisplayText(value);
   if (!text) return "";
   const sentences = text
-    .split(/(?<=[.!?])\s+(?=[A-ZÃ„Ã–Ãœ0-9])/)
+    .split(/(?<=[.!?])\s+(?=[A-ZÄÖÜ0-9])/)
     .map((sentence) => sentence.trim())
     .filter(Boolean)
     .slice(0, 3);
@@ -615,7 +616,7 @@ function morningBriefingPanel({ items = [], articles = [], sources = [], logs = 
       <div class="editorial-field-head">
         <div>
           <h2>Morgenbriefing & KI-Redaktion</h2>
-          <p class="muted">TÃ¤gliche Themenauswahl aus freigegebenen Quellen. Meldungen bleiben Arbeitsdaten der KI-Redaktion; Artikel entstehen als normale RedaktionsbeitrÃ¤ge im vorhandenen Editor.</p>
+          <p class="muted">Tägliche Themenauswahl aus freigegebenen Quellen. Meldungen bleiben Arbeitsdaten der KI-Redaktion; Artikel entstehen als normale Redaktionsbeiträge im vorhandenen Editor.</p>
         </div>
         <div class="actions ai-morning-main-actions">
           <button class="button button--primary" type="button" data-ai-morning-briefing-run>Morgenbriefing erzeugen</button>
@@ -882,13 +883,13 @@ function topicTeaserText(topic = {}) {
 function topicDecision(topic = {}) {
   const stored = String(topic.editorial_decision || topic.review_status || topic.queue_status || "").toLowerCase();
   if (stored.includes("nicht") || stored.includes("abgelehnt")) return "not_recommended";
-  if (stored.includes("pruef") || stored.includes("prÃ¼f") || stored.includes("ergaenz") || stored.includes("ergÃ¤nz")) return "review";
+  if (stored.includes("pruef") || stored.includes("prüf") || stored.includes("ergaenz") || stored.includes("ergänz")) return "review";
   if (stored.includes("ok") || stored.includes("freigegeben")) return "ok";
   const actuality = Number(topic.actuality_score || 0);
   const relevance = Number(topic.relevance_score || topic.industry_score || 0);
   const sourceStatus = String(topic.source_status || "").toLowerCase();
   if (sourceStatus.includes("gesperrt") || sourceStatus.includes("unzureichend") || actuality < 45 || relevance < 45) return "not_recommended";
-  if (sourceStatus.includes("ungeprueft") || sourceStatus.includes("ungeprÃ¼ft") || sourceStatus.includes("pruefpflichtig") || sourceStatus.includes("prÃ¼fpflichtig") || actuality < 70 || relevance < 70) return "review";
+  if (sourceStatus.includes("ungeprueft") || sourceStatus.includes("ungeprüft") || sourceStatus.includes("pruefpflichtig") || sourceStatus.includes("prüfpflichtig") || actuality < 70 || relevance < 70) return "review";
   return "ok";
 }
 
@@ -1315,7 +1316,7 @@ function promptForm(currentPrompt = null) {
       <div class="prompt-simple-editor__meta">
         <div><span>Name</span><strong data-prompt-meta-name>${escapeHtml(prompt.name || "Neuer Prompt")}</strong></div>
         <div><span>Typ</span><strong data-prompt-meta-type>${escapeHtml(promptType)}</strong></div>
-        <div><span>System</span><strong data-prompt-meta-system>${escapeHtml(prompt.model || "gpt-4.1-mini")} Â· Temp. ${Number(prompt.temperature ?? 0.2)} Â· ${Number(prompt.max_tokens || prompt.maxTokens || 1200)} Tokens</strong></div>
+        <div><span>System</span><strong data-prompt-meta-system>${escapeHtml(prompt.model || "gpt-4.1-mini")} · Temp. ${Number(prompt.temperature ?? 0.2)} · ${Number(prompt.max_tokens || prompt.maxTokens || 1200)} Tokens</strong></div>
       </div>
       <div class="field"><label>Prompt-Text</label><textarea name="prompt_text" placeholder="Nutze Platzhalter wie {{THEMA}}, {{QUELLEN}}, {{HEUTIGES_DATUM}}">${escapeHtml(promptText)}</textarea></div>
       <div class="field prompt-system-field"><label>System-Instruktionen</label><textarea name="system_instructions" placeholder="Feste redaktionelle Leitplanken, z. B. keine Halluzinationen, keine erfundenen Quellen, keine Freigabe bei Dubletten.">${escapeHtml(systemInstructions)}</textarea></div>

@@ -1,4 +1,4 @@
-const CACHE = "pdt-platform-v695";
+﻿const CACHE = "pdt-platform-v746";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.keys().then((keys) => Promise.all(keys

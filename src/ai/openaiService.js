@@ -1,6 +1,6 @@
 import { getFirebaseServices, localPreviewMode } from "../firebase/firebaseClient.js";
-import { currentUser, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=466";
-import { upsert } from "../firebase/dataService.js?v=466";
+import { currentUser, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=470";
+import { upsert } from "../firebase/dataService.js?v=487";
 import { aiSourceCatalog } from "../data/aiSourceCatalog.js";
 
 const ACTION_FUNCTIONS = {
@@ -217,7 +217,7 @@ export async function generateAiTopicSuggestions(options = {}) {
   if (requireLive) {
     throw new Error("Live-Quellenrecherche ist nicht erreichbar. Kein Demo- oder Fallback-Themenpool wird fuer das Morgenbriefing verwendet.");
   }
-  const { list, upsert: localUpsert } = await import("../firebase/dataService.js?v=466");
+  const { list, upsert: localUpsert } = await import("../firebase/dataService.js?v=487");
   const now = new Date().toISOString();
   const [articles, existingSuggestions, verifiedSources] = await Promise.all([
     list("editorialContent"),
@@ -429,7 +429,7 @@ function textTokens(value = "") {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9Ã¤Ã¶Ã¼ÃŸ]+/gi, " ")
+    .replace(/[^a-z0-9äöüß]+/gi, " ")
     .split(/\s+/)
     .filter((word) => word.length > 4)
     .filter((word) => !["diese", "dieser", "diesen", "einer", "einem", "einen", "werden", "wurde", "haben", "ueber", "fuer", "nicht", "auch"].includes(word)));
@@ -482,7 +482,7 @@ function cleanSublineEnd(value = "", maxLength = 180) {
   const sentenceEnd = Math.max(clipped.lastIndexOf("."), clipped.lastIndexOf("!"), clipped.lastIndexOf("?"));
   if (sentenceEnd > 60) return clipped.slice(0, sentenceEnd + 1).trim();
   const wordEnd = clipped.lastIndexOf(" ");
-  const clean = clipped.slice(0, wordEnd > 60 ? wordEnd : maxLength).replace(/[,:;â€“-]\s*$/, "").trim();
+  const clean = clipped.slice(0, wordEnd > 60 ? wordEnd : maxLength).replace(/[,:;–-]\s*$/, "").trim();
   return clean ? `${clean}.` : "";
 }
 
@@ -511,9 +511,9 @@ function reformulatedNewsBody({ headline = "", subline = "", combinedText = "", 
   const facts = sentences.map((sentence) => sentence.replace(/\s+/g, " ").trim());
   const paragraphSeeds = [
     `Die aktuelle Entwicklung rund um ${subject} rueckt ein Thema in den Mittelpunkt, das fuer die digitale Medienwirtschaft spuerbar an Bedeutung gewinnt. ${subline || facts[0]} Fuer Unternehmen aus TV, Streaming, Produktion, Vermarktung und Plattformbetrieb geht es dabei nicht nur um eine einzelne Meldung, sondern um die Frage, welche Folgen sich fuer Geschaeftsmodelle, Rechte, Nutzung und Sichtbarkeit digitaler Inhalte ergeben.`,
-    `Im Kern beschreibt der vorliegende Informationsstand, dass ${facts[0].replace(/^[A-ZÄÖÜ][^a-zäöüß]{0,20}[:\-]\s*/, "")} Daraus entsteht ein Branchenbezug, weil solche Entwicklungen zunehmend entscheiden, wie Inhalte produziert, verbreitet, finanziert oder rechtlich eingeordnet werden. Besonders relevant ist, ob daraus neue Standards, neue Marktbewegungen oder veraenderte Erwartungen an Anbieter entstehen.`,
+    `Im Kern beschreibt der vorliegende Informationsstand, dass ${facts[0].replace(/^[A-Z���][^a-z����]{0,20}[:\-]\s*/, "")} Daraus entsteht ein Branchenbezug, weil solche Entwicklungen zunehmend entscheiden, wie Inhalte produziert, verbreitet, finanziert oder rechtlich eingeordnet werden. Besonders relevant ist, ob daraus neue Standards, neue Marktbewegungen oder veraenderte Erwartungen an Anbieter entstehen.`,
     facts[1]
-      ? `Ein weiterer Aspekt ist ${facts[1].replace(/^[A-ZÄÖÜ][^a-zäöüß]{0,20}[:\-]\s*/, "")} Fuer Medienanbieter bedeutet das, Entwicklungen frueh einzuordnen und nicht nur auf technische Neuerungen zu schauen. Entscheidend ist, wie sich Reichweite, Nutzerfuehrung, Lizenzierung, redaktionelle Verantwortung oder wirtschaftliche Planbarkeit veraendern.`
+      ? `Ein weiterer Aspekt ist ${facts[1].replace(/^[A-Z���][^a-z����]{0,20}[:\-]\s*/, "")} Fuer Medienanbieter bedeutet das, Entwicklungen frueh einzuordnen und nicht nur auf technische Neuerungen zu schauen. Entscheidend ist, wie sich Reichweite, Nutzerfuehrung, Lizenzierung, redaktionelle Verantwortung oder wirtschaftliche Planbarkeit veraendern.`
       : `Fuer Medienanbieter bedeutet das, die Entwicklung nicht isoliert zu betrachten. Entscheidend ist, wie sich Reichweite, Nutzerfuehrung, Lizenzierung, redaktionelle Verantwortung oder wirtschaftliche Planbarkeit veraendern.`,
     facts[2]
       ? `Hinzu kommt: ${facts[2]} Diese Einordnung ist wichtig, weil digitale Medienmaerkte immer staerker von Plattformlogik, Daten, Automatisierung, Regulierung und neuen Nutzungsformen gepraegt werden. Was heute als einzelnes Thema erscheint, kann schnell Auswirkungen auf Produktionsprozesse, Rechteklaerung, Vermarktung oder die strategische Positionierung von Anbietern haben.`
@@ -635,7 +635,7 @@ function rotateLocalSources(sources = [], existingSuggestions = [], category = "
 
 function cleanAiEditorialSentence(value = "") {
   return String(value || "")
-    .replace(/\b(redaktioneller Themenkandidat|Themenkandidat|Vorschlag|Quellenfund|redaktionell pruefen|redaktionell prÃ¼fen)\b/gi, "")
+    .replace(/\b(redaktioneller Themenkandidat|Themenkandidat|Vorschlag|Quellenfund|redaktionell pruefen|redaktionell prüfen)\b/gi, "")
     .replace(/\s+/g, " ")
     .replace(/\s+([.,;:!?])/g, "$1")
     .trim();
@@ -660,7 +660,7 @@ function localEditorialArticleBody(topic = {}, sources = []) {
 }
 
 async function runLocalAiEditorialTask(mode = "manual") {
-  const { list, upsert } = await import("../firebase/dataService.js?v=466");
+  const { list, upsert } = await import("../firebase/dataService.js?v=487");
   const { verified_sources: demoSources, ai_prompts: demoPrompts } = await import("../data/demoData.js");
   const now = new Date().toISOString();
   let [articles, sources, prompts, queuedTopics] = await Promise.all([

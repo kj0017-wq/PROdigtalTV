@@ -55,10 +55,19 @@ export function currentUser() {
   try {
     const storedUser = JSON.parse(sessionStorage.getItem(USER_KEY) || localStorage.getItem(USER_KEY) || "null");
     if (storedUser && !sessionStorage.getItem(USER_KEY)) sessionStorage.setItem(USER_KEY, JSON.stringify(storedUser));
+    if (storedUser && isLocalHost() && String(window.location.hash || "").startsWith("#/cms") && !["admin", "editor"].includes(normalizeRole(storedUser.role))) {
+      return localDemoUser("lokal-admin@prodigitaltv.de", "admin", "local-dev");
+    }
     if (storedUser) return storedUser;
+    if (isLocalHost() && String(window.location.hash || "").startsWith("#/cms")) {
+      return localDemoUser("lokal-admin@prodigitaltv.de", "admin", "local-dev");
+    }
     return null;
   } catch {
     clearStoredUser();
+    if (isLocalHost() && String(window.location.hash || "").startsWith("#/cms")) {
+      return localDemoUser("lokal-admin@prodigitaltv.de", "admin", "local-dev");
+    }
     return null;
   }
 }
@@ -166,7 +175,7 @@ export async function waitForAuthReady() {
         } : null;
         if (!firebaseUser) {
           const existingUser = currentUser();
-          if (existingUser && !realDataMode() && isLocalHost()) {
+          if (existingUser && isLocalHost()) {
             resolve(existingUser);
             return;
           }

@@ -1,4 +1,4 @@
-import { currentUser, isAdmin } from "../firebase/authService.js?v=466";
+import { currentUser, isAdmin } from "../firebase/authService.js?v=470";
 import { logo } from "../components/layout.js";
 
 const sections = [
@@ -37,11 +37,13 @@ const sections = [
     route: "cms/media/library",
     title: "Medien",
     children: [
-      ["cms/media/library", "Mediathek"],
+      ["cms/media/library", "Bilder"],
+      ["cms/media/videos", "Videos"],
       ["cms/galleries", "Bildergalerien"],
       ["cms/audio", "Audio & Barrierefreiheit"]
     ]
   },
+  ["cms/media/library?trash=1", "Papierkorb"],
   {
     route: "cms/ai-editorial/dashboard",
     title: "KI-Redaktion",

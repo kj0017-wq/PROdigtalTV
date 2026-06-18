@@ -1,9 +1,9 @@
-import { list, listPublicEvents, listPublicContent, getOne } from "../firebase/dataService.js?v=469";
-import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=467";
+import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=487";
+import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=470";
 import { firebaseEnabled, localPreviewMode, realDataMode } from "../firebase/firebaseClient.js?v=2";
 import { publicShell, logo } from "../components/layout.js?v=5";
 import { eventCard, topicCard } from "../components/cards.js?v=2";
-import { accessLabels, lifecycleLabels } from "../data/demoData.js";
+import { accessLabels, lifecycleLabels } from "../data/demoData.js?v=5";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
 
 function editorialThumbDataUrl(title = "", label = "", context = "") {
@@ -129,10 +129,20 @@ function articleHeader({ eyebrow = "", title = "", intro = "", logoUrl = "", log
 
 function memberLogo(member) {
   const logoClass = `member-logo member-logo--${String(member.id || "").replace(/[^a-z0-9-]/gi, "").toLowerCase()}`;
-  const logoUrl = member.logoDisplayUrl || member.logoUrl || "";
+  const logoUrl = safeMemberLogoUrl(member, member.logoDisplayUrl || member.logoUrl || "");
   return logoUrl
     ? `<img class="${logoClass}" src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(member.name)}">`
     : escapeHtml(member.name);
+}
+
+function blockedMemberLogoUrl(member = {}, url = "") {
+  const value = String(url || "");
+  if (member.id === "goldvisite-media" && /goldbach/i.test(value)) return true;
+  return false;
+}
+
+function safeMemberLogoUrl(member = {}, url = "") {
+  return blockedMemberLogoUrl(member, url) ? "" : url;
 }
 
 function cacheVersionFrom(record = {}) {
@@ -148,28 +158,94 @@ function versionedAssetUrl(url = "", record = {}) {
 }
 
 function mediaAssetUrl(asset = {}) {
-  const url = asset.file_path_web_url || asset.file_path_thumb_url || asset.file_path_original_url || asset.imageUrl || asset.assetUrl || "";
+  const url = asset.file_path_web_url || asset.filePathWebUrl || asset.webUrl
+    || asset.file_path_thumb_url || asset.filePathThumbUrl || asset.thumbUrl || asset.thumb_url
+    || asset.file_path_original_url || asset.filePathOriginalUrl || asset.originalUrl
+    || asset.downloadUrl || asset.downloadURL || asset.url
+    || asset.thumbnail_url || asset.thumbnailUrl
+    || asset.imageUrl || asset.assetUrl || "";
   return versionedAssetUrl(url, asset);
 }
 
+function mediaAssetUrls(asset = {}) {
+  return [
+    asset.file_path_web_url, asset.filePathWebUrl, asset.webUrl,
+    asset.file_path_thumb_url, asset.filePathThumbUrl, asset.thumbUrl, asset.thumb_url,
+    asset.file_path_original_url, asset.filePathOriginalUrl, asset.originalUrl,
+    asset.downloadUrl, asset.downloadURL, asset.url,
+    asset.thumbnail_url, asset.thumbnailUrl,
+    asset.imageUrl, asset.assetUrl
+  ].filter(Boolean);
+}
+
+function eventMediaImageUrl(medium = {}) {
+  const url = medium.fileUrl || medium.file_url || medium.assetUrl || medium.asset_url
+    || medium.downloadUrl || medium.downloadURL || medium.url || medium.imageUrl || medium.thumbnailUrl || "";
+  return validEventImageUrl(url) ? versionedAssetUrl(url, medium) : "";
+}
+
+function eventMediaThumbUrl(event = {}, eventMedia = []) {
+  return eventMedia
+    .filter((medium) => medium.eventId === event.id)
+    .filter((medium) => String(medium.mediaType || medium.type || "").toLowerCase().includes("image") || eventMediaImageUrl(medium))
+    .filter((medium) => ["approved", "published", "active"].includes(String(medium.status || "approved").toLowerCase()))
+    .filter((medium) => ["public", "oeffentlich"].includes(String(medium.visibility || "public").toLowerCase()))
+    .filter((medium) => eventMediaImageUrl(medium))
+    .sort((a, b) => {
+      const score = (medium = {}) => [
+        medium.isCoverImage ? "5" : "0",
+        Number.isFinite(Number(medium.sortOrder)) ? String(9999 - Number(medium.sortOrder)).padStart(4, "0") : "0000",
+        medium.updatedAt || medium.updated_at || medium.uploadedAt || medium.createdAt || "",
+        medium.id || ""
+      ].join("|");
+      return score(b).localeCompare(score(a));
+    })
+    .map(eventMediaImageUrl)[0] || "";
+}
+
+function assetTargetCollection(asset = {}) {
+  return asset.target_collection || asset.targetCollection || "";
+}
+
+function assetTargetId(asset = {}) {
+  return asset.target_id || asset.targetId || "";
+}
+
+function assetTargetField(asset = {}) {
+  return asset.target_field || asset.targetField || "";
+}
+
+function assetLinkedCollection(asset = {}) {
+  return asset.linked_collection || asset.linkedCollection || "";
+}
+
+function assetLinkedId(asset = {}) {
+  return asset.linked_record_id || asset.linkedRecordId || asset.linked_id || asset.linkedId || "";
+}
+
+function assetLinkedField(asset = {}) {
+  return asset.linked_field || asset.linkedField || "";
+}
+
 function publicEventMediaAsset(event = {}, mediaAssets = []) {
+  const eventImageFields = ["imageUrl", "thumbnail_url", "thumbnailUrl", "assetUrl"];
   return mediaAssets
     .filter((asset) => {
       const eventUrl = event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "";
-      const directIds = [event.thumbnail_media_asset_id, event.mediaAssetId, event.media_asset_id].filter(Boolean);
-      const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
+      const directIds = [event.thumbnail_media_asset_id, event.thumbnailMediaAssetId, event.mediaAssetId, event.media_asset_id, event.assetId].filter(Boolean);
+      const urls = mediaAssetUrls(asset);
       return directIds.includes(asset.id)
-        || (asset.target_collection === "events" && asset.target_id === event.id && (asset.target_field || "imageUrl") === "imageUrl")
-        || (asset.linked_collection === "events" && asset.linked_record_id === event.id && (asset.linked_field || "imageUrl") === "imageUrl")
+        || (assetTargetCollection(asset) === "events" && assetTargetId(asset) === event.id && eventImageFields.includes(assetTargetField(asset) || "imageUrl"))
+        || (assetLinkedCollection(asset) === "events" && assetLinkedId(asset) === event.id && eventImageFields.includes(assetLinkedField(asset) || "imageUrl"))
         || (eventUrl && urls.includes(eventUrl));
     })
     .filter((asset) => mediaAssetUrl(asset))
     .sort((a, b) => {
-      const directIds = [event.thumbnail_media_asset_id, event.mediaAssetId, event.media_asset_id].filter(Boolean);
+      const directIds = [event.thumbnail_media_asset_id, event.thumbnailMediaAssetId, event.mediaAssetId, event.media_asset_id, event.assetId].filter(Boolean);
       const score = (asset = {}) => [
         directIds.includes(asset.id) ? "5" : "0",
-        asset.target_collection === "events" && asset.target_id === event.id && (asset.target_field || "imageUrl") === "imageUrl" ? "4" : "0",
-        asset.linked_collection === "events" && asset.linked_record_id === event.id && (asset.linked_field || "imageUrl") === "imageUrl" ? "3" : "0",
+        assetTargetCollection(asset) === "events" && assetTargetId(asset) === event.id && eventImageFields.includes(assetTargetField(asset) || "imageUrl") ? "4" : "0",
+        assetLinkedCollection(asset) === "events" && assetLinkedId(asset) === event.id && eventImageFields.includes(assetLinkedField(asset) || "imageUrl") ? "3" : "0",
         asset.source_type === "edited" ? "2" : "0",
         asset.status === "active" ? "2" : "1",
         asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
@@ -220,35 +296,38 @@ function publicMemberTypeKey(member = {}) {
   return "";
 }
 
+function explicitDemoMode() {
+  const hashQuery = new URLSearchParams(String(window.location.hash || "").split("?")[1] || "");
+  const pageQuery = new URLSearchParams(window.location.search || "");
+  return pageQuery.get("demo") === "1" || hashQuery.get("demo") === "1";
+}
+
 async function publicManagedMembers() {
   const liveMembers = (await list("members").catch(() => []))
-    .filter((member) => publicMemberTypeKey(member)
-      && member.visible !== false
-      && !memberAccessBlocked(member)
-      && !["inactive", "cancelled", "archived"].includes(member.status || ""))
+    .filter((member) => !memberAccessBlocked(member)
+      && !["inactive", "cancelled", "archived", "deleted"].includes(String(member.status || "").toLowerCase()))
     .sort((a, b) => Number(a.sortOrder ?? 999) - Number(b.sortOrder ?? 999) || String(a.name || "").localeCompare(String(b.name || ""), "de"));
-  if (liveMembers.length) return liveMembers;
-  return [];
+  return liveMembers;
 }
 
 function publicEditorialMediaAsset(item = {}, mediaAssets = []) {
   return mediaAssets
     .filter((asset) => {
       const imageUrl = item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || "";
-      const directIds = [item.thumbnail_media_asset_id, item.mediaAssetId, item.media_asset_id].filter(Boolean);
-      const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
+      const directIds = [item.thumbnail_media_asset_id, item.thumbnailMediaAssetId, item.mediaAssetId, item.media_asset_id, item.assetId].filter(Boolean);
+      const urls = mediaAssetUrls(asset);
       return directIds.includes(asset.id)
-        || (asset.target_collection === "editorialContent" && asset.target_id === item.id && ["imageUrl", "thumbnail_url", "thumbnailUrl"].includes(asset.target_field || "imageUrl"))
-        || (asset.linked_collection === "editorialContent" && asset.linked_record_id === item.id && ["imageUrl", "thumbnail_url", "thumbnailUrl"].includes(asset.linked_field || "imageUrl"))
+        || (assetTargetCollection(asset) === "editorialContent" && assetTargetId(asset) === item.id && ["imageUrl", "thumbnail_url", "thumbnailUrl"].includes(assetTargetField(asset) || "imageUrl"))
+        || (assetLinkedCollection(asset) === "editorialContent" && assetLinkedId(asset) === item.id && ["imageUrl", "thumbnail_url", "thumbnailUrl"].includes(assetLinkedField(asset) || "imageUrl"))
         || (imageUrl && urls.includes(imageUrl));
     })
     .filter((asset) => mediaAssetUrl(asset))
     .sort((a, b) => {
-      const directIds = [item.thumbnail_media_asset_id, item.mediaAssetId, item.media_asset_id].filter(Boolean);
+      const directIds = [item.thumbnail_media_asset_id, item.thumbnailMediaAssetId, item.mediaAssetId, item.media_asset_id, item.assetId].filter(Boolean);
       const score = (asset = {}) => [
         directIds.includes(asset.id) ? "5" : "0",
-        asset.target_collection === "editorialContent" && asset.target_id === item.id ? "4" : "0",
-        asset.linked_collection === "editorialContent" && asset.linked_record_id === item.id ? "3" : "0",
+        assetTargetCollection(asset) === "editorialContent" && assetTargetId(asset) === item.id ? "4" : "0",
+        assetLinkedCollection(asset) === "editorialContent" && assetLinkedId(asset) === item.id ? "3" : "0",
         asset.source_type === "edited" ? "2" : "0",
         asset.status === "active" ? "2" : "1",
         asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
@@ -263,19 +342,19 @@ function publicMemberLogoAsset(member = {}, mediaAssets = []) {
     .filter((asset) => {
       const logoUrl = member.logoUrl || "";
       const directIds = [member.logo_media_asset_id, member.logoMediaAssetId, member.thumbnail_media_asset_id, member.mediaAssetId, member.media_asset_id].filter(Boolean);
-      const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
+      const urls = mediaAssetUrls(asset);
       return directIds.includes(asset.id)
-        || (asset.target_collection === "members" && asset.target_id === member.id && (asset.target_field || "logoUrl") === "logoUrl")
-        || (asset.linked_collection === "members" && asset.linked_record_id === member.id && (asset.linked_field || "logoUrl") === "logoUrl")
+        || (assetTargetCollection(asset) === "members" && assetTargetId(asset) === member.id && (assetTargetField(asset) || "logoUrl") === "logoUrl")
+        || (assetLinkedCollection(asset) === "members" && assetLinkedId(asset) === member.id && (assetLinkedField(asset) || "logoUrl") === "logoUrl")
         || (logoUrl && urls.includes(logoUrl));
     })
-    .filter((asset) => mediaAssetUrl(asset))
+    .filter((asset) => safeMemberLogoUrl(member, mediaAssetUrl(asset)))
     .sort((a, b) => {
       const directIds = [member.logo_media_asset_id, member.logoMediaAssetId, member.thumbnail_media_asset_id, member.mediaAssetId, member.media_asset_id].filter(Boolean);
       const score = (asset = {}) => [
         directIds.includes(asset.id) ? "5" : "0",
-        asset.target_collection === "members" && asset.target_id === member.id && (asset.target_field || "logoUrl") === "logoUrl" ? "4" : "0",
-        asset.linked_collection === "members" && asset.linked_record_id === member.id && (asset.linked_field || "logoUrl") === "logoUrl" ? "3" : "0",
+        assetTargetCollection(asset) === "members" && assetTargetId(asset) === member.id && (assetTargetField(asset) || "logoUrl") === "logoUrl" ? "4" : "0",
+        assetLinkedCollection(asset) === "members" && assetLinkedId(asset) === member.id && (assetLinkedField(asset) || "logoUrl") === "logoUrl" ? "3" : "0",
         asset.source_type === "edited" ? "2" : "0",
         asset.status === "active" ? "2" : "1",
         asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
@@ -318,7 +397,14 @@ function publicSponsorLogoUrl(sponsor = {}, mediaAssets = []) {
 }
 
 async function withPublicMemberLogos(members = []) {
-  return members.map((member) => ({ ...member, logoDisplayUrl: member.logoUrl || "" }));
+  const mediaAssets = await list("media_assets").catch(() => []);
+  return members.map((member) => {
+    const asset = publicMemberLogoAsset(member, mediaAssets);
+    return {
+      ...member,
+      logoDisplayUrl: safeMemberLogoUrl(member, mediaAssetUrl(asset || {}) || member.logoUrl || "")
+    };
+  });
 }
 
 function boardPortrait(person) {
@@ -339,9 +425,9 @@ function archiveArticle(event, partners = []) {
   return `<article class="archive-article">
     ${event.imageUrl ? `<figure class="archive-article__image"><img src="${escapeHtml(event.imageUrl)}" alt="Rueckblick ${escapeHtml(event.title)}" loading="lazy" decoding="async"></figure>` : `<div class="archive-article__placeholder"><span>${escapeHtml(event.eventType || "Archiv")}</span></div>`}
     <div class="archive-article__body">
-      <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` Â· ${escapeHtml(event.city)}` : ""}</p>
+      <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` · ${escapeHtml(event.city)}` : ""}</p>
       <h2>${escapeHtml(event.title)}</h2>
-      <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` Â· Co-Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
+      <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` · Co-Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
       <p>${escapeHtml(event.postEventSummary || event.description)}</p>
     </div>
   </article>`;
@@ -353,11 +439,11 @@ function archiveEditorialArticle(item, partners = []) {
   return `<article class="archive-article">
     ${item.imageUrl ? `<figure class="archive-article__image"><img src="${escapeHtml(item.imageUrl)}" alt="Rueckblick ${escapeHtml(item.title || "")}" loading="lazy" decoding="async"></figure>` : `<div class="archive-article__placeholder"><span>Rueckblick</span></div>`}
     <div class="archive-article__body">
-      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Rückblick"}${sponsor ? ` Â· ${escapeHtml(sponsor.name)}` : ""}</p>
+      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "R�ckblick"}${sponsor ? ` · ${escapeHtml(sponsor.name)}` : ""}</p>
       <h2>${escapeHtml(item.title || "Rueckblick")}</h2>
       ${item.subtitle ? `<p class="archive-article__meta">${escapeHtml(item.subtitle)}</p>` : ""}
       <p>${escapeHtml(teaserText(item.longDescription || item.articleText || item.bodyText || item.mainText || item.fullText || item.longText || item.introText || "", 260))}</p>
-      <a class="link" href="#/retrospective/${item.id}">Rueckblick lesen â†’</a>
+      <a class="link" href="#/retrospective/${item.id}">Rueckblick lesen →</a>
     </div>
   </article>`;
 }
@@ -477,38 +563,59 @@ function retrospectiveLinkedEvent(item = {}, events = []) {
   return null;
 }
 
-function archiveListEvent(event, partners = [], mediaAssets = []) {
+function archiveListEvent(event, partners = [], mediaAssets = [], editorial = [], eventMedia = []) {
   const host = partners.find((partner) => partner.id === event.hostId);
+  const retrospectiveArticle = editorial.find((item) => isRetrospectiveArticle(item) && retrospectiveLinkedEvent(item, [event])?.id === event.id);
+  const displayTitle = retrospectiveArticle?.title || event.retrospectiveTitle || event.title;
   const dateLabel = event.displayDate || formatDate(event.date);
-  const detailUrl = `#/event/${escapeHtml(event.id)}`;
-  const imageUrl = archiveEventImageUrl(event, mediaAssets);
+  const detailUrl = retrospectiveArticle?.id ? `#/retrospective/${escapeHtml(retrospectiveArticle.id)}` : `#/event/${escapeHtml(event.id)}`;
+  const imageUrl = eventMediaThumbUrl(event, eventMedia) || archiveEventImageUrl(event, mediaAssets);
   return `<article class="archive-article archive-article--list">
-    <a class="archive-article__thumb" href="${detailUrl}" aria-label="Rueckblick ${escapeHtml(event.title)} ansehen">
-      ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="Rueckblick ${escapeHtml(event.title)}" loading="eager" decoding="async">` : `<span>${escapeHtml(event.eventType || "Archiv")}</span>`}
+    <a class="archive-article__thumb" href="${detailUrl}" aria-label="Rueckblick ${escapeHtml(displayTitle)} ansehen">
+      ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="Rueckblick ${escapeHtml(displayTitle)}" loading="eager" decoding="async">` : `<span>${escapeHtml(event.eventType || "Archiv")}</span>`}
     </a>
     <div class="archive-article__body">
-      <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` Â· ${escapeHtml(event.city)}` : ""}</p>
-      <h2><a href="${detailUrl}">${escapeHtml(event.title)}</a></h2>
-      <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` Â· Co-Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
+      <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` · ${escapeHtml(event.city)}` : ""}</p>
+      <h2><a href="${detailUrl}">${escapeHtml(displayTitle)}</a></h2>
+      <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` · Co-Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
       <p>${escapeHtml(teaserText(event.postEventummary || event.description || "", 260))}</p>
       <a class="link" href="${detailUrl}">Rueckblick ansehen -></a>
     </div>
   </article>`;
 }
 
-function archiveListEditorial(item, partners = [], events = [], mediaAssets = []) {
-  const sponsor = item.sponsorId ? partners.find((partner) => partner.id === item.sponsorId) : null;
-  const linkedEvent = retrospectiveLinkedEvent(item, events);
-  const directAssetIds = [item.thumbnail_media_asset_id, item.mediaAssetId, item.media_asset_id].filter(Boolean);
+function galleryThumbUrlForRetrospective(item = {}, linkedEvent = null, galleries = []) {
+  const galleryIds = [item.galleryId, item.gallery_id, linkedEvent?.galleryId, linkedEvent?.gallery_id].filter(Boolean);
+  const gallery = galleries.find((entry) => galleryIds.includes(entry.id))
+    || galleries.find((entry) => linkedEvent?.id && entry.eventId === linkedEvent.id && entry.status === "published" && entry.visibility === "public")
+    || galleries.find((entry) => item.id && (entry.linkedRecordId === item.id || entry.targetId === item.id));
+  const images = Array.isArray(gallery?.images) ? gallery.images : [];
+  const firstImage = [...images]
+    .filter((entry) => validEventImageUrl(entry.url || entry.imageUrl || entry.assetUrl || entry.thumbnailUrl || ""))
+    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))[0];
+  return firstImage ? versionedAssetUrl(firstImage.url || firstImage.imageUrl || firstImage.assetUrl || firstImage.thumbnailUrl || "", gallery) : "";
+}
+
+function retrospectiveThumbUrl(item = {}, linkedEvent = null, galleries = [], mediaAssets = []) {
+  const directAssetIds = [item.thumbnail_media_asset_id, item.thumbnailMediaAssetId, item.mediaAssetId, item.media_asset_id, item.assetId].filter(Boolean);
   const articleAsset = publicEditorialMediaAsset(item, mediaAssets);
   const hasBrokenDirectAssetReference = directAssetIds.length && !articleAsset;
   const linkedEventThumb = linkedEvent ? archiveEventImageUrl(linkedEvent, mediaAssets) : "";
+  const linkedEventFallback = linkedEvent ? eventFallbackImageUrl(linkedEvent) : "";
+  const linkedEventHasOnlyFallback = linkedEventThumb && linkedEventFallback && linkedEventThumb === linkedEventFallback;
+  const preferredLinkedEventThumb = linkedEventThumb && !linkedEventHasOnlyFallback ? linkedEventThumb : "";
   const articleThumb = mediaAssetUrl(articleAsset || {}) || versionedAssetUrl(item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || "", item);
-  const thumbUrl = hasBrokenDirectAssetReference && linkedEventThumb
-    ? linkedEventThumb
-    : articleThumb && !blockedLegacyEventImageUrl(articleThumb)
-    ? articleThumb
-    : linkedEventThumb;
+  const galleryThumb = galleryThumbUrlForRetrospective(item, linkedEvent, galleries);
+  if (hasBrokenDirectAssetReference && preferredLinkedEventThumb) return preferredLinkedEventThumb;
+  if (articleThumb && !blockedLegacyEventImageUrl(articleThumb)) return articleThumb;
+  if (galleryThumb && !blockedLegacyEventImageUrl(galleryThumb)) return galleryThumb;
+  return preferredLinkedEventThumb || linkedEventThumb;
+}
+
+function archiveListEditorial(item, partners = [], events = [], mediaAssets = [], galleries = []) {
+  const sponsor = item.sponsorId ? partners.find((partner) => partner.id === item.sponsorId) : null;
+  const linkedEvent = retrospectiveLinkedEvent(item, events);
+  const thumbUrl = retrospectiveThumbUrl(item, linkedEvent, galleries, mediaAssets);
   const dateLabel = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   const detailUrl = `#/retrospective/${escapeHtml(item.id)}`;
   return `<article class="archive-article archive-article--list">
@@ -516,7 +623,7 @@ function archiveListEditorial(item, partners = [], events = [], mediaAssets = []
       ${thumbUrl ? `<img src="${escapeHtml(thumbUrl)}" alt="Rueckblick ${escapeHtml(item.title || "")}" loading="eager" decoding="async">` : `<span>Rueckblick</span>`}
     </a>
     <div class="archive-article__body">
-      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Rückblick"}${sponsor ? ` Â· ${escapeHtml(sponsor.name)}` : ""}</p>
+      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "R�ckblick"}${sponsor ? ` · ${escapeHtml(sponsor.name)}` : ""}</p>
       <h2><a href="${detailUrl}">${escapeHtml(item.title || "Rueckblick")}</a></h2>
       ${item.subtitle ? `<p class="archive-article__meta">${escapeHtml(item.subtitle)}</p>` : ""}
       <p>${escapeHtml(teaserText(item.longDescription || item.articleText || item.bodyText || item.mainText || item.fullText || item.longText || item.introText || "", 260))}</p>
@@ -581,7 +688,7 @@ function internalIcon(name = "") {
     network: "N", compass: "K", modules: "M", dialog: "D", breakfast: "B", interview: "I", transformation: "T", impact: "W",
     membership: "M", knowledge: "W", visibility: "S", presentation: "P", guest: "G", exclusive: "E", law: "R", gema: "G", cooperation: "K", discount: "%", cta: ">"
   };
-  return `<span class="internal-card__icon" aria-hidden="true">${escapeHtml(labels[name] || "â€¢")}</span>`;
+  return `<span class="internal-card__icon" aria-hidden="true">${escapeHtml(labels[name] || "•")}</span>`;
 }
 
 function internalCard(block, meta) {
@@ -589,7 +696,7 @@ function internalCard(block, meta) {
   return `<a class="internal-card internal-card--${escapeHtml(block.typ)}" href="${href}">
     ${internalIcon(block.icon)}
     <span><strong>${escapeHtml(block.titel)}</strong><small>${escapeHtml(block.kurztext)}</small></span>
-    <b aria-hidden="true">â†’</b>
+    <b aria-hidden="true">→</b>
   </a>`;
 }
 
@@ -707,7 +814,7 @@ function aboutStickyContent(events = [], board = [], members = [], topics = []) 
   const memberSlides = chunkItems(members.filter((member) => member.featured || member.logoUrl).slice(0, 15), 3);
   const renderEvent = (event) => `<a class="internal-sticky-event" href="#/event/${event.id}">
     ${event.imageUrl ? `<img src="${escapeHtml(event.imageUrl)}" alt="Eventbild ${escapeHtml(event.title || "")}">` : `<span class="internal-sticky-event__picto">${aboutPicto("breakfast")}</span>`}
-    <span><strong>${escapeHtml(event.title || "Event")}</strong><small>${formatDate(event.date)}${event.city ? ` Â· ${escapeHtml(event.city)}` : ""}</small></span>
+    <span><strong>${escapeHtml(event.title || "Event")}</strong><small>${formatDate(event.date)}${event.city ? ` · ${escapeHtml(event.city)}` : ""}</small></span>
   </a>`;
   const renderTopic = (topic) => `<a class="internal-sticky-topic" href="#/topic/${topic.id}">
     <span class="internal-sticky-event__picto">${aboutPicto("dialog")}</span>
@@ -722,19 +829,19 @@ function aboutStickyContent(events = [], board = [], members = [], topics = []) 
   </a>`).join("")}</div>`;
   return `<aside class="internal-about-sticky" aria-label="Aktuelle Inhalte">
     <section class="internal-sticky-section">
-      <a class="internal-sticky-section-title" href="#/events">Aktuelles Event <span aria-hidden="true">â†’</span></a>
-      ${rubricRotator(eventSlides, renderEvent, `<a class="internal-sticky-event" href="#/events"><span class="internal-sticky-event__picto">${aboutPicto("breakfast")}</span><span><strong>Neue Termine in Vorbereitung</strong><small>Zur EventÃ¼bersicht</small></span></a>`)}
+      <a class="internal-sticky-section-title" href="#/events">Aktuelles Event <span aria-hidden="true">→</span></a>
+      ${rubricRotator(eventSlides, renderEvent, `<a class="internal-sticky-event" href="#/events"><span class="internal-sticky-event__picto">${aboutPicto("breakfast")}</span><span><strong>Neue Termine in Vorbereitung</strong><small>Zur Eventübersicht</small></span></a>`)}
     </section>
     <section class="internal-sticky-section">
-      <a class="internal-sticky-section-title" href="#/topics">Themen <span aria-hidden="true">â†’</span></a>
+      <a class="internal-sticky-section-title" href="#/topics">Themen <span aria-hidden="true">→</span></a>
       ${rubricRotator(topicSlides, renderTopic, `<a class="internal-sticky-topic" href="#/topics"><span class="internal-sticky-event__picto">${aboutPicto("dialog")}</span><span><strong>Themen ansehen</strong><small>Aktuelle Themen im Netzwerk</small></span></a>`)}
     </section>
     <section class="internal-sticky-section">
-      <a class="internal-sticky-section-title" href="#/board">Vorstand <span aria-hidden="true">â†’</span></a>
+      <a class="internal-sticky-section-title" href="#/board">Vorstand <span aria-hidden="true">→</span></a>
       ${rubricRotator(boardSlides, renderBoardPair, `<a class="internal-sticky-person" href="#/board">Vorstand ansehen</a>`)}
     </section>
     <section class="internal-sticky-section">
-      <a class="internal-sticky-section-title" href="#/members">Mitglieder <span aria-hidden="true">â†’</span></a>
+      <a class="internal-sticky-section-title" href="#/members">Mitglieder <span aria-hidden="true">→</span></a>
       ${rubricRotator(memberSlides, renderMemberGroup, `<a class="internal-sticky-member" href="#/members">Mitglieder ansehen</a>`)}
     </section>
   </aside>`;
@@ -748,7 +855,7 @@ function aboutCardGroups(blocks, meta, options = {}) {
 
 function internalDesktopSection(block, meta) {
   const detailHref = `#/${meta.detailRoute}/${encodeURIComponent(block.slug)}`;
-  const cta = block.button_text ? `<a class="button button--primary button--small" href="${escapeHtml(block.button_ziel || detailHref)}">${escapeHtml(block.button_text)}</a>` : `<a class="link" href="${detailHref}">Mehr lesen â†’</a>`;
+  const cta = block.button_text ? `<a class="button button--primary button--small" href="${escapeHtml(block.button_ziel || detailHref)}">${escapeHtml(block.button_text)}</a>` : `<a class="link" href="${detailHref}">Mehr lesen →</a>`;
   return `<article class="internal-section internal-section--${escapeHtml(block.typ)}">
     <div class="internal-section__head">${internalIcon(block.icon)}<div><p class="eyebrow">${escapeHtml(block.typ)}</p><h2>${escapeHtml(block.titel)}</h2><p>${escapeHtml(block.kurztext)}</p></div></div>
     <div class="editorial-text internal-section__body">${articleParagraphs(block.langtext)}</div>
@@ -791,7 +898,7 @@ export async function internalDetailPage(bereich, slug) {
   if (!block) return notFoundPage();
   const cta = block.button_text ? `<div class="actions" style="margin-top:24px"><a class="button button--primary" href="${escapeHtml(block.button_ziel || `#/${meta.route}`)}">${escapeHtml(block.button_text)}</a></div>` : "";
   return publicShell(meta.active, `${subhero(meta.eyebrow, block.titel, block.kurztext)}
-    <section class="section"><div class="container internal-detail"><a class="link" href="#/${meta.route}">â† Zurueck</a><article class="detail-main"><div class="editorial-text">${articleParagraphs(block.langtext)}</div>${cta}</article></div></section>`);
+    <section class="section"><div class="container internal-detail"><a class="link" href="#/${meta.route}">← Zurueck</a><article class="detail-main"><div class="editorial-text">${articleParagraphs(block.langtext)}</div>${cta}</article></div></section>`);
 }
 
 function articleSourcesList(item = {}) {
@@ -875,8 +982,8 @@ function cleanNewsDetailText(text = "", title = "", subtitle = "", slug = "") {
   });
   const blocks = value.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
   const first = blocks[0] || "";
-  const titleKey = String(title || "").toLowerCase().replace(/[^a-z0-9äöüß]+/gi, " ").trim();
-  const firstKey = first.toLowerCase().replace(/[^a-z0-9äöüß]+/gi, " ").trim();
+  const titleKey = String(title || "").toLowerCase().replace(/[^a-z0-9����]+/gi, " ").trim();
+  const firstKey = first.toLowerCase().replace(/[^a-z0-9����]+/gi, " ").trim();
   const titleLead = titleKey.split(/\s+/).slice(0, 3).join(" ");
   if (blocks.length > 1 && first.length < 150 && titleLead && firstKey.startsWith(titleLead)) {
     value = blocks.slice(1).join("\n\n");
@@ -1039,7 +1146,76 @@ function galleryPlayCta(gallery, images) {
       altText: image.altText || image.caption || gallery.title || "Galeriebild"
     }))
   }));
-  return `<section class="article-gallery-cta"><div><p class="eyebrow">Bildergalerie</p><h3>${escapeHtml(gallery.title || "Bilder ansehen")}</h3><p>${images.length} Bilder als Slideshow ansehen.</p></div><button class="button button--primary gallery-play-cta__button" type="button" data-gallery-play data-gallery-payload="${payload}"><span>â–¶</span> Galerie abspielen</button></section>`;
+  return `<section class="article-gallery-cta"><div><p class="eyebrow">Bildergalerie</p><h3>${escapeHtml(gallery.title || "Bilder ansehen")}</h3><p>${images.length} Bilder als Slideshow ansehen.</p></div><button class="button button--primary gallery-play-cta__button" type="button" data-gallery-play data-gallery-payload="${payload}"><span>▶</span> Galerie abspielen</button></section>`;
+}
+
+function articleVideoAttachments(item = {}) {
+  const videos = Array.isArray(item.videoAttachments)
+    ? item.videoAttachments
+    : Array.isArray(item.videos)
+      ? item.videos
+      : [];
+  return videos
+    .filter((video) => video && video.youtubeVideoId && !["hidden", "error"].includes(video.status || "ready"))
+    .filter((video) => (video.visibility || "public") === "public")
+    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+}
+
+function youtubeEmbedSrc(videoId = "") {
+  const origin = typeof window !== "undefined" && window.location?.origin
+    ? `&origin=${encodeURIComponent(window.location.origin)}`
+    : "";
+  return `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?enablejsapi=1&rel=0&fs=1&playsinline=0${origin}`;
+}
+
+function articleVideoFrame(video = {}, title = "Video") {
+  return `<iframe src="${escapeHtml(youtubeEmbedSrc(video.youtubeVideoId))}" title="${escapeHtml(title)}" loading="eager" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" allowfullscreen tabindex="-1"></iframe>`;
+}
+
+function articleVideosBlock(item = {}) {
+  const videos = articleVideoAttachments(item);
+  if (!videos.length) return "";
+  return `<section class="article-videos" aria-label="Videoanhaenge">${videos.map((video) => {
+    const poster = video.posterImageUrl || video.youtubeThumbnailUrl || `https://img.youtube.com/vi/${escapeHtml(video.youtubeVideoId)}/hqdefault.jpg`;
+    const title = video.title || video.caption || "Video abspielen";
+    return `<article class="article-video-card">
+      <div class="article-video-poster" data-youtube-video="${escapeHtml(video.youtubeVideoId)}" data-youtube-title="${escapeHtml(title)}" role="button" tabindex="0" aria-label="${escapeHtml(`${title} abspielen`)}">
+        ${poster ? `<img src="${escapeHtml(poster)}" alt="${escapeHtml(video.posterImageAlt || title)}" loading="lazy" decoding="async">` : ""}
+        ${articleVideoFrame(video, title)}
+        <span class="article-video-play" aria-hidden="true"></span>
+        <small>Mit Klick wird das Video gestartet.</small>
+      </div>
+      ${video.title ? `<h3>${escapeHtml(video.title)}</h3>` : ""}
+      ${video.caption ? `<p class="article-video-caption">${escapeHtml(video.caption)}</p>` : ""}
+    </article>`;
+  }).join("")}</section>`;
+}
+
+function articleVideoHero(item = {}) {
+  const [video] = articleVideoAttachments(item);
+  if (!video) return "";
+  const poster = video.posterImageUrl || video.youtubeThumbnailUrl || `https://img.youtube.com/vi/${escapeHtml(video.youtubeVideoId)}/hqdefault.jpg`;
+  const title = video.title || video.caption || item.title || "Video abspielen";
+  return `<div class="article-video-poster member-article-card__hero" data-youtube-video="${escapeHtml(video.youtubeVideoId)}" data-youtube-title="${escapeHtml(title)}" role="button" tabindex="0" aria-label="${escapeHtml(`${title} abspielen`)}">
+    ${poster ? `<img src="${escapeHtml(poster)}" alt="${escapeHtml(video.posterImageAlt || title)}" loading="lazy" decoding="async">` : ""}
+    ${articleVideoFrame(video, title)}
+    <span class="article-video-play" aria-hidden="true"></span>
+    <small>Mit Klick wird das Video gestartet.</small>
+  </div>`;
+}
+
+function memberArticleCard(item = {}) {
+  const date = item.publishDate || item.validFrom || item.date || "";
+  const text = item.articleText || item.bodyText || item.longDescription || item.introText || "";
+  const href = `#/portal/article/${encodeURIComponent(item.slug || item.id || item.key || "")}`;
+  return `<article class="card card__body member-article-card">
+    ${articleVideoHero(item)}
+    <p class="eyebrow">${escapeHtml(item.category || "Mitgliederbeitrag")}${date ? ` / ${formatDate(date)}` : ""}</p>
+    <h3>${escapeHtml(item.title || "Redaktioneller Beitrag")}</h3>
+    ${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}
+    <div class="editorial-text member-article-card__text">${articleParagraphs(text)}</div>
+    <a class="button button--secondary button--small" href="${href}">Beitrag oeffnen</a>
+  </article>`;
 }
 
 function teaserText(value = "", length = 118) {
@@ -1075,16 +1251,15 @@ function mobileLeanStart() {
 }
 
 export async function homePage() {
-  const leanMobile = mobileLeanStart();
-  const [events, rawMembers, editorial, mediaAssets] = await Promise.all([
+  const [events, rawMembers, editorial] = await Promise.all([
     listPublicEvents(),
     publicManagedMembers(),
-    listPublicContent("editorialContent"),
-    leanMobile ? Promise.resolve([]) : list("media_assets").catch(() => [])
+    listPublicContent("editorialContent")
   ]);
   const members = await withPublicMemberLogos(rawMembers);
   const upcoming = events.filter((event) => !isPastEvent(event) && event.visibility === "public").sort((a, b) => a.date.localeCompare(b.date));
   const next = upcoming[0];
+  const mediaAssets = next ? await listPublicEventMediaAssets([next]) : [];
   const latestNewsItems = publicNewsItems(editorial)
     .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")))
     .slice(0, 6);
@@ -1119,10 +1294,10 @@ export async function homePage() {
         <h1>Digitaler Content.<br>Starke Verbindungen.<br>Gemeinsam fuer die <span>Medienzukunft.</span></h1>
         <p>PROdigitalTV ist das Netzwerk fuer digitale Medien, Streaming, Smart-TV, Plattformen und regionale Anbieter.</p>
         <article class="pdtv-mobile-next-event ${nextImageUrl ? "pdtv-mobile-next-event--with-image" : ""}"${mobileNextImageStyle}>
-          <span class="pdtv-mobile-icon" aria-hidden="true">□</span>
+          <span class="pdtv-mobile-icon" aria-hidden="true">?</span>
           <div>
             <p>Naechstes Medienfruehstueck</p>
-            ${next ? `<h2>${escapeHtml(formatDate(next.date))}${next.city ? ` · ${escapeHtml(next.city)}` : ""}</h2><span>${escapeHtml(next.subtitle || next.title || "")}</span><div class="pdtv-mobile-next-actions"><a class="button button--primary button--small" href="#/register/${next.id}">Anmelden</a><a href="#/event/${next.id}">Details ansehen -></a></div>` : `<h2>Neue Termine in Vorbereitung</h2><span>Die naechsten Formate werden in Kuerze veroeffentlicht.</span><div class="pdtv-mobile-next-actions"><a href="#/events">Events ansehen -></a></div>`}
+            ${next ? `<h2>${escapeHtml(formatDate(next.date))}${next.city ? ` � ${escapeHtml(next.city)}` : ""}</h2><span>${escapeHtml(next.subtitle || next.title || "")}</span><div class="pdtv-mobile-next-actions"><a class="button button--primary button--small" href="#/register/${next.id}">Anmelden</a><a href="#/event/${next.id}">Details ansehen -></a></div>` : `<h2>Neue Termine in Vorbereitung</h2><span>Die naechsten Formate werden in Kuerze veroeffentlicht.</span><div class="pdtv-mobile-next-actions"><a href="#/events">Events ansehen -></a></div>`}
           </div>
         </article>
       </div>
@@ -1135,7 +1310,7 @@ export async function homePage() {
     <div class="home-event-card__icon" aria-hidden="true"><span></span></div>
     <p class="eyebrow">Naechstes Medienfruehstueck</p>
     <h2>${escapeHtml(next.title || "Naechste Veranstaltung")}</h2>
-    <p class="home-event-card__meta">${escapeHtml(formatDate(next.date))}${next.startTime ? ` · ${escapeHtml(next.startTime)} Uhr` : ""}${next.city ? ` · ${escapeHtml(next.city)}` : ""}</p>
+    <p class="home-event-card__meta">${escapeHtml(formatDate(next.date))}${next.startTime ? ` � ${escapeHtml(next.startTime)} Uhr` : ""}${next.city ? ` � ${escapeHtml(next.city)}` : ""}</p>
     <p>${escapeHtml(next.subtitle || next.locationName || "Austausch, Orientierung und relevante Branchenkontakte.")}</p>
     <div class="home-event-card__actions"><a class="button button--primary" href="#/register/${escapeHtml(next.id)}">Anmelden</a><a class="home-text-link" href="#/event/${escapeHtml(next.id)}">Details ansehen</a></div>
   </article>` : `<article class="home-event-card">
@@ -1178,7 +1353,7 @@ export async function homePage() {
     </div></section>
     <section class="section home-info-section"><div class="container"><div class="home-info-grid">
       <article class="home-info-card home-info-card--newsletter"><p class="eyebrow">Newsletter</p><h3>Bleiben Sie auf dem Laufenden</h3><p>Impulse, Termine und Nachrichten aus dem PROdigitalTV-Netzwerk.</p><form class="home-newsletter-form"><input type="email" placeholder="E-Mail-Adresse"><button class="button button--primary" type="submit">Abonnieren</button></form></article>
-      <article class="home-info-card"><p class="eyebrow">Event</p><h3>${escapeHtml(next?.title || "Naechstes Medienfruehstueck")}</h3><p>${next ? `${escapeHtml(formatDate(next.date))}${next.city ? ` · ${escapeHtml(next.city)}` : ""}` : "Neue Termine in Vorbereitung"}</p><a class="home-text-link" href="${next ? `#/event/${escapeHtml(next.id)}` : "#/events"}">Event ansehen</a></article>
+      <article class="home-info-card"><p class="eyebrow">Event</p><h3>${escapeHtml(next?.title || "Naechstes Medienfruehstueck")}</h3><p>${next ? `${escapeHtml(formatDate(next.date))}${next.city ? ` � ${escapeHtml(next.city)}` : ""}` : "Neue Termine in Vorbereitung"}</p><a class="home-text-link" href="${next ? `#/event/${escapeHtml(next.id)}` : "#/events"}">Event ansehen</a></article>
       <article class="home-info-card"><p class="eyebrow">Social</p><h3>Mit uns vernetzen</h3><p>Folgen Sie PROdigitalTV auf den relevanten Branchenkanaelen.</p><div class="home-socials"><a href="#/news">RSS</a><a class="home-socials__linkedin" href="#/about" aria-label="LinkedIn"><span aria-hidden="true">in</span></a><a href="#/events">YouTube</a></div></article>
       <article class="home-info-card home-info-card--stat"><p class="eyebrow">Netzwerk</p><h3>${escapeHtml(memberCount)}</h3><p>Mitglieder und Partner im digitalen Mediennetzwerk.</p></article>
     </div></div></section>
@@ -1187,13 +1362,12 @@ export async function homePage() {
   `);
 }
 export async function eventsPage() {
-  const leanMobile = mobileLeanStart();
-  const [events, sponsors, mediaAssets] = await Promise.all([listPublicEvents(isMember()), listPublicContent("sponsors"), leanMobile ? Promise.resolve([]) : list("media_assets").catch(() => [])]);
+  const [events, sponsors] = await Promise.all([listPublicEvents(isMember()), listPublicContent("sponsors")]);
   const user = currentUser();
   const visible = events.filter((event) => event.accessType !== "invitation_only" && (event.visibility === "public" || isMember(user) || event.showPublicTeaser));
-  const upcoming = visible
-    .filter((event) => !isPastEvent(event))
-    .map((event) => ({ ...event, imageDisplayUrl: archiveEventImageUrl(event, mediaAssets) }));
+  const rawUpcoming = visible.filter((event) => !isPastEvent(event));
+  const mediaAssets = await listPublicEventMediaAssets(rawUpcoming);
+  const upcoming = rawUpcoming.map((event) => ({ ...event, imageDisplayUrl: archiveEventImageUrl(event, mediaAssets) }));
   if (upcoming.length === 1) return eventDetailPage(upcoming[0].id);
   if (upcoming.length === 0) return archivePage();
   return publicShell("events", `${subhero("Veranstaltungen", "Events", "Kuratierte Formate fuer Wissenstransfer, Partnerschaften und relevante Branchenkontakte.")}
@@ -1220,8 +1394,7 @@ export async function eventDetailPage(id) {
     return publicShell("events", `${subhero("Geschuetzter Bereich", "Login erforderlich", "Dieses Event ist nur fuer berechtigte Personen sichtbar.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
   }
   if (!event) return notFoundPage();
-  const leanMobile = mobileLeanStart();
-  const [speakers, sponsors, topics, galleries, mediaAssets] = await Promise.all([listPublicContent("speakers"), listPublicContent("sponsors"), listPublicContent("topics"), listPublicContent("galleries"), leanMobile ? Promise.resolve([]) : list("media_assets").catch(() => [])]);
+  const [speakers, sponsors, topics, galleries, mediaAssets] = await Promise.all([listPublicContent("speakers"), listPublicContent("sponsors"), listPublicContent("topics"), listPublicContent("galleries"), listPublicEventMediaAssets([event])]);
   const restricted = event.accessType === "members_only" && !isMember();
   if (restricted && !event.showPublicTeaser) return publicShell("events", subhero("Geschuetzter Bereich", "Nur fuer Mitglieder", "Bitte melden Sie sich an, um dieses Event zu sehen."));
   const coHost = sponsors.find((sponsor) => sponsor.id === event.hostId) || null;
@@ -1246,7 +1419,7 @@ export async function eventDetailPage(id) {
         ${restricted ? `<div class="alert alert--warning">Details und Anmeldung dieses Mitglieder-Events stehen nach dem Login zur Verfuegung.</div>` : ""}
         <h2>Zum Event</h2>${introText ? `<p class="lead">${escapeHtml(introText)}</p>` : ""}
         ${restricted ? "" : registrationCta}
-        ${haseparateLongText ? `<h2>RÃ¼ckblick</h2><div class="editorial-text">${articleParagraphs(longText)}</div>` : ""}
+        ${haseparateLongText ? `<h2>Rückblick</h2><div class="editorial-text">${articleParagraphs(longText)}</div>` : ""}
         ${eventTalksMarkup(topics, speakers, event)}
         ${event.lunchNote ? `<div class="alert">${escapeHtml(event.lunchNote)}</div>` : ""}
         ${restricted ? "" : `<section class="venue-stage"><div class="venue-stage__place"><p class="eyebrow">Veranstaltungsort</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}">` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><span class="tag tag--red">Co-Gastgeber</span><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`}
@@ -1280,7 +1453,7 @@ export async function registrationPage(id) {
   if (event.accessType === "members_only" && !isMember()) {
     return publicShell("events", `${subhero("Anmeldung", "Login erforderlich", "Dieses Event ist exklusiv fuer Mitglieder.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
   }
-  return publicShell("events", `${subhero("Anmeldung", event.title, `${formatDate(event.date)} Â· ${event.locationName}, ${event.city}`)}
+  return publicShell("events", `${subhero("Anmeldung", event.title, `${formatDate(event.date)} · ${event.locationName}, ${event.city}`)}
     <section class="section"><div class="container" style="max-width:820px"><form id="registration-form" data-event-id="${event.id}" class="form-card form-grid">
       <div class="alert">Ihre Anmeldung ist erst nach Bestaetigung Ihrer E-Mail-Adresse gueltig.</div>
       <div class="form-grid--two"><div class="field"><label for="firstName">Vorname *</label><input id="firstName" name="firstName" required></div><div class="field"><label for="lastName">Nachname *</label><input id="lastName" name="lastName" required></div></div>
@@ -1351,8 +1524,8 @@ export async function newsPage(query = new URLSearchParams()) {
       ${selectedCategory ? `<div class="news-filter-state"><span>Rubrik: <strong>${escapeHtml(selectedCategory)}</strong></span><a class="button button--secondary button--small" href="#/news">Alle News</a></div>` : ""}
       <div class="card-grid card-grid--three editorial-list editorial-list--news">${featuredNews.map(newsCard).join("")}</div>
       ${listedNews.length ? `<div class="news-list-view"><div class="section-head"><div><p class="eyebrow">Weitere News</p><h2>${selectedCategory ? `Weitere Meldungen in ${escapeHtml(selectedCategory)}` : "Alle weiteren Meldungen"}</h2></div></div>${listedNews.map(newsListItem).join("")}</div>` : ""}
-      ${!filteredNews.length ? `<div class="alert">Zu dieser Rubrik sind aktuell keine News veröffentlicht.</div>` : ""}
-    ` : `<div class="alert">Aktuell sind keine News veröffentlicht.</div>`}</div></section>`);
+      ${!filteredNews.length ? `<div class="alert">Zu dieser Rubrik sind aktuell keine News ver�ffentlicht.</div>` : ""}
+    ` : `<div class="alert">Aktuell sind keine News ver�ffentlicht.</div>`}</div></section>`);
 }
 
 export async function newsDetailPage(id) {
@@ -1368,16 +1541,20 @@ export async function newsDetailPage(id) {
   const isRetrospective = isRetrospectiveArticle(item);
   if (!item || (item.page !== "news" && item.section !== "news" && !isRetrospective)) return notFoundPage();
   if (!isRetrospective && !publicNewsItems([item]).length) return notFoundPage();
-  const leanMobile = mobileLeanStart();
-  const [sponsors, galleries, events, mediaAssets] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries"), listPublicEvents(), leanMobile ? Promise.resolve([]) : list("media_assets").catch(() => [])]);
+  const [sponsors, galleries, events] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries"), listPublicEvents()]);
+  const [eventMediaAssets, publicMediaAssets] = await Promise.all([
+    listPublicEventMediaAssets(events).catch(() => []),
+    listPublicMediaAssets().catch(() => [])
+  ]);
+  const mediaAssets = Array.from(new Map([...eventMediaAssets, ...publicMediaAssets].map((asset) => [asset.id, asset])).values());
   const date = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   const text = item.longDescription || item.articleText || item.bodyText || item.mainText || item.text || item.fullText || item.longText || item.shortText || item.teaserText || "";
   const displayTitle = cleanNewsDetailTitle(item);
   const displayText = cleanNewsDetailText(text, displayTitle, item.subtitle || "", item.slug || item.key || item.id || "");
   const sponsor = item.sponsorId ? sponsors.find((entry) => entry.id === item.sponsorId) : null;
   const linkedEvent = retrospectiveLinkedEvent(item, events);
-  const articleImageUrl = isRetrospective && linkedEvent
-    ? archiveEventImageUrl(linkedEvent, mediaAssets)
+  const articleImageUrl = isRetrospective
+    ? retrospectiveThumbUrl(item, linkedEvent, galleries, mediaAssets)
     : item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || (linkedEvent ? archiveEventImageUrl(linkedEvent, mediaAssets) : "");
   const selectedGallery = item.galleryId ? galleries.find((gallery) => gallery.id === item.galleryId) : null;
   const attachedGalleryImages = Array.isArray(selectedGallery?.images)
@@ -1385,12 +1562,12 @@ export async function newsDetailPage(id) {
     : [];
   const leadMedia = attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "";
   const detailSection = isRetrospective ? "archive" : "news";
-  const detailTitle = isRetrospective ? "Rückblick" : "News";
+  const detailTitle = isRetrospective ? "R�ckblick" : "News";
   const detailIntro = isRetrospective ? "Nachbericht, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen." : "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.";
   const backHref = isRetrospective ? "#/archive" : "#/news";
-  const backText = isRetrospective ? "Zurück zu Rückblick" : "Zurück zu News";
-  const sectionLabel = isRetrospective ? "Rückblick" : item.category || "News";
-  const allText = isRetrospective ? "Alle Rückblicke" : "Alle News";
+  const backText = isRetrospective ? "Zur�ck zu R�ckblick" : "Zur�ck zu News";
+  const sectionLabel = isRetrospective ? "R�ckblick" : item.category || "News";
+  const allText = isRetrospective ? "Alle R�ckblicke" : "Alle News";
   if (!isRetrospective) {
     return publicShell("news", `<section class="section news-detail-clean-section"><div class="container">
       <article class="news-detail-clean">
@@ -1400,6 +1577,7 @@ export async function newsDetailPage(id) {
           ${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}
           ${ttsReader({ rubric: item.category || "News", title: displayTitle || "", label: "Vorlesen", text: [item.subtitle, displayText].filter(Boolean).join("\n\n"), inlineOffsetText: [displayTitle, item.subtitle].filter(Boolean).join("\n\n"), audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
           <div class="editorial-text">${articleParagraphs(displayText)}</div>
+          ${articleVideosBlock(item)}
           ${newsDetailSources(item)}
           ${newsDetailKeywords(item)}
         </div>
@@ -1410,19 +1588,20 @@ export async function newsDetailPage(id) {
     <section class="section"><div class="container detail-grid">
       <article class="detail-main news-detail">
         <a class="link news-detail__back" href="${backHref}">${backText}</a>
-        <p class="eyebrow">${escapeHtml(item.category || "News")}${date ? ` Â· ${formatDate(date)}` : ""}</p>
+        <p class="eyebrow">${escapeHtml(item.category || "News")}${date ? ` · ${formatDate(date)}` : ""}</p>
         ${articleHeader({
           title: item.title || "",
           intro: item.subtitle || ""
         })}
         ${articleImageUrl ? `<figure class="news-detail__thumb news-detail__hero-image"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${item.title || "News"}`)}" loading="eager" decoding="async"></figure>` : ""}
-        ${ttsReader({ rubric: isRetrospective ? "Rückblick" : item.category || "News", title: item.title || "", text: [item.subtitle, text].filter(Boolean).join("\n\n"), audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
+        ${ttsReader({ rubric: isRetrospective ? "R�ckblick" : item.category || "News", title: item.title || "", text: [item.subtitle, text].filter(Boolean).join("\n\n"), audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
         <div class="editorial-text">${leadMedia}${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}${articleParagraphs(text)}</div>
+        ${articleVideosBlock(item)}
         ${articleSourcesList(item)}
       </article>
       <aside class="detail-aside">
         ${sponsor?.logoUrl ? `<div class="sponsor-logo-card"><span>${escapeHtml(sponsor.role || "Sponsor")}</span><img src="${escapeHtml(sponsor.logoUrl)}" alt="Logo ${escapeHtml(sponsor.name || "")}"><strong>${escapeHtml(sponsor.name || "")}</strong></div>` : ""}
-        <div class="fact"><label>Rubrik</label><strong>${escapeHtml(item.isRetrospective ? "RÃ¼ckblick" : item.category || "News")}</strong></div>
+        <div class="fact"><label>Rubrik</label><strong>${escapeHtml(item.isRetrospective ? "Rückblick" : item.category || "News")}</strong></div>
         ${date ? `<div class="fact"><label>Datum</label><strong>${formatDate(date)}</strong></div>` : ""}
         <a class="button button--secondary" href="${backHref}">${allText}</a>
       </aside>
@@ -1471,12 +1650,12 @@ export async function membersPage() {
   const memberRows = members.map((member) => {
     const teaser = member.description || "";
     const searchText = [member.name, teaser, member.city, member.country, member.website].filter(Boolean).join(" ");
-    return `<article class="member-directory-card" data-member-card data-search="${escapeHtml(searchText.toLowerCase())}"><div class="member-tile">${memberLogo(member)}</div><div class="member-directory-card__body"><h3>${escapeHtml(member.name)}</h3>${teaser ? `<p>${escapeHtml(teaser)}</p>` : ""}<span class="member-directory-card__meta">${escapeHtml(member.city || "")}${member.country ? ` · ${escapeHtml(member.country)}` : ""}</span></div>${member.website ? `<a class="button button--secondary button--small" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Website</a>` : ""}</article>`;
+    return `<article class="member-directory-card" data-member-card data-search="${escapeHtml(searchText.toLowerCase())}"><div class="member-tile">${memberLogo(member)}</div><div class="member-directory-card__body"><h3>${escapeHtml(member.name)}</h3>${teaser ? `<p>${escapeHtml(teaser)}</p>` : ""}<span class="member-directory-card__meta">${escapeHtml(member.city || "")}${member.country ? ` � ${escapeHtml(member.country)}` : ""}</span></div>${member.website ? `<a class="button button--secondary button--small" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Website</a>` : ""}</article>`;
   }).join("");
   return publicShell("members", `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform fuer Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
     <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input data-member-search placeholder="Mitglieder suchen" aria-label="Mitglieder suchen"></div></div><div class="member-directory-list">${memberRows}</div><div class="alert" data-member-empty hidden>Keine passenden sichtbaren Mitglieder gefunden.</div></div></section>`);
   return publicShell("members", `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform fuer Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
-    <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input placeholder="Mitglieder suchen"></div></div><div class="card-grid card-grid--three">${members.map((member) => `<article class="card card__body"><div class="member-tile" style="margin-bottom:16px">${memberLogo(member)}</div><h3 style="margin:15px 0 8px">${escapeHtml(member.name)}</h3><p>${escapeHtml(member.description || "")}</p><p style="margin-top:12px">${escapeHtml(member.city)}${member.country ? ` Â· ${escapeHtml(member.country)}` : ""}</p>${member.website ? `<a class="link" style="display:inline-block;margin-top:14px" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Zur Website â†’</a>` : ""}</article>`).join("")}</div></div></section>`);
+    <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input placeholder="Mitglieder suchen"></div></div><div class="card-grid card-grid--three">${members.map((member) => `<article class="card card__body"><div class="member-tile" style="margin-bottom:16px">${memberLogo(member)}</div><h3 style="margin:15px 0 8px">${escapeHtml(member.name)}</h3><p>${escapeHtml(member.description || "")}</p><p style="margin-top:12px">${escapeHtml(member.city)}${member.country ? ` · ${escapeHtml(member.country)}` : ""}</p>${member.website ? `<a class="link" style="display:inline-block;margin-top:14px" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Zur Website →</a>` : ""}</article>`).join("")}</div></div></section>`);
 }
 
 export async function boardPage() {
@@ -1487,17 +1666,18 @@ export async function boardPage() {
 
 export async function archivePage() {
   const leanMobile = mobileLeanStart();
-  const [allEvents, sponsors, editorial, mediaAssets] = await Promise.all([listPublicEvents(), listPublicContent("sponsors"), listPublicContent("editorialContent"), leanMobile ? Promise.resolve([]) : list("media_assets").catch(() => [])]);
+  const [allEvents, sponsors, editorial, galleries, eventMedia] = await Promise.all([listPublicEvents(), listPublicContent("sponsors"), listPublicContent("editorialContent"), listPublicContent("galleries"), listPublicContent("eventMedia")]);
   const events = allEvents.filter((event) => isPastEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
+  const mediaAssets = await listPublicEventMediaAssets(events).catch(() => []);
   const retrospectives = editorial
     .filter(isRetrospectiveArticle)
     .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")));
-  const items = retrospectives.length
-    ? retrospectives.map((item) => archiveListEditorial(item, sponsors, events, mediaAssets)).join("")
-    : events.map((event) => archiveListEvent(event, sponsors, mediaAssets)).join("");
-  return publicShell("archive", `${subhero("Rückblick", "Rückblick", "Nachbericht, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen.")}
-    <section class="section"><div class="container"><div class="section-head archive-list-head"><div><p class="eyebrow">Medienfruehstuecke</p><h2>Rückblick</h2><p>Vergangene Veranstaltungen mit Nachbericht, Ort, Co-Gastgeber und Detailseite.</p></div></div><div class="archive-list archive-list--compact">${items || `<div class="alert">Rückblicke werden aktuell vorbereitet.</div>`}</div></div></section>`);
+  const items = events.length
+    ? events.map((event) => archiveListEvent(event, sponsors, mediaAssets, editorial, eventMedia)).join("")
+    : retrospectives.map((item) => archiveListEditorial(item, sponsors, events, mediaAssets, galleries)).join("");
+  return publicShell("archive", `${leanMobile ? "" : subhero("R�ckblick", "R�ckblick", "Nachbericht, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen.")}
+    <section class="section"><div class="container"><div class="section-head archive-list-head"><div><p class="eyebrow">Medienfruehstuecke</p><h2>R�ckblick</h2><p>Vergangene Veranstaltungen mit Nachbericht, Ort, Co-Gastgeber und Detailseite.</p></div></div><div class="archive-list archive-list--compact">${items || `<div class="alert">R�ckblicke werden aktuell vorbereitet.</div>`}</div></div></section>`);
 }
 
 export async function downloadsPage() {
@@ -1598,7 +1778,7 @@ export async function portalPage() {
   const [allEvents, sponsors] = await Promise.all([listPublicEvents(true), listPublicContent("sponsors")]);
   const events = allEvents.filter((event) => event.accessType === "members_only");
   return publicShell("login", `${subhero("Mitgliederbereich", `Willkommen, ${escapeHtml(user.displayName)}.`, "Exklusive Inhalte und Ihre Veranstaltungen auf einen Blick.")}
-    <section class="section"><div class="container"><div class="section-head"><div><h2>Mitglieder-Events</h2><p class="muted">Angemeldet als ${escapeHtml(user.email || "")} Â· Rolle: ${escapeHtml(user.role || "guest")} Â· Token bis: ${escapeHtml(user.tokenExpiresAt || "Demo")}</p></div><button id="logout-button" class="button button--secondary">Abmelden</button></div><div class="card-grid card-grid--three">${events.map((event) => eventCard(event, false, sponsors)).join("")}</div></div></section>`);
+    <section class="section"><div class="container"><div class="section-head"><div><h2>Mitglieder-Events</h2><p class="muted">Angemeldet als ${escapeHtml(user.email || "")} · Rolle: ${escapeHtml(user.role || "guest")} · Token bis: ${escapeHtml(user.tokenExpiresAt || "Demo")}</p></div><button id="logout-button" class="button button--secondary">Abmelden</button></div><div class="card-grid card-grid--three">${events.map((event) => eventCard(event, false, sponsors)).join("")}</div></div></section>`);
 }
 
 function memberDirectoryCard(member = {}) {
@@ -1645,7 +1825,7 @@ function memberEventContactsFields(member = {}) {
   return `<div class="form-card form-grid member-event-contacts">
     <div>
       <p class="eyebrow">Eventberechtigte Kontakte</p>
-      <p class="muted">${limit === 1 ? "Einzelmitglieder können eine eventberechtigte Person hinterlegen." : "Firmenmitglieder können bis zu 5 eventberechtigte Personen hinterlegen."}</p>
+      <p class="muted">${limit === 1 ? "Einzelmitglieder k�nnen eine eventberechtigte Person hinterlegen." : "Firmenmitglieder k�nnen bis zu 5 eventberechtigte Personen hinterlegen."}</p>
     </div>
     ${Array.from({ length: limit }, (_, index) => {
       const contact = contacts[index] || {};
@@ -1664,12 +1844,12 @@ function memberProfileForm(member = {}, user = {}, options = {}) {
     return `<div class="alert">Ihr Login ist noch keinem Mitgliedsprofil zugeordnet. Bitte im CMS beim Benutzer <code>${escapeHtml(user.uid || user.email || "")}</code> das Feld <code>memberId</code> setzen.</div>`;
   }
   if (!member?.id) {
-    return `<div class="alert">${adminMode ? "Bitte ein Mitgliedsprofil auswählen." : `Das verknüpfte Mitgliedsprofil <code>${escapeHtml(user.memberId)}</code> wurde noch nicht gefunden.`}</div>`;
+    return `<div class="alert">${adminMode ? "Bitte ein Mitgliedsprofil ausw�hlen." : `Das verkn�pfte Mitgliedsprofil <code>${escapeHtml(user.memberId)}</code> wurde noch nicht gefunden.`}</div>`;
   }
   return `<form id="member-profile-form" class="form-card form-grid" data-member-id="${escapeHtml(member.id)}">
     <p class="eyebrow">${adminMode ? "Admin-Mitgliederpflege" : "Eigenes Mitgliedsprofil"}</p>
     <h2 style="margin-bottom:6px">${adminMode ? escapeHtml(member.name || "Mitglied bearbeiten") : "Profil bearbeiten"}</h2>
-    <p class="muted">${adminMode ? "Als Admin können Sie den ausgewählten Mitgliedsdatensatz bearbeiten." : "Diese Angaben werden direkt im eigenen Mitglieder-Datensatz gespeichert."}</p>
+    <p class="muted">${adminMode ? "Als Admin k�nnen Sie den ausgew�hlten Mitgliedsdatensatz bearbeiten." : "Diese Angaben werden direkt im eigenen Mitglieder-Datensatz gespeichert."}</p>
     <div class="field"><label>Name / Unternehmen</label><input name="name" value="${escapeHtml(member.name || "")}" required></div>
     <div class="field"><label>Beschreibung</label><textarea name="description" rows="5">${escapeHtml(member.description || "")}</textarea></div>
     <div class="form-grid--two">
@@ -1685,7 +1865,7 @@ function memberProfileForm(member = {}, user = {}, options = {}) {
       <div class="field"><label>Briefanrede</label><input name="personalSalutation" value="${escapeHtml(member.personalSalutation || "")}"></div>
     </div>
     <div class="form-grid--two">
-      <div class="field"><label>Straße</label><input name="street" value="${escapeHtml(member.street || "")}"></div>
+      <div class="field"><label>Stra�e</label><input name="street" value="${escapeHtml(member.street || "")}"></div>
       <div class="field"><label>PLZ</label><input name="postalCode" value="${escapeHtml(member.postalCode || "")}"></div>
     </div>
     <div class="form-grid--two">
@@ -1717,11 +1897,12 @@ export async function memberPortalPage() {
     return publicShell("login", `${subhero("Mitgliederbereich", "Zugang nicht aktiv", "Dieser Mitgliederzugang ist nicht oder nicht mehr berechtigt.")}
       <section class="section section--white"><div class="container"><div class="alert alert--warning">Ihr Mitgliedsprofil ist aktuell nicht fuer den Mitgliederbereich freigeschaltet. Bitte wenden Sie sich an die Administration, falls dies nicht korrekt ist.</div><button id="logout-button" class="button button--secondary" style="margin-top:18px">Abmelden</button></div></section>`);
   }
-  const [allEvents, sponsors, memberDocuments, members] = await Promise.all([
+  const [allEvents, sponsors, memberDocuments, members, memberVideos] = await Promise.all([
     listPublicEvents(true),
     listPublicContent("sponsors"),
     list("memberDocuments").catch(() => []),
-    (adminMode ? list("members") : listPublicContent("members")).then(withPublicMemberLogos).catch(() => [])
+    (adminMode ? list("members") : listPublicContent("members")).then(withPublicMemberLogos).catch(() => []),
+    listMemberContent("editorialContent").catch(() => [])
   ]);
   const sortedMembers = members
     .slice()
@@ -1733,7 +1914,7 @@ export async function memberPortalPage() {
   const editableMember = adminMode ? adminSelectedMember : ownMember;
   const adminDropdown = adminMode ? `<form class="form-card form-grid" data-admin-member-picker>
     <p class="eyebrow">Admin</p>
-    <div class="field"><label>Mitglied auswählen</label><select name="memberId" data-admin-member-select>
+    <div class="field"><label>Mitglied ausw�hlen</label><select name="memberId" data-admin-member-select>
       ${sortedMembers.map((member) => `<option value="${escapeHtml(member.id)}" ${member.id === adminSelectedId ? "selected" : ""}>${escapeHtml([member.name || member.id, member.city].filter(Boolean).join(" / "))}</option>`).join("")}
     </select></div>
   </form>` : "";
@@ -1744,6 +1925,10 @@ export async function memberPortalPage() {
   const visibleMembers = members
     .filter((member) => ["company", "individual"].includes(member.membershipType || "") && member.visible !== false && !memberAccessBlocked(member) && !["inactive", "cancelled", "archived"].includes(member.status || ""))
     .sort((a, b) => Number(a.sortOrder || 9999) - Number(b.sortOrder || 9999) || String(a.name || "").localeCompare(String(b.name || "")));
+  const visibleMemberArticles = memberVideos
+    .filter((item) => (item.page || "portal") === "portal" || item.section === "videos")
+    .filter((item) => item.status === "published" && (item.visibility || "members") === "members")
+    .sort((a, b) => Number(a.sortOrder || 9999) - Number(b.sortOrder || 9999) || String(b.publishDate || b.updatedAt || "").localeCompare(String(a.publishDate || a.updatedAt || "")));
   const documentUrl = (item) => item.documentUrl || item.assetUrl || item.fileUrl || item.url || "";
   const documentCard = (item) => {
     const url = documentUrl(item);
@@ -1757,9 +1942,33 @@ export async function memberPortalPage() {
   };
   return publicShell("login", `${subhero("Mitgliederbereich", `Willkommen, ${escapeHtml(user.displayName)}.`, "Dokumente, Mitgliederverzeichnis und eigenes Profil.")}
     <section class="section"><div class="container"><div class="section-head"><div><h2>Mitglieder-Dokumente</h2><p class="muted">Angemeldet als ${escapeHtml(user.email || "")} / Rolle: ${escapeHtml(user.role || "guest")}${user.memberId ? ` / Mitglied: ${escapeHtml(user.memberId)}` : ""}</p></div><button id="logout-button" class="button button--secondary">Abmelden</button></div><div class="card-grid card-grid--three">${visibleDocuments.length ? visibleDocuments.map(documentCard).join("") : `<div class="alert">Noch keine freigegebenen Mitgliederdokumente.</div>`}</div></div></section>
+    <section class="section section--white"><div class="container"><div class="section-head"><h2>Redaktionelle Beitr�ge</h2></div><div class="card-grid card-grid--three">${visibleMemberArticles.length ? visibleMemberArticles.map(memberArticleCard).join("") : `<div class="alert">Noch keine freigegebenen Mitglieder-Beitraege.</div>`}</div></div></section>
     <section class="section section--white"><div class="container"><div class="section-head"><h2>${adminMode ? "Mitgliedsprofil bearbeiten" : "Mein Profil"}</h2></div>${adminDropdown}${memberProfileForm(editableMember, user, { adminMode })}</div></section>
     <section class="section"><div class="container"><div class="section-head"><h2>Mitgliederverzeichnis</h2></div><div class="card-grid card-grid--three">${visibleMembers.length ? visibleMembers.map(memberDirectoryCard).join("") : `<div class="alert">Noch keine freigegebenen Mitglieder.</div>`}</div></div></section>
     <section class="section"><div class="container"><div class="section-head"><h2>Mitglieder-Events</h2></div><div class="card-grid card-grid--three">${events.length ? events.map((event) => eventCard(event, false, sponsors)).join("") : `<div class="alert">Aktuell keine Mitglieder-Events.</div>`}</div></div></section>`);
+}
+
+export async function memberArticleDetailPage(id) {
+  const user = currentUser();
+  if (!user) return loginPage();
+  if (!isMember(user)) return portalPage();
+  const articles = await listMemberContent("editorialContent").catch(() => []);
+  const item = articles.find((entry) => [entry.id, entry.slug, entry.key].filter(Boolean).includes(id))
+    || await getOne("editorialContent", id).catch(() => null);
+  if (!item || item.status !== "published" || (item.visibility || "members") !== "members") return notFoundPage();
+  const date = item.publishDate || item.validFrom || item.date || "";
+  const text = item.articleText || item.bodyText || item.longDescription || item.introText || "";
+  return publicShell("login", `${subhero("Mitgliederbereich", item.title || "Redaktioneller Beitrag", item.subtitle || "Exklusiv fuer Mitglieder.")}
+    <section class="section section--white"><div class="container detail-main" style="max-width:920px">
+      <a class="link" href="#/portal">Zurueck zum Mitgliederbereich</a>
+      <article class="member-article-detail">
+        ${articleVideoHero(item)}
+        <p class="eyebrow">${escapeHtml(item.category || "Mitgliederbeitrag")}${date ? ` / ${formatDate(date)}` : ""}</p>
+        <h1>${escapeHtml(item.title || "Redaktioneller Beitrag")}</h1>
+        ${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}
+        <div class="editorial-text">${articleParagraphs(text)}</div>
+      </article>
+    </div></section>`);
 }
 
 export async function legalPage(type) {
