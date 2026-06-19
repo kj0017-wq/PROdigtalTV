@@ -18,6 +18,8 @@ const sections = [
     title: "Mitglieder",
     children: [
       ["cms/members", "Mitglieder"],
+      ["cms/member-area", "Mitgliederbereich"],
+      ["cms/editorial/member-area", "Mitgliederbeitraege"],
       ["cms/membership-applications", "Mitgliedsantraege"],
       ["cms/member-documents", "Dokumente"],
       ["cms/board", "Vorstand"]

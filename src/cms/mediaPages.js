@@ -1457,11 +1457,7 @@ export async function mediaPage(section = "library", query = new URLSearchParams
   const shouldLoadEventTargets = activeSection === "edit" && selectedAsset && !query.get("targetCollection") && !query.get("targetId");
   const eventTargets = shouldLoadEventTargets ? await list("events").catch(() => []) : [];
   const videoItems = activeSection === "videos"
-    ? uniqueVideos([
-        ...(await list("media_videos").catch(() => [])),
-        ...attachedVideosFromContent(await list("editorialContent").catch(() => []), "editorialContent"),
-        ...attachedVideosFromContent(await list("events").catch(() => []), "events")
-      ])
+    ? uniqueVideos(await list("media_videos").catch(() => []))
     : [];
   const shouldInferEventTarget = activeSection === "edit"
     && selectedAsset

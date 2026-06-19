@@ -1,6 +1,6 @@
 import { route, onRouteChange, go } from "./utils/router.js";
 import { currentUser, canUseCms, isAdmin, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=470";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=487";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=492";
 import { escapeHtml, formatDate } from "./utils/format.js";
 
 const root = document.querySelector("#app");
@@ -9,12 +9,12 @@ const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9
 const localCodexStoreKey = "prodigitaltv-demo-db-official-assets-v7";
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=551");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=558");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=612");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=575");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=489");
-const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=88");
+const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=89");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js");
-const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=5");
+const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=10");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
 const csvService = () => lazy.csvService ||= import("./utils/csv.js");
 const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=324");
@@ -275,7 +275,7 @@ async function viewForRoute(current) {
     window.__pdtCmsStage = "import:cmsPages";
     const {
       dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage,
-      moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, aiAccessPage, mailAdminPage, audioAdminPage
+      moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, aiAccessPage, mailAdminPage, audioAdminPage, memberAreaAdminPage
     } = await cmsPages();
     window.__pdtCmsStage = `cms:${current.id || "dashboard"}`;
     if (!current.id) return dashboardPage();
@@ -299,6 +299,7 @@ async function viewForRoute(current) {
       return moduleListPage("members");
     }
     if (current.id === "membership-applications") return moduleListPage("membershipApplications");
+    if (current.id === "member-area") return memberAreaAdminPage();
     if (current.id === "member-documents") return moduleListPage("memberDocuments");
     if (current.id === "member-directories") return moduleListPage("memberDirectories");
     if (current.id === "users") return moduleListPage("users");
@@ -357,10 +358,11 @@ function redirectPublicRouteOutOfCms(current) {
 }
 
 async function render() {
+  let currentRoute;
   try {
     applyTheme();
     stopAllAudioPlayback();
-    const currentRoute = route();
+    currentRoute = route();
     if (redirectPublicRouteOutOfCms(currentRoute)) return;
     if (root?.dataset?.localFallback && currentRoute.path === "cms" && localCmsHost()) {
       const fallback = root.dataset.localFallback;
@@ -625,6 +627,20 @@ function stopAllAudioPlayback() {
     audio.removeAttribute("src");
     audio.load?.();
   });
+  document.querySelectorAll("[data-youtube-video].is-playing").forEach((box) => {
+    const iframe = box.querySelector("iframe");
+    try {
+      iframe?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "stopVideo", args: [] }), "*");
+    } catch {}
+    if (iframe) {
+      iframe.removeAttribute("src");
+      iframe.load?.();
+    }
+    box.classList.remove("is-playing", "is-fullscreen-requested");
+  });
+  if (document.fullscreenElement?.matches?.("[data-youtube-video]")) {
+    try { document.exitFullscreen?.(); } catch {}
+  }
 }
 
 function schedulePublicGermanTextNormalization() {
@@ -2198,6 +2214,60 @@ function slugify(value = "") {
     .slice(0, 80);
 }
 
+async function approveEventMediaToGallery(mediaId) {
+  const medium = await getOne("eventMedia", mediaId);
+  if (!medium) return null;
+  const event = medium.eventId ? await getOne("events", medium.eventId).catch(() => null) : null;
+  const now = new Date().toISOString();
+  const isImage = String(medium.mediaType || medium.fileType || "").toLowerCase().includes("image") || /\.(jpe?g|png|webp|gif|avif|svg)(\?|$)/i.test(medium.fileUrl || "");
+  let galleryId = medium.galleryId || event?.galleryId || (medium.eventId ? `gallery-${slugify(medium.eventId)}` : "member-upload-gallery");
+  if (isImage && galleryId) {
+    const existingGallery = await getOne("galleries", galleryId).catch(() => null);
+    const existingImages = Array.isArray(existingGallery?.images) ? existingGallery.images : [];
+    const alreadyAttached = existingImages.some((image) => image.eventMediaId === medium.id || image.url === medium.fileUrl);
+    const images = alreadyAttached ? existingImages : [
+      ...existingImages,
+      {
+        id: `gallery-image-${crypto.randomUUID()}`,
+        eventMediaId: medium.id,
+        fileName: medium.fileName || medium.title || "Event-Material",
+        url: medium.fileUrl || medium.url || "",
+        thumbUrl: medium.thumbUrl || medium.fileUrl || "",
+        storagePath: medium.storagePath || "",
+        contentType: medium.fileType || "",
+        caption: medium.caption || medium.description || "",
+        altText: medium.altText || medium.caption || medium.title || "Event-Material",
+        sortOrder: existingImages.length + 1,
+        uploadedAt: medium.uploadedAt || now
+      }
+    ];
+    await upsert("galleries", {
+      ...(existingGallery || {}),
+      id: galleryId,
+      title: existingGallery?.title || medium.galleryTitle || `Galerie ${event?.title || medium.eventId || "Material Uploads"}`.trim(),
+      description: existingGallery?.description || "",
+      eventId: medium.eventId || existingGallery?.eventId || "",
+      linkedEventId: medium.eventId || existingGallery?.linkedEventId || "",
+      status: existingGallery?.status || "published",
+      visibility: existingGallery?.visibility || event?.visibility || "public",
+      images,
+      createdAt: existingGallery?.createdAt || now,
+      updatedAt: now
+    });
+    if (event && event.galleryId !== galleryId) {
+      await upsert("events", { ...event, galleryId, updatedAt: now });
+    }
+  }
+  await upsert("eventMedia", {
+    ...medium,
+    galleryId,
+    status: "approved",
+    visibility: "public",
+    approvedAt: now,
+    updatedAt: now
+  });
+  return { medium, galleryId, attachedToGallery: isImage && Boolean(galleryId) };
+}
 function eventRetrospectiveArticleId(eventId = "") {
   return `retrospective-${slugify(eventId) || crypto.randomUUID()}`;
 }
@@ -4666,7 +4736,7 @@ function wireGalleryEditor() {
   const updateDropzoneText = (files) => {
     const count = files?.length || 0;
     const label = dropzone?.querySelector("span");
-    if (label && count) label.textContent = `${count} Bild${count === 1 ? "" : "er"} ausgewaehlt. Upload startet automatisch.`;
+    if (label && count) label.textContent = `${count} Datei${count === 1 ? "" : "en"} ausgewaehlt. Upload startet automatisch.`;
   };
   const autosaveDroppedFiles = (images) => {
     if (!images.length) return;
@@ -4755,7 +4825,7 @@ function openGalleryPlayer(gallery) {
         <button type="button" data-gallery-prev aria-label="Vorheriges Bild">‹</button>
         <span>${index + 1} / ${images.length}</span>
         <button type="button" data-gallery-next aria-label="Naechstes Bild">›</button>
-        <button type="button" data-gallery-toggle>${timer ? "Pause" : "Play"}</button>
+        <button type="button" data-gallery-toggle data-gallery-state="${timer ? "pause" : "play"}"><span aria-hidden="true"></span></button>
       </div>
     </div>`;
   };
@@ -4802,6 +4872,37 @@ function openGalleryPlayer(gallery) {
   renderSlide();
 }
 
+function openPdfOverlay(url = "", title = "PDF") {
+  if (!url) return;
+  const overlay = document.createElement("div");
+  overlay.className = "pdf-player";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.innerHTML = `<div class="pdf-player__panel">
+    <div class="pdf-player__top"><strong>${escapeHtml(title || "PDF")}</strong><div><a class="button button--secondary button--small" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" download>PDF speichern</a><button class="gallery-player__close" type="button" data-pdf-close aria-label="Schliessen">×</button></div></div>
+    <iframe class="pdf-player__frame" src="${escapeHtml(url)}" title="${escapeHtml(title || "PDF")}" loading="eager"></iframe>
+  </div>`;
+  const close = () => {
+    overlay.remove();
+    document.removeEventListener("keydown", onKey);
+  };
+  const onKey = (event) => {
+    if (event.key === "Escape") close();
+  };
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay || event.target.closest("[data-pdf-close]")) close();
+  });
+  document.addEventListener("keydown", onKey);
+  document.body.appendChild(overlay);
+}
+
+function wirePdfOverlays() {
+  document.querySelectorAll("[data-pdf-overlay]").forEach((button) => {
+    if (button.dataset.pdfOverlayWired === "1") return;
+    button.dataset.pdfOverlayWired = "1";
+    button.addEventListener("click", () => openPdfOverlay(button.dataset.pdfUrl || "", button.dataset.pdfTitle || button.textContent?.trim() || "PDF"));
+  });
+}
 function wireGalleryPlayers() {
   document.querySelectorAll("[data-gallery-play]").forEach((button) => {
     if (button.dataset.galleryPlayerWired === "1") return;
@@ -4952,20 +5053,32 @@ function wireArticleVideos() {
   document.querySelectorAll("[data-youtube-video]").forEach((box) => {
     if (box.dataset.youtubeVideoWired === "1") return;
     box.dataset.youtubeVideoWired = "1";
+    const stop = () => {
+      const iframe = box.querySelector("iframe");
+      try {
+        iframe?.contentWindow?.postMessage(JSON.stringify({ event: "command", func: "stopVideo", args: [] }), "*");
+      } catch {}
+      if (iframe) {
+        iframe.removeAttribute("src");
+        iframe.load?.();
+      }
+      box.classList.remove("is-playing", "is-fullscreen-requested");
+    };
     const start = async () => {
       const id = box.dataset.youtubeVideo || "";
       if (!id) return;
+      const origin = window.location?.origin ? `&origin=${encodeURIComponent(window.location.origin)}` : "";
+      const autoplaySrc = `https://www.youtube.com/embed/${encodeURIComponent(id)}?enablejsapi=1&autoplay=1&rel=0&fs=1&playsinline=0${origin}`;
       let iframe = box.querySelector("iframe");
       if (!iframe) {
         iframe = document.createElement("iframe");
-        const origin = window.location?.origin ? `&origin=${encodeURIComponent(window.location.origin)}` : "";
-        iframe.src = `https://www.youtube.com/embed/${encodeURIComponent(id)}?enablejsapi=1&autoplay=1&rel=0&fs=1&playsinline=0${origin}`;
         iframe.title = box.dataset.youtubeTitle || "Video";
         iframe.loading = "eager";
         iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen";
         iframe.allowFullscreen = true;
         box.appendChild(iframe);
       }
+      if (!iframe.src || !iframe.src.includes("autoplay=1")) iframe.src = autoplaySrc;
       box.classList.add("is-playing", "is-fullscreen-requested");
       box.appendChild(iframe);
       iframe.focus();
@@ -4979,6 +5092,15 @@ function wireArticleVideos() {
         } catch {}
       }, 250);
     };
+    if ("IntersectionObserver" in window) {
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting || entry.intersectionRatio > 0.22) return;
+          if (box.classList.contains("is-playing")) stop();
+        });
+      }, { threshold: [0, 0.22, 0.5] });
+      observer.observe(box);
+    }
     box.addEventListener("click", start);
     box.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.key !== " ") return;
@@ -5004,6 +5126,7 @@ function renderEditorGalleryPreview(select) {
     preview.className = "editor-gallery-preview";
     preview.innerHTML = `<div><strong>${escapeHtml(gallery.title || "Bildergalerie")}</strong><span>${imageCount} Bilder</span></div><button class="gallery-play-button" type="button" data-gallery-play data-gallery-payload="${escapeHtml(payloadText)}" title="Galerie abspielen" aria-label="Galerie abspielen"><span aria-hidden="true"></span></button>`;
     wireGalleryPlayers();
+  wirePdfOverlays();
   } catch (error) {
     preview.className = "editor-gallery-preview editor-gallery-preview--empty";
     preview.innerHTML = `<p class="muted">Galerie-Vorschau konnte nicht geladen werden.</p>`;
@@ -7048,6 +7171,41 @@ function editorialPreviewParagraphs(value = "") {
   }).join("");
 }
 
+
+function editorialPreviewVideoId(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const direct = text.match(/^[a-zA-Z0-9_-]{8,}$/);
+  if (direct && !text.includes("/") && !text.includes(".")) return text;
+  try {
+    const url = new URL(text);
+    if (url.hostname.includes("youtu.be")) return url.pathname.split("/").filter(Boolean)[0] || "";
+    if (url.searchParams.get("v")) return url.searchParams.get("v") || "";
+    const embedMatch = url.pathname.match(/\/(?:embed|shorts)\/([^/?#]+)/);
+    return embedMatch?.[1] || "";
+  } catch {
+    const match = text.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([a-zA-Z0-9_-]{8,})/);
+    return match?.[1] || "";
+  }
+}
+
+function editorialPreviewVideos(form) {
+  const rows = Array.from(form.querySelectorAll("[data-video-attachment-row]"));
+  const videos = rows.map((row, index) => {
+    const get = (prefix) => row.querySelector(`[name="${prefix}${index}"]`)?.value || "";
+    const youtubeValue = get("videoYoutubeUrl");
+    const youtubeVideoId = editorialPreviewVideoId(youtubeValue);
+    const title = get("videoTitle") || "Video";
+    const poster = get("videoPosterImageUrl") || (youtubeVideoId ? `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg` : "");
+    return { youtubeVideoId, youtubeValue, title, poster };
+  }).filter((video) => video.youtubeVideoId || video.youtubeValue || video.title !== "Video");
+  if (!videos.length) return "";
+  return `<section class="editorial-preview-video-hero" aria-label="Video">${videos.slice(0, 1).map((video) => {
+    const title = video.title || "Video abspielen";
+    const iframe = video.youtubeVideoId ? `<iframe src="https://www.youtube.com/embed/${encodeURIComponent(video.youtubeVideoId)}?enablejsapi=1&rel=0&fs=1" title="${escapeHtml(title)}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" allowfullscreen tabindex="-1"></iframe>` : "";
+    return `<div class="article-video-poster editorial-preview-video-poster" data-youtube-video="${escapeHtml(video.youtubeVideoId)}" data-youtube-title="${escapeHtml(title)}" role="button" tabindex="0" aria-label="${escapeHtml(`${title} abspielen`)}">${video.poster ? `<img src="${escapeHtml(video.poster)}" alt="${escapeHtml(title)}">` : ""}${iframe}<span class="article-video-play" aria-hidden="true"></span><small>Mit Klick wird das Video gestartet.</small></div><h3>${escapeHtml(title)}</h3>`;
+  }).join("")}</section>`;
+}
 function openEditorialPreviewLayer(form) {
   const values = formObject(form);
   const title = values.title || values.titel || "Redaktioneller Beitrag";
@@ -7057,6 +7215,7 @@ function openEditorialPreviewLayer(form) {
   const category = values.category || values.page || "Redaktion";
   const date = values.publishDate || values.validFrom || "";
   const imageUrl = form.querySelector("[data-image-preview] img")?.getAttribute("src") || "";
+  const videoPreview = editorialPreviewVideos(form);
   document.querySelector(".editorial-preview-backdrop")?.remove();
   const wrapper = document.createElement("div");
   wrapper.className = "editorial-preview-backdrop";
@@ -7066,6 +7225,7 @@ function openEditorialPreviewLayer(form) {
       <button type="button" class="link-button" data-editorial-preview-close>Schliessen</button>
     </div>
     <article class="editorial-preview-article">
+      ${videoPreview}
       ${imageUrl ? `<figure class="editorial-preview-hero"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}"><figcaption><p class="eyebrow">${escapeHtml(category)}${date ? ` · ${escapeHtml(date)}` : ""}</p><h1>${escapeHtml(title)}</h1></figcaption></figure>` : `<p class="eyebrow">${escapeHtml(category)}${date ? ` · ${escapeHtml(date)}` : ""}</p><h1>${escapeHtml(title)}</h1>`}
       ${subtitle ? `<p class="editorial-preview-subline">${escapeHtml(subtitle)}</p>` : ""}
       ${intro ? `<p class="editorial-preview-intro">${escapeHtml(intro)}</p>` : ""}
@@ -7078,6 +7238,7 @@ function openEditorialPreviewLayer(form) {
   wrapper.addEventListener("click", (event) => {
     if (event.target === wrapper) close();
   });
+  wireArticleVideos();
   wrapper.querySelector("[data-editorial-preview-close]")?.focus();
 }
 
@@ -7163,6 +7324,7 @@ function wireActions() {
   wireImageDropzones();
   wireGalleryEditor();
   wireGalleryPlayers();
+  wirePdfOverlays();
   wireVideoAttachmentEditor();
   wireArticleVideos();
   wireEditorGallerySelects();
@@ -10191,6 +10353,8 @@ function wireActions() {
         values.articleText = values.bodyText;
       }
       const image = imageFileFromDropzone(form, "assetFile", form.dataset.id);
+      const documentFile = form.dataset.module === "editorialContent" ? form.querySelector('input[name="documentFile"]')?.files?.[0] : null;
+      const removeDocumentRequested = values.removeDocumentFile === "1";
       if (removeAssetRequested) {
         values.imageUrl = "";
         values.documentUrl = "";
@@ -10230,9 +10394,27 @@ function wireActions() {
         }
         values.assetStoragePath = asset.storagePath;
       }
+      if (removeDocumentRequested) {
+        values.documentUrl = "";
+        values.documentFileName = "";
+        values.documentStoragePath = "";
+        values.documentType = "";
+      }
+      if (documentFile) {
+        const isPdf = documentFile.type === "application/pdf" || /\.pdf$/i.test(documentFile.name || "");
+        if (!isPdf) throw new Error("Bitte nur PDF-Dateien als Beitragsanhang auswaehlen.");
+        const uploadedDocument = await uploadEntityImage(form.dataset.module, form.dataset.id, documentFile);
+        values.documentUrl = uploadedDocument.url;
+        values.documentFileName = documentFile.name;
+        values.documentStoragePath = uploadedDocument.storagePath;
+        values.documentType = documentFile.type || "application/pdf";
+      }
       delete values.assetFile;
       delete values.assetFileDataUrl;
+      delete values.documentFile;
+      delete values.documentFileDataUrl;
       delete values.removeAssetFile;
+      delete values.removeDocumentFile;
       delete values.source_snapshot_json_text;
       if (form.dataset.module === "members") {
         const membershipType = values.membershipType || existing.membershipType || "";
@@ -10648,7 +10830,7 @@ function wireActions() {
       let values = normalizeMemberContactValues(removeMemberEventContactFormFields(formObject(form)));
       values.eventContacts = collectMemberEventContacts(form, existing.membershipType || "");
       values = syncPrimaryMemberContact(values);
-      const allowedFields = ["name", "description", "website", "street", "houseNumber", "postalCode", "city", "country", "contactEmail", "email", "phone", "contactPhone", "mobile", "contactMobile", "profileContactName", "contactName", "contactRole", "eventContacts"];
+      const allowedFields = ["firstName", "lastName", "company", "name", "description", "website", "street", "houseNumber", "postalCode", "city", "country", "contactEmail", "email", "phone", "contactPhone", "mobile", "contactMobile", "profileContactName", "contactName", "contactRole", "position", "visible", "isLive", "allowContact", "contactAllowed", "eventContacts"];
       const update = {
         id: memberId,
         profileUpdatedAt: new Date().toISOString(),
@@ -10889,18 +11071,75 @@ function wireActions() {
       return;
     }
     result.innerHTML = `<div class="progress"><span style="width:0"></span></div>`;
-    await uploadEventMedia(form.dataset.eventId, files, {}, (progress) => {
+    await uploadEventMedia(form.dataset.eventId, files, {
+      source: "cms-event-upload",
+      status: "new",
+      rightsConfirmed: Boolean(form.elements.rightsConfirmed?.checked),
+      uploadedBy: currentUser()?.uid || currentUser()?.email || "cms",
+      uploadedByEmail: currentUser()?.email || ""
+    }, (progress) => {
       result.querySelector("span").style.width = `${progress}%`;
     });
     result.innerHTML += `<div class="alert alert--success" style="margin-top:12px">Upload abgeschlossen. Medien warten auf Freigabe.</div>`;
+    await render();
   });
 
-  document.querySelectorAll("[data-media-approve]").forEach((button) => button.addEventListener("click", async () => {
-    const medium = await getOne("eventMedia", button.dataset.mediaApprove);
-    await upsert("eventMedia", { ...medium, status: "approved", visibility: "public" });
+  document.querySelector("[data-member-portal-select]")?.addEventListener("change", (event) => {
+    const target = event.currentTarget.value || "#/portal";
+    window.location.hash = target.replace(/^#/, "");
+  });
+  document.querySelector("[data-member-photo-input]")?.addEventListener("change", (event) => {
+    const count = event.currentTarget.files?.length || 0;
+    const state = event.currentTarget.form?.querySelector("[data-member-photo-state]");
+    if (state) state.textContent = count ? `${count} Bild${count === 1 ? "" : "er"} ausgewaehlt.` : "Keine Bilder ausgewaehlt.";
+  });
+  document.querySelector("#member-material-upload-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = form.querySelector("#member-material-upload-result");
+    const files = Array.from(form.elements.files?.files || []);
+    const invalidFiles = files.filter((file) => !String(file.type || "").startsWith("image/"));
+    const requestedEventId = form.elements.eventId?.value || "";
+    if (!files.length || invalidFiles.length) {
+      result.innerHTML = `<div class="alert alert--warning" style="margin-top:14px">Bitte nur Bilder auswaehlen.</div>`;
+      return;
+    }
+    if (!form.elements.rightsConfirmed?.checked) {
+      result.innerHTML = `<div class="alert alert--warning" style="margin-top:14px">Bitte die Nutzungsfreigabe bestaetigen.</div>`;
+      return;
+    }
+    result.innerHTML = `<div class="progress"><span style="width:0"></span></div>`;
+    await uploadEventMedia("", files, {
+      source: "member-material-upload",
+      status: "new",
+      eventId: "",
+      requestedEventId,
+      galleryId: "",
+      galleryTitle: "Mitglieder Uploads",
+      caption: form.elements.note?.value?.trim() || "",
+      note: form.elements.note?.value?.trim() || "",
+      rightsConfirmed: true,
+      uploadedBy: currentUser()?.uid || currentUser()?.email || "member",
+      uploadedByName: currentUser()?.displayName || "",
+      uploadedByEmail: currentUser()?.email || ""
+    }, (progress) => {
+      result.querySelector("span").style.width = `${progress}%`;
+    });
+    form.reset();
+    const state = form.querySelector("[data-member-photo-state]");
+    if (state) state.textContent = "Keine Bilder ausgewaehlt.";
+    result.innerHTML = `<div class="alert alert--success" style="margin-top:12px">Danke. Die Bilder wurden an die Redaktion uebertragen.</div>`;
+  });  document.querySelectorAll("[data-media-approve], [data-event-media-approve]").forEach((button) => button.addEventListener("click", async () => {
+    await approveEventMediaToGallery(button.dataset.mediaApprove || button.dataset.eventMediaApprove);
     await render();
   }));
 
+  document.querySelectorAll("[data-event-media-reject]").forEach((button) => button.addEventListener("click", async () => {
+    const medium = await getOne("eventMedia", button.dataset.eventMediaReject);
+    if (!medium) return;
+    await upsert("eventMedia", { ...medium, status: "rejected", visibility: "internal", rejectedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    await render();
+  }));
   document.querySelectorAll("[data-record-status]").forEach((button) => button.addEventListener("click", async () => {
     const record = await getOne(button.dataset.recordStatus, button.dataset.recordId);
     if (isProtectedInternalEditorialRecord(button.dataset.recordStatus, record)) {

@@ -38,32 +38,84 @@ function imageAsOptimizedDataUrl(file, maxSize = 960, quality = 0.72) {
   });
 }
 
-export async function uploadEventMedia(eventId, files, metadata = {}, onProgress = () => {}) {
+function slugifyStoragePart(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 90) || "event";
+}
+
+function safeFileName(value = "") {
+  const fallback = `datei-${Date.now()}`;
+  return String(value || fallback)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w.-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || fallback;
+}
+
+function mediaTypeFromFile(file) {
+  const type = String(file?.type || "").toLowerCase();
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  if (type.includes("pdf") || type.includes("presentation") || type.includes("document")) return "document";
+  return "file";
+}
+
+export async function uploadEventMedia(eventId = "", files, metadata = {}, onProgress = () => {}) {
   const firebase = await getFirebaseServices();
   const results = [];
+  const targetId = metadata.galleryId || eventId || "member-upload-gallery";
+  const targetSlug = slugifyStoragePart(metadata.gallerySlug || metadata.galleryTitle || metadata.eventSlug || metadata.eventTitle || targetId);
+  const rootFolder = metadata.galleryId && !eventId ? "images/galleries" : "images/events";
+  const folder = slugifyStoragePart(metadata.folder || "uploads");
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index];
     const id = `event-media-${crypto.randomUUID()}`;
+    const fileType = file.type || "application/octet-stream";
+    const mediaType = mediaTypeFromFile(file);
     let fileUrl = "";
-    let storagePath = `events/${eventId}/${id}/${file.name}`;
+    let storagePath = `${rootFolder}/${targetSlug}/${folder}/${Date.now()}-${id}-${safeFileName(file.name)}`;
     if (firebase) {
       const reference = firebase.storageLib.ref(firebase.storage, storagePath);
-      await firebase.storageLib.uploadBytes(reference, file, { contentType: file.type });
+      await firebase.storageLib.uploadBytes(reference, file, { contentType: fileType });
       fileUrl = await firebase.storageLib.getDownloadURL(reference);
     } else {
       fileUrl = URL.createObjectURL(file);
     }
     const record = await upsert("eventMedia", {
-      id, eventId, fileName: file.name, fileUrl, storagePath,
-      mediaType: file.type.startsWith("image/") ? "image" : "document",
-      title: metadata.title || file.name,
-      description: metadata.description || "",
+      id,
+      uploadId: id,
+      eventId: eventId || metadata.eventId || "",
+      requestedEventId: metadata.requestedEventId || metadata.targetEventId || "",
+      galleryId: metadata.galleryId || "",
+      galleryTitle: metadata.galleryTitle || "",
+      fileName: file.name,
+      fileUrl,
+      thumbUrl: mediaType === "image" ? fileUrl : (metadata.thumbUrl || ""),
+      storagePath,
+      fileType,
+      mediaType,
+      title: metadata.title || metadata.caption || file.name,
+      caption: metadata.caption || metadata.description || "",
+      note: metadata.note || "",
+      description: metadata.description || metadata.caption || "",
       altText: metadata.altText || file.name,
       visibility: "internal",
-      status: "in_review",
+      status: metadata.status || "new",
       sortOrder: index + 1,
       isCoverImage: false,
-      uploadedAt: new Date().toISOString()
+      rightsConfirmed: Boolean(metadata.rightsConfirmed),
+      source: metadata.source || "event-upload",
+      uploadedBy: metadata.uploadedBy || "",
+      uploadedByName: metadata.uploadedByName || "",
+      uploadedByEmail: metadata.uploadedByEmail || "",
+      uploadedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     });
     results.push(record);
     onProgress(Math.round(((index + 1) / files.length) * 100));

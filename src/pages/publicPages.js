@@ -1,4 +1,4 @@
-import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=487";
+import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=492";
 import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=470";
 import { firebaseEnabled, localPreviewMode, realDataMode } from "../firebase/firebaseClient.js?v=2";
 import { publicShell, logo } from "../components/layout.js?v=5";
@@ -41,32 +41,32 @@ function editorialThumbDataUrl(title = "", label = "", context = "") {
 const editorialFallbackNews = [
   {
     id: "news-gema-suno-ki-musik-urheberrecht",
-    title: "GEMA gegen Suno: KI-Musik wird zum Grundsatzfall fuer die Kreativwirtschaft",
-    headline: "GEMA gegen Suno: KI-Musik wird zum Grundsatzfall fuer die Kreativwirtschaft",
-    subtitle: "Vor dem Landgericht Muenchen geht es um die Frage, ob KI-Musik mit geschuetzten Werken trainiert wurde. Der Fall koennte wichtige Standards fuer Verguetung, Lizenzen und kreative Rechte setzen.",
-    subline: "Vor dem Landgericht Muenchen geht es um die Frage, ob KI-Musik mit geschuetzten Werken trainiert wurde. Der Fall koennte wichtige Standards fuer Verguetung, Lizenzen und kreative Rechte setzen.",
-    shortText: "Der Streit zwischen GEMA und Suno koennte zum europaeischen Musterfall fuer KI-Musik werden.",
+    title: "GEMA gegen Suno: KI-Musik wird zum Grundsatzfall für die Kreativwirtschaft",
+    headline: "GEMA gegen Suno: KI-Musik wird zum Grundsatzfall für die Kreativwirtschaft",
+    subtitle: "Vor dem Landgericht München geht es um die Frage, ob KI-Musik mit geschützten Werken trainiert wurde. Der Fall koennte wichtige Standards für Vergütung, Lizenzen und kreative Rechte setzen.",
+    subline: "Vor dem Landgericht München geht es um die Frage, ob KI-Musik mit geschützten Werken trainiert wurde. Der Fall koennte wichtige Standards für Vergütung, Lizenzen und kreative Rechte setzen.",
+    shortText: "Der Streit zwischen GEMA und Suno koennte zum europaeischen Musterfall für KI-Musik werden.",
     bodyText: [
-      "Der Rechtsstreit zwischen der GEMA und dem US-Unternehmen Suno gehoert zu den wichtigsten Verfahren rund um generative KI in der Musikbranche. Suno bietet ein KI-Tool an, mit dem Nutzer per Texteingabe vollstaendige Songs erzeugen koennen. Die GEMA wirft dem Unternehmen vor, geschuetzte Werke aus ihrem Repertoire ohne Lizenz fuer das Training des Systems genutzt zu haben. Ausserdem sollen erzeugte KI-Songs bekannten Titeln teilweise so stark aehneln, dass Urheberrechte verletzt sein koennten.",
-      "Die Klage wurde am 21. Januar 2025 beim Landgericht Muenchen eingereicht. Am 9. Maerz 2026 wurde der Fall dort verhandelt. Nach Einschaetzung der GEMA handelt es sich um das erste europaeische Verfahren, das sich direkt mit der Nutzung von Audioinhalten durch KI-Unternehmen befasst. Ein Urteil steht noch aus; ein Copyright-Tracker von Taylor Wessing nennt den 12. Juni 2026 als erwarteten Entscheidungstermin.",
-      "Im Kern geht es um eine zentrale Frage fuer die digitale Medien- und Kreativwirtschaft: Darf ein KI-System mit urheberrechtlich geschuetzter Musik trainiert werden, ohne dass die Komponisten, Textautoren und Musikverlage zustimmen oder verguetet werden? Die GEMA argumentiert, dass der wirtschaftliche Erfolg solcher KI-Systeme auf menschlicher Kreativitaet beruht und die Rechteinhaber deshalb an der Nutzung beteiligt werden muessen.",
-      "Fuer die Medienbranche ist der Fall weit ueber Musik hinaus relevant. Wenn Gerichte klarstellen, dass KI-Training mit geschuetzten Inhalten lizenzpflichtig ist, haette das Folgen fuer viele Bereiche: Musikproduktion, TV, Streaming, Werbung, Archivnutzung, Synchronisation, Voice-Cloning, Trailer-Produktion und automatisierte Content-Erstellung. Besonders betroffen waeren Geschaeftsmodelle, bei denen KI neue Inhalte erzeugt, die auf bestehenden Werken, Stimmen, Stilen oder Produktionen beruhen.",
-      "Gleichzeitig zeigt der internationale Markt, dass sich die Branche bereits neu sortiert. In den USA haben grosse Musikunternehmen Verfahren gegen KI-Musikdienste wie Suno und Udio gefuehrt oder teilweise beigelegt. Reuters berichtete Anfang Juni 2026 zudem ueber eine neue Klage der US-Musikergewerkschaft gegen Warner und Universal, weil deren KI-Lizenzvereinbarungen aus Sicht der Musiker nicht ausreichend kompensieren.",
-      "Der Fall GEMA gegen Suno ist deshalb mehr als ein einzelner Urheberrechtsstreit. Er steht fuer die Frage, ob KI-Anbieter kreative Leistungen einfach als Trainingsmaterial nutzen duerfen - oder ob dafuer klare Lizenzmodelle entstehen muessen. Fuer Kreative, Rechteinhaber, Medienhaeuser und Plattformbetreiber geht es um nicht weniger als die wirtschaftliche Grundlage professioneller Inhalteproduktion im KI-Zeitalter.",
-      "Kurzfazit: Der Streit zwischen GEMA und Suno koennte zum europaeischen Musterfall fuer KI-Musik werden. Entscheidend wird sein, ob Gerichte das Training und die Ausgabe KI-generierter Musik als lizenzpflichtige Nutzung geschuetzter Werke bewerten."
+      "Der Rechtsstreit zwischen der GEMA und dem US-Unternehmen Suno gehoert zu den wichtigsten Verfahren rund um generative KI in der Musikbranche. Suno bietet ein KI-Tool an, mit dem Nutzer per Texteingabe vollständige Songs erzeugen können. Die GEMA wirft dem Unternehmen vor, geschützte Werke aus ihrem Repertoire ohne Lizenz für das Training des Systems genutzt zu haben. Ausserdem sollen erzeugte KI-Songs bekannten Titeln teilweise so stark ähneln, dass Urheberrechte verletzt sein könnten.",
+      "Die Klage wurde am 21. Januar 2025 beim Landgericht München eingereicht. Am 9. Maerz 2026 wurde der Fall dort verhandelt. Nach Einschaetzung der GEMA handelt es sich um das erste europaeische Verfahren, das sich direkt mit der Nutzung von Audioinhalten durch KI-Unternehmen befasst. Ein Urteil steht noch aus; ein Copyright-Tracker von Taylor Wessing nennt den 12. Juni 2026 als erwarteten Entscheidungstermin.",
+      "Im Kern geht es um eine zentrale Frage für die digitale Medien- und Kreativwirtschaft: Darf ein KI-System mit urheberrechtlich geschützter Musik trainiert werden, ohne dass die Komponisten, Textautoren und Musikverlage zustimmen oder verguetet werden? Die GEMA argumentiert, dass der wirtschaftliche Erfolg solcher KI-Systeme auf menschlicher Kreativitaet beruht und die Rechteinhaber deshalb an der Nutzung beteiligt werden müssen.",
+      "Für die Medienbranche ist der Fall weit über Musik hinaus relevant. Wenn Gerichte klarstellen, dass KI-Training mit geschützten Inhalten lizenzpflichtig ist, haette das Folgen für viele Bereiche: Musikproduktion, TV, Streaming, Werbung, Archivnutzung, Synchronisation, Voice-Cloning, Trailer-Produktion und automatisierte Content-Erstellung. Besonders betroffen waeren Geschaeftsmodelle, bei denen KI neue Inhalte erzeugt, die auf bestehenden Werken, Stimmen, Stilen oder Produktionen beruhen.",
+      "Gleichzeitig zeigt der internationale Markt, dass sich die Branche bereits neu sortiert. In den USA haben grosse Musikunternehmen Verfahren gegen KI-Musikdienste wie Suno und Udio gefuehrt oder teilweise beigelegt. Reuters berichtete Anfang Juni 2026 zudem über eine neue Klage der US-Musikergewerkschaft gegen Warner und Universal, weil deren KI-Lizenzvereinbarungen aus Sicht der Musiker nicht ausreichend kompensieren.",
+      "Der Fall GEMA gegen Suno ist deshalb mehr als ein einzelner Urheberrechtsstreit. Er steht für die Frage, ob KI-Anbieter kreative Leistungen einfach als Trainingsmaterial nutzen dürfen - oder ob dafür klare Lizenzmodelle entstehen müssen. Für Kreative, Rechteinhaber, Medienhäuser und Plattformbetreiber geht es um nicht weniger als die wirtschaftliche Grundlage professioneller Inhalteproduktion im KI-Zeitalter.",
+      "Kurzfazit: Der Streit zwischen GEMA und Suno koennte zum europaeischen Musterfall für KI-Musik werden. Entscheidend wird sein, ob Gerichte das Training und die Ausgabe KI-generierter Musik als lizenzpflichtige Nutzung geschützter Werke bewerten."
     ].join("\n\n"),
     page: "news",
     section: "news",
     category: "KI / Musikrechte / Medienrecht / Digitale Medien",
     tags: ["GEMA", "Suno", "KI-Musik", "Urheberrecht", "generative KI", "Musikrechte", "Lizenzierung", "Medienrecht", "Kreativwirtschaft", "AI Act"],
-    thumbnail_idea: "Geteiltes Bild: links ein klassisches Tonstudio mit Noten und Mischpult, rechts ein KI-Musikgenerator mit Wellenform und AI-Music-Label. In der Mitte eine Waage als Symbol fuer Urheberrecht und faire Verguetung.",
-    thumbnail_prompt: "Serioese redaktionelle Illustration fuer eine Medienbranchen-News, Thema GEMA gegen Suno, KI-Musik und Urheberrecht, links Tonstudio mit Noten und Mischpult, rechts digitales KI-Musikinterface mit Audiowellenform, zentrale Waage als Rechtssymbol, professioneller Stil, klare Linien, serioese Farben, keine Comicoptik, geeignet fuer TV-, Streaming- und Digitalbranche.",
-    imageUrl: editorialThumbDataUrl("GEMA vs. Suno", "KI-Musik", "Urheberrecht und faire Verguetung"),
-    thumbnail_url: editorialThumbDataUrl("GEMA vs. Suno", "KI-Musik", "Urheberrecht und faire Verguetung"),
+    thumbnail_idea: "Geteiltes Bild: links ein klassisches Tonstudio mit Noten und Mischpult, rechts ein KI-Musikgenerator mit Wellenform und AI-Music-Label. In der Mitte eine Waage als Symbol für Urheberrecht und faire Vergütung.",
+    thumbnail_prompt: "Serioese redaktionelle Illustration für eine Medienbranchen-News, Thema GEMA gegen Suno, KI-Musik und Urheberrecht, links Tonstudio mit Noten und Mischpult, rechts digitales KI-Musikinterface mit Audiowellenform, zentrale Waage als Rechtssymbol, professioneller Stil, klare Linien, seriöse Farben, keine Comicoptik, geeignet für TV-, Streaming- und Digitalbranche.",
+    imageUrl: editorialThumbDataUrl("GEMA vs. Suno", "KI-Musik", "Urheberrecht und faire Vergütung"),
+    thumbnail_url: editorialThumbDataUrl("GEMA vs. Suno", "KI-Musik", "Urheberrecht und faire Vergütung"),
     thumbnail_alt: "Redaktionelles Thumb zu GEMA gegen Suno mit Studio, KI-Musik und Rechtssymbol.",
     source_snapshot_json: [
-      { title: "GEMA klagt gegen Suno: Landgericht Muenchen verhandelt erstes Verfahren im Bereich Audio-KI", publisher: "GEMA", url: "https://www.gema.de/de/w/gema-klagt-gegen-suno-2026", source_type: "Verwertungsgesellschaft" },
-      { title: "Suno AI und Open AI: GEMA klagt fuer faire Verguetung", publisher: "GEMA", url: "https://www.gema.de/de/aktuelles/ki-und-musik/ki-klage", source_type: "Verwertungsgesellschaft" },
+      { title: "GEMA klagt gegen Suno: Landgericht München verhandelt erstes Verfahren im Bereich Audio-KI", publisher: "GEMA", url: "https://www.gema.de/de/w/gema-klagt-gegen-suno-2026", source_type: "Verwertungsgesellschaft" },
+      { title: "Suno AI und Open AI: GEMA klagt für faire Vergütung", publisher: "GEMA", url: "https://www.gema.de/de/aktuelles/ki-und-musik/ki-klage", source_type: "Verwertungsgesellschaft" },
       { title: "Musicians union sues record labels over AI licensing", publisher: "Reuters", url: "https://www.reuters.com/legal/litigation/musicians-union-sues-record-labels-over-ai-licensing-2026-06-05/", source_type: "Nachrichtenagentur" }
     ],
     publishDate: "2026-06-07",
@@ -77,29 +77,29 @@ const editorialFallbackNews = [
   },
   {
     id: "news-ki-kennzeichnungspflicht-transparenz-medienanbieter",
-    title: "KI-Kennzeichnungspflicht: Transparenz wird zur Pflichtaufgabe fuer Medienanbieter",
-    headline: "KI-Kennzeichnungspflicht: Transparenz wird zur Pflichtaufgabe fuer Medienanbieter",
-    subtitle: "Ab August 2026 gelten neue EU-Regeln fuer KI-generierte Inhalte. Fuer Medienanbieter wird Transparenz damit zur Pflichtaufgabe.",
-    subline: "Ab August 2026 gelten neue EU-Regeln fuer KI-generierte Inhalte. Fuer Medienanbieter wird Transparenz damit zur Pflichtaufgabe.",
-    shortText: "Medienanbieter sollten schon jetzt klare Regeln fuer Kennzeichnung, redaktionelle Pruefung und Verantwortlichkeit vorbereiten.",
+    title: "KI-Kennzeichnungspflicht: Transparenz wird zur Pflichtaufgabe für Medienanbieter",
+    headline: "KI-Kennzeichnungspflicht: Transparenz wird zur Pflichtaufgabe für Medienanbieter",
+    subtitle: "Ab August 2026 gelten neue EU-Regeln für KI-generierte Inhalte. Für Medienanbieter wird Transparenz damit zur Pflichtaufgabe.",
+    subline: "Ab August 2026 gelten neue EU-Regeln für KI-generierte Inhalte. Für Medienanbieter wird Transparenz damit zur Pflichtaufgabe.",
+    shortText: "Medienanbieter sollten schon jetzt klare Regeln für Kennzeichnung, redaktionelle Pruefung und Verantwortlichkeit vorbereiten.",
     bodyText: [
       "Kuenstliche Intelligenz ist laengst in der Medienproduktion angekommen. Texte werden mit KI vorbereitet, Pressemitteilungen redaktionell umformuliert, Bilder generiert, Stimmen synthetisch erzeugt und Videos automatisiert bearbeitet. Was bisher oft eine technische oder redaktionelle Entscheidung war, wird mit dem europaeischen AI Act zunehmend auch zu einer Frage von Transparenz, Verantwortung und Vertrauen.",
       "Die Transparenzpflichten des AI Act sollen ab 2. August 2026 gelten. Sie betreffen unter anderem KI-Systeme, mit denen Menschen direkt interagieren, sowie bestimmte KI-generierte oder manipulierte Inhalte. Die Europaeische Kommission nennt ausdruecklich synthetische Inhalte, Deepfakes und KI-generierte Veroeffentlichungen zu Themen von oeffentlichem Interesse.",
-      "Fuer Medienanbieter ist dabei entscheidend: Nicht jede Nutzung von KI muss automatisch gross sichtbar gekennzeichnet werden. Es macht einen Unterschied, ob KI nur bei Recherche, Zusammenfassung, Uebersetzung oder Formulierung unterstuetzt - oder ob Inhalte so erzeugt oder veraendert wurden, dass das Publikum ueber deren Ursprung getaeuscht werden koennte.",
-      "Besonders relevant wird die Kennzeichnung bei Bild-, Audio- und Videoinhalten, die reale Personen, Stimmen oder Ereignisse taeuschend echt darstellen oder veraendern. Wer solche Deepfakes oder synthetischen Medien veroeffentlicht, muss kuenftig klarer offenlegen, dass KI eingesetzt wurde. Auch Anbieter generativer KI-Systeme sollen technische Markierungen ermoeglichen, damit kuenstlich erzeugte oder manipulierte Inhalte maschinenlesbar erkannt werden koennen.",
-      "Auch Texte koennen betroffen sein, wenn sie mit KI erstellt und veroeffentlicht werden, um die Oeffentlichkeit ueber Themen von allgemeinem Interesse zu informieren. Fuer Redaktionen bleibt deshalb wichtig, dass KI-generierte Inhalte redaktionell geprueft, eingeordnet und verantwortet werden. Genau hier liegt die Chance fuer professionelle Medienanbieter: Nicht die KI selbst ist das Problem, sondern ein unklarer oder verdeckter Einsatz.",
-      "Fuer TV-, Streaming- und Digitalanbieter sollte KI-Transparenz kuenftig direkt im Redaktionssystem mitgedacht werden. Sinnvoll ist eine einfache Dokumentation: Wurde KI fuer Text, Bild, Audio, Video, Zusammenfassung oder Uebersetzung genutzt? Wurde der Inhalt redaktionell geprueft? Wer traegt die finale Verantwortung? Solche Informationen helfen nicht nur bei der rechtlichen Einordnung, sondern staerken auch die Glaubwuerdigkeit gegenueber Publikum, Partnern und Mitgliedern.",
+      "Für Medienanbieter ist dabei entscheidend: Nicht jede Nutzung von KI muss automatisch gross sichtbar gekennzeichnet werden. Es macht einen Unterschied, ob KI nur bei Recherche, Zusammenfassung, Uebersetzung oder Formulierung unterstuetzt - oder ob Inhalte so erzeugt oder veraendert wurden, dass das Publikum über deren Ursprung getaeuscht werden koennte.",
+      "Besonders relevant wird die Kennzeichnung bei Bild-, Audio- und Videoinhalten, die reale Personen, Stimmen oder Ereignisse täuschend echt darstellen oder verändern. Wer solche Deepfakes oder synthetischen Medien veröffentlicht, muss künftig klarer offenlegen, dass KI eingesetzt wurde. Auch Anbieter generativer KI-Systeme sollen technische Markierungen ermöglichen, damit künstlich erzeugte oder manipulierte Inhalte maschinenlesbar erkannt werden können.",
+      "Auch Texte können betroffen sein, wenn sie mit KI erstellt und veröffentlicht werden, um die Öffentlichkeit über Themen von allgemeinem Interesse zu informieren. Für Redaktionen bleibt deshalb wichtig, dass KI-generierte Inhalte redaktionell geprüft, eingeordnet und verantwortet werden. Genau hier liegt die Chance für professionelle Medienanbieter: Nicht die KI selbst ist das Problem, sondern ein unklarer oder verdeckter Einsatz.",
+      "Für TV-, Streaming- und Digitalanbieter sollte KI-Transparenz künftig direkt im Redaktionssystem mitgedacht werden. Sinnvoll ist eine einfache Dokumentation: Wurde KI für Text, Bild, Audio, Video, Zusammenfassung oder Uebersetzung genutzt? Wurde der Inhalt redaktionell geprüft? Wer traegt die finale Verantwortung? Solche Informationen helfen nicht nur bei der rechtlichen Einordnung, sondern staerken auch die Glaubwuerdigkeit gegenueber Publikum, Partnern und Mitgliedern.",
       "Die KI-Kennzeichnungspflicht ist damit kein reines Warnschild gegen neue Technologie. Sie ist ein Instrument, um Vertrauen in digitale Medien zu sichern. Wer KI offen, nachvollziehbar und redaktionell kontrolliert einsetzt, kann neue Produktionsmoeglichkeiten nutzen, ohne journalistische Standards aufzugeben.",
-      "Kurzfazit: Medienanbieter sollten schon jetzt klare Regeln fuer den Einsatz von KI vorbereiten. Dazu gehoeren Kennzeichnung, redaktionelle Pruefung, Verantwortlichkeit und eine einfache Dokumentation im CMS."
+      "Kurzfazit: Medienanbieter sollten schon jetzt klare Regeln für den Einsatz von KI vorbereiten. Dazu gehoeren Kennzeichnung, redaktionelle Pruefung, Verantwortlichkeit und eine einfache Dokumentation im CMS."
     ].join("\n\n"),
     page: "news",
     section: "news",
     category: "Medienrecht / KI / Digitale Medien",
     tags: ["KI-Kennzeichnungspflicht", "AI Act", "Kuenstliche Intelligenz", "Medienrecht", "Deepfake", "Transparenzpflicht", "Redaktion", "CMS", "generative KI", "digitale Medien"],
-    thumbnail_idea: "Moderner digitaler Newsroom mit Monitoren, KI-Symbol und dezenter Label-Markierung AI. Der Stil sollte serioes, klar und redaktionell wirken - keine uebertriebene Science-Fiction.",
-    thumbnail_prompt: "Serioese redaktionelle Illustration fuer eine Medienbranchen-News, moderner digitaler Newsroom, Monitore, dezentes KI-Symbol, transparente Label-Markierung AI, europaeischer Regulierungs-Kontext, professionelle Atmosphaere, klare Linien, serioeser Stil, geeignet fuer TV-, Streaming- und Digitalbranche.",
-    imageUrl: editorialThumbDataUrl("AI Label", "KI-Transparenz", "Kennzeichnungspflicht fuer Medienanbieter"),
-    thumbnail_url: editorialThumbDataUrl("AI Label", "KI-Transparenz", "Kennzeichnungspflicht fuer Medienanbieter"),
+    thumbnail_idea: "Moderner digitaler Newsroom mit Monitoren, KI-Symbol und dezenter Label-Markierung AI. Der Stil sollte seriös, klar und redaktionell wirken - keine uebertriebene Science-Fiction.",
+    thumbnail_prompt: "Serioese redaktionelle Illustration für eine Medienbranchen-News, moderner digitaler Newsroom, Monitore, dezentes KI-Symbol, transparente Label-Markierung AI, europaeischer Regulierungs-Kontext, professionelle Atmosphaere, klare Linien, seriöser Stil, geeignet für TV-, Streaming- und Digitalbranche.",
+    imageUrl: editorialThumbDataUrl("AI Label", "KI-Transparenz", "Kennzeichnungspflicht für Medienanbieter"),
+    thumbnail_url: editorialThumbDataUrl("AI Label", "KI-Transparenz", "Kennzeichnungspflicht für Medienanbieter"),
     thumbnail_alt: "Redaktionelles Thumb zur KI-Kennzeichnungspflicht mit Newsroom, AI-Label und Regulierungskontext.",
     source_snapshot_json: [
       { title: "Consultation on the draft guidelines on transparency obligations under AI Act", publisher: "Digitale Strategie Europa", url: "https://digital-strategy.ec.europa.eu/en/consultations/consultation-draft-guidelines-transparency-obligations-under-ai-act", source_type: "EU-Kommission" }
@@ -127,12 +127,14 @@ function articleHeader({ eyebrow = "", title = "", intro = "", logoUrl = "", log
   </header>`;
 }
 
-function memberLogo(member) {
+function memberLogo(member, options = {}) {
   const logoClass = `member-logo member-logo--${String(member.id || "").replace(/[^a-z0-9-]/gi, "").toLowerCase()}`;
   const logoUrl = safeMemberLogoUrl(member, member.logoDisplayUrl || member.logoUrl || "");
   return logoUrl
     ? `<img class="${logoClass}" src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(member.name)}">`
-    : escapeHtml(member.name);
+    : options.initialFallback
+      ? `<span class="member-logo-initials" aria-hidden="true">${escapeHtml(initials(member.name || "Mitglied"))}</span>`
+      : escapeHtml(member.name);
 }
 
 function blockedMemberLogoUrl(member = {}, url = "") {
@@ -189,7 +191,7 @@ function eventMediaThumbUrl(event = {}, eventMedia = []) {
     .filter((medium) => medium.eventId === event.id)
     .filter((medium) => String(medium.mediaType || medium.type || "").toLowerCase().includes("image") || eventMediaImageUrl(medium))
     .filter((medium) => ["approved", "published", "active"].includes(String(medium.status || "approved").toLowerCase()))
-    .filter((medium) => ["public", "oeffentlich"].includes(String(medium.visibility || "public").toLowerCase()))
+    .filter((medium) => ["public", "öffentlich"].includes(String(medium.visibility || "public").toLowerCase()))
     .filter((medium) => eventMediaImageUrl(medium))
     .sort((a, b) => {
       const score = (medium = {}) => [
@@ -261,7 +263,7 @@ const currentMemberIds = new Set([
   "kj-technical-consulting-klaus-juli",
   "dsc-dietmar-schickel-consulting",
   "ors-comm",
-  "buero-fuer-moderne-werbung-tv",
+  "buero-für-moderne-werbung-tv",
   "markus-vogelbacher",
   "blu-tec-one",
   "house-of-research",
@@ -423,7 +425,7 @@ function archiveArticle(event, partners = []) {
   const host = partners.find((partner) => partner.id === event.hostId);
   const dateLabel = event.displayDate || formatDate(event.date);
   return `<article class="archive-article">
-    ${event.imageUrl ? `<figure class="archive-article__image"><img src="${escapeHtml(event.imageUrl)}" alt="Rueckblick ${escapeHtml(event.title)}" loading="lazy" decoding="async"></figure>` : `<div class="archive-article__placeholder"><span>${escapeHtml(event.eventType || "Archiv")}</span></div>`}
+    ${event.imageUrl ? `<figure class="archive-article__image"><img src="${escapeHtml(event.imageUrl)}" alt="Rückblick ${escapeHtml(event.title)}" loading="lazy" decoding="async"></figure>` : `<div class="archive-article__placeholder"><span>${escapeHtml(event.eventType || "Archiv")}</span></div>`}
     <div class="archive-article__body">
       <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` · ${escapeHtml(event.city)}` : ""}</p>
       <h2>${escapeHtml(event.title)}</h2>
@@ -437,13 +439,13 @@ function archiveEditorialArticle(item, partners = []) {
   const sponsor = item.sponsorId ? partners.find((partner) => partner.id === item.sponsorId) : null;
   const dateLabel = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   return `<article class="archive-article">
-    ${item.imageUrl ? `<figure class="archive-article__image"><img src="${escapeHtml(item.imageUrl)}" alt="Rueckblick ${escapeHtml(item.title || "")}" loading="lazy" decoding="async"></figure>` : `<div class="archive-article__placeholder"><span>Rueckblick</span></div>`}
+    ${item.imageUrl ? `<figure class="archive-article__image"><img src="${escapeHtml(item.imageUrl)}" alt="Rückblick ${escapeHtml(item.title || "")}" loading="lazy" decoding="async"></figure>` : `<div class="archive-article__placeholder"><span>Rückblick</span></div>`}
     <div class="archive-article__body">
-      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "R�ckblick"}${sponsor ? ` · ${escapeHtml(sponsor.name)}` : ""}</p>
-      <h2>${escapeHtml(item.title || "Rueckblick")}</h2>
+      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Rückblick"}${sponsor ? ` · ${escapeHtml(sponsor.name)}` : ""}</p>
+      <h2>${escapeHtml(item.title || "Rückblick")}</h2>
       ${item.subtitle ? `<p class="archive-article__meta">${escapeHtml(item.subtitle)}</p>` : ""}
       <p>${escapeHtml(teaserText(item.longDescription || item.articleText || item.bodyText || item.mainText || item.fullText || item.longText || item.introText || "", 260))}</p>
-      <a class="link" href="#/retrospective/${item.id}">Rueckblick lesen →</a>
+      <a class="link" href="#/retrospective/${item.id}">Rückblick lesen →</a>
     </div>
   </article>`;
 }
@@ -571,15 +573,15 @@ function archiveListEvent(event, partners = [], mediaAssets = [], editorial = []
   const detailUrl = retrospectiveArticle?.id ? `#/retrospective/${escapeHtml(retrospectiveArticle.id)}` : `#/event/${escapeHtml(event.id)}`;
   const imageUrl = eventMediaThumbUrl(event, eventMedia) || archiveEventImageUrl(event, mediaAssets);
   return `<article class="archive-article archive-article--list">
-    <a class="archive-article__thumb" href="${detailUrl}" aria-label="Rueckblick ${escapeHtml(displayTitle)} ansehen">
-      ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="Rueckblick ${escapeHtml(displayTitle)}" loading="eager" decoding="async">` : `<span>${escapeHtml(event.eventType || "Archiv")}</span>`}
+    <a class="archive-article__thumb" href="${detailUrl}" aria-label="Rückblick ${escapeHtml(displayTitle)} ansehen">
+      ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="Rückblick ${escapeHtml(displayTitle)}" loading="eager" decoding="async">` : `<span>${escapeHtml(event.eventType || "Archiv")}</span>`}
     </a>
     <div class="archive-article__body">
       <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` · ${escapeHtml(event.city)}` : ""}</p>
       <h2><a href="${detailUrl}">${escapeHtml(displayTitle)}</a></h2>
       <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` · Co-Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
       <p>${escapeHtml(teaserText(event.postEventummary || event.description || "", 260))}</p>
-      <a class="link" href="${detailUrl}">Rueckblick ansehen -></a>
+      <a class="link" href="${detailUrl}">Rückblick ansehen -></a>
     </div>
   </article>`;
 }
@@ -619,15 +621,15 @@ function archiveListEditorial(item, partners = [], events = [], mediaAssets = []
   const dateLabel = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   const detailUrl = `#/retrospective/${escapeHtml(item.id)}`;
   return `<article class="archive-article archive-article--list">
-    <a class="archive-article__thumb" href="${detailUrl}" aria-label="Rueckblick ${escapeHtml(item.title || "Rueckblick")} lesen">
-      ${thumbUrl ? `<img src="${escapeHtml(thumbUrl)}" alt="Rueckblick ${escapeHtml(item.title || "")}" loading="eager" decoding="async">` : `<span>Rueckblick</span>`}
+    <a class="archive-article__thumb" href="${detailUrl}" aria-label="Rückblick ${escapeHtml(item.title || "Rückblick")} lesen">
+      ${thumbUrl ? `<img src="${escapeHtml(thumbUrl)}" alt="Rückblick ${escapeHtml(item.title || "")}" loading="eager" decoding="async">` : `<span>Rückblick</span>`}
     </a>
     <div class="archive-article__body">
-      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "R�ckblick"}${sponsor ? ` · ${escapeHtml(sponsor.name)}` : ""}</p>
-      <h2><a href="${detailUrl}">${escapeHtml(item.title || "Rueckblick")}</a></h2>
+      <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Rückblick"}${sponsor ? ` · ${escapeHtml(sponsor.name)}` : ""}</p>
+      <h2><a href="${detailUrl}">${escapeHtml(item.title || "Rückblick")}</a></h2>
       ${item.subtitle ? `<p class="archive-article__meta">${escapeHtml(item.subtitle)}</p>` : ""}
       <p>${escapeHtml(teaserText(item.longDescription || item.articleText || item.bodyText || item.mainText || item.fullText || item.longText || item.introText || "", 260))}</p>
-      <a class="link" href="${detailUrl}">Rueckblick lesen -></a>
+      <a class="link" href="${detailUrl}">Rückblick lesen -></a>
     </div>
   </article>`;
 }
@@ -636,8 +638,8 @@ const internalPageMeta = {
   ueber_uns: {
     active: "about",
     route: "about",
-    detailRoute: "ueber-uns",
-    eyebrow: "Ueber uns",
+    detailRoute: "über-uns",
+    eyebrow: "Über uns",
     title: "Das Branchennetzwerk der digitalen Medienwirtschaft.",
     intro: "PROdigitalTV vernetzt Unternehmen und Akteure der digitalen Medienwirtschaft im deutschsprachigen Raum."
   },
@@ -669,15 +671,17 @@ function canonicalInternalBlock(item = {}) {
 
 function isPublicInternalBlock(item = {}, bereich) {
   const block = canonicalInternalBlock(item);
-  const managedInternal = item.editorialManaged || item.bereich === "ueber_uns" || item.bereich === "mitglied_werden";
+  const managedInternal = item.editorialManaged || ["ueber_uns", "mitglied_werden"].includes(block.bereich);
+  const visibility = String(item.sichtbarkeit || item.visibility || "").toLowerCase();
   return managedInternal
     && block.bereich === bereich
     && ["aktiv", "published"].includes(String(item.status || ""))
-    && ["oeffentlich", "public"].includes(String(item.sichtbarkeit || item.visibility || ""));
+    && ["öffentlich", "oeffentlich", "public"].includes(visibility);
 }
 
 async function internalBlocks(bereich) {
-  return (await listPublicContent("editorialContent"))
+  const records = await listPublicContent("editorialContent").catch(() => []);
+  return records
     .filter((item) => isPublicInternalBlock(item, bereich))
     .map(canonicalInternalBlock)
     .sort((a, b) => Number(a.sortierung || 0) - Number(b.sortierung || 0));
@@ -751,7 +755,7 @@ function aboutPicto(icon = "") {
 }
 
 function aboutButtonGallery(blocks, meta) {
-  return `<div class="internal-button-gallery" aria-label="Ueber-uns Bereiche">${blocks.map((block) => {
+  return `<div class="internal-button-gallery" aria-label="Über-uns Bereiche">${blocks.map((block) => {
     const href = `#/${meta.detailRoute}/${encodeURIComponent(block.slug)}`;
     return `<a href="${href}">${aboutPicto(block.icon)}<span>${escapeHtml(block.titel)}</span></a>`;
   }).join("")}</div>`;
@@ -867,7 +871,13 @@ function internalOverviewPage(bereich) {
   return async function renderInternalOverview() {
     const meta = internalPageMeta[bereich];
     const [blocks, events, board, rawMembers, topics] = bereich === "ueber_uns"
-      ? await Promise.all([internalBlocks(bereich), listPublicEvents(), listPublicContent("boardMembers"), listPublicContent("members"), listPublicContent("topics")])
+      ? await Promise.all([
+        internalBlocks(bereich),
+        listPublicEvents().catch(() => []),
+        listPublicContent("boardMembers").catch(() => []),
+        listPublicContent("members").catch(() => []),
+        listPublicContent("topics").catch(() => [])
+      ])
       : [await internalBlocks(bereich), [], [], [], []];
     const members = await withPublicMemberLogos(rawMembers);
     const hero = blocks.find((block) => block.typ === "hero") || blocks[0];
@@ -982,8 +992,8 @@ function cleanNewsDetailText(text = "", title = "", subtitle = "", slug = "") {
   });
   const blocks = value.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
   const first = blocks[0] || "";
-  const titleKey = String(title || "").toLowerCase().replace(/[^a-z0-9����]+/gi, " ").trim();
-  const firstKey = first.toLowerCase().replace(/[^a-z0-9����]+/gi, " ").trim();
+  const titleKey = String(title || "").toLowerCase().replace(/[^a-z0-9äöüß]+/gi, " ").trim();
+  const firstKey = first.toLowerCase().replace(/[^a-z0-9äöüß]+/gi, " ").trim();
   const titleLead = titleKey.split(/\s+/).slice(0, 3).join(" ");
   if (blocks.length > 1 && first.length < 150 && titleLead && firstKey.startsWith(titleLead)) {
     value = blocks.slice(1).join("\n\n");
@@ -1012,7 +1022,7 @@ function newsIdentity(item = {}) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "");
+    .replace(/[^a-z0-9äöüß]+/g, "");
 }
 
 function newsDateValue(item = {}) {
@@ -1146,7 +1156,15 @@ function galleryPlayCta(gallery, images) {
       altText: image.altText || image.caption || gallery.title || "Galeriebild"
     }))
   }));
-  return `<section class="article-gallery-cta"><div><p class="eyebrow">Bildergalerie</p><h3>${escapeHtml(gallery.title || "Bilder ansehen")}</h3><p>${images.length} Bilder als Slideshow ansehen.</p></div><button class="button button--primary gallery-play-cta__button" type="button" data-gallery-play data-gallery-payload="${payload}"><span>▶</span> Galerie abspielen</button></section>`;
+  return `<section class="article-gallery-cta"><div><p class="eyebrow">Bildergalerie</p><h3>${escapeHtml(gallery.title || "Bilder ansehen")}</h3><p>${images.length} Bilder als Slideshow ansehen.</p></div><button class="button button--primary gallery-play-cta__button" type="button" data-gallery-play data-gallery-payload="${payload}"><span aria-hidden="true"></span> Galerie abspielen</button></section>`;
+}
+
+function youtubeVideoIdFromValue(value = "") {
+  const text = String(value || "").trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(text)) return text;
+  const match = text.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/|live\/))([A-Za-z0-9_-]{11})/i)
+    || text.match(/[?&]v=([A-Za-z0-9_-]{11})/i);
+  return match?.[1] || "";
 }
 
 function articleVideoAttachments(item = {}) {
@@ -1156,9 +1174,92 @@ function articleVideoAttachments(item = {}) {
       ? item.videos
       : [];
   return videos
-    .filter((video) => video && video.youtubeVideoId && !["hidden", "error"].includes(video.status || "ready"))
-    .filter((video) => (video.visibility || "public") === "public")
+    .map((video, index) => ({
+      ...video,
+      id: video.id || `video-${index + 1}`,
+      youtubeVideoId: youtubeVideoIdFromValue(video.youtubeVideoId || video.youtube_video_id || video.videoId || video.youtubeId || video.youtubeVideoIa || video.youtubeUrl || video.url || video.embedUrl || ""),
+      posterImageUrl: video.posterImageUrl || video.thumbnailUrl || video.youtubeThumbnailUrl || "",
+      title: video.title || video.caption || "",
+      visibility: video.visibility || "public",
+      status: video.status || "ready",
+      sortOrder: Number(video.sortOrder ?? index + 1)
+    }))
+    .filter((video) => video && video.youtubeVideoId && !["hidden", "error", "deleted"].includes(video.status || "ready"))
+    .filter((video) => ["public", "members", ""].includes(video.visibility || ""))
     .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
+}
+
+function articlePdfAssets(item = {}) {
+  const candidates = [
+    ...(Array.isArray(item.pdfAttachments) ? item.pdfAttachments : []),
+    ...(Array.isArray(item.documentAttachments) ? item.documentAttachments : []),
+    ...(Array.isArray(item.attachments) ? item.attachments : []),
+    ...(Array.isArray(item.assets) ? item.assets : [])
+  ];
+  if (item.documentUrl || item.document_url || item.aocumentUrl || item.aocument_url) {
+    candidates.push({
+      url: item.documentUrl || item.document_url || item.aocumentUrl || item.aocument_url,
+      title: item.documentTitle || item.documentFileName || item.aocumentFileName || item.assetFileName || item.fileName || "PDF-Anhang",
+      fileName: item.documentFileName || item.aocumentFileName || item.assetFileName || item.fileName || "PDF-Anhang"
+    });
+  }
+  return candidates
+    .map((asset) => ({
+      url: asset.url || asset.fileUrl || asset.assetUrl || asset.downloadUrl || asset.documentUrl || "",
+      title: asset.title || asset.fileName || asset.name || "PDF-Anhang",
+      type: String(asset.type || asset.fileType || asset.mimeType || asset.mediaType || "").toLowerCase()
+    }))
+    .filter((asset) => asset.url && (asset.type.includes("pdf") || /\.pdf(\?|#|$)/i.test(asset.url) || /\.pdf$/i.test(asset.title)));
+}
+
+function articlePdfBlock(item = {}) {
+  const pdfs = articlePdfAssets(item);
+  if (!pdfs.length) return "";
+  return `<section class="member-article-assets"><div><p class="eyebrow">PDF</p><h2>Anhang</h2></div><div class="member-article-assets__list">${pdfs.map((pdf) => `<button class="button button--secondary button--small" type="button" data-pdf-overlay data-pdf-url="${escapeHtml(pdf.url)}" data-pdf-title="${escapeHtml(pdf.title)}">${escapeHtml(pdf.title || "PDF öffnen")}</button>`).join("")}</div></section>`;
+}
+
+function articleGallery(item = {}, galleries = []) {
+  const galleryIds = [item.galleryId, item.gallery_id, item.galleryIa, item.linkedGalleryId, item.linkeaGalleryIa, item.gallery].filter(Boolean);
+  if (!galleryIds.length) return null;
+  return galleries.find((gallery) => galleryIds.includes(gallery.id) || galleryIds.includes(gallery.ia) || galleryIds.includes(gallery.slug) || galleryIds.includes(gallery.key)) || null;
+}
+
+function visibleGalleryImages(gallery = {}) {
+  return (Array.isArray(gallery.images) ? gallery.images : [])
+    .filter((image) => image.url || image.imageUrl || image.assetUrl || image.downloadUrl)
+    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+    .map((image) => ({ ...image, url: image.url || image.imageUrl || image.assetUrl || image.downloadUrl }));
+}
+
+function articleHasAudio(item = {}) {
+  return Boolean(item.audioUrl || item.auaioUrl || item.audioAccessibleUrl || item.audioNaturalUrl || item.audio?.audioUrl);
+}
+
+function memberArticleAssetBar(item = {}, galleries = [], options = {}) {
+  const videos = articleVideoAttachments(item);
+  const gallery = articleGallery(item, galleries);
+  const galleryImages = visibleGalleryImages(gallery || {});
+  const pdfs = articlePdfAssets(item);
+  const parts = [];
+  if (videos.length) {
+    parts.push(options.href
+      ? `<a class="member-asset-pill member-asset-pill--video" href="${escapeHtml(options.href)}">Video</a>`
+      : `<span class="member-asset-pill member-asset-pill--video">Video</span>`);
+  }
+  if (galleryImages.length) {
+    const payload = escapeHtml(JSON.stringify({
+      title: gallery.title || "Bildergalerie",
+      images: galleryImages.map((image) => ({
+        url: image.url,
+        caption: image.caption || image.title || "",
+        altText: image.altText || image.caption || gallery.title || "Galeriebild"
+      }))
+    }));
+    parts.push(`<button class="member-asset-pill member-asset-pill--gallery" type="button" data-gallery-play data-gallery-payload="${payload}">Galerie</button>`);
+  }
+  if (pdfs.length) parts.push(`<button class="member-asset-pill member-asset-pill--pdf" type="button" data-pdf-overlay data-pdf-url="${escapeHtml(pdfs[0].url)}" data-pdf-title="${escapeHtml(pdfs[0].title)}">PDF</button>`);
+  if (articleHasAudio(item)) parts.push(`<span class="member-asset-pill member-asset-pill--audio">Audio</span>`);
+  return parts.length ? `<div class="member-asset-bar" aria-label="Anh&auml;nge">${parts.join("")}</div>` : "";
 }
 
 function youtubeEmbedSrc(videoId = "") {
@@ -1169,7 +1270,7 @@ function youtubeEmbedSrc(videoId = "") {
 }
 
 function articleVideoFrame(video = {}, title = "Video") {
-  return `<iframe src="${escapeHtml(youtubeEmbedSrc(video.youtubeVideoId))}" title="${escapeHtml(title)}" loading="eager" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" allowfullscreen tabindex="-1"></iframe>`;
+  return `<iframe data-youtube-src="${escapeHtml(youtubeEmbedSrc(video.youtubeVideoId))}" title="${escapeHtml(title)}" loading="eager" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" allowfullscreen tabindex="-1"></iframe>`;
 }
 
 function articleVideosBlock(item = {}) {
@@ -1204,17 +1305,35 @@ function articleVideoHero(item = {}) {
   </div>`;
 }
 
-function memberArticleCard(item = {}) {
+function memberArticleImageUrl(item = {}) {
+  return item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || item.asset_url || "";
+}
+
+function memberArticleImageHero(item = {}, loading = "lazy") {
+  const imageUrl = memberArticleImageUrl(item);
+  if (!imageUrl) return "";
+  const alt = item.thumbnail_alt || item.thumbnailAlt || item.imageAlt || item.title || "Artikelbild";
+  return `<figure class="member-article-card__hero member-article-card__image">
+    <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(alt)}" loading="${escapeHtml(loading)}" decoding="async">
+  </figure>`;
+}
+
+function memberArticleHero(item = {}, loading = "lazy") {
+  return articleVideoHero(item) || memberArticleImageHero(item, loading);
+}
+
+function memberArticleCard(item = {}, galleries = []) {
   const date = item.publishDate || item.validFrom || item.date || "";
   const text = item.articleText || item.bodyText || item.longDescription || item.introText || "";
   const href = `#/portal/article/${encodeURIComponent(item.slug || item.id || item.key || "")}`;
   return `<article class="card card__body member-article-card">
-    ${articleVideoHero(item)}
+    ${memberArticleImageHero(item)}
     <p class="eyebrow">${escapeHtml(item.category || "Mitgliederbeitrag")}${date ? ` / ${formatDate(date)}` : ""}</p>
     <h3>${escapeHtml(item.title || "Redaktioneller Beitrag")}</h3>
     ${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}
-    <div class="editorial-text member-article-card__text">${articleParagraphs(text)}</div>
-    <a class="button button--secondary button--small" href="${href}">Beitrag oeffnen</a>
+    <p class="member-article-card__text">${escapeHtml(teaserText(text, 260))}</p>
+    ${memberArticleAssetBar(item, galleries, { href })}
+    <a class="button button--secondary button--small" href="${href}">Beitrag öffnen</a>
   </article>`;
 }
 
@@ -1233,7 +1352,7 @@ function downloadCard(item) {
   return `<a class="quick-card download-card" href="${escapeHtml(url)}" ${active ? `target="_blank" rel="noreferrer"` : ""}>
     <p class="eyebrow">${escapeHtml(item.category || "Download")}</p>
     <h3>${escapeHtml(item.title || item.fileName || "Download")}</h3>
-    <p>${escapeHtml(item.description || item.bodyText || item.fileName || "PDF wird oeffentlich bereitgestellt.")}</p>
+    <p>${escapeHtml(item.description || item.bodyText || item.fileName || "PDF wird öffentlich bereitgestellt.")}</p>
   </a>`;
 }
 
@@ -1267,16 +1386,16 @@ export async function homePage() {
   const featuredMembers = shuffledItems(logoMembers.length >= 3 ? logoMembers : members).slice(0, 3);
   const memberCount = "30+";
   const quickCards = [
-    ["#/events", "events", "Events", "Medienfruehstuecke, Veranstaltungen und Rueckblicke", "Alle Events ansehen"],
+    ["#/events", "events", "Events", "Medienfrühstücke, Veranstaltungen und Rückblicke", "Alle Events ansehen"],
     ["#/topics", "topics", "Themen", "Aktuelle Entwicklungen, Positionen und Expertise", "Alle Themen ansehen"],
     ["#/members", "members", "Mitglieder", "Unser Netzwerk, Vorteile und Mitglied werden", "Mitglieder entdecken"],
-    ["#/about", "about", "Ueber uns", "Der Verband, Vorstand und Ziele", "Mehr ueber uns"]
+    ["#/about", "about", "Über uns", "Der Verband, Vorstand und Ziele", "Mehr über uns"]
   ];
   const mobileCards = [
-    ["#/events", "events", "Events", "Medienfruehstuecke, Veranstaltungen und Rueckblicke"],
+    ["#/events", "events", "Events", "Medienfrühstücke, Veranstaltungen und Rückblicke"],
     ["#/topics", "topics", "Themen", "Aktuelle Entwicklungen, Positionen und Expertise"],
     ["#/members", "members", "Mitglieder", "Unser Netzwerk, Vorteile und Mitglied werden"],
-    ["#/about", "about", "Ueber uns", "Der Verband, Vorstand und Ziele"]
+    ["#/about", "about", "Über uns", "Der Verband, Vorstand und Ziele"]
   ];
   const nextImageCandidates = next ? [
     archiveEventImageUrl(next, mediaAssets),
@@ -1291,13 +1410,13 @@ export async function homePage() {
   const mobileHome = `<section class="pdtv-mobile-home" aria-label="Mobile Startseite">
     <div class="container">
       <div class="pdtv-mobile-hero">
-        <h1>Digitaler Content.<br>Starke Verbindungen.<br>Gemeinsam fuer die <span>Medienzukunft.</span></h1>
-        <p>PROdigitalTV ist das Netzwerk fuer digitale Medien, Streaming, Smart-TV, Plattformen und regionale Anbieter.</p>
+        <h1>Digitaler Content.<br>Starke Verbindungen.<br>Gemeinsam für die <span>Medienzukunft.</span></h1>
+        <p>PROdigitalTV ist das Netzwerk für digitale Medien, Streaming, Smart-TV, Plattformen und regionale Anbieter.</p>
         <article class="pdtv-mobile-next-event ${nextImageUrl ? "pdtv-mobile-next-event--with-image" : ""}"${mobileNextImageStyle}>
           <span class="pdtv-mobile-icon" aria-hidden="true">?</span>
           <div>
-            <p>Naechstes Medienfruehstueck</p>
-            ${next ? `<h2>${escapeHtml(formatDate(next.date))}${next.city ? ` � ${escapeHtml(next.city)}` : ""}</h2><span>${escapeHtml(next.subtitle || next.title || "")}</span><div class="pdtv-mobile-next-actions"><a class="button button--primary button--small" href="#/register/${next.id}">Anmelden</a><a href="#/event/${next.id}">Details ansehen -></a></div>` : `<h2>Neue Termine in Vorbereitung</h2><span>Die naechsten Formate werden in Kuerze veroeffentlicht.</span><div class="pdtv-mobile-next-actions"><a href="#/events">Events ansehen -></a></div>`}
+            <p>Nächstes Medienfrühstück</p>
+            ${next ? `<h2>${escapeHtml(formatDate(next.date))}${next.city ? ` · ${escapeHtml(next.city)}` : ""}</h2><span>${escapeHtml(next.subtitle || next.title || "")}</span><div class="pdtv-mobile-next-actions"><a class="button button--primary button--small" href="#/register/${next.id}">Anmelden</a><a href="#/event/${next.id}">Details ansehen →</a></div>` : `<h2>Neue Termine in Vorbereitung</h2><span>Die nächsten Formate werden in Kürze veröffentlicht.</span><div class="pdtv-mobile-next-actions"><a href="#/events">Events ansehen →</a></div>`}
           </div>
         </article>
       </div>
@@ -1308,17 +1427,17 @@ export async function homePage() {
   </section>`;
   const nextEventCard = next ? `<article class="home-event-card ${nextImageUrl ? "home-event-card--with-image" : ""}"${nextImageStyle}>
     <div class="home-event-card__icon" aria-hidden="true"><span></span></div>
-    <p class="eyebrow">Naechstes Medienfruehstueck</p>
+    <p class="eyebrow">Nächstes Medienfrühstück</p>
     <h2>${escapeHtml(next.title || "Naechste Veranstaltung")}</h2>
-    <p class="home-event-card__meta">${escapeHtml(formatDate(next.date))}${next.startTime ? ` � ${escapeHtml(next.startTime)} Uhr` : ""}${next.city ? ` � ${escapeHtml(next.city)}` : ""}</p>
+    <p class="home-event-card__meta">${escapeHtml(formatDate(next.date))}${next.startTime ? ` · ${escapeHtml(next.startTime)} Uhr` : ""}${next.city ? ` · ${escapeHtml(next.city)}` : ""}</p>
     <p>${escapeHtml(next.subtitle || next.locationName || "Austausch, Orientierung und relevante Branchenkontakte.")}</p>
     <div class="home-event-card__actions"><a class="button button--primary" href="#/register/${escapeHtml(next.id)}">Anmelden</a><a class="home-text-link" href="#/event/${escapeHtml(next.id)}">Details ansehen</a></div>
   </article>` : `<article class="home-event-card">
     <div class="home-event-card__icon" aria-hidden="true"><span></span></div>
-    <p class="eyebrow">Naechstes Medienfruehstueck</p>
+    <p class="eyebrow">Nächstes Medienfrühstück</p>
     <h2>Neue Termine in Vorbereitung</h2>
     <p class="home-event-card__meta">PROdigitalTV</p>
-    <p>Die naechsten Formate werden in Kuerze veroeffentlicht.</p>
+    <p>Die nächsten Formate werden in Kürze veröffentlicht.</p>
     <div class="home-event-card__actions"><a class="button button--primary" href="#/events">Events ansehen</a></div>
   </article>`;
   const newsCards = latestNewsItems.map((item) => {
@@ -1336,7 +1455,7 @@ export async function homePage() {
   return publicShell("home", `
     ${mobileHome}
     <section class="hero home-hero"><div class="container hero__grid home-hero__grid">
-      <div class="home-hero__copy"><p class="eyebrow">PROdigitalTV</p><h1>Digitaler Content.<br>Starke Verbindungen.<br>Gemeinsam fuer die <span>Medienzukunft.</span></h1><p class="lead">PROdigitalTV ist das Netzwerk fuer digitale Medien, Streaming, Smart-TV, Plattformen und regionale Anbieter.</p>
+      <div class="home-hero__copy"><p class="eyebrow">PROdigitalTV</p><h1>Digitaler Content.<br>Starke Verbindungen.<br>Gemeinsam für die <span>Medienzukunft.</span></h1><p class="lead">PROdigitalTV ist das Netzwerk für digitale Medien, Streaming, Smart-TV, Plattformen und regionale Anbieter.</p>
         <div class="hero__buttons"><a class="button button--primary" href="#/events">Events entdecken</a><a class="button button--secondary" href="#/join">Mitglied werden</a></div>
       </div>
       ${nextEventCard}
@@ -1346,33 +1465,36 @@ export async function homePage() {
       <div class="home-quick-grid">
         ${quickCards.map(([href, type, title, text, cta], index) => `<a class="home-quick-card ${index === 0 || index === 3 ? "home-quick-card--dark" : ""}" href="${href}"><span class="home-quick-card__icon home-quick-card__icon--${type}" aria-hidden="true"></span><h3>${escapeHtml(title)}</h3><p>${escapeHtml(text)}</p><strong>${escapeHtml(cta)}</strong></a>`).join("")}
       </div>
-      <nav class="mobile-sublinks" aria-label="Weitere Informationen"><a href="#/board">Vorstand</a><a href="#/join">Mitglied werden</a><a href="#/archive">Rueckblicke</a></nav>
+      <nav class="mobile-sublinks" aria-label="Weitere Informationen"><a href="#/board">Vorstand</a><a href="#/join">Mitglied werden</a><a href="#/archive">Rückblicke</a></nav>
     </div></section>
     <section class="section section--white home-news-section"><div class="container"><div class="section-head"><div><p class="eyebrow">Aktuelles</p><h2>News aus der Medienwirtschaft</h2></div><a class="link" href="#/news">Alle Nachrichten ansehen</a></div>
-      ${latestNewsItems.length ? `<div class="home-news-grid">${newsCards}</div>` : `<div class="alert">Aktuell sind keine News veroeffentlicht.</div>`}
+      ${latestNewsItems.length ? `<div class="home-news-grid">${newsCards}</div>` : `<div class="alert">Aktuell sind keine News veröffentlicht.</div>`}
     </div></section>
     <section class="section home-info-section"><div class="container"><div class="home-info-grid">
       <article class="home-info-card home-info-card--newsletter"><p class="eyebrow">Newsletter</p><h3>Bleiben Sie auf dem Laufenden</h3><p>Impulse, Termine und Nachrichten aus dem PROdigitalTV-Netzwerk.</p><form class="home-newsletter-form"><input type="email" placeholder="E-Mail-Adresse"><button class="button button--primary" type="submit">Abonnieren</button></form></article>
-      <article class="home-info-card"><p class="eyebrow">Event</p><h3>${escapeHtml(next?.title || "Naechstes Medienfruehstueck")}</h3><p>${next ? `${escapeHtml(formatDate(next.date))}${next.city ? ` � ${escapeHtml(next.city)}` : ""}` : "Neue Termine in Vorbereitung"}</p><a class="home-text-link" href="${next ? `#/event/${escapeHtml(next.id)}` : "#/events"}">Event ansehen</a></article>
+      <article class="home-info-card"><p class="eyebrow">Event</p><h3>${escapeHtml(next?.title || "Nächstes Medienfrühstück")}</h3><p>${next ? `${escapeHtml(formatDate(next.date))}${next.city ? ` · ${escapeHtml(next.city)}` : ""}` : "Neue Termine in Vorbereitung"}</p><a class="home-text-link" href="${next ? `#/event/${escapeHtml(next.id)}` : "#/events"}">Event ansehen</a></article>
       <article class="home-info-card"><p class="eyebrow">Social</p><h3>Mit uns vernetzen</h3><p>Folgen Sie PROdigitalTV auf den relevanten Branchenkanaelen.</p><div class="home-socials"><a href="#/news">RSS</a><a class="home-socials__linkedin" href="#/about" aria-label="LinkedIn"><span aria-hidden="true">in</span></a><a href="#/events">YouTube</a></div></article>
       <article class="home-info-card home-info-card--stat"><p class="eyebrow">Netzwerk</p><h3>${escapeHtml(memberCount)}</h3><p>Mitglieder und Partner im digitalen Mediennetzwerk.</p></article>
     </div></div></section>
-    <section class="section section--white"><div class="container feature home-member-feature"><div><p class="eyebrow">Mitglieder</p><h2>Ein Netzwerk fuer digitale Medien.</h2><p class="lead">Mitglieder profitieren von Fachimpulsen, Medienfruehstuecken und relevanten Branchenkontakten.</p><a class="button button--secondary" href="#/members">Mitglieder entdecken</a></div><div class="member-logos">${featuredMembers.map((member) => `<div class="member-tile">${memberLogo(member)}</div>`).join("")}</div></div></section>
-    <section class="section home-final-cta"><div class="container home-final-cta__inner"><div><h2>Gemeinsam fuer die Medienzukunft.</h2><p>Vernetzen, informieren und die digitale Zukunft gestalten.</p></div><a class="button button--primary" href="#/join">Mitglied werden</a></div></section>
+    <section class="section section--white"><div class="container feature home-member-feature"><div><p class="eyebrow">Mitglieder</p><h2>Ein Netzwerk für digitale Medien.</h2><p class="lead">Mitglieder profitieren von Fachimpulsen, Medienfruehstuecken und relevanten Branchenkontakten.</p><a class="button button--secondary" href="#/members">Mitglieder entdecken</a></div><div class="member-logos">${featuredMembers.map((member) => `<div class="member-tile">${memberLogo(member)}</div>`).join("")}</div></div></section>
+    <section class="section home-final-cta"><div class="container home-final-cta__inner"><div><h2>Gemeinsam für die Medienzukunft.</h2><p>Vernetzen, informieren und die digitale Zukunft gestalten.</p></div><a class="button button--primary" href="#/join">Mitglied werden</a></div></section>
   `);
 }
 export async function eventsPage() {
-  const [events, sponsors] = await Promise.all([listPublicEvents(isMember()), listPublicContent("sponsors")]);
+  const [events, sponsors] = await Promise.all([
+    listPublicEvents(isMember()).catch(() => []),
+    listPublicContent("sponsors").catch(() => [])
+  ]);
   const user = currentUser();
   const visible = events.filter((event) => event.accessType !== "invitation_only" && (event.visibility === "public" || isMember(user) || event.showPublicTeaser));
   const rawUpcoming = visible.filter((event) => !isPastEvent(event));
-  const mediaAssets = await listPublicEventMediaAssets(rawUpcoming);
+  const mediaAssets = await listPublicEventMediaAssets(rawUpcoming).catch(() => []);
   const upcoming = rawUpcoming.map((event) => ({ ...event, imageDisplayUrl: archiveEventImageUrl(event, mediaAssets) }));
   if (upcoming.length === 1) return eventDetailPage(upcoming[0].id);
   if (upcoming.length === 0) return archivePage();
-  return publicShell("events", `${subhero("Veranstaltungen", "Events", "Kuratierte Formate fuer Wissenstransfer, Partnerschaften und relevante Branchenkontakte.")}
-    <section class="section"><div class="container"><div class="filters"><button class="filter active">Kommende Events</button><button class="filter">Oeffentlich</button><button class="filter">Mitglieder</button><a class="filter" href="#/archive">Rueckblicke</a></div>
-    ${upcoming.length ? `<div class="card-grid card-grid--three">${upcoming.map((event) => eventCard(event, false, sponsors)).join("")}</div>` : `<div class="alert">Aktuell sind keine neuen Termine veroeffentlicht. Im Eventarchiv finden Sie die letzten PROdigitalTV-Veranstaltungen.</div>`}</div></section>`);
+  return publicShell("events", `${subhero("Veranstaltungen", "Events", "Kuratierte Formate für Wissenstransfer, Partnerschaften und relevante Branchenkontakte.")}
+    <section class="section"><div class="container"><div class="filters"><button class="filter active">Kommende Events</button><button class="filter">Öffentlich</button><button class="filter">Mitglieder</button><a class="filter" href="#/archive">Rückblicke</a></div>
+    ${upcoming.length ? `<div class="card-grid card-grid--three">${upcoming.map((event) => eventCard(event, false, sponsors)).join("")}</div>` : `<div class="alert">Aktuell sind keine neuen Termine veröffentlicht. Im Eventarchiv finden Sie die letzten PROdigitalTV-Veranstaltungen.</div>`}</div></section>`);
 }
 
 async function getPublicRouteEvent(id, includeMemberEvents = false) {
@@ -1391,12 +1513,18 @@ export async function eventDetailPage(id) {
   try {
     event = await getPublicRouteEvent(id, isMember());
   } catch {
-    return publicShell("events", `${subhero("Geschuetzter Bereich", "Login erforderlich", "Dieses Event ist nur fuer berechtigte Personen sichtbar.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
+    return publicShell("events", `${subhero("Geschuetzter Bereich", "Login erforderlich", "Dieses Event ist nur für berechtigte Personen sichtbar.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
   }
   if (!event) return notFoundPage();
-  const [speakers, sponsors, topics, galleries, mediaAssets] = await Promise.all([listPublicContent("speakers"), listPublicContent("sponsors"), listPublicContent("topics"), listPublicContent("galleries"), listPublicEventMediaAssets([event])]);
+  const [speakers, sponsors, topics, galleries, mediaAssets] = await Promise.all([
+    listPublicContent("speakers").catch(() => []),
+    listPublicContent("sponsors").catch(() => []),
+    listPublicContent("topics").catch(() => []),
+    listPublicContent("galleries").catch(() => []),
+    listPublicEventMediaAssets([event]).catch(() => [])
+  ]);
   const restricted = event.accessType === "members_only" && !isMember();
-  if (restricted && !event.showPublicTeaser) return publicShell("events", subhero("Geschuetzter Bereich", "Nur fuer Mitglieder", "Bitte melden Sie sich an, um dieses Event zu sehen."));
+  if (restricted && !event.showPublicTeaser) return publicShell("events", subhero("Geschuetzter Bereich", "Nur für Mitglieder", "Bitte melden Sie sich an, um dieses Event zu sehen."));
   const coHost = sponsors.find((sponsor) => sponsor.id === event.hostId) || null;
   const coHostLogo = coHost ? publicSponsorLogoUrl(coHost, mediaAssets) : "";
   const assignedGallery = galleries.find((gallery) => gallery.id === event.galleryId) || galleries.find((gallery) => gallery.eventId === event.id && gallery.status === "published" && gallery.visibility === "public");
@@ -1451,7 +1579,7 @@ export async function registrationPage(id) {
   }
   if (!event) return notFoundPage();
   if (event.accessType === "members_only" && !isMember()) {
-    return publicShell("events", `${subhero("Anmeldung", "Login erforderlich", "Dieses Event ist exklusiv fuer Mitglieder.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
+    return publicShell("events", `${subhero("Anmeldung", "Login erforderlich", "Dieses Event ist exklusiv für Mitglieder.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
   }
   return publicShell("events", `${subhero("Anmeldung", event.title, `${formatDate(event.date)} · ${event.locationName}, ${event.city}`)}
     <section class="section"><div class="container" style="max-width:820px"><form id="registration-form" data-event-id="${event.id}" class="form-card form-grid">
@@ -1524,8 +1652,8 @@ export async function newsPage(query = new URLSearchParams()) {
       ${selectedCategory ? `<div class="news-filter-state"><span>Rubrik: <strong>${escapeHtml(selectedCategory)}</strong></span><a class="button button--secondary button--small" href="#/news">Alle News</a></div>` : ""}
       <div class="card-grid card-grid--three editorial-list editorial-list--news">${featuredNews.map(newsCard).join("")}</div>
       ${listedNews.length ? `<div class="news-list-view"><div class="section-head"><div><p class="eyebrow">Weitere News</p><h2>${selectedCategory ? `Weitere Meldungen in ${escapeHtml(selectedCategory)}` : "Alle weiteren Meldungen"}</h2></div></div>${listedNews.map(newsListItem).join("")}</div>` : ""}
-      ${!filteredNews.length ? `<div class="alert">Zu dieser Rubrik sind aktuell keine News ver�ffentlicht.</div>` : ""}
-    ` : `<div class="alert">Aktuell sind keine News ver�ffentlicht.</div>`}</div></section>`);
+      ${!filteredNews.length ? `<div class="alert">Zu dieser Rubrik sind aktuell keine News veröffentlicht.</div>` : ""}
+    ` : `<div class="alert">Aktuell sind keine News veröffentlicht.</div>`}</div></section>`);
 }
 
 export async function newsDetailPage(id) {
@@ -1562,12 +1690,12 @@ export async function newsDetailPage(id) {
     : [];
   const leadMedia = attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "";
   const detailSection = isRetrospective ? "archive" : "news";
-  const detailTitle = isRetrospective ? "R�ckblick" : "News";
+  const detailTitle = isRetrospective ? "Rückblick" : "News";
   const detailIntro = isRetrospective ? "Nachbericht, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen." : "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.";
   const backHref = isRetrospective ? "#/archive" : "#/news";
-  const backText = isRetrospective ? "Zur�ck zu R�ckblick" : "Zur�ck zu News";
-  const sectionLabel = isRetrospective ? "R�ckblick" : item.category || "News";
-  const allText = isRetrospective ? "Alle R�ckblicke" : "Alle News";
+  const backText = isRetrospective ? "Zurück zu Rückblick" : "Zurück zu News";
+  const sectionLabel = isRetrospective ? "Rückblick" : item.category || "News";
+  const allText = isRetrospective ? "Alle Rückblicke" : "Alle News";
   if (!isRetrospective) {
     return publicShell("news", `<section class="section news-detail-clean-section"><div class="container">
       <article class="news-detail-clean">
@@ -1594,7 +1722,7 @@ export async function newsDetailPage(id) {
           intro: item.subtitle || ""
         })}
         ${articleImageUrl ? `<figure class="news-detail__thumb news-detail__hero-image"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${item.title || "News"}`)}" loading="eager" decoding="async"></figure>` : ""}
-        ${ttsReader({ rubric: isRetrospective ? "R�ckblick" : item.category || "News", title: item.title || "", text: [item.subtitle, text].filter(Boolean).join("\n\n"), audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
+        ${ttsReader({ rubric: isRetrospective ? "Rückblick" : item.category || "News", title: item.title || "", text: [item.subtitle, text].filter(Boolean).join("\n\n"), audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
         <div class="editorial-text">${leadMedia}${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}${articleParagraphs(text)}</div>
         ${articleVideosBlock(item)}
         ${articleSourcesList(item)}
@@ -1650,11 +1778,11 @@ export async function membersPage() {
   const memberRows = members.map((member) => {
     const teaser = member.description || "";
     const searchText = [member.name, teaser, member.city, member.country, member.website].filter(Boolean).join(" ");
-    return `<article class="member-directory-card" data-member-card data-search="${escapeHtml(searchText.toLowerCase())}"><div class="member-tile">${memberLogo(member)}</div><div class="member-directory-card__body"><h3>${escapeHtml(member.name)}</h3>${teaser ? `<p>${escapeHtml(teaser)}</p>` : ""}<span class="member-directory-card__meta">${escapeHtml(member.city || "")}${member.country ? ` � ${escapeHtml(member.country)}` : ""}</span></div>${member.website ? `<a class="button button--secondary button--small" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Website</a>` : ""}</article>`;
+    return `<article class="member-directory-card" data-member-card data-search="${escapeHtml(searchText.toLowerCase())}"><div class="member-tile">${memberLogo(member)}</div><div class="member-directory-card__body"><h3>${escapeHtml(member.name)}</h3>${teaser ? `<p>${escapeHtml(teaser)}</p>` : ""}<span class="member-directory-card__meta">${escapeHtml(member.city || "")}${member.country ? ` · ${escapeHtml(member.country)}` : ""}</span></div>${member.website ? `<a class="button button--secondary button--small" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Website</a>` : ""}</article>`;
   }).join("");
-  return publicShell("members", `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform fuer Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
+  return publicShell("members", `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform für Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
     <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input data-member-search placeholder="Mitglieder suchen" aria-label="Mitglieder suchen"></div></div><div class="member-directory-list">${memberRows}</div><div class="alert" data-member-empty hidden>Keine passenden sichtbaren Mitglieder gefunden.</div></div></section>`);
-  return publicShell("members", `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform fuer Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
+  return publicShell("members", `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform für Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
     <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input placeholder="Mitglieder suchen"></div></div><div class="card-grid card-grid--three">${members.map((member) => `<article class="card card__body"><div class="member-tile" style="margin-bottom:16px">${memberLogo(member)}</div><h3 style="margin:15px 0 8px">${escapeHtml(member.name)}</h3><p>${escapeHtml(member.description || "")}</p><p style="margin-top:12px">${escapeHtml(member.city)}${member.country ? ` · ${escapeHtml(member.country)}` : ""}</p>${member.website ? `<a class="link" style="display:inline-block;margin-top:14px" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Zur Website →</a>` : ""}</article>`).join("")}</div></div></section>`);
 }
 
@@ -1676,21 +1804,21 @@ export async function archivePage() {
   const items = events.length
     ? events.map((event) => archiveListEvent(event, sponsors, mediaAssets, editorial, eventMedia)).join("")
     : retrospectives.map((item) => archiveListEditorial(item, sponsors, events, mediaAssets, galleries)).join("");
-  return publicShell("archive", `${leanMobile ? "" : subhero("R�ckblick", "R�ckblick", "Nachbericht, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen.")}
-    <section class="section"><div class="container"><div class="section-head archive-list-head"><div><p class="eyebrow">Medienfruehstuecke</p><h2>R�ckblick</h2><p>Vergangene Veranstaltungen mit Nachbericht, Ort, Co-Gastgeber und Detailseite.</p></div></div><div class="archive-list archive-list--compact">${items || `<div class="alert">R�ckblicke werden aktuell vorbereitet.</div>`}</div></div></section>`);
+  return publicShell("archive", `${leanMobile ? "" : subhero("Rückblick", "Rückblick", "Nachbericht, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen.")}
+    <section class="section"><div class="container"><div class="section-head archive-list-head"><div><p class="eyebrow">Medienfrühstücke</p><h2>Rückblick</h2><p>Vergangene Veranstaltungen mit Nachbericht, Ort, Co-Gastgeber und Detailseite.</p></div></div><div class="archive-list archive-list--compact">${items || `<div class="alert">Rückblicke werden aktuell vorbereitet.</div>`}</div></div></section>`);
 }
 
 export async function downloadsPage() {
   const downloads = (await listPublicContent("downloads"))
     .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
-  return publicShell("downloads", `${subhero("Downloads", "Oeffentliche Downloads.", "Vereinssatzung, Beitraege und weitere oeffentliche Dokumente von PROdigitalTV.")}
+  return publicShell("downloads", `${subhero("Downloads", "Oeffentliche Downloads.", "Vereinssatzung, Beiträge und weitere oeffentliche Dokumente von PROdigitalTV.")}
     <section class="section"><div class="container">${downloads.length ? `<div class="card-grid card-grid--three">${downloads.map(downloadCard).join("")}</div>` : `<div class="alert">Oeffentliche Downloads werden aktuell vorbereitet.</div>`}</div></section>`);
 }
 
 export function webappQrPage() {
   const webappUrl = "https://prodigitaltv-da47b.web.app/#/home";
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=720x720&margin=2&data=${encodeURIComponent(webappUrl)}`;
-  return publicShell("webapp-qr", `${subhero("WebApp", "QR-Code zur mobilen WebApp.", "Direkt scannen und PROdigitalTV auf dem Smartphone oeffnen.")}
+  return publicShell("webapp-qr", `${subhero("WebApp", "QR-Code zur mobilen WebApp.", "Direkt scannen und PROdigitalTV auf dem Smartphone öffnen.")}
     <section class="section"><div class="container webapp-qr-page">
       <article class="webapp-qr-card">
         <figure class="webapp-qr-card__code"><img src="${escapeHtml(qrUrl)}" alt="QR-Code zur PROdigitalTV WebApp" loading="lazy"></figure>
@@ -1699,7 +1827,7 @@ export function webappQrPage() {
           <h2>QR-Code scannen</h2>
           <p>Der Code fuehrt direkt zur mobilen PROdigitalTV-WebApp.</p>
           <p class="webapp-qr-card__url">${escapeHtml(webappUrl)}</p>
-          <div class="actions"><a class="button button--primary" href="${escapeHtml(webappUrl)}" target="_blank" rel="noreferrer">WebApp oeffnen</a><a class="button button--secondary" href="#/home">Zur Website</a></div>
+          <div class="actions"><a class="button button--primary" href="${escapeHtml(webappUrl)}" target="_blank" rel="noreferrer">WebApp öffnen</a><a class="button button--secondary" href="#/home">Zur Website</a></div>
         </div>
       </article>
     </div></section>`);
@@ -1715,7 +1843,7 @@ function joinAside(downloads, editorial) {
   const downloadField = (item) => {
     const url = downloadUrl(item);
     const info = downloadInfo(item);
-    return `<details class="download-field"><summary><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.fileName || item.description || "Download")}</span></summary><div class="download-field__body"><p>${escapeHtml(info?.bodyText || item.description || "Weitere Informationen zu diesem Dokument.")}</p><a class="link" href="${escapeHtml(url)}" ${url !== "#/downloads" ? `target="_blank" rel="noreferrer"` : ""}>PDF oeffnen</a></div></details>`;
+    return `<details class="download-field"><summary><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.fileName || item.description || "Download")}</span></summary><div class="download-field__body"><p>${escapeHtml(info?.bodyText || item.description || "Weitere Informationen zu diesem Dokument.")}</p><a class="link" href="${escapeHtml(url)}" ${url !== "#/downloads" ? `target="_blank" rel="noreferrer"` : ""}>PDF öffnen</a></div></details>`;
   };
   const joinCta = `<a class="join-aside-cta" href="#membership-application-form" data-join-scroll>
     ${aboutPicto("membership")}
@@ -1745,7 +1873,11 @@ function membershipFormSection() {
 
 export async function joinPage() {
   const meta = internalPageMeta.mitglied_werden;
-  const [blocks, downloads, editorial] = await Promise.all([internalBlocks("mitglied_werden"), listPublicContent("downloads"), listPublicContent("editorialContent")]);
+  const [blocks, downloads, editorial] = await Promise.all([
+    internalBlocks("mitglied_werden"),
+    listPublicContent("downloads").catch(() => []),
+    listPublicContent("editorialContent").catch(() => [])
+  ]);
   const hero = blocks.find((block) => block.typ === "hero") || blocks[0];
   const cardBlocks = blocks.filter((block) => block.typ !== "hero");
   const joinCards = aboutCardGroups(cardBlocks, meta, { summary: "long", all: true, joinCta: true });
@@ -1762,18 +1894,18 @@ export async function loginPage() {
   const realMode = realDataMode();
   const demoAvailable = !realMode && (!firebaseEnabled() || localPreviewMode() || localHost);
   const user = currentUser();
-  const demoControls = demoAvailable ? `<div class="field"><label>Demo-Rolle fuer lokale Vorschau</label><select name="role"><option value="admin">Admin</option><option value="editor">Redakteur</option><option value="member">Mitglied</option></select></div>` : "";
+  const demoControls = demoAvailable ? `<div class="field"><label>Demo-Rolle für lokale Vorschau</label><select name="role"><option value="admin">Admin</option><option value="editor">Redakteur</option><option value="member">Mitglied</option></select></div>` : "";
   const emailValue = demoAvailable ? "admin@prodigitaltv.de" : "";
   const passwordValue = demoAvailable ? "demo" : "";
   const activeSession = user ? `<div class="alert" style="margin-bottom:18px">Aktuell angemeldet als ${escapeHtml(user.email || user.displayName || user.uid || "Benutzer")} mit Rolle ${escapeHtml(user.role || "guest")}.</div><button id="logout-button" class="button button--secondary" type="button">Abmelden / Session loeschen</button>` : "";
-  return publicShell("login", `<section class="login-wrap"><div class="container"><form id="login-form" class="form-card login-card">${logo()}<p class="eyebrow">Mitgliederbereich</p><h1 style="margin-bottom:10px">Anmelden</h1><p style="margin-bottom:25px">Zugriff auf exklusive Events, Downloads und CMS-Funktionen. Nach erfolgreichem Login wird ein Firebase-ID-Token fuer die aktuelle Sitzung gespeichert.</p>${activeSession}<div class="form-grid"><button id="google-login-button" class="button button--secondary" type="button">Mit Google anmelden</button><div class="login-divider"><span>oder mit E-Mail</span></div><div class="field"><label>E-Mail</label><input name="email" type="email" value="${emailValue}" required></div><div class="field"><label>Passwort</label><input name="password" type="password" value="${passwordValue}" required></div>${demoControls}<button class="button button--primary">Einloggen</button><p class="muted">Produktiv zaehlt die Rolle aus Firestore unter <code>users/{uid}</code>. Der Token wird automatisch erneuert und beim Logout geloescht.</p><div id="login-result"></div></div></form></div></section>`);
+  return publicShell("login", `<section class="login-wrap"><div class="container"><form id="login-form" class="form-card login-card">${logo()}<p class="eyebrow">Mitgliederbereich</p><h1 style="margin-bottom:10px">Anmelden</h1><p style="margin-bottom:25px">Zugriff auf exklusive Events, Downloads und CMS-Funktionen. Nach erfolgreichem Login wird ein Firebase-ID-Token für die aktuelle Sitzung gespeichert.</p>${activeSession}<div class="form-grid"><button id="google-login-button" class="button button--secondary" type="button">Mit Google anmelden</button><div class="login-divider"><span>oder mit E-Mail</span></div><div class="field"><label>E-Mail</label><input name="email" type="email" value="${emailValue}" required></div><div class="field"><label>Passwort</label><input name="password" type="password" value="${passwordValue}" required></div>${demoControls}<button class="button button--primary">Einloggen</button><p class="muted">Produktiv zaehlt die Rolle aus Firestore unter <code>users/{uid}</code>. Der Token wird automatisch erneuert und beim Logout geloescht.</p><div id="login-result"></div></div></form></div></section>`);
 }
 
 export async function portalPage() {
   const user = currentUser();
   if (!user) return loginPage();
   if (!isMember(user)) {
-    return publicShell("login", `${subhero("Mitgliederbereich", "Zugriff noch nicht freigeschaltet.", "Ihr Login ist aktiv, aber die Rolle fuer Mitglieder- oder CMS-Inhalte ist noch nicht hinterlegt.")}<section class="section"><div class="container" style="max-width:760px"><div class="form-card"><p>Bitte pruefen Sie in Firebase/Firestore den Eintrag unter <code>users/${escapeHtml(user.uid || "")}</code>. Fuer CMS-Zugriff muss die Rolle <code>admin</code> oder <code>editor</code> sein, fuer den Mitgliederbereich <code>member</code>.</p><div class="alert" style="margin-top:18px">Wenn dies die erste Einrichtung ist, kann der aktuell eingeloggte Benutzer einmalig als erster Admin freigeschaltet werden. Das funktioniert nur, solange noch kein aktiver Admin existiert.</div><div class="actions" style="margin-top:22px"><button id="bootstrap-admin-button" class="button button--primary">Als ersten Admin freischalten</button><button id="logout-button" class="button button--secondary">Abmelden</button><a class="button button--secondary" href="#/home">Zur Website</a></div><div id="bootstrap-admin-result"></div></div></div></section>`);
+    return publicShell("login", `${subhero("Mitgliederbereich", "Zugriff noch nicht freigeschaltet.", "Ihr Login ist aktiv, aber die Rolle für Mitglieder- oder CMS-Inhalte ist noch nicht hinterlegt.")}<section class="section"><div class="container" style="max-width:760px"><div class="form-card"><p>Bitte pruefen Sie in Firebase/Firestore den Eintrag unter <code>users/${escapeHtml(user.uid || "")}</code>. Für CMS-Zugriff muss die Rolle <code>admin</code> oder <code>editor</code> sein, für den Mitgliederbereich <code>member</code>.</p><div class="alert" style="margin-top:18px">Wenn dies die erste Einrichtung ist, kann der aktuell eingeloggte Benutzer einmalig als erster Admin freigeschaltet werden. Das funktioniert nur, solange noch kein aktiver Admin existiert.</div><div class="actions" style="margin-top:22px"><button id="bootstrap-admin-button" class="button button--primary">Als ersten Admin freischalten</button><button id="logout-button" class="button button--secondary">Abmelden</button><a class="button button--secondary" href="#/home">Zur Website</a></div><div id="bootstrap-admin-result"></div></div></div></section>`);
   }
   const [allEvents, sponsors] = await Promise.all([listPublicEvents(true), listPublicContent("sponsors")]);
   const events = allEvents.filter((event) => event.accessType === "members_only");
@@ -1781,13 +1913,67 @@ export async function portalPage() {
     <section class="section"><div class="container"><div class="section-head"><div><h2>Mitglieder-Events</h2><p class="muted">Angemeldet als ${escapeHtml(user.email || "")} · Rolle: ${escapeHtml(user.role || "guest")} · Token bis: ${escapeHtml(user.tokenExpiresAt || "Demo")}</p></div><button id="logout-button" class="button button--secondary">Abmelden</button></div><div class="card-grid card-grid--three">${events.map((event) => eventCard(event, false, sponsors)).join("")}</div></div></section>`);
 }
 
+function memberDirectoryContact(member = {}) {
+  const contacts = normalizedMemberEventContacts(member);
+  const primary = contacts.find((contact) => contact.name || contact.email || contact.phone || contact.mobile) || {};
+  return {
+    name: primary.name || member.profileContactName || member.contactName || [member.firstName, member.lastName].filter(Boolean).join(" "),
+    role: primary.role || primary.function || member.department || member.contactRole || "",
+    email: primary.email || member.contactEmail || member.email || "",
+    phone: primary.phone || member.contactPhone || member.phone || "",
+    mobile: primary.mobile || member.contactMobile || member.mobile || ""
+  };
+}
+
+function externalUrl(value = "") {
+  const url = String(value || "").trim();
+  if (!url) return "";
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
+function urlLabel(value = "") {
+  return String(value || "").trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
+}
+
+function websiteFromEmail(value = "") {
+  const email = String(value || "").trim();
+  const domain = email.includes("@") ? email.split("@").pop().toLowerCase() : "";
+  const privateMailDomains = ["gmail.com", "googlemail.com", "gmx.de", "gmx.net", "web.de", "t-online.de", "hotmail.com", "outlook.com", "icloud.com"];
+  if (!domain || !domain.includes(".") || privateMailDomains.includes(domain) || domain.includes("yahoo.")) return "";
+  return domain.startsWith("www.") ? `https://${domain}` : `https://www.${domain}`;
+}
+
+function phoneHref(value = "") {
+  return String(value || "").replace(/[^\d+]/g, "");
+}
+
+function memberPublicDescription(member = {}) {
+  const description = String(member.description || "").trim();
+  if (!description) return "";
+  if (/^Internes Mitgliedsprofil aus der Mitgliederliste 2026\.?$/i.test(description)) return "";
+  return description;
+}
+
+function comparableName(value = "") {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9äöüß]+/gi, " ").replace(/\s+/g, " ").trim();
+}
+
 function memberDirectoryCard(member = {}) {
-  return `<article class="card card__body">
-    <div class="member-tile" style="margin-bottom:16px">${memberLogo(member)}</div>
+  const contact = memberDirectoryContact(member);
+  const website = externalUrl(member.website || member.url || websiteFromEmail(contact.email) || "");
+  const description = memberPublicDescription(member);
+  const showContactName = contact.name && comparableName(contact.name) !== comparableName(member.name);
+  return `<article class="card card__body member-directory-card member-directory-card--portal-item">
+    <div class="member-tile" style="margin-bottom:16px">${memberLogo(member, { initialFallback: true })}</div>
     <h3 style="margin:15px 0 8px">${escapeHtml(member.name || "Mitglied")}</h3>
-    ${member.description ? `<p>${escapeHtml(member.description)}</p>` : ""}
+    ${description ? `<p>${escapeHtml(description)}</p>` : ""}
     <p style="margin-top:12px">${escapeHtml(member.category || "Mitglied")}${member.city ? ` / ${escapeHtml(member.city)}` : ""}${member.country ? ` / ${escapeHtml(member.country)}` : ""}</p>
-    ${member.website ? `<a class="link" style="display:inline-block;margin-top:14px" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Zur Website -></a>` : ""}
+    <div class="member-directory-contact">
+      ${showContactName ? `<span class="member-directory-contact__full"><b>Ansprechperson:</b> ${escapeHtml(contact.name)}${contact.role ? ` · ${escapeHtml(contact.role)}` : ""}</span>` : ""}
+      ${contact.email ? `<span class="member-directory-contact__full"><b>Mail:</b> <a href="mailto:${escapeHtml(contact.email)}">${escapeHtml(contact.email)}</a></span>` : ""}
+      ${contact.phone || contact.mobile ? `<span class="member-directory-contact__full member-directory-contact__phones">${contact.phone ? `<span><b>Tel:</b> <a href="tel:${escapeHtml(phoneHref(contact.phone))}">${escapeHtml(contact.phone)}</a></span>` : ""}${contact.mobile ? `<span><b>Mobil:</b> <a href="tel:${escapeHtml(phoneHref(contact.mobile))}">${escapeHtml(contact.mobile)}</a></span>` : ""}</span>` : ""}
+      ${website ? `<span class="member-directory-contact__full"><b>Web:</b> <a href="${escapeHtml(website)}" target="_blank" rel="noopener">${escapeHtml(urlLabel(website))}</a></span>` : ""}
+    </div>
   </article>`;
 }
 
@@ -1825,7 +2011,7 @@ function memberEventContactsFields(member = {}) {
   return `<div class="form-card form-grid member-event-contacts">
     <div>
       <p class="eyebrow">Eventberechtigte Kontakte</p>
-      <p class="muted">${limit === 1 ? "Einzelmitglieder k�nnen eine eventberechtigte Person hinterlegen." : "Firmenmitglieder k�nnen bis zu 5 eventberechtigte Personen hinterlegen."}</p>
+      <p class="muted">${limit === 1 ? "Einzelmitglieder können eine eventberechtigte Person hinterlegen." : "Firmenmitglieder können bis zu 5 eventberechtigte Personen hinterlegen."}</p>
     </div>
     ${Array.from({ length: limit }, (_, index) => {
       const contact = contacts[index] || {};
@@ -1844,12 +2030,12 @@ function memberProfileForm(member = {}, user = {}, options = {}) {
     return `<div class="alert">Ihr Login ist noch keinem Mitgliedsprofil zugeordnet. Bitte im CMS beim Benutzer <code>${escapeHtml(user.uid || user.email || "")}</code> das Feld <code>memberId</code> setzen.</div>`;
   }
   if (!member?.id) {
-    return `<div class="alert">${adminMode ? "Bitte ein Mitgliedsprofil ausw�hlen." : `Das verkn�pfte Mitgliedsprofil <code>${escapeHtml(user.memberId)}</code> wurde noch nicht gefunden.`}</div>`;
+    return `<div class="alert">${adminMode ? "Bitte ein Mitgliedsprofil auswählen." : `Das verknüpfte Mitgliedsprofil <code>${escapeHtml(user.memberId)}</code> wurde noch nicht gefunden.`}</div>`;
   }
   return `<form id="member-profile-form" class="form-card form-grid" data-member-id="${escapeHtml(member.id)}">
     <p class="eyebrow">${adminMode ? "Admin-Mitgliederpflege" : "Eigenes Mitgliedsprofil"}</p>
     <h2 style="margin-bottom:6px">${adminMode ? escapeHtml(member.name || "Mitglied bearbeiten") : "Profil bearbeiten"}</h2>
-    <p class="muted">${adminMode ? "Als Admin k�nnen Sie den ausgew�hlten Mitgliedsdatensatz bearbeiten." : "Diese Angaben werden direkt im eigenen Mitglieder-Datensatz gespeichert."}</p>
+    <p class="muted">${adminMode ? "Als Admin können Sie den ausgewählten Mitgliedsdatensatz bearbeiten." : "Diese Angaben werden direkt im eigenen Mitglieder-Datensatz gespeichert."}</p>
     <div class="field"><label>Name / Unternehmen</label><input name="name" value="${escapeHtml(member.name || "")}" required></div>
     <div class="field"><label>Beschreibung</label><textarea name="description" rows="5">${escapeHtml(member.description || "")}</textarea></div>
     <div class="form-grid--two">
@@ -1865,7 +2051,7 @@ function memberProfileForm(member = {}, user = {}, options = {}) {
       <div class="field"><label>Briefanrede</label><input name="personalSalutation" value="${escapeHtml(member.personalSalutation || "")}"></div>
     </div>
     <div class="form-grid--two">
-      <div class="field"><label>Stra�e</label><input name="street" value="${escapeHtml(member.street || "")}"></div>
+      <div class="field"><label>Straße</label><input name="street" value="${escapeHtml(member.street || "")}"></div>
       <div class="field"><label>PLZ</label><input name="postalCode" value="${escapeHtml(member.postalCode || "")}"></div>
     </div>
     <div class="form-grid--two">
@@ -1890,19 +2076,27 @@ export async function memberPortalPage() {
       return "";
     }
   })();
+  const activeTab = (() => {
+    try {
+      return new URLSearchParams((window.location.hash.split("?")[1] || "")).get("tab") || "overview";
+    } catch {
+      return "overview";
+    }
+  })();
   const ownMember = adminMode
     ? null
     : user.memberId ? await getOne("members", user.memberId).catch(() => null) : null;
   if (!adminMode && !memberHasPortalAccess(ownMember)) {
     return publicShell("login", `${subhero("Mitgliederbereich", "Zugang nicht aktiv", "Dieser Mitgliederzugang ist nicht oder nicht mehr berechtigt.")}
-      <section class="section section--white"><div class="container"><div class="alert alert--warning">Ihr Mitgliedsprofil ist aktuell nicht fuer den Mitgliederbereich freigeschaltet. Bitte wenden Sie sich an die Administration, falls dies nicht korrekt ist.</div><button id="logout-button" class="button button--secondary" style="margin-top:18px">Abmelden</button></div></section>`);
+      <section class="section section--white"><div class="container"><div class="alert alert--warning">Ihr Mitgliedsprofil ist aktuell nicht für den Mitgliederbereich freigeschaltet. Bitte wenden Sie sich an die Administration, falls dies nicht korrekt ist.</div><button id="logout-button" class="button button--secondary" style="margin-top:18px">Abmelden</button></div></section>`);
   }
-  const [allEvents, sponsors, memberDocuments, members, memberVideos] = await Promise.all([
-    listPublicEvents(true),
-    listPublicContent("sponsors"),
+  const [allEvents, sponsors, memberDocuments, members, memberVideos, galleries] = await Promise.all([
+    listPublicEvents(true).catch(() => []),
+    listPublicContent("sponsors").catch(() => []),
     list("memberDocuments").catch(() => []),
     (adminMode ? list("members") : listPublicContent("members")).then(withPublicMemberLogos).catch(() => []),
-    listMemberContent("editorialContent").catch(() => [])
+    listMemberContent("editorialContent").catch(() => []),
+    list("galleries").catch(() => [])
   ]);
   const sortedMembers = members
     .slice()
@@ -1914,7 +2108,7 @@ export async function memberPortalPage() {
   const editableMember = adminMode ? adminSelectedMember : ownMember;
   const adminDropdown = adminMode ? `<form class="form-card form-grid" data-admin-member-picker>
     <p class="eyebrow">Admin</p>
-    <div class="field"><label>Mitglied ausw�hlen</label><select name="memberId" data-admin-member-select>
+    <div class="field"><label>Mitglied auswählen</label><select name="memberId" data-admin-member-select>
       ${sortedMembers.map((member) => `<option value="${escapeHtml(member.id)}" ${member.id === adminSelectedId ? "selected" : ""}>${escapeHtml([member.name || member.id, member.city].filter(Boolean).join(" / "))}</option>`).join("")}
     </select></div>
   </form>` : "";
@@ -1926,8 +2120,8 @@ export async function memberPortalPage() {
     .filter((member) => ["company", "individual"].includes(member.membershipType || "") && member.visible !== false && !memberAccessBlocked(member) && !["inactive", "cancelled", "archived"].includes(member.status || ""))
     .sort((a, b) => Number(a.sortOrder || 9999) - Number(b.sortOrder || 9999) || String(a.name || "").localeCompare(String(b.name || "")));
   const visibleMemberArticles = memberVideos
-    .filter((item) => (item.page || "portal") === "portal" || item.section === "videos")
-    .filter((item) => item.status === "published" && (item.visibility || "members") === "members")
+    .filter((item) => (item.visibility || "members") === "members" || item.page === "member-area" || item.section === "member-area" || String(item.category || "").toLowerCase().includes("mitglied"))
+    .filter((item) => !["archived", "deleted", "hidden"].includes(String(item.status || "published").toLowerCase()) && item.visible !== false)
     .sort((a, b) => Number(a.sortOrder || 9999) - Number(b.sortOrder || 9999) || String(b.publishDate || b.updatedAt || "").localeCompare(String(a.publishDate || a.updatedAt || "")));
   const documentUrl = (item) => item.documentUrl || item.assetUrl || item.fileUrl || item.url || "";
   const documentCard = (item) => {
@@ -1937,15 +2131,37 @@ export async function memberPortalPage() {
       <h3>${escapeHtml(item.title || item.fileName || "Dokument")}</h3>
       ${item.description ? `<p>${escapeHtml(item.description)}</p>` : ""}
       ${item.meetingDate ? `<p class="muted">${formatDate(item.meetingDate)}</p>` : ""}
-      ${url ? `<a class="button button--secondary button--small" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">Datei oeffnen</a>` : `<p class="muted">Datei ist noch nicht hinterlegt.</p>`}
+      ${url ? `<a class="button button--secondary button--small" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">Datei öffnen</a>` : `<p class="muted">Datei ist noch nicht hinterlegt.</p>`}
     </article>`;
   };
+  const tabs = [
+    ["overview", "Übersicht"],
+    ["profile", "Mein Profil"],
+    ["directory", "Mitgliederliste"],
+    ["documents", "Member Infos"],
+    ["events", "Events"],
+    ["upload", "Foto-Upload"]
+  ];
+  const tabNav = `<nav class="member-portal-tabs" aria-label="Mitgliederbereich">${tabs.map(([key, label]) => `<a href="#/portal?tab=${key}" class="${activeTab === key ? "active" : ""}">${label}</a>`).join("")}</nav>`;
+  const documentsSection = `<section class="member-portal-section member-portal-section--documents"><div class="section-head"><div><h2>Mitglieder-Dokumente</h2><p class="muted">Freigegebene Unterlagen und Anlagen für Mitglieder.</p></div></div><div class="card-grid card-grid--three">${visibleDocuments.length ? visibleDocuments.map(documentCard).join("") : `<div class="alert">Noch keine freigegebenen Mitgliederdokumente.</div>`}</div></section>`;
+  const memberInfosSection = `<section class="member-portal-section member-portal-section--infos"><div class="section-head"><h2>Member Infos</h2></div><div class="member-article-list">${visibleMemberArticles.length ? visibleMemberArticles.map((article) => memberArticleCard(article, galleries)).join("") : `<div class="alert">Noch keine Mitgliederbeitr&auml;ge sichtbar.</div>`}</div></section>`;
+  const profileSection = `<section class="member-portal-section"><div class="section-head"><h2>${adminMode ? "Mitgliedsprofil bearbeiten" : "Mein Profil"}</h2></div>${adminDropdown}${memberProfileForm(editableMember, user, { adminMode })}</section>`;
+  const directorySection = `<section class="member-portal-section"><div class="section-head"><h2>Mitgliederverzeichnis</h2></div><div class="card-grid card-grid--three member-directory-grid">${visibleMembers.length ? visibleMembers.map(memberDirectoryCard).join("") : `<div class="alert">Noch keine freigegebenen Mitglieder.</div>`}</div></section>`;
+  const eventsSection = `<section class="member-portal-section"><div class="section-head"><h2>Mitglieder-Events</h2></div><div class="card-grid card-grid--three">${events.length ? events.map((event) => eventCard(event, false, sponsors)).join("") : `<div class="alert">Aktuell keine Mitglieder-Events.</div>`}</div></section>`;
+  const uploadSection = `<section class="member-portal-section"><div class="section-head"><div><h2>Foto-Upload</h2><p class="muted">Bilder an die Redaktion senden. Die Zuordnung erfolgt spaeter im CMS.</p></div></div><form id="member-material-upload-form" class="form-card form-grid member-upload-form"><label class="button button--primary member-photo-upload-button">Fotos auswaehlen<input name="files" type="file" accept="image/*" capture="environment" multiple hidden></label><div class="field"><label>Hinweistext</label><textarea name="note" rows="3" placeholder="z. B. Eventname, Ort oder kurzer Hinweis"></textarea></div><label class="checkbox-line"><input type="checkbox" name="rightsConfirmed" value="1" required> Nutzungsfreigabe bestätigen</label><button class="button button--primary" type="submit">Bilder senden</button><div id="member-material-upload-result"></div></form></section>`;
+  const overviewSection = `<section class="member-portal-section"><div class="member-portal-overview"><article class="member-portal-card"><span>${visibleMemberArticles.length}</span><h3>Member Infos</h3><p>Mitgliederbeiträge, Dokumente und Anlagen abrufen.</p><a href="#/portal?tab=documents">Öffnen</a></article><article class="member-portal-card"><span>${visibleMembers.length}</span><h3>Mitgliederliste</h3><p>Aktuelle Mitglieder und freigegebene Kontaktdaten.</p><a href="#/portal?tab=directory">Öffnen</a></article><article class="member-portal-card"><span>1</span><h3>Mein Profil</h3><p>Eigene Mitgliedsdaten pflegen.</p><a href="#/portal?tab=profile">Bearbeiten</a></article><article class="member-portal-card"><span>+</span><h3>Foto-Upload</h3><p>Fotos an die Redaktion senden.</p><a href="#/portal?tab=upload">Hochladen</a></article></div></section>`;
+  const content = activeTab === "profile" ? profileSection
+    : activeTab === "directory" ? directorySection
+    : activeTab === "documents" ? memberInfosSection
+    : activeTab === "events" ? eventsSection
+    : activeTab === "upload" ? uploadSection
+    : overviewSection;
   return publicShell("login", `${subhero("Mitgliederbereich", `Willkommen, ${escapeHtml(user.displayName)}.`, "Dokumente, Mitgliederverzeichnis und eigenes Profil.")}
-    <section class="section"><div class="container"><div class="section-head"><div><h2>Mitglieder-Dokumente</h2><p class="muted">Angemeldet als ${escapeHtml(user.email || "")} / Rolle: ${escapeHtml(user.role || "guest")}${user.memberId ? ` / Mitglied: ${escapeHtml(user.memberId)}` : ""}</p></div><button id="logout-button" class="button button--secondary">Abmelden</button></div><div class="card-grid card-grid--three">${visibleDocuments.length ? visibleDocuments.map(documentCard).join("") : `<div class="alert">Noch keine freigegebenen Mitgliederdokumente.</div>`}</div></div></section>
-    <section class="section section--white"><div class="container"><div class="section-head"><h2>Redaktionelle Beitr�ge</h2></div><div class="card-grid card-grid--three">${visibleMemberArticles.length ? visibleMemberArticles.map(memberArticleCard).join("") : `<div class="alert">Noch keine freigegebenen Mitglieder-Beitraege.</div>`}</div></div></section>
-    <section class="section section--white"><div class="container"><div class="section-head"><h2>${adminMode ? "Mitgliedsprofil bearbeiten" : "Mein Profil"}</h2></div>${adminDropdown}${memberProfileForm(editableMember, user, { adminMode })}</div></section>
-    <section class="section"><div class="container"><div class="section-head"><h2>Mitgliederverzeichnis</h2></div><div class="card-grid card-grid--three">${visibleMembers.length ? visibleMembers.map(memberDirectoryCard).join("") : `<div class="alert">Noch keine freigegebenen Mitglieder.</div>`}</div></div></section>
-    <section class="section"><div class="container"><div class="section-head"><h2>Mitglieder-Events</h2></div><div class="card-grid card-grid--three">${events.length ? events.map((event) => eventCard(event, false, sponsors)).join("") : `<div class="alert">Aktuell keine Mitglieder-Events.</div>`}</div></div></section>`);
+    <section class="section section--white member-portal-shell"><div class="container">
+      <div class="section-head member-portal-userbar"><p class="muted">Angemeldet als ${escapeHtml(user.email || "")}</p><button id="logout-button" class="button button--secondary">Abmelden</button></div>
+      ${tabNav}
+      ${content}
+    </div></section>`);
 }
 
 export async function memberArticleDetailPage(id) {
@@ -1953,20 +2169,29 @@ export async function memberArticleDetailPage(id) {
   if (!user) return loginPage();
   if (!isMember(user)) return portalPage();
   const articles = await listMemberContent("editorialContent").catch(() => []);
+  const galleries = await list("galleries").catch(() => []);
   const item = articles.find((entry) => [entry.id, entry.slug, entry.key].filter(Boolean).includes(id))
     || await getOne("editorialContent", id).catch(() => null);
-  if (!item || item.status !== "published" || (item.visibility || "members") !== "members") return notFoundPage();
+  const itemStatus = String(item?.status || "published").toLowerCase();
+  const isMemberArticle = item && ((item.visibility || "members") === "members" || item.page === "member-area" || item.section === "member-area");
+  if (!item || ["archived", "deleted", "hidden"].includes(itemStatus) || item.visible === false || !isMemberArticle) return notFoundPage();
   const date = item.publishDate || item.validFrom || item.date || "";
   const text = item.articleText || item.bodyText || item.longDescription || item.introText || "";
-  return publicShell("login", `${subhero("Mitgliederbereich", item.title || "Redaktioneller Beitrag", item.subtitle || "Exklusiv fuer Mitglieder.")}
+  const selectedGallery = articleGallery(item, galleries);
+  const galleryImages = visibleGalleryImages(selectedGallery || {});
+  return publicShell("login", `${subhero("Mitgliederbereich", item.title || "Redaktioneller Beitrag", item.subtitle || "Exklusiv für Mitglieder.")}
     <section class="section section--white"><div class="container detail-main" style="max-width:920px">
       <a class="link" href="#/portal">Zurueck zum Mitgliederbereich</a>
       <article class="member-article-detail">
-        ${articleVideoHero(item)}
+        ${memberArticleHero(item, "eager")}
         <p class="eyebrow">${escapeHtml(item.category || "Mitgliederbeitrag")}${date ? ` / ${formatDate(date)}` : ""}</p>
         <h1>${escapeHtml(item.title || "Redaktioneller Beitrag")}</h1>
         ${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}
+        ${memberArticleAssetBar(item, galleries)}
+        ${ttsReader({ rubric: item.category || "Member Info", title: item.title || "", text: [item.subtitle, text].filter(Boolean).join("\n\n"), audio: item.audio || {}, audioProvider: item.audioProvider || item.auaioProvider || "", audioUrl: item.audioUrl || item.auaioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || item.auaioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || item.auaioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || item.auaioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || item.auaioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || item.auaioNaturalStatus || "" })}
         <div class="editorial-text">${articleParagraphs(text)}</div>
+        ${galleryImages.length ? galleryPlayCta(selectedGallery, galleryImages) : ""}
+        ${articlePdfBlock(item)}
       </article>
     </div></section>`);
 }
@@ -1974,7 +2199,7 @@ export async function memberArticleDetailPage(id) {
 export async function legalPage(type) {
   const privacy = type === "privacy";
   const fallback = privacy
-    ? { title: "Datenschutz bei Event-Anmeldungen", introText: "Informationen zur Verarbeitung personenbezogener Daten.", bodyText: "Anmeldedaten werden ausschliesslich zur Organisation des gewaelten Events, zur Bestaetigung der E-Mail-Adresse und fuer erteilte Einwilligungen verarbeitet. Die finale Datenschutzerklaerung ist vor Livegang rechtlich abzustimmen." }
+    ? { title: "Datenschutz bei Event-Anmeldungen", introText: "Informationen zur Verarbeitung personenbezogener Daten.", bodyText: "Anmeldedaten werden ausschliesslich zur Organisation des gewaelten Events, zur Bestaetigung der E-Mail-Adresse und für erteilte Einwilligungen verarbeitet. Die finale Datenschutzerklaerung ist vor Livegang rechtlich abzustimmen." }
     : { title: "PROdigitalTV - Interessengemeinschaft Digitale Medien e.V.", introText: "Angaben gemaess den gesetzlichen Informationspflichten.", bodyText: "Vereins- und Geschaeftssitz:\nWandalenweg 26\n20097 Hamburg\nTelefon: +49 40 44506617\nE-Mail: post@prodigitaltv.de\nInternet: www.prodigitaltv.de\n\nEingetragen im Vereinsregister Hamburg: VR 19974\nVerantwortliche Personen: Vorstand von PROdigitalTV." };
   const content = await getOne("editorialContent", privacy ? "legal-privacy" : "legal-imprint") || fallback;
   return publicShell("", `${subhero("Rechtliches", privacy ? "Datenschutz" : "Impressum", content.introText || fallback.introText)}
@@ -1984,3 +2209,4 @@ export async function legalPage(type) {
 export function notFoundPage() {
   return publicShell("", `<section class="section"><div class="container empty"><h1>Seite nicht gefunden</h1><p>Die angeforderte Seite ist nicht verfuegbar.</p><a class="button button--primary" style="margin-top:20px" href="#/home">Zur Startseite</a></div></section>`);
 }
+

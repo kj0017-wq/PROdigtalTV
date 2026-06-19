@@ -37,12 +37,23 @@ service cloud.firestore {
         );
     }
     function publicMemberRecord(memberData) {
-      return (
+      return memberData.visible == true
+        && (
+          !memberData.keys().hasAny(["visibility"])
+          || memberData.visibility == "public"
+          || memberData.visibility == "portal"
+        )
+        && (
+          !memberData.keys().hasAny(["isLive"])
+          || memberData.isLive != false
+        )
+        && (
           !memberData.keys().hasAny(["status"])
           || (
             memberData.status != "inactive"
             && memberData.status != "cancelled"
             && memberData.status != "archived"
+            && memberData.status != "deleted"
           )
         )
         && (
@@ -131,7 +142,11 @@ service cloud.firestore {
 
     match /editorialContent/{id} {
       allow read: if publicPublished()
-        || (member() && resource.data.visibility == "members")
+        || (member() && (
+          resource.data.visibility == "members"
+          || resource.data.section == "member-area"
+          || resource.data.page == "member-area"
+        ))
         || editor();
       allow write: if editor();
     }
@@ -187,6 +202,10 @@ service cloud.firestore {
     }
 
     match /media_variants/{id} {
+      allow read, write: if editor();
+    }
+
+    match /media_videos/{id} {
       allow read, write: if editor();
     }
 

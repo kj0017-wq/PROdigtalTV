@@ -246,6 +246,10 @@ function cmsDataMode() {
     || String(window.location.hash || "").startsWith("#/cms");
 }
 
+function memberPortalDataMode() {
+  return String(window.location.hash || "").startsWith("#/portal");
+}
+
 function localCmsDataFallbackAllowed() {
   const pageQuery = new URLSearchParams(window.location.search || "");
   const hashQuery = new URLSearchParams(String(window.location.hash || "").split("?")[1] || "");
@@ -272,10 +276,10 @@ async function waitForFirebaseAuth(firebase) {
 
 async function getDataFirebase({ write = false } = {}) {
   if (localCmsDataFallbackAllowed()) return null;
-  const firebase = write || cmsDataMode()
+  const firebase = write || cmsDataMode() || memberPortalDataMode()
     ? await getFirebaseServices()
     : await getFirestoreServices();
-  if (firebase && (write || cmsDataMode())) await waitForFirebaseAuth(firebase);
+  if (firebase && (write || cmsDataMode() || memberPortalDataMode())) await waitForFirebaseAuth(firebase);
   return firebase;
 }
 
@@ -552,8 +556,10 @@ function isEventVisible(event) {
 }
 
 function isPublicLiveMember(member) {
-  return !["inactive", "cancelled", "archived"].includes(member.status || "")
-    && (member.visibility || "public") === "public"
+  const status = String(member.status || "active").toLowerCase();
+  const visibility = String(member.visibility || "public").toLowerCase();
+  return !["inactive", "cancelled", "archived", "deleted"].includes(status)
+    && !["internal", "private", "hidden"].includes(visibility)
     && member.visible !== false
     && member.isLive !== false
     && !memberAccessBlocked(member);
@@ -581,22 +587,35 @@ export async function listPublicContent(collectionName) {
     topics: [["status", "==", "active"]],
     speakers: [["status", "==", "published"]],
     sponsors: [["status", "==", "published"]],
-    members: [["visible", "==", true], ["visibility", "==", "public"]],
+    members: [["visible", "==", true]],
     boardMembers: [["status", "==", "active"], ["visibility", "==", "public"]],
     editorialContent: [["status", "==", "published"], ["visibility", "==", "public"]],
     galleries: [["status", "==", "published"], ["visibility", "==", "public"]],
     eventMedia: [["status", "==", "approved"], ["visibility", "==", "public"]]
   };
+  if (collectionName === "members") {
+    const queried = await cachedConstrainedList(collectionName, filters.members).catch(() => []);
+    const merged = new Map(normalizedCurrentLocalMembers().map((member) => [member.id, member]));
+    queried.forEach((member) => merged.set(member.id, { ...(merged.get(member.id) || {}), ...member }));
+    return Array.from(merged.values()).filter(isPublicLiveMember);
+  }
   const records = await cachedConstrainedList(collectionName, filters[collectionName] || []);
-  if (collectionName === "members") return records.filter(isPublicLiveMember);
   return records;
 }
 
 export async function listMemberContent(collectionName) {
-  const filters = {
-    editorialContent: [["status", "==", "published"], ["visibility", "==", "members"]]
-  };
-  return cachedConstrainedList(collectionName, filters[collectionName] || [["visibility", "==", "members"]]);
+  if (collectionName !== "editorialContent") return cachedConstrainedList(collectionName, [["visibility", "==", "members"]]);
+  const queries = [
+    [["visibility", "==", "members"]],
+    [["section", "==", "member-area"]],
+    [["page", "==", "member-area"]]
+  ];
+  const batches = await Promise.all(queries.map((predicates) => cachedConstrainedList(collectionName, predicates).catch(() => [])));
+  const merged = new Map();
+  batches.flat().forEach((item) => {
+    if (item?.id) merged.set(item.id, { ...(merged.get(item.id) || {}), ...item });
+  });
+  return Array.from(merged.values());
 }
 
 export async function getOne(collectionName, id) {

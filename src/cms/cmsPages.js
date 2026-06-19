@@ -1,4 +1,4 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=467";
+ï»¿import { cmsShell, cmsTitle } from "./cmsLayout.js?v=467";
 import { list, getOne } from "../firebase/dataService.js?v=487";
 import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=470";
 import { accessLabels, lifecycleLabels } from "../data/demoData.js";
@@ -337,7 +337,7 @@ function memberLogoUrl(item = {}, mediaAssets = []) {
 function memberLogoInitials(item = {}) {
   const name = String(item.name || item.title || "").replace(/\b(gmbh|ug|ag|kg|co|ltd|inc|stiftung|consulting|media|medien|television)\b/gi, " ");
   const words = name
-    .split(/[^A-Za-z0-9ÄÖÜäöüß]+/)
+    .split(/[^A-Za-z0-9ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½]+/)
     .map((word) => word.trim())
     .filter((word) => word.length > 1);
   const initials = words.length >= 2
@@ -516,7 +516,7 @@ function timestampText(value) {
   return formatDateTime(value);
 }
 
-const audioAreaOrder = ["News", "Rückblicke", "Presse", "Themen", "Interna"];
+const audioAreaOrder = ["News", "Rï¿½ckblicke", "Presse", "Themen", "Interna"];
 
 function audioAreaRank(area = "") {
   const index = audioAreaOrder.indexOf(area);
@@ -524,10 +524,10 @@ function audioAreaRank(area = "") {
 }
 
 function audioAreaLabel(item = {}) {
-  if (item.audioArea && !["Presse / Rueckblick", "Presse / Rückblick", "Rückblicke / Presse"].includes(item.audioArea)) return item.audioArea;
+  if (item.audioArea && !["Presse / Rueckblick", "Presse / Rï¿½ckblick", "Rï¿½ckblicke / Presse"].includes(item.audioArea)) return item.audioArea;
   if (item.audioCollection === "topics") return "Themen";
   if (isNewsEditorialItem(item)) return "News";
-  if (item.publication_target === "archive" || isEventRetrospectiveAudioItem(item)) return "Rückblicke";
+  if (item.publication_target === "archive" || isEventRetrospectiveAudioItem(item)) return "Rï¿½ckblicke";
   if (isPressEditorialItem(item)) return "Presse";
   if (isInternalEditorialItem(item) || item.bereich || item.page || item.section || item.key) return "Interna";
   return "Interna";
@@ -535,7 +535,7 @@ function audioAreaLabel(item = {}) {
 
 function audioSubareaLabel(item = {}) {
   if (item.audioCollection === "topics") return "Themen";
-  if (item.bereich === "ueber_uns" || item.page === "about" || String(item.key || "").startsWith("ueber_uns.")) return "Über uns";
+  if (item.bereich === "ueber_uns" || item.page === "about" || String(item.key || "").startsWith("ueber_uns.")) return "ï¿½ber uns";
   if (item.bereich === "mitglied_werden" || item.page === "join" || String(item.key || "").startsWith("mitglied_werden.")) return "Mitglied werden";
   return "";
 }
@@ -548,7 +548,7 @@ function isPublicAudioCandidate(item = {}) {
   const statusValue = String(item.status || "").toLowerCase();
   const visibilityValue = String(item.visibility || item.sichtbarkeit || "").toLowerCase();
   const isPublished = ["published", "active", "aktiv", "approved"].includes(statusValue);
-  const isPublic = ["public", "oeffentlich", "öffentlich", ""].includes(visibilityValue);
+  const isPublic = ["public", "oeffentlich", "ï¿½ffentlich", ""].includes(visibilityValue);
   return isPublished && isPublic;
 }
 
@@ -565,9 +565,9 @@ function isEventRetrospectiveAudioItem(item = {}) {
     || String(item.id || "").startsWith("retrospective-")
     || String(item.key || "").includes("retrospective")
     || String(item.key || "").includes("rueckblick")
-    || String(item.key || "").includes("rückblick")
+    || String(item.key || "").includes("rï¿½ckblick")
     || category.includes("rueckblick")
-    || category.includes("rückblick");
+    || category.includes("rï¿½ckblick");
 }
 
 function normalizeRetrospectiveMatchText(value = "") {
@@ -660,7 +660,7 @@ function audioMetaLine(collection, item, variant) {
   const voice = item[`${prefix}Voice`] || (variant === "natural" ? "Puck" : "Kore");
   const mime = item[`${prefix}MimeType`] || (variant === "natural" ? "audio/mpeg" : item.audioMimeType || "audio/wav");
   const textLength = item[`${prefix}TextLength`] || item.audioTextLength || 0;
-  return `<small>Version ${Number(item.contentVersion || item.audioContentVersion || 1)} · ${escapeHtml(voice)} · ${escapeHtml(mime)}${textLength ? ` · ${Number(textLength).toLocaleString("de-DE")} Zeichen` : ""}${generatedAt ? ` · ${formatDateTime(generatedAt)}` : ""}</small>`;
+  return `<small>Version ${Number(item.contentVersion || item.audioContentVersion || 1)} ï¿½ ${escapeHtml(voice)} ï¿½ ${escapeHtml(mime)}${textLength ? ` ï¿½ ${Number(textLength).toLocaleString("de-DE")} Zeichen` : ""}${generatedAt ? ` ï¿½ ${formatDateTime(generatedAt)}` : ""}</small>`;
 }
 
 function audioGenerationPanel(collection, item, options = {}) {
@@ -823,7 +823,7 @@ function chatGptHints(events, media, downloads = []) {
   const hints = [
     shortDescriptions ? `${shortDescriptions} Events haben sehr kurze Beschreibungen.` : "",
     memberEventsWithoutTeaser ? `${memberEventsWithoutTeaser} Mitglieder-Events haben keinen oeffentlichen Teaser.` : "",
-    postWithoutReport ? `${postWithoutReport} Events im Rückblick haben noch keinen Rückblicktext.` : "",
+    postWithoutReport ? `${postWithoutReport} Events im Rï¿½ckblick haben noch keinen Rï¿½ckblicktext.` : "",
     missingAlt ? `${missingAlt} Bilder haben keine Alt-Texte.` : "",
     downloadsWithoutDescription ? `${downloadsWithoutDescription} Downloads haben keine Beschreibung.` : ""
   ].filter(Boolean);
@@ -842,14 +842,14 @@ export async function dashboardPage() {
       <div class="stat"><span>Kommende Events</span><strong>${upcoming.length}</strong></div>
       <div class="stat"><span>Anmeldungen</span><strong>${registrations.length}</strong></div>
       <div class="stat"><span>Unbestaetigt</span><strong>${pending}</strong></div>
-      <div class="stat"><span>Event Rückblick / Archiv</span><strong>${openPost}</strong></div>
+      <div class="stat"><span>Event Rï¿½ckblick / Archiv</span><strong>${openPost}</strong></div>
       <div class="stat"><span>Mailfehler</span><strong>${mails.filter((mail) => mail.status === "failed").length}</strong></div>
     </div>
     ${chatGptHints(events, media, downloads)}
     <div class="cms-columns">
       <section class="panel"><h2>Naechste Events</h2><div class="table-wrap"><table class="table"><thead><tr><th>Event</th><th>Termin</th><th>Phase</th></tr></thead><tbody>${upcoming.map((event) => `<tr><td><a class="link" href="#/cms/event/${event.id}">${escapeHtml(event.title)}</a></td><td>${formatDate(event.date)}</td><td>${status(lifecycleLabels[event.lifecyclePhase])}</td></tr>`).join("")}</tbody></table></div></section>
       <section class="panel"><h2>Aufmerksamkeit erforderlich</h2>
-        <div class="setup-steps"><div class="setup-step"><span>Unbestaetigte Anmeldungen</span><strong>${pending}</strong></div><div class="setup-step"><span>Medien in Pruefung</span><strong>${media.filter((item) => item.status === "in_review").length}</strong></div><div class="setup-step"><span>Event Rückblick offen</span><strong>${openPost}</strong></div></div>
+        <div class="setup-steps"><div class="setup-step"><span>Unbestaetigte Anmeldungen</span><strong>${pending}</strong></div><div class="setup-step"><span>Medien in Pruefung</span><strong>${media.filter((item) => item.status === "in_review").length}</strong></div><div class="setup-step"><span>Event Rï¿½ckblick offen</span><strong>${openPost}</strong></div></div>
         <div class="actions" style="margin-top:20px"><a class="button button--secondary button--small" href="#/cms/editorial">Redaktion bearbeiten</a><a class="button button--secondary button--small" href="#/cms/members">Mitglied anlegen</a></div>
       </section>
     </div>`));
@@ -890,12 +890,12 @@ export async function eventFollowUpPage() {
   const events = allEvents
     .filter((event) => isPastCmsEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
-  return protect(cmsShell("cms/followup", `${cmsTitle("Event-Management", "Event Rückblick")}
+  return protect(cmsShell("cms/followup", `${cmsTitle("Event-Management", "Event Rï¿½ckblick")}
   ${eventFollowUpTable(events, mediaAssets, allEditorial)}`));
 }
 
 function eventTabs(id, active) {
-  return `<nav class="tabs">${[["base", "Stammdaten"], ["pre", "Vorlauf"], ["topics", "Vortraege / Referenten"], ["partners", "Co-Gastgeber"], ["registration", "Anmeldung"], ["post", "Rückblick"], ["media", "Fotogalerie / Downloads"]].map(([key, label]) => `<button data-event-tab="${key}" data-event-id="${id}" class="${active === key ? "active" : ""}">${label}</button>`).join("")}</nav>`;
+  return `<nav class="tabs">${[["base", "Stammdaten"], ["pre", "Vorlauf"], ["topics", "Vortraege / Referenten"], ["partners", "Co-Gastgeber"], ["registration", "Anmeldung"], ["post", "Rï¿½ckblick"], ["media", "Fotogalerie / Downloads"]].map(([key, label]) => `<button data-event-tab="${key}" data-event-id="${id}" class="${active === key ? "active" : ""}">${label}</button>`).join("")}</nav>`;
 }
 
 function shortText(value = "", length = 112) {
@@ -981,7 +981,7 @@ function eventFollowUpActionButtons(event = {}) {
   const nextStatus = isActive ? "inactive" : "published";
   const toggleClass = isActive ? "icon-button--visible" : "icon-button--hidden";
   const toggleLabel = isActive ? "Aktiv: auf inaktiv setzen" : "Inaktiv: auf aktiv setzen";
-  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/event/${event.id}?tab=post" title="Rückblick bearbeiten" aria-label="Rückblick bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-event-status="${escapeHtml(event.id)}" data-status="${nextStatus}" data-lifecycle-phase="${isActive ? "archived" : "archive_published"}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ? "eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-event="${escapeHtml(event.id)}" data-delete-return="cms/followup" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
+  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/event/${event.id}?tab=post" title="Rï¿½ckblick bearbeiten" aria-label="Rï¿½ckblick bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-event-status="${escapeHtml(event.id)}" data-status="${nextStatus}" data-lifecycle-phase="${isActive ? "archived" : "archive_published"}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ? "eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-event="${escapeHtml(event.id)}" data-delete-return="cms/followup" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
 }
 
 function eventImageUrl(event = {}, mediaAssets = []) {
@@ -994,7 +994,7 @@ function eventFollowUpTable(events = [], mediaAssets = [], allEditorial = []) {
     const retrospectiveArticle = allEditorial.find((item) => {
       const category = String(item.category || "").toLowerCase();
       return retrospectiveMatchesEvent(item, event)
-        && (item.isRetrospective || category.includes("rückblick") || category.includes("rueckblick") || category.includes("rÃ¼ckblick"))
+        && (item.isRetrospective || category.includes("rï¿½ckblick") || category.includes("rueckblick") || category.includes("rÃ¼ckblick"))
         && (item.page === "press" || item.section === "pressRelease");
     });
     return `<tr>
@@ -1002,7 +1002,7 @@ function eventFollowUpTable(events = [], mediaAssets = [], allEditorial = []) {
     <td><a class="link editorial-title-link" href="#/cms/event/${event.id}?tab=post" title="${escapeHtml(event.title || "-")}">${escapeHtml(shortText(event.title || "-", 70))}</a>${event.subtitle ? `<small>${escapeHtml(shortText(event.subtitle, 95))}</small>` : ""}</td>
     <td>${escapeHtml(formatDate(event.date))}</td>
     <td>${status(event.lifecyclePhase === "archive_published" ? "published" : event.status || event.lifecyclePhase || "draft")}</td>
-    <td>${retrospectiveArticle ? audioListCell("editorialContent", retrospectiveArticle) : `<small class="muted">Rückblick-Beitrag fehlt</small>`}</td>
+    <td>${retrospectiveArticle ? audioListCell("editorialContent", retrospectiveArticle) : `<small class="muted">Rï¿½ckblick-Beitrag fehlt</small>`}</td>
     <td>${editorialMediaFlags(retrospectiveArticle || event)}</td>
     <td>${eventFollowUpActionButtons(event)}</td>
   </tr>`;
@@ -1278,19 +1278,19 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   const retrospectiveArticle = allEditorial.find((item) => {
     const category = String(item.category || "").toLowerCase();
     return retrospectiveMatchesEvent(item, event)
-      && (item.isRetrospective || category.includes("rückblick") || category.includes("rueckblick") || category.includes("rückblick"))
+      && (item.isRetrospective || category.includes("rï¿½ckblick") || category.includes("rueckblick") || category.includes("rï¿½ckblick"))
       && (item.page === "press" || item.section === "pressRelease");
   });
   const retrospectiveArticleId = retrospectiveArticle?.id || `retrospective-${event.id}`;
   const retrospectiveControl = `<section class="panel event-retrospective-control" style="background:var(--pdt-bg)">
     <div class="actions" style="justify-content:space-between;align-items:flex-start">
-      <div><p class="eyebrow">Presse / Rückblicke</p><h2>Redaktionellen Rückblick steuern</h2><p class="muted">Erstellt oder aktualisiert einen Pressebeitrag in der Kategorie Rückblicke mit Fließtext, Event-Bezug und Galerie-Verknüpfung.</p></div>
+      <div><p class="eyebrow">Presse / Rï¿½ckblicke</p><h2>Redaktionellen Rï¿½ckblick steuern</h2><p class="muted">Erstellt oder aktualisiert einen Pressebeitrag in der Kategorie Rï¿½ckblicke mit Flieï¿½text, Event-Bezug und Galerie-Verknï¿½pfung.</p></div>
       <div class="actions">
-        <button type="button" class="button button--primary button--small" data-create-event-retrospective="${escapeHtml(event.id)}">${retrospectiveArticle ? "Rückblick aktualisieren" : "Rückblick erstellen"}</button>
-        ${retrospectiveArticle ? `<a class="button button--secondary button--small" href="#/cms/edit?module=editorialContent&id=${escapeHtml(retrospectiveArticle.id)}&section=press">Beitrag öffnen</a>` : ""}
+        <button type="button" class="button button--primary button--small" data-create-event-retrospective="${escapeHtml(event.id)}">${retrospectiveArticle ? "Rï¿½ckblick aktualisieren" : "Rï¿½ckblick erstellen"}</button>
+        ${retrospectiveArticle ? `<a class="button button--secondary button--small" href="#/cms/edit?module=editorialContent&id=${escapeHtml(retrospectiveArticle.id)}&section=press">Beitrag ï¿½ffnen</a>` : ""}
       </div>
     </div>
-    <div id="event-retrospective-result" class="muted">${retrospectiveArticle ? `Verknüpfter Beitrag: ${escapeHtml(retrospectiveArticle.title || retrospectiveArticle.id)}` : "Noch kein redaktioneller Rückblick zu diesem Event vorhanden."}</div>
+    <div id="event-retrospective-result" class="muted">${retrospectiveArticle ? `Verknï¿½pfter Beitrag: ${escapeHtml(retrospectiveArticle.title || retrospectiveArticle.id)}` : "Noch kein redaktioneller Rï¿½ckblick zu diesem Event vorhanden."}</div>
     <input type="hidden" data-retrospective-article-id value="${escapeHtml(retrospectiveArticleId)}">
   </section>`;
   if (tab === "post" && retrospectiveArticle) {
@@ -1313,10 +1313,10 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   } else if (tab === "topics") {
     content = eventTopicsEditor(event, topics, speakers, allEvents, query);
   } else if (tab === "__old_topics") {
-    content = `<h2>Zugeordnete Themen</h2><div class="filters">${topics.map((topic) => `<span class="filter ${event.topicIds.includes(topic.id) ? "active" : ""}">${escapeHtml(topic.title)}</span>`).join("")}</div><p>Themenspezifische Beschreibung und Sortierung koennen hier redaktionell erweitert werden.</p><div class="table-wrap" style="margin-top:22px"><table class="table"><thead><tr><th>Thema</th><th>Referenten</th></tr></thead><tbody>${topics.filter((topic) => event.topicIds.includes(topic.id)).map((topic) => { const topicSpeakers = speakers.filter((speaker) => speaker.topicId === topic.id || (event.speakerIds || []).includes(speaker.id)); return `<tr><td>${escapeHtml(topic.title)}</td><td>${topicSpeakers.length ? topicSpeakers.map((speaker) => `<div class="person"><div>${speaker.photoUrl ? `<img src="${escapeHtml(speaker.photoUrl)}" alt="">` : ""}</div><div><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" · "))}</small>${speaker.shortBio ? `<p>${escapeHtml(speaker.shortBio)}</p>` : ""}</div></div>`).join("") : "Noch kein Referent zugeordnet."}</td></tr>`; }).join("")}</tbody></table></div>`;
+    content = `<h2>Zugeordnete Themen</h2><div class="filters">${topics.map((topic) => `<span class="filter ${event.topicIds.includes(topic.id) ? "active" : ""}">${escapeHtml(topic.title)}</span>`).join("")}</div><p>Themenspezifische Beschreibung und Sortierung koennen hier redaktionell erweitert werden.</p><div class="table-wrap" style="margin-top:22px"><table class="table"><thead><tr><th>Thema</th><th>Referenten</th></tr></thead><tbody>${topics.filter((topic) => event.topicIds.includes(topic.id)).map((topic) => { const topicSpeakers = speakers.filter((speaker) => speaker.topicId === topic.id || (event.speakerIds || []).includes(speaker.id)); return `<tr><td>${escapeHtml(topic.title)}</td><td>${topicSpeakers.length ? topicSpeakers.map((speaker) => `<div class="person"><div>${speaker.photoUrl ? `<img src="${escapeHtml(speaker.photoUrl)}" alt="">` : ""}</div><div><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" ï¿½ "))}</small>${speaker.shortBio ? `<p>${escapeHtml(speaker.shortBio)}</p>` : ""}</div></div>`).join("") : "Noch kein Referent zugeordnet."}</td></tr>`; }).join("")}</tbody></table></div>`;
   } else if (tab === "speakers") {
     const assignedSpeakers = speakers.filter((item) => (event.speakerIds || []).includes(item.id));
-    content = `<h2>Referenten im Eventkontext</h2><form id="event-speakers-form" data-event-id="${event.id}" class="form-grid"><div class="selection-grid">${speakers.length ? speakers.map((speaker) => `<label class="selection-item"><input type="checkbox" name="speakerIds" value="${speaker.id}" ${(event.speakerIds || []).includes(speaker.id) ? "checked" : ""}><span><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml(speaker.position || speaker.company || "")}</small></span>${status(speaker.status || "draft")}</label>`).join("") : `<div class="alert">Noch keine Referenten angelegt. Bitte zuerst im Bereich Referenten ein Profil mit Foto und Vita erstellen.</div>`}</div><div class="actions"><button class="button button--primary">Zuordnung speichern</button><a class="button button--secondary" href="#/cms/speakers">Referentenprofile verwalten</a></div><div id="speaker-assignment-result"></div></form>${assignedSpeakers.length ? `<div class="table-wrap" style="margin-top:24px"><table class="table"><thead><tr><th>Zugeordnet</th><th>Unternehmen</th><th>Profil</th></tr></thead><tbody>${assignedSpeakers.map((speaker) => `<tr><td>${escapeHtml(speaker.name)}</td><td>${escapeHtml(speaker.company || "-")}</td><td>${speaker.photoUrl ? "Foto vorhanden" : "Foto fehlt"} · ${speaker.shortBio || speaker.longBio ? "Vita vorhanden" : "Vita fehlt"}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
+    content = `<h2>Referenten im Eventkontext</h2><form id="event-speakers-form" data-event-id="${event.id}" class="form-grid"><div class="selection-grid">${speakers.length ? speakers.map((speaker) => `<label class="selection-item"><input type="checkbox" name="speakerIds" value="${speaker.id}" ${(event.speakerIds || []).includes(speaker.id) ? "checked" : ""}><span><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml(speaker.position || speaker.company || "")}</small></span>${status(speaker.status || "draft")}</label>`).join("") : `<div class="alert">Noch keine Referenten angelegt. Bitte zuerst im Bereich Referenten ein Profil mit Foto und Vita erstellen.</div>`}</div><div class="actions"><button class="button button--primary">Zuordnung speichern</button><a class="button button--secondary" href="#/cms/speakers">Referentenprofile verwalten</a></div><div id="speaker-assignment-result"></div></form>${assignedSpeakers.length ? `<div class="table-wrap" style="margin-top:24px"><table class="table"><thead><tr><th>Zugeordnet</th><th>Unternehmen</th><th>Profil</th></tr></thead><tbody>${assignedSpeakers.map((speaker) => `<tr><td>${escapeHtml(speaker.name)}</td><td>${escapeHtml(speaker.company || "-")}</td><td>${speaker.photoUrl ? "Foto vorhanden" : "Foto fehlt"} ï¿½ ${speaker.shortBio || speaker.longBio ? "Vita vorhanden" : "Vita fehlt"}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
   } else if (tab === "partners") {
     content = eventPartnersEditor(event, sponsors, mediaAssets);
   } else if (tab === "registration") {
@@ -1332,30 +1332,30 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     content = `<h2>KI-Pruefung</h2><p class="muted" style="margin-bottom:18px">Diese Pruefung erzeugt redaktionelle Empfehlungen. Blocker kommen weiterhin aus der regelbasierten Pipeline-Validierung.</p><div class="ai-quality-card"><button type="button" class="button button--primary ai-action" data-ai-action="analyzeEventPipelineQuality" data-ai-target="ai-quality-context" data-ai-entity-type="event" data-ai-entity-id="${event.id}" data-ai-field="pipelineQuality">Pipeline mit ChatGPT pruefen</button><div id="ai-quality-context" hidden>${escapeHtml(JSON.stringify({ event, media: eventMedia }))}</div></div><div class="setup-steps" style="margin-top:20px"><div class="setup-step"><span>Pflichtfelder fehlen?</span><strong>${event.title && event.date && event.locationName ? "ok" : "pruefen"}</strong></div><div class="setup-step"><span>SEO-Daten vorhanden?</span><strong>${event.seoTitle && event.seoDescription ? "ok" : "Empfehlung"}</strong></div><div class="setup-step"><span>Alt-Texte bei Bildern?</span><strong>${eventMedia.some((item) => !item.altText) ? "Empfehlung" : "ok"}</strong></div></div>`;
   } else {
     const assigned = media.filter((item) => item.eventId === event.id);
-    content = `<h2>${tab === "post" ? "Event-Nacharbeit" : "Medien zum Event"}</h2>${tab === "post" ? `<section class="panel" style="background:var(--pdt-bg)"><h2>Event-Nachlauf mit KI</h2>${aiFieldActions([{ action: "generateArchiveText", target: "longDescription", label: "Nachbericht erzeugen", entityId: event.id, fieldName: "archiveText" }, { action: "generateEventSummary", target: "postEventSummary", label: "Kurztext erzeugen", entityId: event.id, fieldName: "postEventSummary" }])}</section>` : `<section class="panel" style="background:var(--pdt-bg)"><h2>Fotogalerie und Downloads mit KI</h2><p>Galerie und Downloads bleiben optional. Wenn keine Bilder oder Downloads vorhanden sind, entsteht kein Pflichtfehler.</p>${aiFieldActions([{ action: "generateGalleryIntro", target: "ai-media-context", label: "Galerie-Einleitung", entityId: event.id, fieldName: "galleryIntro" }, { action: "generateImageAltText", target: "ai-media-context", label: "Alt-Texte vorbereiten", entityId: event.id, fieldName: "altTexts" }, { action: "generateDownloadDescription", target: "ai-media-context", label: "Downloadbeschreibung", entityId: event.id, fieldName: "downloadDescription" }])}<div id="ai-media-context" hidden>${escapeHtml(JSON.stringify({ event, media: assigned }))}</div></section>`}${tab === "post" ? `${retrospectiveControl}<form id="event-edit-form" data-event-id="${event.id}" class="form-grid" style="margin-bottom:22px"><div class="field"><label>Nachbericht Kurztext</label><textarea name="postEventSummary">${escapeHtml(event.postEventSummary || event.postEventummary || "")}</textarea></div><div class="field"><label>Langtext / Rückblicktext</label><textarea name="longDescription">${escapeHtml(event.longDescription || event.bodyText || event.articleText || event.archiveText || "")}</textarea><p class="muted">Dieser Text wird als Langtext fuer den redaktionellen Rückblick verwendet.</p></div><div class="actions"><button class="button button--primary button--small">Rückblicktext speichern</button></div><div id="event-save-result"></div></form>` : ""}<form id="media-upload-form" data-event-id="${event.id}" class="upload"><p><strong>Fotos, PDFs oder Praesentationen hochladen</strong></p><p>Drag-and-drop oder Dateiauswahl; Inhalte bleiben bis zur Freigabe intern.</p><input type="file" name="files" multiple style="margin-top:17px"><button class="button button--primary button--small" type="submit" style="margin:15px auto 0">Upload starten</button><div id="upload-result"></div></form><div class="table-wrap"><table class="table"><thead><tr><th>Datei</th><th>Typ</th><th>Sichtbarkeit</th><th>Freigabe</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((item) => `<tr><td>${escapeHtml(item.title)}</td><td>${item.mediaType}</td><td>${item.visibility}</td><td>${status(item.status)}</td><td><div class="table-actions"><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="approved">Aktiv</button><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="archived">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="eventMedia" data-record-id="${item.id}">Loeschen</button></div></td></tr>`).join("")}</tbody></table></div>`;
+    content = `<h2>${tab === "post" ? "Event-Nacharbeit" : "Medien zum Event"}</h2>${tab === "post" ? `<section class="panel" style="background:var(--pdt-bg)"><h2>Event-Nachlauf mit KI</h2>${aiFieldActions([{ action: "generateArchiveText", target: "longDescription", label: "Nachbericht erzeugen", entityId: event.id, fieldName: "archiveText" }, { action: "generateEventSummary", target: "postEventSummary", label: "Kurztext erzeugen", entityId: event.id, fieldName: "postEventSummary" }])}</section>` : `<section class="panel" style="background:var(--pdt-bg)"><h2>Fotogalerie und Downloads mit KI</h2><p>Galerie und Downloads bleiben optional. Wenn keine Bilder oder Downloads vorhanden sind, entsteht kein Pflichtfehler.</p>${aiFieldActions([{ action: "generateGalleryIntro", target: "ai-media-context", label: "Galerie-Einleitung", entityId: event.id, fieldName: "galleryIntro" }, { action: "generateImageAltText", target: "ai-media-context", label: "Alt-Texte vorbereiten", entityId: event.id, fieldName: "altTexts" }, { action: "generateDownloadDescription", target: "ai-media-context", label: "Downloadbeschreibung", entityId: event.id, fieldName: "downloadDescription" }])}<div id="ai-media-context" hidden>${escapeHtml(JSON.stringify({ event, media: assigned }))}</div></section>`}${tab === "post" ? `${retrospectiveControl}<form id="event-edit-form" data-event-id="${event.id}" class="form-grid" style="margin-bottom:22px"><div class="field"><label>Nachbericht Kurztext</label><textarea name="postEventSummary">${escapeHtml(event.postEventSummary || event.postEventummary || "")}</textarea></div><div class="field"><label>Langtext / Rï¿½ckblicktext</label><textarea name="longDescription">${escapeHtml(event.longDescription || event.bodyText || event.articleText || event.archiveText || "")}</textarea><p class="muted">Dieser Text wird als Langtext fuer den redaktionellen Rï¿½ckblick verwendet.</p></div><div class="actions"><button class="button button--primary button--small">Rï¿½ckblicktext speichern</button></div><div id="event-save-result"></div></form>` : ""}<form id="media-upload-form" data-event-id="${event.id}" class="upload"><p><strong>Fotos, PDFs oder Praesentationen hochladen</strong></p><p>Drag-and-drop oder Dateiauswahl; Inhalte bleiben bis zur Freigabe intern.</p><input type="file" name="files" multiple style="margin-top:17px"><button class="button button--primary button--small" type="submit" style="margin:15px auto 0">Upload starten</button><div id="upload-result"></div></form><div class="table-wrap"><table class="table"><thead><tr><th>Datei</th><th>Typ</th><th>Sichtbarkeit</th><th>Freigabe</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((item) => `<tr><td>${escapeHtml(item.title)}</td><td>${item.mediaType}</td><td>${item.visibility}</td><td>${status(item.status)}</td><td><div class="table-actions"><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="approved">Aktiv</button><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="archived">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="eventMedia" data-record-id="${item.id}">Loeschen</button></div></td></tr>`).join("")}</tbody></table></div>`;
   }
   if (tab === "post") {
     const assigned = media.filter((item) => item.eventId === event.id);
     const selectedGallery = event.galleryId ? galleries.find((gallery) => gallery.id === event.galleryId) : null;
-    const postTitleValue = event.retrospectiveTitle || retrospectiveArticle?.title || `Rückblick: ${event.title || "PROdigitalTV Event"}`;
+    const postTitleValue = event.retrospectiveTitle || retrospectiveArticle?.title || `Rï¿½ckblick: ${event.title || "PROdigitalTV Event"}`;
     const postSummaryValue = event.postEventSummary || event.postEventummary || retrospectiveArticle?.introText || retrospectiveArticle?.subtitle || "";
     const postLongValue = event.longDescription || event.bodyText || event.articleText || event.archiveText || retrospectiveArticle?.longDescription || retrospectiveArticle?.bodyText || retrospectiveArticle?.articleText || retrospectiveArticle?.archiveText || "";
     const retrospectiveAudioTool = retrospectiveArticle
       ? audioGenerationPanel("editorialContent", retrospectiveArticle, { variant: "accessible", providerConfig: audioProviders })
-      : `<p class="muted">Bitte zuerst den Rückblicktext speichern. Danach wird der redaktionelle Rückblick-Beitrag angelegt und die Vorlesfunktion ist hier verfügbar.</p>`;
+      : `<p class="muted">Bitte zuerst den Rï¿½ckblicktext speichern. Danach wird der redaktionelle Rï¿½ckblick-Beitrag angelegt und die Vorlesfunktion ist hier verfï¿½gbar.</p>`;
     const retrospectiveVideoTool = retrospectiveArticle
       ? articleVideoAttachmentEditor(retrospectiveArticle, videoLibrary)
-      : `<details class="editorial-tool-details" data-editor-tool-panel="videos"><summary><span>Medien</span><strong>Videoanhaenge</strong><em>optional</em></summary><div class="editor-tool-section editor-tool-section--videos"><p class="muted">Bitte zuerst den Rückblicktext speichern. Danach wird der redaktionelle Rückblick-Beitrag angelegt und Videos koennen am Beitrag angehaengt werden.</p></div></details>`;
+      : `<details class="editorial-tool-details" data-editor-tool-panel="videos"><summary><span>Medien</span><strong>Videoanhaenge</strong><em>optional</em></summary><div class="editor-tool-section editor-tool-section--videos"><p class="muted">Bitte zuerst den Rï¿½ckblicktext speichern. Danach wird der redaktionelle Rï¿½ckblick-Beitrag angelegt und Videos koennen am Beitrag angehaengt werden.</p></div></details>`;
     content = `<h2>Event-Nacharbeit</h2>
       <section class="panel event-post-ai-panel" style="background:var(--pdt-bg)">
         ${aiFieldActions([{ action: "generateArchiveText", target: "longDescription", label: "Nachbericht erzeugen", entityId: event.id, fieldName: "archiveText" }, { action: "generateEventSummary", target: "postEventSummary", label: "Kurztext erzeugen", entityId: event.id, fieldName: "postEventSummary" }])}
       </section>
       <form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="post" class="form-grid is-save-aware event-post-workspace" style="margin-bottom:22px">
         <div class="event-post-workspace__main">
-          <div class="field"><label>Headline Rückblick</label><input name="retrospectiveTitle" value="${escapeHtml(postTitleValue)}"></div>
+          <div class="field"><label>Headline Rï¿½ckblick</label><input name="retrospectiveTitle" value="${escapeHtml(postTitleValue)}"></div>
           <div class="field"><label>Nachbericht Kurztext</label><textarea name="postEventSummary">${escapeHtml(postSummaryValue)}</textarea></div>
-          <div class="field"><label>Langtext / Rückblicktext</label><textarea name="longDescription">${escapeHtml(postLongValue)}</textarea><p class="muted">Dieser Text wird als Langtext fuer den redaktionellen Rückblick verwendet.</p></div>
-          <div class="actions"><button class="button button--primary button--small">Rückblicktext speichern</button></div><div id="event-save-result"></div>
+          <div class="field"><label>Langtext / Rï¿½ckblicktext</label><textarea name="longDescription">${escapeHtml(postLongValue)}</textarea><p class="muted">Dieser Text wird als Langtext fuer den redaktionellen Rï¿½ckblick verwendet.</p></div>
+          <div class="actions"><button class="button button--primary button--small">Rï¿½ckblicktext speichern</button></div><div id="event-save-result"></div>
         </div>
         <aside class="event-post-toolbox">
           <details class="editorial-tool-details">
@@ -1368,7 +1368,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
           </details>
           <details class="editorial-tool-details">
             <summary><span>Medien</span><strong>Galerie</strong>${selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")}</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`}</summary>
-            <div class="editor-tool-section editor-tool-section--gallery"><div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Die Galerie wird mit dem Event und dem späteren Rückblick verbunden.</p></div></div>
+            <div class="editor-tool-section editor-tool-section--gallery"><div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Die Galerie wird mit dem Event und dem spï¿½teren Rï¿½ckblick verbunden.</p></div></div>
           </details>
           ${retrospectiveVideoTool}
         </aside>
@@ -1457,6 +1457,14 @@ const editorialSections = {
     createParams: "&page=news&section=news",
     filter: (item) => isNewsEditorialItem(item)
   },
+  "member-area": {
+    active: "cms/editorial/member-area",
+    title: "MitgliederbeitrÃ¤ge",
+    itemLabel: "Mitgliederbeitrag",
+    route: "cms/editorial/member-area",
+    createParams: "&page=member-area&section=member-area&visibility=members",
+    filter: (item) => isMemberAreaEditorialItem(item)
+  },
   interna: {
     active: "cms/editorial/interna",
     title: "Interna",
@@ -1467,7 +1475,16 @@ const editorialSections = {
   }
 };
 
+function isMemberAreaEditorialItem(item = {}) {
+  return item.page === "member-area"
+    || item.section === "member-area"
+    || item.visibility === "members"
+    || item.publication_target === "member-area"
+    || item.publicationTarget === "member-area";
+}
+
 function isPressEditorialItem(item = {}) {
+  if (isMemberAreaEditorialItem(item)) return false;
   if (isEventRetrospectiveAudioItem(item)) return false;
   const category = String(item.category || "").toLowerCase();
   return item.page === "press"
@@ -1479,12 +1496,13 @@ function isPressEditorialItem(item = {}) {
 }
 
 function isNewsEditorialItem(item = {}) {
+  if (isMemberAreaEditorialItem(item)) return false;
   const category = String(item.category || "").toLowerCase();
   const target = item.publication_target || item.publicationTarget || "";
   if (isPressEditorialItem(item)) return false;
   if (item.page === "news" || item.section === "news") return true;
   if (["news", "daily_news", "monthly_topic", "topic"].includes(target)) return true;
-  if (category && !category.includes("presse") && !category.includes("rueckblick") && !category.includes("rückblick")) return true;
+  if (category && !category.includes("presse") && !category.includes("rueckblick") && !category.includes("rï¿½ckblick")) return true;
   return Boolean(item.author_type === "ai" || item.authorType === "ai" || item.aiGenerated || item.ai_log_json || item.aiLogJson || item.source_snapshot_json || item.sourceSnapshotJson);
 }
 
@@ -1507,6 +1525,7 @@ function isAiGeneratedEditorialItem(item = {}) {
 
 function isInternalEditorialItem(item = {}) {
   if (item.section === "download" || String(item.migratedTo || "").startsWith("downloads/")) return false;
+  if (isMemberAreaEditorialItem(item)) return false;
   if (isAiGeneratedEditorialItem(item)) return false;
   if (["ueber_uns", "mitglied_werden"].includes(item.bereich)) return true;
   return !["press", "news"].includes(item.page)
@@ -1695,6 +1714,7 @@ function videoLibrarySnapshot(video = {}, index = 0) {
   const youtubeUrl = video.youtubeUrl || video.url || (youtubeVideoId ? `https://www.youtube.com/watch?v=${youtubeVideoId}` : "");
   const posterImageUrl = video.posterImageUrl || video.thumbnailUrl || video.youtubeThumbnailUrl || (youtubeVideoId ? `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg` : "");
   return {
+    ...video,
     id: video.id || `video-${index + 1}`,
     youtubeVideoId,
     youtubeUrl,
@@ -1706,12 +1726,24 @@ function videoLibrarySnapshot(video = {}, index = 0) {
     privacyStatus: video.privacyStatus || "unlisted",
     visibility: video.visibility || "public",
     status: video.status || "ready",
-    sortOrder: Number(video.sortOrder ?? index + 1)
+    sortOrder: Number(video.sortOrder ?? index + 1),
+    createdAt: video.createdAt || video.created_at || "",
+    updatedAt: video.updatedAt || video.updated_at || "",
+    trash_status: video.trash_status || video.trashStatus || ""
   };
 }
 
 function videoLibraryOptionPayload(video = {}) {
   return escapeHtml(JSON.stringify(videoLibrarySnapshot(video)));
+}
+
+function usableCentralVideos(videoLibrary = []) {
+  return (Array.isArray(videoLibrary) ? videoLibrary : [])
+    .map((video, index) => videoLibrarySnapshot(video, index))
+    .filter((video) => video.youtubeVideoId || video.youtubeUrl)
+    .filter((video) => !["archived", "deleted", "hidden", "error"].includes(String(video.status || "ready").toLowerCase()))
+    .filter((video) => String(video.trash_status || video.trashStatus || "").toLowerCase() !== "paperkorb")
+    .sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
 }
 
 function articleVideoAssignmentRow(video = {}, index = 0) {
@@ -1738,9 +1770,9 @@ function articleVideoAttachmentEditor(item = {}, videoLibrary = []) {
   const rows = videos.map((video, index) => articleVideoAssignmentRow(video, index)).join("");
   const returnTo = `#/cms/edit?module=editorialContent&id=${encodeURIComponent(item.id)}&section=${encodeURIComponent(item.section || item.page || "news")}`;
   const newHref = `#/cms/media/videos?mode=new&targetCollection=editorialContent&targetId=${encodeURIComponent(item.id)}&returnTo=${encodeURIComponent(returnTo)}`;
-  const options = [`<option value="">Video aus Videothek wählen</option>`, ...videoLibrary.map((video) => {
-    const snapshot = videoLibrarySnapshot(video);
-    return `<option value="${escapeHtml(snapshot.id)}" data-video-payload="${videoLibraryOptionPayload(video)}">${escapeHtml(snapshot.title || snapshot.youtubeVideoId || snapshot.id)}</option>`;
+  const centralVideos = usableCentralVideos(videoLibrary);
+  const options = [`<option value="">Video aus Videothek waehlen</option>`, ...centralVideos.map((snapshot) => {
+    return `<option value="${escapeHtml(snapshot.id)}" data-video-payload="${videoLibraryOptionPayload(snapshot)}">${escapeHtml(snapshot.title || snapshot.youtubeVideoId || snapshot.id)}</option>`;
   })].join("");
   return `<details class="editorial-tool-details" data-editor-tool-panel="videos">
     <summary><span>Medien</span><strong>Video</strong><em>${videos.length ? `${videos.length} zugeordnet` : "optional"}</em></summary>
@@ -1748,7 +1780,7 @@ function articleVideoAttachmentEditor(item = {}, videoLibrary = []) {
       <div class="video-attachment-list" data-video-attachment-list>${rows || `<p class="muted">Noch kein Video zugeordnet.</p>`}</div>
       <div class="field"><label>Video zuordnen</label><select data-video-library-select>${options}</select></div>
       <div class="tool-button-row">
-        <button class="button button--secondary button--small" type="button" data-add-video-from-library>Aus Liste zuordnen</button>
+        <button class="button button--primary button--small video-library-assign-button" type="button" data-add-video-from-library>Aus Liste zuordnen</button>
         <a class="button button--secondary button--small" href="${newHref}">Neues Video</a>
       </div>
       <p class="muted">YouTube-URLs werden zentral unter Medien > Videos gepflegt.</p>
@@ -1836,7 +1868,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
     const linkedEventId = item.eventId || item.linkedEventId || "";
     const eventOptions = [`<option value="">Kein Event zugeordnet</option>`, ...events
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
-      .map((event) => `<option value="${escapeHtml(event.id)}" ${linkedEventId === event.id ? "selected" : ""}>${escapeHtml([event.date, event.title].filter(Boolean).join(" · "))}</option>`)].join("");
+      .map((event) => `<option value="${escapeHtml(event.id)}" ${linkedEventId === event.id ? "selected" : ""}>${escapeHtml([event.date, event.title].filter(Boolean).join(" ï¿½ "))}</option>`)].join("");
     const imageKeys = new Set(images.flatMap((image) => [image.id, image.url, image.storagePath].filter(Boolean)));
     const candidateMedia = media
       .filter((entry) => entry.mediaType === "image" && entry.fileUrl)
@@ -1853,7 +1885,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
           <div class="field"><label>Alt-Text</label><input name="media-${index}-altText" value="${escapeHtml(medium.altText || medium.title || medium.fileName || "")}"></div>
           <label class="checkbox-line"><input type="checkbox" name="media-${index}-attach"> In Galerie aufnehmen</label>
           <label class="checkbox-line"><input type="checkbox" name="media-${index}-approve" checked> Freigeben</label>
-          <small>${escapeHtml([medium.eventId, medium.status, medium.visibility].filter(Boolean).join(" · "))}</small>
+          <small>${escapeHtml([medium.eventId, medium.status, medium.visibility].filter(Boolean).join(" ï¿½ "))}</small>
         </article>`).join("")}</div>`
       : `<div class="alert">Der Uploadfolder enthaelt aktuell keine weiteren Bilder.</div>`;
     return protect(cmsShell("cms/galleries", `${cmsTitle("Bildergalerien", "Galerie bearbeiten", `<a class="button button--secondary button--small" href="#/cms/galleries">Zurueck</a>`)}
@@ -1884,56 +1916,60 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
       </form></section>`));
   }
   const editorialKind = item.page || item.section || query.get("page") || query.get("section");
-  if (module === "editorialContent" && (["press", "news", "pressRelease"].includes(editorialKind) || isPressEditorialItem(item) || isNewsEditorialItem(item))) {
-    const sectionKey = item.page === "news" || item.section === "news" || query.get("page") === "news" || query.get("section") === "news" ? "news" : "press";
+  const isMemberAreaEditor = module === "editorialContent"
+    && (editorialKind === "member-area" || query.get("section") === "member-area" || isMemberAreaEditorialItem(item));
+  if (module === "editorialContent" && (isMemberAreaEditor || ["press", "news", "pressRelease"].includes(editorialKind) || isPressEditorialItem(item) || isNewsEditorialItem(item))) {
+    const sectionKey = isMemberAreaEditor
+      ? "member-area"
+      : item.page === "news" || item.section === "news" || query.get("page") === "news" || query.get("section") === "news" ? "news" : "press";
     const [allEditorial, events, sponsors, galleries] = await Promise.all([list("editorialContent"), list("events"), list("sponsors"), list("galleries")]);
     const categories = Array.from(new Set(allEditorial
       .filter((entry) => entry.page === sectionKey)
-      .map((entry) => entry.category || (sectionKey === "press" ? "Presse" : "News"))
+      .map((entry) => entry.category || (sectionKey === "press" ? "Presse" : sectionKey === "member-area" ? "Member Infos" : "News"))
       .filter(Boolean))).sort((a, b) => a.localeCompare(b));
-    const categoryValue = item.category || (sectionKey === "press" ? "Presse" : "News");
-    const categoryOptions = Array.from(new Set([categoryValue, sectionKey === "press" ? "Rückblicke" : "", ...categories])).filter(Boolean);
-    const backPath = sectionKey === "press" ? "editorial/press" : "editorial/news";
-    const defaultRetrospectivePrompt = `Erstelle aus der folgenden Pressemitteilung einen redaktionellen Rückblicksbeitrag für PROdigitalTV.
+    const categoryValue = item.category || (sectionKey === "press" ? "Presse" : sectionKey === "member-area" ? "Member Infos" : "News");
+    const categoryOptions = Array.from(new Set([categoryValue, sectionKey === "press" ? "Rï¿½ckblicke" : "", ...categories])).filter(Boolean);
+    const backPath = sectionKey === "press" ? "editorial/press" : sectionKey === "member-area" ? "editorial/member-area" : "editorial/news";
+    const defaultRetrospectivePrompt = `Erstelle aus der folgenden Pressemitteilung einen redaktionellen Rï¿½ckblicksbeitrag fï¿½r PROdigitalTV.
 
 Ziel:
-Der Text soll nicht wie eine Pressemitteilung wirken, sondern wie ein nachträglicher redaktioneller Rückblick auf eine bereits stattgefundene Veranstaltung.
+Der Text soll nicht wie eine Pressemitteilung wirken, sondern wie ein nachtrï¿½glicher redaktioneller Rï¿½ckblick auf eine bereits stattgefundene Veranstaltung.
 
-chreibe vollständig in der Vergangenheitsform.
+chreibe vollstï¿½ndig in der Vergangenheitsform.
 
 Aufgaben:
-- Formuliere den Text journalistisch, seriös und flüssig.
+- Formuliere den Text journalistisch, seriï¿½s und flï¿½ssig.
 - Ordne die Inhalte thematisch neu, nicht zwingend in der Reihenfolge der Pressemitteilung.
 - Beginne mit einem starken Einstieg, der Veranstaltung, Anlass und Bedeutung zusammenfasst.
-- Beschreibe danach die wichtigsten Themen, Aussagen, Gäste, Diskussionen und Erkenntnisse.
-- telle heraus, welchen Mehrwert die Veranstaltung für Mitglieder, Gäste und die Branche hatte.
-- Verwende klare Absätze mit Zwischenüberschriften.
+- Beschreibe danach die wichtigsten Themen, Aussagen, Gï¿½ste, Diskussionen und Erkenntnisse.
+- telle heraus, welchen Mehrwert die Veranstaltung fï¿½r Mitglieder, Gï¿½ste und die Branche hatte.
+- Verwende klare Absï¿½tze mit Zwischenï¿½berschriften.
 - Vermeide werbliche prache.
-- Keine reine Aufzählung der Pressemitteilung übernehmen.
-- Keine Zukunftsankündigungen so formulieren, als stünden sie noch bevor.
-- Falls in der Pressemitteilung Ankündigungen enthalten sind, wandle sie in Rückblicksform um.
+- Keine reine Aufzï¿½hlung der Pressemitteilung ï¿½bernehmen.
+- Keine Zukunftsankï¿½ndigungen so formulieren, als stï¿½nden sie noch bevor.
+- Falls in der Pressemitteilung Ankï¿½ndigungen enthalten sind, wandle sie in Rï¿½ckblicksform um.
 - Zitate nur verwenden, wenn sie im Ausgangstext vorhanden sind.
 - Keine Fakten erfinden.
-- Namen, Orte, Datum, Unternehmen und Veranstaltungsformate korrekt übernehmen.
+- Namen, Orte, Datum, Unternehmen und Veranstaltungsformate korrekt ï¿½bernehmen.
 
-Gewünschte truktur:
+Gewï¿½nschte truktur:
 1. Titel
-2. Kurzer Teaser mit 2 bis 3 ätzen
-3. Redaktioneller Fließtext mit Zwischenüberschriften
-4. Optionaler Abschlussabsatz mit Einordnung für PROdigitalTV
+2. Kurzer Teaser mit 2 bis 3 ï¿½tzen
+3. Redaktioneller Flieï¿½text mit Zwischenï¿½berschriften
+4. Optionaler Abschlussabsatz mit Einordnung fï¿½r PROdigitalTV
 
 Ton:
-Professionell, redaktionell, sachlich, hochwertig, verständlich.
+Professionell, redaktionell, sachlich, hochwertig, verstï¿½ndlich.
 
 Ausgangstext:
 {{pressemitteilung}}`;
     const retrospectivePrompt = defaultRetrospectivePrompt;
     const eventOptions = [`<option value="">Kein Event verknuepfen</option>`, ...events
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
-      .map((event) => `<option value="${escapeHtml(event.id)}" ${item.linkedEventId === event.id ? "selected" : ""}>${escapeHtml([event.date, event.title].filter(Boolean).join(" · "))}</option>`)].join("");
+      .map((event) => `<option value="${escapeHtml(event.id)}" ${item.linkedEventId === event.id ? "selected" : ""}>${escapeHtml([event.date, event.title].filter(Boolean).join(" ï¿½ "))}</option>`)].join("");
     const sponsorOptions = [`<option value="">Kein Sponsorlogo</option>`, ...sponsors
       .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
-      .map((sponsor) => `<option value="${escapeHtml(sponsor.id)}" ${item.sponsorId === sponsor.id ? "selected" : ""}>${escapeHtml([sponsor.name, sponsor.role].filter(Boolean).join(" · "))}</option>`)].join("");
+      .map((sponsor) => `<option value="${escapeHtml(sponsor.id)}" ${item.sponsorId === sponsor.id ? "selected" : ""}>${escapeHtml([sponsor.name, sponsor.role].filter(Boolean).join(" ï¿½ "))}</option>`)].join("");
     const galleryOptions = [`<option value="">Keine Galerie</option>`, ...galleries
       .filter((gallery) => gallery.status !== "archived")
       .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")))
@@ -1948,18 +1984,22 @@ Ausgangstext:
           ${galleryPlayerButton(selectedGallery, "Galerie abspielen")}
         </div>`
       : `<div class="editor-gallery-preview editor-gallery-preview--empty" data-editor-gallery-preview><p class="muted">Keine Galerie ausgewaehlt. Nach dem Speichern erscheint hier der Playbutton fuer die verknuepfte Galerie.</p></div>`;
-    const isRetrospectiveEditor = sectionKey === "press" && (item.isRetrospective || ["Rückblicke", "Rueckblicke"].includes(item.category) || item.linkedEventId);
+    const isRetrospectiveEditor = sectionKey === "press" && (item.isRetrospective || ["Rï¿½ckblicke", "Rueckblicke"].includes(item.category) || item.linkedEventId);
     const thumbState = `${editorialSummaryThumb(item)}${item.imageUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`}`;
     const audioState = item.audioUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
-    const galleryState = selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
-    const publicArticlePath = isRetrospectiveEditor ? `retrospective/${item.id}` : sectionKey === "news" ? `news/${item.id}` : `retrospective/${item.id}`;
+    const galleryState = selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} ï¿½ ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
+    const documentState = item.documentUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">PDF vorhanden</small>` : `<small class="editorial-tool-state">Kein PDF</small>`;
+    const documentTitle = item.documentTitle || item.documentFileName || item.assetFileName || "PDF-Anhang";
+    const publicArticlePath = sectionKey === "member-area" ? `portal/article/${item.id}` : isRetrospectiveEditor ? `retrospective/${item.id}` : sectionKey === "news" ? `news/${item.id}` : `retrospective/${item.id}`;
     const publicArticleHref = `/?real=1#/${escapeHtml(publicArticlePath)}`;
     const sourceJsonValue = JSON.stringify(item.source_snapshot_json || item.sources || [], null, 2);
     const tagsValue = Array.isArray(item.tags) ? item.tags.join(", ") : item.tags || "";
-    return protect(cmsShell(`cms/${backPath}`, `${cmsTitle("Redaktion", sectionKey === "press" ? "Pressemeldung bearbeiten" : "News bearbeiten", `<a class="button button--secondary button--small" href="#/cms/${backPath}">Zurueck</a>`)}
+    const editorTitle = sectionKey === "press" ? "Pressemeldung bearbeiten" : sectionKey === "member-area" ? "Mitgliederbeitrag bearbeiten" : "News bearbeiten";
+    return protect(cmsShell(`cms/${backPath}`, `${cmsTitle("Redaktion", editorTitle, `<a class="button button--secondary button--small" href="#/cms/${backPath}">Zurueck</a>`)}
       <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid">
         <input type="hidden" name="page" value="${escapeHtml(sectionKey)}">
-        <input type="hidden" name="section" value="${escapeHtml(sectionKey === "press" ? "pressRelease" : "news")}">
+        <input type="hidden" name="section" value="${escapeHtml(sectionKey === "press" ? "pressRelease" : sectionKey)}">
+        ${sectionKey === "member-area" ? `<input type="hidden" name="visibility" value="members">` : ""}
         <input type="hidden" name="key" value="${escapeHtml(item.key || `${sectionKey}.${item.id}`)}">
         <input type="hidden" name="validFrom" value="${escapeHtml(item.validFrom || item.publishDate || "")}">
         <div class="editorial-workspace editorial-workspace--text-editor">
@@ -1968,11 +2008,12 @@ Ausgangstext:
               <button class="button button--secondary button--small" type="button" data-editorial-preview-layer>Vorschau</button>
               <button class="button button--secondary button--small" type="button" data-editor-tool-open="audio">Audio</button>
               <button class="button button--secondary button--small" type="button" data-editor-tool-open="gallery">Galerie</button>
+              <button class="button button--secondary button--small" type="button" data-editor-tool-open="pdf">PDF</button>
               <button class="button button--secondary button--small" type="button" data-editor-tool-open="videos">Video</button>
             </div>
             <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Titel / Headline</label>${aiFieldActions([{ action: "improveText", target: "title", label: "Headline erzeugen", entityType: module, entityId: item.id, fieldName: "title" }])}</div><textarea name="title" rows="2" required>${escapeHtml(item.title || "")}</textarea></div>
             <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Subline</label>${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Subline erzeugen", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div><textarea name="subtitle" rows="2">${escapeHtml(item.subtitle || "")}</textarea></div>
-            <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Haupttext</label>${aiFieldActions(sectionKey === "press" ? [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }, { action: "rewritePressRetrospective", target: "bodyText", label: "Rückblick aus Pressemitteilung", entityType: module, entityId: item.id, fieldName: "bodyText", promptField: "retrospectivePrompt" }] : [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div><textarea name="bodyText" required>${escapeHtml(item.bodyText || "")}</textarea></div>
+            <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Haupttext</label>${aiFieldActions(sectionKey === "press" ? [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }, { action: "rewritePressRetrospective", target: "bodyText", label: "Rï¿½ckblick aus Pressemitteilung", entityType: module, entityId: item.id, fieldName: "bodyText", promptField: "retrospectivePrompt" }] : [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div><textarea name="bodyText" required>${escapeHtml(item.bodyText || "")}</textarea></div>
             <div class="field editorial-text-field"><div class="editorial-field-head"><label>Shorttext / Intro</label>${aiFieldActions([{ action: "shortenText", target: "introText", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "introText" }])}</div><textarea name="introText">${escapeHtml(item.introText || "")}</textarea></div>
             <div class="actions editorial-save-inline">
               <button class="button button--primary">Speichern</button>
@@ -2007,21 +2048,29 @@ Ausgangstext:
                 <div class="gallery-link-result" data-gallery-link-result></div>
               </div>
             </details>
+            <details class="editorial-tool-details" data-editor-tool-panel="pdf">
+              <summary><span>Medien</span><strong>PDF</strong>${documentState}</summary>
+              <div class="editor-tool-section editor-tool-section--pdf">
+                ${item.documentUrl ? `<div class="member-pdf-asset"><strong>${escapeHtml(documentTitle)}</strong><a class="button button--secondary button--small" href="${escapeHtml(item.documentUrl)}" target="_blank" rel="noreferrer">PDF oeffnen</a></div>` : `<p class="muted">Noch kein PDF-Anhang vorhanden.</p>`}
+                <div class="field"><label>PDF hochladen</label><input type="file" name="documentFile" accept=".pdf,application/pdf"><p class="muted">Ein PDF pro Beitrag. Ein neuer Upload ersetzt den bisherigen PDF-Anhang.</p></div>
+                ${item.documentUrl ? `<label class="checkbox-line"><input type="checkbox" name="removeDocumentFile" value="1"> PDF-Anhang entfernen</label>` : ""}
+              </div>
+            </details>
             ${articleVideoAttachmentEditor(item, videoLibrary)}
-            <details class="editorial-tool-details">
+            ${sectionKey === "member-area" ? "" : `<details class="editorial-tool-details">
               <summary><span>Werkzeuge</span><strong>Rueckblick & Verknuepfungen</strong></summary>
             <section class="retrospective-tool">
               ${sectionKey === "news" ? `<div class="field"><label>Quellen</label><textarea name="source_snapshot_json_text" placeholder='[{ "title": "", "url": "", "source_type": "" }]'>${escapeHtml(sourceJsonValue)}</textarea></div><div class="field"><label>Interne Hinweise</label><textarea name="editorial_note">${escapeHtml(item.editorial_note || item.editorialNote || "")}</textarea></div>` : ""}
-              <div class="field"><label>Rückblick-Prompt</label><textarea name="retrospectivePrompt">${escapeHtml(retrospectivePrompt)}</textarea></div>
+              <div class="field"><label>Rï¿½ckblick-Prompt</label><textarea name="retrospectivePrompt">${escapeHtml(retrospectivePrompt)}</textarea></div>
               <div class="field"><label>Event-Bezug</label><select name="linkedEventId">${eventOptions}</select></div>
               <div class="field"><label>Sponsorlogo</label><select name="sponsorId">${sponsorOptions}</select></div>
-              <label class="checkbox-line"><input type="checkbox" name="isRetrospective" ${item.isRetrospective ? "checked" : ""}> Unter Rückblicke / Event-Nachlauf anzeigen</label>
+              <label class="checkbox-line"><input type="checkbox" name="isRetrospective" ${item.isRetrospective ? "checked" : ""}> Unter Rï¿½ckblicke / Event-Nachlauf anzeigen</label>
               <label class="checkbox-line"><input type="checkbox" name="showGallery" ${item.showGallery ? "checked" : ""}> Bildergalerie aus Event-Medien anzeigen</label>
               <input type="hidden" name="galleryEventId" value="${escapeHtml(item.galleryEventId || item.linkedEventId || "")}">
-              <p class="muted">Im Rückblick-Modus formuliert ChatGPT Headline, Subline und Haupttext als nachträgliche Berichterstattung über das vergangene Event.</p>
-              ${aiFieldActions([{ action: "rewritePressRetrospective", target: "bodyText", label: "Rückblick-Fliesstext erzeugen", entityType: module, entityId: item.id, fieldName: "bodyText", promptField: "retrospectivePrompt" }])}
+              <p class="muted">Im Rï¿½ckblick-Modus formuliert ChatGPT Headline, Subline und Haupttext als nachtrï¿½gliche Berichterstattung ï¿½ber das vergangene Event.</p>
+              ${aiFieldActions([{ action: "rewritePressRetrospective", target: "bodyText", label: "Rï¿½ckblick-Fliesstext erzeugen", entityType: module, entityId: item.id, fieldName: "bodyText", promptField: "retrospectivePrompt" }])}
             </section>
-            </details>
+            </details>`}
           </aside>
         </div>
         <input type="hidden" name="visibility" value="${escapeHtml(item.visibility || "public")}">
@@ -2045,7 +2094,7 @@ Ausgangstext:
       : `<div class="editor-gallery-preview editor-gallery-preview--empty" data-editor-gallery-preview><p class="muted">Keine Galerie verknuepft. Galerie auswaehlen, speichern, danach kann sie hier abgespielt werden.</p></div>`;
     const thumbState = `${editorialSummaryThumb(item)}${item.imageUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`}`;
     const audioState = item.audioUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
-    const galleryState = selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
+    const galleryState = selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} ï¿½ ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
     return protect(cmsShell("cms/topics", `${cmsTitle("Redaktion", "Thema bearbeiten", `<a class="button button--secondary button--small" href="#/cms/topics">Zurueck</a>`)}
       <section class="panel"><form id="topic-editor-form" data-topic-id="${item.id}" class="form-grid is-save-aware">
         <div class="editorial-workspace editorial-workspace--text-editor">
@@ -2233,9 +2282,9 @@ Ausgangstext:
           <div class="field"><label>Mitgliedschaftsstatus</label><select name="membershipAccessStatus">
             <option value="active" ${memberAccessStatus === "active" ? "selected" : ""}>Aktiv</option>
             <option value="inactive" ${memberAccessStatus === "inactive" ? "selected" : ""}>Inaktiv</option>
-            <option value="cancelled" ${memberAccessStatus === "cancelled" ? "selected" : ""}>Gekündigt</option>
+            <option value="cancelled" ${memberAccessStatus === "cancelled" ? "selected" : ""}>Gekï¿½ndigt</option>
           </select></div>
-          <div class="field"><label>Gekündigt / inaktiv ab</label><input name="membershipAccessEffectiveAt" type="date" value="${escapeHtml(timestampInputDate(item?.membershipAccessEffectiveAt))}"><p class="muted">Leer = sofort.</p></div>
+          <div class="field"><label>Gekï¿½ndigt / inaktiv ab</label><input name="membershipAccessEffectiveAt" type="date" value="${escapeHtml(timestampInputDate(item?.membershipAccessEffectiveAt))}"><p class="muted">Leer = sofort.</p></div>
         </div>
       </div>`
     : "";
@@ -2360,8 +2409,8 @@ export async function audioAdminPage() {
       if (rankA !== rankB) return rankA - rankB;
       return String(a).localeCompare(String(b), "de");
     });
-  const subareaOptions = Array.from(new Set(rows.map((item) => item.audioSubarea).filter((value) => ["Über uns", "Mitglied werden"].includes(value))))
-    .sort((a, b) => ["Über uns", "Mitglied werden"].indexOf(a) - ["Über uns", "Mitglied werden"].indexOf(b));
+  const subareaOptions = Array.from(new Set(rows.map((item) => item.audioSubarea).filter((value) => ["ï¿½ber uns", "Mitglied werden"].includes(value))))
+    .sort((a, b) => ["ï¿½ber uns", "Mitglied werden"].indexOf(a) - ["ï¿½ber uns", "Mitglied werden"].indexOf(b));
   const rowHtml = rows.map((item) => {
     const collection = item.audioCollection;
     const title = item.title || item.titel || item.slug || item.id;
@@ -2405,7 +2454,7 @@ export async function audioAdminPage() {
         </label>
         <small data-audio-area-count>${rows.length} Inhalte</small>
       </div>
-      <div class="table-wrap"><table class="table table--editorial table--audio-service"><thead><tr><th>Inhalt</th><th>Bereich</th><th>Audio</th><th>Modell</th><th>Stimme</th><th>Aktion</th></tr></thead><tbody>${rowHtml || `<tr><td colspan="6">Noch keine audiofähigen Inhalte vorhanden.</td></tr>`}</tbody></table></div>
+      <div class="table-wrap"><table class="table table--editorial table--audio-service"><thead><tr><th>Inhalt</th><th>Bereich</th><th>Audio</th><th>Modell</th><th>Stimme</th><th>Aktion</th></tr></thead><tbody>${rowHtml || `<tr><td colspan="6">Noch keine audiofï¿½higen Inhalte vorhanden.</td></tr>`}</tbody></table></div>
     </section>`));
 }
 
