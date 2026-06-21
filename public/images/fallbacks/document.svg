@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1200" role="img" aria-label="PROdigitalTV Dokument">
+  <rect width="900" height="1200" fill="#f5f8fb"/>
+  <path d="M210 105h330l150 150v840H210Z" fill="#ffffff" stroke="#d7e0ea" stroke-width="4"/>
+  <path d="M540 105v150h150" fill="#eef4fb" stroke="#d7e0ea" stroke-width="4"/>
+  <path d="M300 420h300M300 515h300M300 610h220M300 760h300" stroke="#123866" stroke-width="28" stroke-linecap="round"/>
+  <rect x="300" y="865" width="205" height="72" rx="12" fill="#e30613"/>
+  <text x="330" y="914" font-family="Arial, Helvetica, sans-serif" font-size="38" font-weight="800" fill="#ffffff">PDF</text>
+</svg>

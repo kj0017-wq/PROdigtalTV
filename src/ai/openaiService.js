@@ -26,7 +26,7 @@ const ACTION_FUNCTIONS = {
   analyzeEventPipelineQuality: "analyzeEventPipelineQuality"
 };
 
-const DEFAULT_AI_EDITORIAL_THUMBNAIL_PROMPT = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
+const DEFAULT_AI_EDITORIAL_THUMBNAIL_PROMPT = "Fotorealistisches redaktionelles 16:9-Vorschaubild für PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 
 async function ensureCallableLogin(label = "KI-Aktion") {
   await waitForAuthReady();
@@ -42,16 +42,16 @@ function isLocalHost() {
 }
 
 const LOCAL_TOPIC_POOL = [
-  { key: "barrierefreiheit-streaming", title: "Barrierefreiheit in Streaming-Angeboten", headline: "Barrierefreiheit wird fuer Streaming-Anbieter wichtiger", subline: "Accessibility wird zum festen Bestandteil digitaler Medienangebote.", category: "Barrierefreiheit", keywords: ["Barrierefreiheit", "Streaming", "Untertitel", "Plattformregulierung", "Medienrecht"], thumbnailIdea: "Streaming-Oberflaeche mit Untertitel-Symbolen und klarer Accessibility-Anmutung.", actuality_score: 86, industry_score: 88, reason: "Regulatorische Anforderungen und Nutzererwartungen machen Accessibility fuer Streaming-Anbieter dauerhaft relevant." },
-  { key: "hbbtv-smart-tv", title: "HbbTV und Smart-TV-Strategien", headline: "HbbTV bleibt wichtig fuer Smart-TV-Strategien", subline: "Offene TV-Standards helfen Sendern bei Reichweite und Nutzerfuehrung.", category: "HbbTV / Smart-TV", keywords: ["HbbTV", "Smart-TV", "Distribution", "TV-Apps", "Streaming-Technologie"], thumbnailIdea: "Moderner Smart-TV mit App-Oberflaeche, HbbTV-Signal und klarer Medienplattform-Aesthetik.", actuality_score: 79, industry_score: 84, reason: "Smart-TV bleibt zentraler Zugangspunkt fuer TV- und Streamingangebote." },
+  { key: "barrierefreiheit-streaming", title: "Barrierefreiheit in Streaming-Angeboten", headline: "Barrierefreiheit wird für Streaming-Anbieter wichtiger", subline: "Accessibility wird zum festen Bestandteil digitaler Medienangebote.", category: "Barrierefreiheit", keywords: ["Barrierefreiheit", "Streaming", "Untertitel", "Plattformregulierung", "Medienrecht"], thumbnailIdea: "Streaming-Oberflaeche mit Untertitel-Symbolen und klarer Accessibility-Anmutung.", actuality_score: 86, industry_score: 88, reason: "Regulatorische Anforderungen und Nutzererwartungen machen Accessibility für Streaming-Anbieter dauerhaft relevant." },
+  { key: "hbbtv-smart-tv", title: "HbbTV und Smart-TV-Strategien", headline: "HbbTV bleibt wichtig für Smart-TV-Strategien", subline: "Offene TV-Standards helfen Sendern bei Reichweite und Nutzerführung.", category: "HbbTV / Smart-TV", keywords: ["HbbTV", "Smart-TV", "Distribution", "TV-Apps", "Streaming-Technologie"], thumbnailIdea: "Moderner Smart-TV mit App-Oberflaeche, HbbTV-Signal und klarer Medienplattform-Aesthetik.", actuality_score: 79, industry_score: 84, reason: "Smart-TV bleibt zentraler Zugangspunkt für TV- und Streamingangebote." },
   { key: "ki-redaktion-produktion", title: "KI in Redaktion und Produktion", headline: "KI veraendert redaktionelle Produktionsprozesse", subline: "Automatisierung braucht klare Kontrolle, Quellen und Verantwortlichkeit.", category: "KI / Produktion", keywords: ["KI", "Redaktion", "Produktion", "Automatisierung", "Quellenpruefung"], thumbnailIdea: "Redaktioneller Arbeitsplatz mit abstrakter KI-Assistenz, Datenlinien und Medienmonitoren.", actuality_score: 94, industry_score: 92, reason: "KI-Workflows werden praktisch eingesetzt, brauchen aber Governance und Pruefprozesse." },
-  { key: "fast-channel-distribution", title: "FAST-Channels und digitale Distribution", headline: "FAST-Channels erweitern die digitale Distribution", subline: "Lineare Streaming-Kanaele schaffen neue Chancen fuer Reichweite und Vermarktung.", category: "Distribution / FAST-Channels", keywords: ["FAST-Channels", "Distribution", "OTT", "Streaming", "Vermarktung"], thumbnailIdea: "Mehrere lineare Streaming-Kanaele auf einem modernen Dashboard, serioeser Business-Look.", actuality_score: 83, industry_score: 87, reason: "FAST bleibt fuer Plattformen, Rechtehalter und Vermarkter ein relevantes Wachstumsfeld." },
-  { key: "musikrechte-streaming", title: "Musikrechte in digitalen Medienangeboten", headline: "Musikrechte bleiben zentral fuer digitale Medienangebote", subline: "Rechteklaerung ist Voraussetzung fuer sichere Auswertung und Distribution.", category: "Musikrechte / Verwertungsrecht", keywords: ["Musikrechte", "GEMA", "Verwertungsrecht", "Rechteklaerung", "Streaming"], thumbnailIdea: "Abstrakte Verbindung von Audiowellen, Medienplayer und rechtlicher Dokumentation.", actuality_score: 77, industry_score: 82, reason: "Rechteklaerung ist ein wiederkehrender Engpass bei digitaler Distribution." },
+  { key: "fast-channel-distribution", title: "FAST-Channels und digitale Distribution", headline: "FAST-Channels erweitern die digitale Distribution", subline: "Lineare Streaming-Kanaele schaffen neue Chancen für Reichweite und Vermarktung.", category: "Distribution / FAST-Channels", keywords: ["FAST-Channels", "Distribution", "OTT", "Streaming", "Vermarktung"], thumbnailIdea: "Mehrere lineare Streaming-Kanaele auf einem modernen Dashboard, serioeser Business-Look.", actuality_score: 83, industry_score: 87, reason: "FAST bleibt für Plattformen, Rechtehalter und Vermarkter ein relevantes Wachstumsfeld." },
+  { key: "musikrechte-streaming", title: "Musikrechte in digitalen Medienangeboten", headline: "Musikrechte bleiben zentral für digitale Medienangebote", subline: "Rechteklaerung ist Voraussetzung für sichere Auswertung und Distribution.", category: "Musikrechte / Verwertungsrecht", keywords: ["Musikrechte", "GEMA", "Verwertungsrecht", "Rechteklaerung", "Streaming"], thumbnailIdea: "Abstrakte Verbindung von Audiowellen, Medienplayer und rechtlicher Dokumentation.", actuality_score: 77, industry_score: 82, reason: "Rechteklaerung ist ein wiederkehrender Engpass bei digitaler Distribution." },
   { key: "voice-cloning-synchron", title: "Voice-Cloning in der Synchronbranche", headline: "KI-Stimmen setzen die Synchronbranche unter Druck", subline: "Voice-Cloning veraendert Rechte, Verguetung und Produktion.", category: "KI / Synchron / Verwertungsrecht", keywords: ["Voice-Cloning", "Synchronbranche", "KI-Stimmen", "Sprecherrechte", "Verwertungsrecht"], thumbnailIdea: "Synchronstudio mit Mikrofon, abstrakter KI-Wellenform und dezenter rechtlicher Symbolik.", actuality_score: 91, industry_score: 89, reason: "KI-Stimmen betreffen Produktion, Rechte und Verguetungsmodelle direkt." },
-  { key: "addressable-tv-vermarktung", title: "Addressable TV und Vermarktung", headline: "Addressable TV verlangt klare Daten- und Werbestrategien", subline: "Zielgruppenwerbung im TV braucht Technik, Reichweite und Vertrauen.", category: "Werbung / Addressable TV", keywords: ["Addressable TV", "Werbung", "Vermarktung", "Reichweite", "Smart-TV"], thumbnailIdea: "TV-Werbedashboard mit Zielgruppen-Segmenten und neutraler Datenvisualisierung.", actuality_score: 80, industry_score: 86, reason: "Adressierbare Werbung bleibt ein wichtiges Feld fuer Sender und Vermarkter." },
+  { key: "addressable-tv-vermarktung", title: "Addressable TV und Vermarktung", headline: "Addressable TV verlangt klare Daten- und Werbestrategien", subline: "Zielgruppenwerbung im TV braucht Technik, Reichweite und Vertrauen.", category: "Werbung / Addressable TV", keywords: ["Addressable TV", "Werbung", "Vermarktung", "Reichweite", "Smart-TV"], thumbnailIdea: "TV-Werbedashboard mit Zielgruppen-Segmenten und neutraler Datenvisualisierung.", actuality_score: 80, industry_score: 86, reason: "Adressierbare Werbung bleibt ein wichtiges Feld für Sender und Vermarkter." },
   { key: "cdn-distribution-streaming", title: "CDN und Streaming-Distribution", headline: "Streaming-Qualitaet haengt an robuster Distribution", subline: "CDN-Strategien entscheiden ueber Kosten, Stabilitaet und Nutzererlebnis.", category: "CDN / Distribution", keywords: ["CDN", "Streaming", "Distribution", "OTT", "QoE"], thumbnailIdea: "Netzwerkvisualisierung mit Videostreams, Serverknoten und moderner Medieninfrastruktur.", actuality_score: 75, industry_score: 84, reason: "Kosten und Qualitaet digitaler Ausspielung bleiben operative Kernthemen." },
-  { key: "plattformregulierung-medien", title: "Plattformregulierung fuer Medienanbieter", headline: "Plattformregeln praegen digitale Medienstrategien", subline: "Regulierung beeinflusst Sichtbarkeit, Verantwortung und Zugang zu Nutzern.", category: "Plattformregulierung", keywords: ["Plattformregulierung", "Medienrecht", "Streaming", "Plattformen", "Branchenpolitik"], thumbnailIdea: "Medienplattform mit Regelwerk-Overlay, klarer Business-Look, keine Logos.", actuality_score: 88, industry_score: 85, reason: "Regulatorische Vorgaben beeinflussen Plattformen und Anbieter strukturell." },
-  { key: "leichte-sprache-medien", title: "Leichte Sprache in Medienangeboten", headline: "Leichte Sprache wird fuer Medienangebote wichtiger", subline: "Verstaendliche Inhalte erweitern Zugang und Teilhabe.", category: "Barrierefreiheit / leichte Sprache", keywords: ["leichte Sprache", "Barrierefreiheit", "Mediatheken", "Accessibility", "Inklusion"], thumbnailIdea: "Klare Medienoberflaeche mit vereinfachten Textbausteinen und Accessibility-Symbolik.", actuality_score: 74, industry_score: 78, reason: "Verstaendliche Sprache gewinnt bei digitalen Services und oeffentlichen Angeboten an Bedeutung." }
+  { key: "plattformregulierung-medien", title: "Plattformregulierung für Medienanbieter", headline: "Plattformregeln praegen digitale Medienstrategien", subline: "Regulierung beeinflusst Sichtbarkeit, Verantwortung und Zugang zu Nutzern.", category: "Plattformregulierung", keywords: ["Plattformregulierung", "Medienrecht", "Streaming", "Plattformen", "Branchenpolitik"], thumbnailIdea: "Medienplattform mit Regelwerk-Overlay, klarer Business-Look, keine Logos.", actuality_score: 88, industry_score: 85, reason: "Regulatorische Vorgaben beeinflussen Plattformen und Anbieter strukturell." },
+  { key: "leichte-sprache-medien", title: "Leichte Sprache in Medienangeboten", headline: "Leichte Sprache wird für Medienangebote wichtiger", subline: "Verstaendliche Inhalte erweitern Zugang und Teilhabe.", category: "Barrierefreiheit / leichte Sprache", keywords: ["leichte Sprache", "Barrierefreiheit", "Mediatheken", "Accessibility", "Inklusion"], thumbnailIdea: "Klare Medienoberflaeche mit vereinfachten Textbausteinen und Accessibility-Symbolik.", actuality_score: 74, industry_score: 78, reason: "Verstaendliche Sprache gewinnt bei digitalen Services und oeffentlichen Angeboten an Bedeutung." }
 ];
 
 function localSuggestion(action, payload) {
@@ -62,9 +62,9 @@ function localSuggestion(action, payload) {
       suggestedText: "",
       structured: {
         seoTitle: `${payload.context?.title || "PROdigitalTV Event"} | PROdigitalTV`,
-        seoDescription: text ? text.slice(0, 155) : "Branchenevent von PROdigitalTV fuer die digitale Medienwirtschaft.",
+        seoDescription: text ? text.slice(0, 155) : "Branchenevent von PROdigitalTV für die digitale Medienwirtschaft.",
         keywords: ["PROdigitalTV", "digitale Medienwirtschaft", "Event"],
-        summary: "SEO-Vorschlag aus lokalen Daten. Fuer echte KI bitte Firebase Function mit OPENAI_API_KEY nutzen."
+        summary: "SEO-Vorschlag aus lokalen Daten. Für echte KI bitte Firebase Function mit OPENAI_API_KEY nutzen."
       },
       status: "suggested"
     };
@@ -78,7 +78,7 @@ function localSuggestion(action, payload) {
         warnings: text.length < 120 ? ["Der Eventtext ist sehr kurz."] : [],
         recommendations: ["Oeffentlichen Teaser, SEO-Daten und Mobile-Kurztext redaktionell pruefen."],
         optionalNotes: ["KI-Pruefung ist nur eine Empfehlung und blockiert keine Pipeline-Statuswechsel."],
-        summary: "Lokale Vorschau der KI-Pruefung. Fuer echte OpenAI-Analyse bitte Cloud Function konfigurieren."
+        summary: "Lokale Vorschau der KI-Pruefung. Für echte OpenAI-Analyse bitte Cloud Function konfigurieren."
       },
       status: "suggested"
     };
@@ -101,7 +101,7 @@ function localSuggestion(action, payload) {
     return {
       action,
       suggestedText: [
-        prompt ? `Prompt:\n${prompt}` : "Prompt fuer Rueckblick fehlt.",
+        prompt ? `Prompt:\n${prompt}` : "Prompt für Rückblick fehlt.",
         "",
         "Ausgangstext:",
         text || "Keine Pressemitteilung im Haupttext vorhanden."
@@ -215,7 +215,7 @@ export async function generateAiTopicSuggestions(options = {}) {
     }
   }
   if (requireLive) {
-    throw new Error("Live-Quellenrecherche ist nicht erreichbar. Kein Demo- oder Fallback-Themenpool wird fuer das Morgenbriefing verwendet.");
+    throw new Error("Live-Quellenrecherche ist nicht erreichbar. Kein Demo- oder Fallback-Themenpool wird für das Morgenbriefing verwendet.");
   }
   const { list, upsert: localUpsert } = await import("../firebase/dataService.js?v=487");
   const now = new Date().toISOString();
@@ -290,7 +290,7 @@ export async function generateAiTopicSuggestions(options = {}) {
         name: source.name,
         publisher: source.name,
         url: source.url || "",
-        note: "Aus der Quellenrotation fuer diese Themenrecherche zugeordnet. Veroeffentlichungsdatum muss aus der konkreten Quellenmeldung ermittelt werden."
+        note: "Aus der Quellenrotation für diese Themenrecherche zugeordnet. Veroeffentlichungsdatum muss aus der konkreten Quellenmeldung ermittelt werden."
       }] : []
     };
   });
@@ -301,12 +301,12 @@ export async function generateAiTopicSuggestions(options = {}) {
     task_name: "KI_Redaktion_Themenrecherche",
     status: suggestions.length ? "suggested" : "blocked",
     message: suggestions.length
-      ? `${suggestions.length} qualitaetsgepruefte Themenvorschlaege erstellt${categoryFilter || keywordFilter ? ` fuer ${[categoryFilter, keywordFilter].filter(Boolean).join(" / ")}` : ""}. Redaktionelle Auswahl fuer Queue erforderlich.`
-      : `Keine belastbaren Themenvorschlaege gefunden${categoryFilter || keywordFilter ? ` fuer ${[categoryFilter, keywordFilter].filter(Boolean).join(" / ")}` : ""}.`,
+      ? `${suggestions.length} qualitaetsgepruefte Themenvorschlaege erstellt${categoryFilter || keywordFilter ? ` für ${[categoryFilter, keywordFilter].filter(Boolean).join(" / ")}` : ""}. Redaktionelle Auswahl für Queue erforderlich.`
+      : `Keine belastbaren Themenvorschlaege gefunden${categoryFilter || keywordFilter ? ` für ${[categoryFilter, keywordFilter].filter(Boolean).join(" / ")}` : ""}.`,
     found_topics_json: suggestions,
     rejected_topics_json: [],
     used_sources_json: [],
-      source_check_json: { source_status: "Eine valide Quelle reicht fuer die Themenliste" },
+      source_check_json: { source_status: "Eine valide Quelle reicht für die Themenliste" },
     duplicate_check_json: {},
     keyword_result_json: {},
     ai_check_json: { status: "Vorschlag", publication_status: "nicht freigegeben" },
@@ -471,7 +471,7 @@ function complementarySubline(headline = "", text = "") {
     .map((part) => part.trim())
     .filter((part) => part.length > 35);
   return cleanSublineEnd(sentences.find((sentence) => textSimilarity(headline, sentence) < 0.45 && sentence !== headline) || "", 180)
-    || "Der Beitrag ordnet die Entwicklung fuer die digitale Medien- und Kreativwirtschaft ein.";
+    || "Der Beitrag ordnet die Entwicklung für die digitale Medien- und Kreativwirtschaft ein.";
 }
 
 function cleanSublineEnd(value = "", maxLength = 180) {
@@ -510,15 +510,15 @@ function reformulatedNewsBody({ headline = "", subline = "", combinedText = "", 
   if (!sentences.length) return "Aus den bereitgestellten Informationen laesst sich derzeit noch kein aussagekraeftiger Beitrag ableiten.";
   const facts = sentences.map((sentence) => sentence.replace(/\s+/g, " ").trim());
   const paragraphSeeds = [
-    `Die aktuelle Entwicklung rund um ${subject} rueckt ein Thema in den Mittelpunkt, das fuer die digitale Medienwirtschaft spuerbar an Bedeutung gewinnt. ${subline || facts[0]} Fuer Unternehmen aus TV, Streaming, Produktion, Vermarktung und Plattformbetrieb geht es dabei nicht nur um eine einzelne Meldung, sondern um die Frage, welche Folgen sich fuer Geschaeftsmodelle, Rechte, Nutzung und Sichtbarkeit digitaler Inhalte ergeben.`,
-    `Im Kern beschreibt der vorliegende Informationsstand, dass ${facts[0].replace(/^[A-Z���][^a-z����]{0,20}[:\-]\s*/, "")} Daraus entsteht ein Branchenbezug, weil solche Entwicklungen zunehmend entscheiden, wie Inhalte produziert, verbreitet, finanziert oder rechtlich eingeordnet werden. Besonders relevant ist, ob daraus neue Standards, neue Marktbewegungen oder veraenderte Erwartungen an Anbieter entstehen.`,
+    `Die aktuelle Entwicklung rund um ${subject} rueckt ein Thema in den Mittelpunkt, das für die digitale Medienwirtschaft spuerbar an Bedeutung gewinnt. ${subline || facts[0]} Für Unternehmen aus TV, Streaming, Produktion, Vermarktung und Plattformbetrieb geht es dabei nicht nur um eine einzelne Meldung, sondern um die Frage, welche Folgen sich für Geschaeftsmodelle, Rechte, Nutzung und Sichtbarkeit digitaler Inhalte ergeben.`,
+    `Im Kern beschreibt der vorliegende Informationsstand, dass ${facts[0].replace(/^[A-ZÄÖÜ][^a-zäöüß]{0,20}[:\-]\s*/, "")} Daraus entsteht ein Branchenbezug, weil solche Entwicklungen zunehmend entscheiden, wie Inhalte produziert, verbreitet, finanziert oder rechtlich eingeordnet werden. Besonders relevant ist, ob daraus neue Standards, neue Marktbewegungen oder veränderte Erwartungen an Anbieter entstehen.`,
     facts[1]
-      ? `Ein weiterer Aspekt ist ${facts[1].replace(/^[A-Z���][^a-z����]{0,20}[:\-]\s*/, "")} Fuer Medienanbieter bedeutet das, Entwicklungen frueh einzuordnen und nicht nur auf technische Neuerungen zu schauen. Entscheidend ist, wie sich Reichweite, Nutzerfuehrung, Lizenzierung, redaktionelle Verantwortung oder wirtschaftliche Planbarkeit veraendern.`
-      : `Fuer Medienanbieter bedeutet das, die Entwicklung nicht isoliert zu betrachten. Entscheidend ist, wie sich Reichweite, Nutzerfuehrung, Lizenzierung, redaktionelle Verantwortung oder wirtschaftliche Planbarkeit veraendern.`,
+      ? `Ein weiterer Aspekt ist ${facts[1].replace(/^[A-ZÄÖÜ][^a-zäöüß]{0,20}[:\-]\s*/, "")} Für Medienanbieter bedeutet das, Entwicklungen früh einzuordnen und nicht nur auf technische Neuerungen zu schauen. Entscheidend ist, wie sich Reichweite, Nutzerführung, Lizenzierung, redaktionelle Verantwortung oder wirtschaftliche Planbarkeit verändern.`
+      : `Für Medienanbieter bedeutet das, die Entwicklung nicht isoliert zu betrachten. Entscheidend ist, wie sich Reichweite, Nutzerführung, Lizenzierung, redaktionelle Verantwortung oder wirtschaftliche Planbarkeit verändern.`,
     facts[2]
       ? `Hinzu kommt: ${facts[2]} Diese Einordnung ist wichtig, weil digitale Medienmaerkte immer staerker von Plattformlogik, Daten, Automatisierung, Regulierung und neuen Nutzungsformen gepraegt werden. Was heute als einzelnes Thema erscheint, kann schnell Auswirkungen auf Produktionsprozesse, Rechteklaerung, Vermarktung oder die strategische Positionierung von Anbietern haben.`
       : `Die Einordnung ist wichtig, weil digitale Medienmaerkte immer staerker von Plattformlogik, Daten, Automatisierung, Regulierung und neuen Nutzungsformen gepraegt werden. Was heute als einzelnes Thema erscheint, kann schnell Auswirkungen auf Produktionsprozesse, Rechteklaerung, Vermarktung oder die strategische Positionierung von Anbietern haben.`,
-    `Fuer die Branche bleibt damit vor allem die praktische Frage, wie Unternehmen auf ${tags[0] || "diese Entwicklung"} reagieren. Professionelle Anbieter muessen Chancen erkennen, Risiken sauber bewerten und ihre Angebote so weiterentwickeln, dass technische Innovation, rechtliche Sicherheit und publizistische Qualitaet zusammenpassen. Genau darin liegt die Relevanz des Themas fuer PROdigitalTV: Es verbindet Marktbeobachtung mit konkreter Orientierung fuer digitale Medienanbieter.`
+    `Für die Branche bleibt damit vor allem die praktische Frage, wie Unternehmen auf ${tags[0] || "diese Entwicklung"} reagieren. Professionelle Anbieter muessen Chancen erkennen, Risiken sauber bewerten und ihre Angebote so weiterentwickeln, dass technische Innovation, rechtliche Sicherheit und publizistische Qualitaet zusammenpassen. Genau darin liegt die Relevanz des Themas für PROdigitalTV: Es verbindet Marktbeobachtung mit konkreter Orientierung für digitale Medienanbieter.`
   ];
   let body = paragraphSeeds.join("\n\n");
   for (const fact of facts.slice(3)) {
@@ -526,7 +526,7 @@ function reformulatedNewsBody({ headline = "", subline = "", combinedText = "", 
     body += `\n\nZusaetzlich zeigt der Quellenstand: ${fact} Auch dieser Punkt unterstreicht, dass die Entwicklung nicht nur eine Detailfrage ist, sondern Teil eines groesseren Wandels in der digitalen Medienwirtschaft.`;
   }
   while (localWordCount(body) < minimumWords) {
-    body += `\n\nIn der weiteren Einordnung wird deutlich, dass ${tags[1] || tags[0] || "das Thema"} fuer Medienunternehmen vor allem dort relevant wird, wo strategische Entscheidungen, technische Entwicklung und wirtschaftliche Rahmenbedingungen zusammenkommen. Anbieter muessen nicht jede Entwicklung sofort uebernehmen, sollten aber verstehen, welche Erwartungen sich daraus fuer Partner, Publikum und Marktakteure ergeben.`;
+    body += `\n\nIn der weiteren Einordnung wird deutlich, dass ${tags[1] || tags[0] || "das Thema"} für Medienunternehmen vor allem dort relevant wird, wo strategische Entscheidungen, technische Entwicklung und wirtschaftliche Rahmenbedingungen zusammenkommen. Anbieter muessen nicht jede Entwicklung sofort uebernehmen, sollten aber verstehen, welche Erwartungen sich daraus für Partner, Publikum und Marktakteure ergeben.`;
     if (localWordCount(body) > minimumWords + 90) break;
   }
   return body;
@@ -568,7 +568,7 @@ function localImportedNewsDraft(payload = {}) {
     relevance_score: combinedText ? 65 : 25,
     relevance_reason: combinedText ? "Aus lokal bereitgestellten Textquellen abgeleitet." : "Es liegt noch zu wenig extrahierbarer Text vor.",
     thumbnail_idea: imageSources.length ? `Redaktionelles Vorschaubild auf Basis der gelieferten Bildquelle: ${imageSources[0].name || imageSources[0].fileName || "Bildquelle"}.` : "Redaktionelles Motiv zur digitalen Medienwirtschaft.",
-    thumbnail_prompt: "Serioeses redaktionelles 16:9-Vorschaubild fuer PROdigitalTV, digitale Medienwirtschaft, sachlich, modern, keine erfundenen Logos, keine realen Personen identifizieren.",
+    thumbnail_prompt: "Serioeses redaktionelles 16:9-Vorschaubild für PROdigitalTV, digitale Medienwirtschaft, sachlich, modern, keine erfundenen Logos, keine realen Personen identifizieren.",
     thumbnail_alt: headline || "News-Motiv",
     gallery_suggestions: imageSources.map((image) => ({
       file_name: image.name || image.fileName || "",
@@ -651,10 +651,10 @@ function localEditorialArticleBody(topic = {}, sources = []) {
     ? `Vorhandene Quellenhinweise: ${sourceNames.join(", ")}.`
     : "Es ist noch keine belastbare Quellenbasis mit inhaltlichem Auszug hinterlegt.";
   return [
-    "Quelleninhalt fehlt fuer fertigen Beitrag.",
+    "Quelleninhalt fehlt für fertigen Beitrag.",
     teaser || headline,
     `${sourceSentence} Dieser Text ist ein redaktioneller Arbeitsentwurf und kein veroeffentlichungsfaehiger Beitrag.`,
-    `Fuer einen echten Beitrag zu ${category} muessen aus der Quelle konkret ermittelt werden: Was ist passiert, wer ist beteiligt, wann oder wo passiert es, welche Zahlen oder Entscheidungen sind belegt und welche Folge ergibt sich fuer ${keyword}?`,
+    `Für einen echten Beitrag zu ${category} muessen aus der Quelle konkret ermittelt werden: Was ist passiert, wer ist beteiligt, wann oder wo passiert es, welche Zahlen oder Entscheidungen sind belegt und welche Folge ergibt sich für ${keyword}?`,
     "Erst danach kann daraus ein journalistischer Lead, ein Faktenabsatz und eine belastbare Einordnung entstehen."
   ].join("\n\n");
 }
@@ -766,7 +766,7 @@ async function runLocalAiEditorialTask(mode = "manual") {
     primary_keyword: topic.keywords[0],
     keyword_json: topic.keywords.map((keyword, index) => ({ keyword, relevance_score: index === 0 ? 92 : 72 })),
     thumbnail_idea: topic.thumbnailIdea,
-    thumbnail_prompt: `Fotorealistisches redaktionelles Vorschaubild fuer ein Medienbranchen-Portal: ${topic.thumbnailIdea}, serioeser moderner Business-Look, natuerliches Licht, 16:9, keine Logos, keine realen Personen, keine Comic-Optik.`,
+    thumbnail_prompt: `Fotorealistisches redaktionelles Vorschaubild für ein Medienbranchen-Portal: ${topic.thumbnailIdea}, serioeser moderner Business-Look, natuerliches Licht, 16:9, keine Logos, keine realen Personen, keine Comic-Optik.`,
     source_status: "geprueft",
     duplicate_status: duplicate ? "Hinweis: aehnliches Thema vorhanden" : "nicht blockierend",
     ai_check_status: "Warnung",
@@ -812,7 +812,7 @@ async function runLocalAiEditorialTask(mode = "manual") {
       source_type: source.source_type,
       published_at: "",
       accessed_at: now,
-      relevance_note: "Verifizierte Quelle fuer redaktionelle Pruefung.",
+      relevance_note: "Verifizierte Quelle für redaktionelle Pruefung.",
       claim_reference: "Noch keine finale zentrale Aussage erzeugt.",
       trust_score: source.trust_score,
       check_status: "geprueft",
@@ -880,7 +880,7 @@ export async function generateAiEditorialThumbnail(article = {}) {
   if (!firebase || localPreviewMode()) return null;
   const prompt = article.thumbnail_prompt || article.thumbnailPrompt || [
     DEFAULT_AI_EDITORIAL_THUMBNAIL_PROMPT,
-    "Professionelles redaktionelles Vorschaubild fuer ein Medienbranchen-Portal.",
+    "Professionelles redaktionelles Vorschaubild für ein Medienbranchen-Portal.",
     "Stil: fotorealistisch, serioes, modern, TV-, Streaming- und Digitalbranche, 16:9.",
     "Keine echten Logos, keine realen Personen, keine irrefuehrenden Bildinhalte.",
     article.headline || article.title || "",
@@ -917,7 +917,7 @@ export async function generateCmsThumbCollage(payload = {}) {
       imageDataUrl: localThumbSvg(payload),
       mimeType: "image/svg+xml",
       fileName: `${payload.entityId || "cms-thumb"}-ki-collage.svg`,
-      prompt: payload.prompt || "Lokale Vorschau-Collage. Fuer echte KI bitte Firebase Function mit OPENAI_API_KEY nutzen."
+      prompt: payload.prompt || "Lokale Vorschau-Collage. Für echte KI bitte Firebase Function mit OPENAI_API_KEY nutzen."
     };
   }
   try {

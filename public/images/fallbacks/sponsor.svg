@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-label="PROdigitalTV Partner">
+  <rect width="800" height="450" fill="#ffffff"/>
+  <rect x="70" y="90" width="660" height="270" rx="22" fill="#f5f8fb" stroke="#d7e0ea" stroke-width="3"/>
+  <path d="M185 250c60-80 145-80 205 0M410 250c60-80 145-80 205 0" fill="none" stroke="#123866" stroke-width="24" stroke-linecap="round"/>
+  <circle cx="292" cy="185" r="45" fill="#123866"/>
+  <circle cx="518" cy="185" r="45" fill="#e30613"/>
+  <text x="90" y="405" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="800" fill="#071f3f">Partner</text>
+</svg>

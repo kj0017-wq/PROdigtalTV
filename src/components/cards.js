@@ -1,15 +1,16 @@
 import { accessLabels } from "../data/demoData.js";
 import { eventDateBox, escapeHtml, formatDate } from "../utils/format.js";
+import { imageFallbackAttrs, stableImageUrl } from "../utils/imageFallbacks.js?v=1";
 
 export function eventCard(event, archive = false, partners = []) {
   const date = eventDateBox(event.date);
   const host = partners.find((partner) => partner.id === event.hostId);
   const eventSponsors = partners.filter((partner) => event.sponsorIds?.includes(partner.id));
   const promotedPartners = [host, ...eventSponsors].filter(Boolean);
-  const imageUrl = event.imageDisplayUrl || event.imageUrl || "";
+  const imageUrl = stableImageUrl(event.imageDisplayUrl || event.imageUrl || "", "event");
   return `<article class="card event-card">
     <div class="event-card__visual ${archive ? "event-card__visual--archive" : ""}">
-      ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy" decoding="async">` : ""}
+      <img src="${escapeHtml(imageUrl)}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy" decoding="async" ${imageFallbackAttrs("event")}>
       <div class="next-event__date"><strong>${date.day}</strong><span>${date.month}</span></div>
       <span class="tag tag--light">${escapeHtml(event.eventType)}</span>
     </div>
@@ -28,8 +29,9 @@ export function eventCard(event, archive = false, partners = []) {
 }
 
 export function topicCard(topic) {
+  const imageUrl = topic.imageUrl || "";
   return `<a class="card topic-card" href="#/topic/${topic.id}">
-    ${topic.imageUrl ? `<figure class="topic-card__image"><img src="${escapeHtml(topic.imageUrl)}" alt="Themenbild ${escapeHtml(topic.title)}" loading="lazy" decoding="async"></figure>` : `<span class="quick-card__icon">${escapeHtml(topic.icon)}</span>`}
+    ${imageUrl ? `<figure class="topic-card__image"><img src="${escapeHtml(imageUrl)}" alt="Themenbild ${escapeHtml(topic.title)}" loading="lazy" decoding="async" ${imageFallbackAttrs("topic")}></figure>` : `<span class="quick-card__icon">${escapeHtml(topic.icon)}</span>`}
     <h3>${escapeHtml(topic.title)}</h3><div class="topic-card__line"></div>
     <p>${escapeHtml(topic.shortDescription)}</p>
   </a>`;

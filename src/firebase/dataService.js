@@ -3,6 +3,8 @@ import { getFirebaseServices, getFirestoreServices, firebaseEnabled, realDataMod
 
 const STORE_KEY = "prodigitaltv-demo-db-official-assets-v7";
 const PUBLIC_LIST_CACHE_MS = 45000;
+const PUBLIC_SESSION_CACHE_MS = 180000;
+const PUBLIC_READ_TIMEOUT_MS = 4500;
 const publicListCache = new Map();
 
 const currentMemberSeeds = [
@@ -47,6 +49,7 @@ const currentMemberLogoUrls = {
   "moderne-werbung-tv": "/assets/official/members/moderne-werbung.png",
   "blu-tec-one": "/assets/official/members/blu-tec-one.png",
   "house-of-research": "/assets/official/members/house-of-research.png",
+  "goldvisite-media": "/assets/official/members/goldvisite-media.svg",
   "fashion-tv": "/assets/official/members/fashion-tv-production.jpg",
   "stingray-digital-international": "/assets/official/members/stingray-music.jpg",
   "eutelsat": "/assets/official/members/eutelsat.png",
@@ -289,6 +292,34 @@ function canFallbackToLocal(error) {
     && ["permission-denied", "unauthenticated", "failed-precondition", "login erforderlich"].some((code) => String(error?.code || error?.message || "").toLowerCase().includes(code));
 }
 
+function timeoutError(label = "Firestore") {
+  const error = new Error(`${label} Timeout`);
+  error.code = "pdtv-timeout";
+  return error;
+}
+
+function withReadTimeout(promise, timeoutMs = PUBLIC_READ_TIMEOUT_MS, label = "Firestore") {
+  if (cmsDataMode() || memberPortalDataMode()) return promise;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      const timer = (typeof window !== "undefined" ? window : globalThis).setTimeout(() => reject(timeoutError(label)), timeoutMs);
+      promise.finally(() => (typeof window !== "undefined" ? window : globalThis).clearTimeout(timer)).catch(() => {});
+    })
+  ]);
+}
+
+function canUsePublicFallback(error) {
+  return String(error?.code || error?.message || "").toLowerCase().includes("pdtv-timeout");
+}
+
+function filteredLocalCollection(collectionName, predicates = []) {
+  return (localDb()[collectionName] || []).filter((record) => predicates.every(([field, operator, value]) => {
+    if (operator === "==") return record[field] === value;
+    return true;
+  }));
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -419,9 +450,10 @@ export async function list(collectionName) {
     return localDb()[collectionName] || [];
   }
   try {
-    const result = await firebase.firestore.getDocs(firebase.firestore.collection(firebase.db, collectionName));
+    const result = await withReadTimeout(firebase.firestore.getDocs(firebase.firestore.collection(firebase.db, collectionName)), PUBLIC_READ_TIMEOUT_MS, `list:${collectionName}`);
     return result.docs.map((item) => ({ id: item.id, ...item.data() }));
   } catch (error) {
+    if (canUsePublicFallback(error)) return realDataMode() ? [] : collectionName === "members" ? normalizedCurrentLocalMembers() : localDb()[collectionName] || [];
     if (canFallbackToLocal(error)) return localDb()[collectionName] || [];
     throw error;
   }
@@ -439,14 +471,12 @@ async function constrainedList(collectionName, predicates) {
   try {
     const constraints = predicates.map(([field, operator, value]) => firebase.firestore.where(field, operator, value));
     const request = firebase.firestore.query(firebase.firestore.collection(firebase.db, collectionName), ...constraints);
-    const result = await firebase.firestore.getDocs(request);
+    const result = await withReadTimeout(firebase.firestore.getDocs(request), PUBLIC_READ_TIMEOUT_MS, `query:${collectionName}`);
     return result.docs.map((item) => ({ id: item.id, ...item.data() }));
   } catch (error) {
+    if (canUsePublicFallback(error)) return realDataMode() ? [] : filteredLocalCollection(collectionName, predicates);
     if (canFallbackToLocal(error)) {
-      return (localDb()[collectionName] || []).filter((record) => predicates.every(([field, operator, value]) => {
-        if (operator === "==") return record[field] === value;
-        return true;
-      }));
+      return filteredLocalCollection(collectionName, predicates);
     }
     throw error;
   }
@@ -456,14 +486,47 @@ function publicCacheKey(collectionName, predicates) {
   return `${collectionName}:${JSON.stringify(predicates || [])}`;
 }
 
+function publicSessionCacheKey(key = "") {
+  return `pdtv-public-list:${key}`;
+}
+
+function publicSessionCacheAllowed(collectionName, predicates = []) {
+  if (!firebaseEnabled() || !realDataMode()) return false;
+  if (["users", "registrations", "mailQueue"].includes(collectionName)) return false;
+  return predicates.every(([field, operator]) => operator === "==" && !["accessType", "email", "uid"].includes(field));
+}
+
+function readPublicSessionCache(key = "") {
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(publicSessionCacheKey(key)) || "null");
+    if (!cached || !Array.isArray(cached.records) || Date.now() - Number(cached.createdAt || 0) > PUBLIC_SESSION_CACHE_MS) return null;
+    return cached.records;
+  } catch {
+    return null;
+  }
+}
+
+function writePublicSessionCache(key = "", records = []) {
+  try {
+    sessionStorage.setItem(publicSessionCacheKey(key), JSON.stringify({
+      createdAt: Date.now(),
+      records: records.map(scrubOversizedInlineImages)
+    }));
+  } catch {}
+}
+
 async function cachedConstrainedList(collectionName, predicates) {
   const key = publicCacheKey(collectionName, predicates);
   const cached = publicListCache.get(key);
   if (cached && Date.now() - cached.createdAt < PUBLIC_LIST_CACHE_MS) return cached.promise;
+  const sessionCached = publicSessionCacheAllowed(collectionName, predicates) ? readPublicSessionCache(key) : null;
+  if (sessionCached) return sessionCached;
   const promise = constrainedList(collectionName, predicates);
   publicListCache.set(key, { createdAt: Date.now(), promise });
   try {
-    return await promise;
+    const records = await promise;
+    if (publicSessionCacheAllowed(collectionName, predicates)) writePublicSessionCache(key, records);
+    return records;
   } catch (error) {
     publicListCache.delete(key);
     throw error;
@@ -583,6 +646,29 @@ export async function listPublicContent(collectionName) {
     [...published, ...activeManaged].forEach((record) => merged.set(record.id, record));
     return Array.from(merged.values());
   }
+  if (collectionName === "topics") {
+    const batches = await Promise.all([
+      cachedConstrainedList(collectionName, [["status", "==", "active"]]).catch(() => []),
+      cachedConstrainedList(collectionName, [["status", "==", "published"], ["visibility", "==", "public"]]).catch(() => []),
+      cachedConstrainedList(collectionName, [["status", "==", "aktiv"], ["sichtbarkeit", "==", "oeffentlich"]]).catch(() => [])
+    ]);
+    const merged = new Map();
+    batches.flat().forEach((record) => {
+      const status = String(record.status || "active").toLowerCase();
+      const visibility = String(record.visibility || record.sichtbarkeit || "public").toLowerCase();
+      if (["inactive", "archived", "deleted", "hidden"].includes(status)) return;
+      if (["internal", "private", "hidden"].includes(visibility)) return;
+      merged.set(record.id, record);
+    });
+    if (merged.size) return Array.from(merged.values());
+    const allTopics = await list("topics").catch(() => []);
+    return allTopics.filter((topic) => {
+      const status = String(topic.status || "active").toLowerCase();
+      const visibility = String(topic.visibility || topic.sichtbarkeit || "public").toLowerCase();
+      return !["inactive", "archived", "deleted", "hidden"].includes(status)
+        && !["internal", "private", "hidden"].includes(visibility);
+    });
+  }
   const filters = {
     topics: [["status", "==", "active"]],
     speakers: [["status", "==", "published"]],
@@ -628,9 +714,12 @@ export async function getOne(collectionName, id) {
     return (localDb()[collectionName] || []).find((item) => item.id === id) || null;
   }
   try {
-    const snapshot = await firebase.firestore.getDoc(firebase.firestore.doc(firebase.db, collectionName, id));
+    const snapshot = await withReadTimeout(firebase.firestore.getDoc(firebase.firestore.doc(firebase.db, collectionName, id)), PUBLIC_READ_TIMEOUT_MS, `get:${collectionName}/${id}`);
     return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
   } catch (error) {
+    if (canUsePublicFallback(error)) return realDataMode() ? null : collectionName === "members"
+      ? normalizedCurrentLocalMembers().find((item) => item.id === id) || null
+      : (localDb()[collectionName] || []).find((item) => item.id === id) || null;
     if (canFallbackToLocal(error)) {
       if (collectionName === "members" && localCmsDataFallbackAllowed()) return (localDb().members || []).find((item) => item.id === id) || normalizedCurrentLocalMembers().find((item) => item.id === id) || null;
       return (localDb()[collectionName] || []).find((item) => item.id === id) || null;

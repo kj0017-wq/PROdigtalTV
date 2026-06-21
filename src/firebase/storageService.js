@@ -38,6 +38,75 @@ function imageAsOptimizedDataUrl(file, maxSize = 960, quality = 0.72) {
   });
 }
 
+function normalizedLogoFile(file) {
+  if (!file?.type?.startsWith("image/") || file.type === "image/svg+xml") return Promise.resolve(file);
+  return new Promise((resolve) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    image.addEventListener("load", () => {
+      const sourceWidth = image.naturalWidth || 1;
+      const sourceHeight = image.naturalHeight || 1;
+      const source = document.createElement("canvas");
+      source.width = sourceWidth;
+      source.height = sourceHeight;
+      const sourceContext = source.getContext("2d", { willReadFrequently: true });
+      sourceContext.drawImage(image, 0, 0);
+      let bounds = { left: sourceWidth, top: sourceHeight, right: 0, bottom: 0 };
+      try {
+        const pixels = sourceContext.getImageData(0, 0, sourceWidth, sourceHeight).data;
+        for (let y = 0; y < sourceHeight; y += 1) {
+          for (let x = 0; x < sourceWidth; x += 1) {
+            const offset = (y * sourceWidth + x) * 4;
+            const alpha = pixels[offset + 3];
+            const red = pixels[offset];
+            const green = pixels[offset + 1];
+            const blue = pixels[offset + 2];
+            const visible = alpha > 20 && !(red > 245 && green > 245 && blue > 245);
+            if (!visible) continue;
+            bounds.left = Math.min(bounds.left, x);
+            bounds.top = Math.min(bounds.top, y);
+            bounds.right = Math.max(bounds.right, x);
+            bounds.bottom = Math.max(bounds.bottom, y);
+          }
+        }
+      } catch {
+        bounds = { left: 0, top: 0, right: sourceWidth - 1, bottom: sourceHeight - 1 };
+      }
+      if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) {
+        bounds = { left: 0, top: 0, right: sourceWidth - 1, bottom: sourceHeight - 1 };
+      }
+      const cropWidth = bounds.right - bounds.left + 1;
+      const cropHeight = bounds.bottom - bounds.top + 1;
+      const targetWidth = 1800;
+      const targetHeight = 720;
+      const padding = 80;
+      const scale = Math.min((targetWidth - padding * 2) / cropWidth, (targetHeight - padding * 2) / cropHeight);
+      const drawWidth = Math.max(1, Math.round(cropWidth * scale));
+      const drawHeight = Math.max(1, Math.round(cropHeight * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, targetWidth, targetHeight);
+      context.drawImage(source, bounds.left, bounds.top, cropWidth, cropHeight, Math.round((targetWidth - drawWidth) / 2), Math.round((targetHeight - drawHeight) / 2), drawWidth, drawHeight);
+      canvas.toBlob((blob) => {
+        URL.revokeObjectURL(objectUrl);
+        if (!blob) {
+          resolve(file);
+          return;
+        }
+        resolve(new File([blob], `${safeFileName(file.name).replace(/\.[^.]+$/, "") || "logo"}.webp`, { type: "image/webp" }));
+      }, "image/webp", 0.86);
+    });
+    image.addEventListener("error", () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(file);
+    });
+    image.src = objectUrl;
+  });
+}
+
 function slugifyStoragePart(value = "") {
   return String(value || "")
     .normalize("NFD")
@@ -127,12 +196,13 @@ export async function uploadEntityImage(collection, entityId, file) {
   const supported = { events: "events", topics: "topics", members: "members", boardMembers: "board", speakers: "speakers", sponsors: "sponsors", editorialContent: "editorial", memberDocuments: "member-documents", memberDirectories: "member-directories" };
   if (!supported[collection] || !file) return null;
   const firebase = await getFirebaseServices();
-  if (!firebase) return { url: await fileAsDataUrl(file), storagePath: "" };
-  const extension = file.name.includes(".") ? file.name.split(".").pop().toLowerCase() : "jpg";
+  const uploadFile = ["members", "sponsors"].includes(collection) ? await normalizedLogoFile(file) : file;
+  if (!firebase) return { url: await fileAsDataUrl(uploadFile), storagePath: "" };
+  const extension = uploadFile.name.includes(".") ? uploadFile.name.split(".").pop().toLowerCase() : "jpg";
   const uniqueName = `${Date.now()}-${crypto.randomUUID()}.${extension}`;
   const storagePath = collection === "events" ? `events/${entityId}/cover/${uniqueName}` : `${supported[collection]}/${entityId}/${uniqueName}`;
   const reference = firebase.storageLib.ref(firebase.storage, storagePath);
-  await firebase.storageLib.uploadBytes(reference, file, { contentType: file.type });
+  await firebase.storageLib.uploadBytes(reference, uploadFile, { contentType: uploadFile.type });
   return { url: await firebase.storageLib.getDownloadURL(reference), storagePath };
 }
 

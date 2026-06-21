@@ -1,4 +1,4 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=467";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=470";
 import { list, getOne } from "../firebase/dataService.js?v=487";
 import { currentUser, canUseCms, waitForAuthReady } from "../firebase/authService.js?v=470";
 import { escapeHtml } from "../utils/format.js";
@@ -56,7 +56,7 @@ function mediaUsagePreset(type = "upload") {
 
 function mediaPresetSummary(type = "upload") {
   const preset = mediaUsagePreset(type);
-  return `${preset.aspect} · ${preset.width} x ${preset.height}px · ${preset.portal} · ${preset.mobile}`;
+  return `${preset.aspect} Â· ${preset.width} x ${preset.height}px Â· ${preset.portal} Â· ${preset.mobile}`;
 }
 
 function lastMediaAssetId() {
@@ -578,7 +578,7 @@ function mediaVariantChooser(asset = {}, variants = [], assets = []) {
     const label = variant.variant_label || mediaTypeLabels[variant.variant_type] || variant.variant_type || "Variante";
     const format = variant.format || asset.aspect_ratio || mediaDisplayAspect(asset) || "16x9";
     const url = mediaVariantUrl(variant);
-    return `<button class="media-variant-choice" type="button" data-media-load-variant data-media-variant-src="${escapeHtml(url)}" data-media-variant-format="${escapeHtml(format)}" aria-pressed="false"><img src="${escapeHtml(url)}" alt=""><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml([format, variant.version, variant.filename].filter(Boolean).join(" · "))}</small></span></button>`;
+    return `<button class="media-variant-choice" type="button" data-media-load-variant data-media-variant-src="${escapeHtml(url)}" data-media-variant-format="${escapeHtml(format)}" aria-pressed="false"><img src="${escapeHtml(url)}" alt=""><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml([format, variant.version, variant.filename].filter(Boolean).join(" Â· "))}</small></span></button>`;
   }).join("");
   return `<div class="media-editor-variants"><p>Varianten</p><div>${original}${options}</div></div>`;
 }
@@ -641,8 +641,8 @@ function mediaMetadataBox(asset = {}) {
     ["Format", asset.image_format || asset.mime_type || ""],
     ["Groesse", asset.file_size_label || (asset.file_size ? `${Math.round(Number(asset.file_size) / 1024)} KB` : "")],
     ["Pixel", asset.image_width && asset.image_height ? `${asset.image_width} x ${asset.image_height}px` : ""],
-    ["Web-Datei", asset.web_image_width && asset.web_image_height ? `${asset.web_image_width} x ${asset.web_image_height}px · ${asset.web_file_size_label || ""} · ${asset.web_codec || asset.web_mime_type || ""}` : ""],
-    ["Thumb", asset.thumb_image_width && asset.thumb_image_height ? `${asset.thumb_image_width} x ${asset.thumb_image_height}px · ${asset.thumb_file_size_label || ""} · ${asset.thumb_codec || asset.thumb_mime_type || ""}` : ""],
+    ["Web-Datei", asset.web_image_width && asset.web_image_height ? `${asset.web_image_width} x ${asset.web_image_height}px Â· ${asset.web_file_size_label || ""} Â· ${asset.web_codec || asset.web_mime_type || ""}` : ""],
+    ["Thumb", asset.thumb_image_width && asset.thumb_image_height ? `${asset.thumb_image_width} x ${asset.thumb_image_height}px Â· ${asset.thumb_file_size_label || ""} Â· ${asset.thumb_codec || asset.thumb_mime_type || ""}` : ""],
     ["Speicherpfad", asset.file_path_web || asset.file_path_original || ""],
     ["Geaendert", assetDate(asset)]
   ].filter(([, value]) => value);
@@ -1153,9 +1153,9 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
           </div>
           <div class="media-crop-actions">
             <button class="button button--secondary button--small" type="button" data-media-crop-fit>Original einpassen</button>
-            <button class="button button--secondary button--small" type="button" data-media-crop-cover>Rahmen füllen</button>
-            <button class="button button--primary button--small" type="button" data-media-crop-apply>OK übernehmen</button>
-            <button class="button button--secondary button--small" type="button" data-media-crop-reset>Zurücksetzen</button>
+            <button class="button button--secondary button--small" type="button" data-media-crop-cover>Rahmen fÃ¼llen</button>
+            <button class="button button--primary button--small" type="button" data-media-crop-apply>OK Ã¼bernehmen</button>
+            <button class="button button--secondary button--small" type="button" data-media-crop-reset>ZurÃ¼cksetzen</button>
           </div>
         </div>
         <div class="field media-editor-assignment"><label>Bildzuordnung</label><select name="media_type" data-media-editor-type-update>${mediaTypeOptions(asset.media_type || "upload")}</select><p class="media-preset-hint" data-media-preset-hint>${escapeHtml(mediaPresetSummary(asset.media_type || "upload"))}</p></div>
@@ -1263,7 +1263,7 @@ function normalizedVideoAttachments(item = {}) {
 
 function videoAreaLabel(item = {}) {
   const section = String(item.section || item.page || item.publication_target || item.category || "").toLowerCase();
-  if (item.isRetrospective || item.linkedEventId || section.includes("rueckblick") || section.includes("rückblick")) return "Rückblick";
+  if (item.isRetrospective || item.linkedEventId || section.includes("rueckblick") || section.includes("rÃ¼ckblick")) return "RÃ¼ckblick";
   if (section.includes("news")) return "News";
   if (section.includes("press") || section.includes("presse")) return "Presse";
   if (section.includes("topic") || section.includes("thema")) return "Themen";
@@ -1290,7 +1290,7 @@ function videoAttachmentRow(video = {}, index = 0) {
       </select></div>
       <div class="field field--wide"><label>Beschreibung</label><textarea name="videoDescription${index}">${escapeHtml(video.description || "")}</textarea></div>
     </div>
-    <button class="icon-button icon-button--danger" type="button" data-remove-video-attachment title="Video entfernen" aria-label="Video entfernen">×</button>
+    <button class="icon-button icon-button--danger" type="button" data-remove-video-attachment title="Video entfernen" aria-label="Video entfernen">Ã—</button>
   </fieldset>`;
 }
 
@@ -1307,13 +1307,13 @@ function videoEditorPage(item = {}) {
       </div>
       <div class="actions">
         <a class="button button--secondary button--small" href="#/cms/media/videos">Zur Videoliste</a>
-        <a class="button button--secondary button--small" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(item.id)}&section=${encodeURIComponent(item.section || item.page || "news")}">Beitrag öffnen</a>
+        <a class="button button--secondary button--small" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(item.id)}&section=${encodeURIComponent(item.section || item.page || "news")}">Beitrag Ã¶ffnen</a>
       </div>
     </div>
     <form id="media-video-form" data-content-id="${escapeHtml(item.id || "")}">
       <div class="video-attachment-editor" data-video-attachments>
         <div data-video-attachment-list>${rows}</div>
-        <button class="button button--secondary button--small" type="button" data-add-video-attachment>Video hinzufügen</button>
+        <button class="button button--secondary button--small" type="button" data-add-video-attachment>Video hinzufÃ¼gen</button>
       </div>
       <div class="sticky-actions sticky-actions--member">
         <button class="button button--primary" type="submit">Videos speichern</button>
@@ -1447,7 +1447,7 @@ export async function mediaPage(section = "library", query = new URLSearchParams
   assets = [...assets, ...memberLogoVirtualAssets(membersForMedia, assets)];
   variants = await list("media_variants").catch(() => []);
   if (mediaAccessError && activeSection !== "videos") {
-    return protect(cmsShell("cms/media/library", `${cmsTitle("Bilder", "Mediathek")}<section class="panel"><div class="alert alert--error"><strong>Mediathek konnte nicht geoeffnet werden.</strong><br>${escapeHtml(mediaAccessError)}<br><small>Bitte Firestore-Regeln fuer <code>media_assets</code> pruefen: Admins und Redakteure muessen lesen duerfen.</small></div></section>`));
+    return protect(cmsShell("cms/media/library", `${cmsTitle("Bilder", "Mediathek")}<section class="panel"><div class="alert alert--error"><strong>Mediathek konnte nicht geoeffnet werden.</strong><br>${escapeHtml(mediaAccessError)}<br><small>Bitte Firestore-Regeln fuer <code>media_assets</code> prÃ¼fen: Admins und Redakteure muessen lesen duerfen.</small></div></section>`));
   }
   const targetRecord = query.get("targetCollection") && query.get("targetId")
     ? await getOne(query.get("targetCollection"), query.get("targetId")).catch(() => null)

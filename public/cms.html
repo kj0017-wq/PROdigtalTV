@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#071a33">
     <meta name="description" content="PROdigitalTV CMS">
     <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/src/styles/main.css?v=779">
+    <link rel="stylesheet" href="/src/styles/main.css?v=793">
     <title>PROdigitalTV | CMS</title>
   </head>
   <body>
@@ -46,31 +46,31 @@
             ["kj-technical-consulting", "KJ Technical Consulting Klaus Juli", "Berlin"],
             ["dsc-dietmar-schickel-consulting", "DSC Dietmar Schickel Consulting GmbH", "Berlin"],
             ["ors", "ORS Comm GmbH & Co KG", "Wien"],
-            ["moderne-werbung-tv", "B�ro f�r moderne Werbung.tv", "Hamburg"],
-            ["markus-vogelbacher", "Markus Vogelbacher", "M�nchen"],
+            ["moderne-werbung-tv", "Büro für moderne Werbung.tv", "Hamburg"],
+            ["markus-vogelbacher", "Markus Vogelbacher", "München"],
             ["blu-tec-one", "BLU TEC ONE GmbH", "Tangstedt"],
             ["house-of-research", "HOR House of Research GmbH", "Berlin"],
-            ["goldvisite-media", "Goldvisite Media GmbH", "Unterf�hring"],
+            ["goldvisite-media", "Goldvisite Media GmbH", "Unterföhring"],
             ["schneider-enterprise", "Schneider-Enterprise", "Koblenz"],
             ["fashion-tv", "Fashion TV Production UG", "Hamburg"],
             ["stingray-digital-international", "STINGRAY Digital International LTD", "London"],
-            ["eutelsat", "Eutelsat Services und Beteiligungen GmbH", "K�ln"],
+            ["eutelsat", "Eutelsat Services und Beteiligungen GmbH", "Köln"],
             ["farbi-flora", "Farbi Flora GmbH", "Gosen-Neu Zittau"],
-            ["anixe-hd", "ANIXE HD TELEVISION GmbH & Co KG", "M�nchen"],
-            ["js-consult", "JS Consult Ing.-b�ro und Medienberatung", "Pulheim"],
-            ["thorsten-lork", "Thorsten Lork", "M�nchen"],
+            ["anixe-hd", "ANIXE HD TELEVISION GmbH & Co KG", "München"],
+            ["js-consult", "JS Consult Ing.-büro und Medienberatung", "Pulheim"],
+            ["thorsten-lork", "Thorsten Lork", "München"],
             ["red-bull-media-house", "RED Bull Media House GmbH", "Wals-Siezenheim"],
             ["hardy-heine", "Hardy Heine", "Bad Nenndorf"],
             ["no-limits-media", "No Limits Media GmbH", "Berlin"],
             ["itsmaxsuhr", "itsmaxsuhr", "Hamburg"],
             ["major-seven-consulting", "Major Seven Consulting", "Frankfurt / Main"],
             ["sebastian-labonte", "Sebastian Labonte", "Mainz"],
-            ["michael-kayser", "Michael Kayser", "M�nchen"],
+            ["michael-kayser", "Michael Kayser", "München"],
             ["idee-medien", "Idee Medien UG", "Delmenhorst"],
             ["prof-dr-conrad-heberling", "Prof. Dr Conrad Heberling", "Potsdam"],
             ["tv-2000plus", "TV.2000plus GmbH", "Leinfelden-Echterdingen"],
-            ["3q-medien", "3Q Medien", "M�nchen"],
-            ["johannes-kors", "Johannes Kors", "M�nchen"],
+            ["3q-medien", "3Q Medien", "München"],
+            ["johannes-kors", "Johannes Kors", "München"],
             ["claudio-malasomma-bellavista", "Claudio Malasomma BellaVista", "Frankfurt / Main"]
           ].map(([id, name, city]) => ({ id, name, city, status: "active", visible: true, visibility: "public" }));
           let members = [];
@@ -110,7 +110,7 @@
         app.innerHTML = `<main class="cms-app"><aside class="cms-sidebar"><a class="cms-logo" href="#/cms">PROdigitalTV</a><nav><a href="#/cms/members">Mitglieder</a><a href="#/cms/media/library">Medien</a><a href="#/cms">Dashboard</a></nav></aside><section class="cms-main"><div class="cms-title"><div><p class="eyebrow">Lokaler Notfallmodus</p><h1>Mitglied bearbeiten</h1><p>Der Editor wird direkt aus cms.html geoeffnet, damit die Seite nicht im Ladezustand haengt.</p></div><a class="button button--secondary button--small" href="#/cms/members">Zurueck</a></div><section class="panel"><form id="content-edit-form" data-module="members" data-id="${id}" class="form-grid form-grid--two member-edit-form"><div class="member-edit-form__column member-edit-form__column--identity"><section class="member-edit-card"><p class="eyebrow">Stammdaten</p><div class="form-grid form-grid--member-base"><div class="field"><label>Mitgliedstyp</label><select name="membershipType"><option value="company" selected>Firmenmitglied</option><option value="individual">Einzelmitglied</option></select></div><div class="field"><label>Firma / Name</label><input name="name" value="${title}"></div><div class="field"><label>Straße</label><input name="street"></div><div class="field"><label>Hausnummer</label><input name="houseNumber"></div><div class="field"><label>PLZ</label><input name="postalCode"></div><div class="field"><label>Ort</label><input name="city"></div><div class="field"><label>Land</label><input name="country"></div></div></section><div class="member-edit-form__event-contacts"><p class="eyebrow">Kontaktdaten</p>${Array.from({ length: 5 }, (_, index) => `<fieldset class="member-event-contact-row"><legend>Kontakt ${index + 1}</legend><div class="form-grid form-grid--member-contact"><div class="field"><label>Vorname</label><input name="eventContactFirstName${index}"></div><div class="field"><label>Nachname</label><input name="eventContactLastName${index}"></div><div class="field"><label>Funktion</label><select name="eventContactRole${index}"><option value="">Funktion wählen</option><option>Buchhaltung</option><option>Geschäftsleitung</option><option>Marketing</option><option>Sales / Verkauf</option><option>Kommunikation / PR</option><option>Technik</option></select></div><div class="field"><label>Mail</label><input name="eventContactEmail${index}" type="email"></div><div class="field"><label>Tel. mit Landesvorwahl</label><input name="eventContactPhone${index}" type="tel" placeholder="+49 ..."></div></div></fieldset>`).join("")}</div></div><div class="member-edit-form__column member-edit-form__column--content"><section class="member-edit-card member-edit-card--profile"><p class="eyebrow">Profil</p><div class="field"><label>Beschreibung</label><textarea name="description"></textarea></div><div class="field"><label>Website</label><input name="website"></div><label class="checkbox-line"><input type="checkbox" name="visible" checked> Im Portal sichtbar</label></section></div><div class="member-edit-savebar"><button class="button button--primary">Speichern</button><div id="content-save-result"></div></div></form></section></section></main>`;
       })();
     </script>
-    <script type="module" src="/src/main.js?v=835"></script>
+    <script type="module" src="/src/main.js?v=868"></script>
   </body>
 </html>
 

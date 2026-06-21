@@ -1,8 +1,9 @@
-﻿import { cmsShell, cmsTitle } from "./cmsLayout.js?v=467";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=470";
 import { list, getOne } from "../firebase/dataService.js?v=487";
 import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=470";
 import { accessLabels, lifecycleLabels } from "../data/demoData.js";
 import { escapeHtml, formatDate, formatDateTime, formatShortDate } from "../utils/format.js";
+import { fallbackImageUrl } from "../utils/imageFallbacks.js?v=1";
 
 function localCmsAccessBypass() {
   return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
@@ -29,7 +30,7 @@ function denied(adminOnly = false) {
 
 function status(value) {
   const style = ["failed", "expired", "inactive", "cancelled", "archived"].includes(value) ? "status--error" : ["draft", "pending_email_confirmation", "queued", "in_review", "uploaded"].includes(value) ? "status--draft" : "";
-  const label = { active: "Aktiv", inactive: "Inaktiv", cancelled: "Gekuendigt", internal: "Intern", published: "Veroeffentlicht", draft: "Entwurf", archived: "Archiviert", approved: "Freigegeben", new: "Neu", queued: "Wartet", sent: "Gesendet", failed: "Fehler", in_review: "In Pruefung" }[value] || value;
+  const label = { active: "Aktiv", inactive: "Inaktiv", cancelled: "Gekuendigt", internal: "Intern", published: "Veroeffentlicht", draft: "Entwurf", archived: "Archiviert", approved: "Freigegeben", new: "Neu", queued: "Wartet", sent: "Gesendet", failed: "Fehler", in_review: "In Prüfung" }[value] || value;
   return `<span class="status ${style}">${escapeHtml(label)}</span>`;
 }
 
@@ -337,7 +338,7 @@ function memberLogoUrl(item = {}, mediaAssets = []) {
 function memberLogoInitials(item = {}) {
   const name = String(item.name || item.title || "").replace(/\b(gmbh|ug|ag|kg|co|ltd|inc|stiftung|consulting|media|medien|television)\b/gi, " ");
   const words = name
-    .split(/[^A-Za-z0-9�������]+/)
+    .split(/[^A-Za-z0-9ÄÖÜäöüß]+/)
     .map((word) => word.trim())
     .filter((word) => word.length > 1);
   const initials = words.length >= 2
@@ -516,7 +517,7 @@ function timestampText(value) {
   return formatDateTime(value);
 }
 
-const audioAreaOrder = ["News", "R�ckblicke", "Presse", "Themen", "Interna"];
+const audioAreaOrder = ["News", "Rückblicke", "Presse", "Themen", "Interna"];
 
 function audioAreaRank(area = "") {
   const index = audioAreaOrder.indexOf(area);
@@ -524,10 +525,10 @@ function audioAreaRank(area = "") {
 }
 
 function audioAreaLabel(item = {}) {
-  if (item.audioArea && !["Presse / Rueckblick", "Presse / R�ckblick", "R�ckblicke / Presse"].includes(item.audioArea)) return item.audioArea;
+  if (item.audioArea && !["Presse / Rueckblick", "Presse / Rückblick", "Rückblicke / Presse"].includes(item.audioArea)) return item.audioArea;
   if (item.audioCollection === "topics") return "Themen";
   if (isNewsEditorialItem(item)) return "News";
-  if (item.publication_target === "archive" || isEventRetrospectiveAudioItem(item)) return "R�ckblicke";
+  if (item.publication_target === "archive" || isEventRetrospectiveAudioItem(item)) return "Rückblicke";
   if (isPressEditorialItem(item)) return "Presse";
   if (isInternalEditorialItem(item) || item.bereich || item.page || item.section || item.key) return "Interna";
   return "Interna";
@@ -535,7 +536,7 @@ function audioAreaLabel(item = {}) {
 
 function audioSubareaLabel(item = {}) {
   if (item.audioCollection === "topics") return "Themen";
-  if (item.bereich === "ueber_uns" || item.page === "about" || String(item.key || "").startsWith("ueber_uns.")) return "�ber uns";
+  if (item.bereich === "ueber_uns" || item.page === "about" || String(item.key || "").startsWith("ueber_uns.")) return "Über uns";
   if (item.bereich === "mitglied_werden" || item.page === "join" || String(item.key || "").startsWith("mitglied_werden.")) return "Mitglied werden";
   return "";
 }
@@ -548,7 +549,7 @@ function isPublicAudioCandidate(item = {}) {
   const statusValue = String(item.status || "").toLowerCase();
   const visibilityValue = String(item.visibility || item.sichtbarkeit || "").toLowerCase();
   const isPublished = ["published", "active", "aktiv", "approved"].includes(statusValue);
-  const isPublic = ["public", "oeffentlich", "�ffentlich", ""].includes(visibilityValue);
+  const isPublic = ["public", "oeffentlich", "öffentlich", ""].includes(visibilityValue);
   return isPublished && isPublic;
 }
 
@@ -565,9 +566,9 @@ function isEventRetrospectiveAudioItem(item = {}) {
     || String(item.id || "").startsWith("retrospective-")
     || String(item.key || "").includes("retrospective")
     || String(item.key || "").includes("rueckblick")
-    || String(item.key || "").includes("r�ckblick")
+    || String(item.key || "").includes("rückblick")
     || category.includes("rueckblick")
-    || category.includes("r�ckblick");
+    || category.includes("rückblick");
 }
 
 function normalizeRetrospectiveMatchText(value = "") {
@@ -660,7 +661,7 @@ function audioMetaLine(collection, item, variant) {
   const voice = item[`${prefix}Voice`] || (variant === "natural" ? "Puck" : "Kore");
   const mime = item[`${prefix}MimeType`] || (variant === "natural" ? "audio/mpeg" : item.audioMimeType || "audio/wav");
   const textLength = item[`${prefix}TextLength`] || item.audioTextLength || 0;
-  return `<small>Version ${Number(item.contentVersion || item.audioContentVersion || 1)} � ${escapeHtml(voice)} � ${escapeHtml(mime)}${textLength ? ` � ${Number(textLength).toLocaleString("de-DE")} Zeichen` : ""}${generatedAt ? ` � ${formatDateTime(generatedAt)}` : ""}</small>`;
+  return `<small>Version ${Number(item.contentVersion || item.audioContentVersion || 1)} · ${escapeHtml(voice)} · ${escapeHtml(mime)}${textLength ? ` · ${Number(textLength).toLocaleString("de-DE")} Zeichen` : ""}${generatedAt ? ` · ${formatDateTime(generatedAt)}` : ""}</small>`;
 }
 
 function audioGenerationPanel(collection, item, options = {}) {
@@ -799,7 +800,7 @@ export async function aiAccessPage() {
         </div>
         <div class="field">
           <label>Leseprobe</label>
-          <textarea name="previewText" rows="3">Dies ist eine kurze Leseprobe fuer PROdigitalTV. So klingt diese Stimme in der Audio- und Barrierefreiheitsfunktion.</textarea>
+          <textarea name="previewText" rows="3">Dies ist eine kurze Leseprobe für PROdigitalTV. So klingt diese Stimme in der Audio- und Barrierefreiheitsfunktion.</textarea>
         </div>
         <audio controls preload="none" hidden data-audio-provider-preview-player></audio>
         <div class="alert">Das Firebase Secret <code>ELEVENLABS_API_KEY</code> muss serverseitig gesetzt sein. Ein hier eingegebener API-Key wird bewusst nicht in Firestore gespeichert.</div>
@@ -823,11 +824,11 @@ function chatGptHints(events, media, downloads = []) {
   const hints = [
     shortDescriptions ? `${shortDescriptions} Events haben sehr kurze Beschreibungen.` : "",
     memberEventsWithoutTeaser ? `${memberEventsWithoutTeaser} Mitglieder-Events haben keinen oeffentlichen Teaser.` : "",
-    postWithoutReport ? `${postWithoutReport} Events im R�ckblick haben noch keinen R�ckblicktext.` : "",
+    postWithoutReport ? `${postWithoutReport} Events im Rückblick haben noch keinen Rückblicktext.` : "",
     missingAlt ? `${missingAlt} Bilder haben keine Alt-Texte.` : "",
     downloadsWithoutDescription ? `${downloadsWithoutDescription} Downloads haben keine Beschreibung.` : ""
   ].filter(Boolean);
-  return `<section class="panel ai-panel"><div class="actions" style="justify-content:space-between"><h2>ChatGPT-Hinweise</h2><a class="button button--secondary button--small" href="#/cms/chatgpt">KI-Pruefung oeffnen</a></div>${hints.length ? `<div class="setup-steps">${hints.map((hint) => `<div class="setup-step"><span>${escapeHtml(hint)}</span><strong>Hinweis</strong></div>`).join("")}</div>` : `<p>Keine akuten ChatGPT-Hinweise aus den aktuellen CMS-Daten.</p>`}<p class="muted" style="margin-top:14px">KI-Hinweise sind redaktionelle Empfehlungen und blockieren keine Pipeline-Statuswechsel.</p></section>`;
+  return `<section class="panel ai-panel"><div class="actions" style="justify-content:space-between"><h2>ChatGPT-Hinweise</h2><a class="button button--secondary button--small" href="#/cms/chatgpt">KI-Prüfung oeffnen</a></div>${hints.length ? `<div class="setup-steps">${hints.map((hint) => `<div class="setup-step"><span>${escapeHtml(hint)}</span><strong>Hinweis</strong></div>`).join("")}</div>` : `<p>Keine akuten ChatGPT-Hinweise aus den aktuellen CMS-Daten.</p>`}<p class="muted" style="margin-top:14px">KI-Hinweise sind redaktionelle Empfehlungen und blockieren keine Pipeline-Statuswechsel.</p></section>`;
 }
 
 export async function dashboardPage() {
@@ -842,14 +843,14 @@ export async function dashboardPage() {
       <div class="stat"><span>Kommende Events</span><strong>${upcoming.length}</strong></div>
       <div class="stat"><span>Anmeldungen</span><strong>${registrations.length}</strong></div>
       <div class="stat"><span>Unbestaetigt</span><strong>${pending}</strong></div>
-      <div class="stat"><span>Event R�ckblick / Archiv</span><strong>${openPost}</strong></div>
+      <div class="stat"><span>Event Rückblick / Archiv</span><strong>${openPost}</strong></div>
       <div class="stat"><span>Mailfehler</span><strong>${mails.filter((mail) => mail.status === "failed").length}</strong></div>
     </div>
     ${chatGptHints(events, media, downloads)}
     <div class="cms-columns">
       <section class="panel"><h2>Naechste Events</h2><div class="table-wrap"><table class="table"><thead><tr><th>Event</th><th>Termin</th><th>Phase</th></tr></thead><tbody>${upcoming.map((event) => `<tr><td><a class="link" href="#/cms/event/${event.id}">${escapeHtml(event.title)}</a></td><td>${formatDate(event.date)}</td><td>${status(lifecycleLabels[event.lifecyclePhase])}</td></tr>`).join("")}</tbody></table></div></section>
       <section class="panel"><h2>Aufmerksamkeit erforderlich</h2>
-        <div class="setup-steps"><div class="setup-step"><span>Unbestaetigte Anmeldungen</span><strong>${pending}</strong></div><div class="setup-step"><span>Medien in Pruefung</span><strong>${media.filter((item) => item.status === "in_review").length}</strong></div><div class="setup-step"><span>Event R�ckblick offen</span><strong>${openPost}</strong></div></div>
+        <div class="setup-steps"><div class="setup-step"><span>Unbestätigte Anmeldungen</span><strong>${pending}</strong></div><div class="setup-step"><span>Medien in Prüfung</span><strong>${media.filter((item) => item.status === "in_review").length}</strong></div><div class="setup-step"><span>Event Rückblick offen</span><strong>${openPost}</strong></div></div>
         <div class="actions" style="margin-top:20px"><a class="button button--secondary button--small" href="#/cms/editorial">Redaktion bearbeiten</a><a class="button button--secondary button--small" href="#/cms/members">Mitglied anlegen</a></div>
       </section>
     </div>`));
@@ -890,12 +891,12 @@ export async function eventFollowUpPage() {
   const events = allEvents
     .filter((event) => isPastCmsEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
-  return protect(cmsShell("cms/followup", `${cmsTitle("Event-Management", "Event R�ckblick")}
+  return protect(cmsShell("cms/followup", `${cmsTitle("Event-Management", "Event Rückblick")}
   ${eventFollowUpTable(events, mediaAssets, allEditorial)}`));
 }
 
 function eventTabs(id, active) {
-  return `<nav class="tabs">${[["base", "Stammdaten"], ["pre", "Vorlauf"], ["topics", "Vortraege / Referenten"], ["partners", "Co-Gastgeber"], ["registration", "Anmeldung"], ["post", "R�ckblick"], ["media", "Fotogalerie / Downloads"]].map(([key, label]) => `<button data-event-tab="${key}" data-event-id="${id}" class="${active === key ? "active" : ""}">${label}</button>`).join("")}</nav>`;
+  return `<nav class="tabs">${[["base", "Stammdaten"], ["pre", "Vorlauf"], ["topics", "Vortraege / Referenten"], ["partners", "Co-Gastgeber"], ["registration", "Anmeldung"], ["post", "Rückblick"], ["media", "Fotogalerie / Downloads"]].map(([key, label]) => `<button data-event-tab="${key}" data-event-id="${id}" class="${active === key ? "active" : ""}">${label}</button>`).join("")}</nav>`;
 }
 
 function shortText(value = "", length = 112) {
@@ -981,7 +982,7 @@ function eventFollowUpActionButtons(event = {}) {
   const nextStatus = isActive ? "inactive" : "published";
   const toggleClass = isActive ? "icon-button--visible" : "icon-button--hidden";
   const toggleLabel = isActive ? "Aktiv: auf inaktiv setzen" : "Inaktiv: auf aktiv setzen";
-  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/event/${event.id}?tab=post" title="R�ckblick bearbeiten" aria-label="R�ckblick bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-event-status="${escapeHtml(event.id)}" data-status="${nextStatus}" data-lifecycle-phase="${isActive ? "archived" : "archive_published"}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ? "eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-event="${escapeHtml(event.id)}" data-delete-return="cms/followup" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
+  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/event/${event.id}?tab=post" title="Rückblick bearbeiten" aria-label="Rückblick bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-event-status="${escapeHtml(event.id)}" data-status="${nextStatus}" data-lifecycle-phase="${isActive ? "archived" : "archive_published"}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ? "eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-event="${escapeHtml(event.id)}" data-delete-return="cms/followup" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
 }
 
 function eventImageUrl(event = {}, mediaAssets = []) {
@@ -994,7 +995,7 @@ function eventFollowUpTable(events = [], mediaAssets = [], allEditorial = []) {
     const retrospectiveArticle = allEditorial.find((item) => {
       const category = String(item.category || "").toLowerCase();
       return retrospectiveMatchesEvent(item, event)
-        && (item.isRetrospective || category.includes("r�ckblick") || category.includes("rueckblick") || category.includes("rückblick"))
+        && (item.isRetrospective || category.includes("rückblick") || category.includes("rueckblick") || category.includes("rückblick"))
         && (item.page === "press" || item.section === "pressRelease");
     });
     return `<tr>
@@ -1002,11 +1003,11 @@ function eventFollowUpTable(events = [], mediaAssets = [], allEditorial = []) {
     <td><a class="link editorial-title-link" href="#/cms/event/${event.id}?tab=post" title="${escapeHtml(event.title || "-")}">${escapeHtml(shortText(event.title || "-", 70))}</a>${event.subtitle ? `<small>${escapeHtml(shortText(event.subtitle, 95))}</small>` : ""}</td>
     <td>${escapeHtml(formatDate(event.date))}</td>
     <td>${status(event.lifecyclePhase === "archive_published" ? "published" : event.status || event.lifecyclePhase || "draft")}</td>
-    <td>${retrospectiveArticle ? audioListCell("editorialContent", retrospectiveArticle) : `<small class="muted">R�ckblick-Beitrag fehlt</small>`}</td>
+    <td>${retrospectiveArticle ? audioListCell("editorialContent", retrospectiveArticle) : `<small class="muted">Rückblick-Beitrag fehlt</small>`}</td>
     <td>${editorialMediaFlags(retrospectiveArticle || event)}</td>
     <td>${eventFollowUpActionButtons(event)}</td>
   </tr>`;
-  }).join("") : `<tr><td colspan="7">Noch keine Rueckblicke vorhanden.</td></tr>`}</tbody></table></div></section>`;
+  }).join("") : `<tr><td colspan="7">Noch keine Rückblicke vorhanden.</td></tr>`}</tbody></table></div></section>`;
 }
 
 function editorialSummaryThumb(item = {}) {
@@ -1053,7 +1054,7 @@ function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", d
     <p class="muted" data-image-resolution>Ausgabeformat: ${escapeHtml(defaultSize.replace("x", " x "))} px.</p>
     ${aiCollage ? `<div class="image-dropzone__ai" data-image-mode-panel="ai" hidden>
       <label>KI-Collage erzeugen</label>
-      <textarea name="${inputName}AiPrompt" data-ai-image-prompt placeholder="Optional: Motiv, Stil oder Schwerpunkt fuer die Collage beschreiben. Leer lassen = aus Titel, Subtitel und Text ableiten."></textarea>
+      <textarea name="${inputName}AiPrompt" data-ai-image-prompt placeholder="Optional: Motiv, Stil oder Schwerpunkt für die Collage beschreiben. Leer lassen = aus Titel, Subtitel und Text ableiten."></textarea>
       <button class="button button--secondary button--small" type="button" data-ai-image-generate>KI-Collage als Thumb erzeugen</button>
     </div>` : ""}
     <p class="image-dropzone__status" data-image-status>${imageUrl ? "Bild ist gespeichert." : "Kein Bild gespeichert."}</p>
@@ -1278,19 +1279,19 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   const retrospectiveArticle = allEditorial.find((item) => {
     const category = String(item.category || "").toLowerCase();
     return retrospectiveMatchesEvent(item, event)
-      && (item.isRetrospective || category.includes("r�ckblick") || category.includes("rueckblick") || category.includes("r�ckblick"))
+      && (item.isRetrospective || category.includes("rückblick") || category.includes("rueckblick") || category.includes("rückblick"))
       && (item.page === "press" || item.section === "pressRelease");
   });
   const retrospectiveArticleId = retrospectiveArticle?.id || `retrospective-${event.id}`;
   const retrospectiveControl = `<section class="panel event-retrospective-control" style="background:var(--pdt-bg)">
     <div class="actions" style="justify-content:space-between;align-items:flex-start">
-      <div><p class="eyebrow">Presse / R�ckblicke</p><h2>Redaktionellen R�ckblick steuern</h2><p class="muted">Erstellt oder aktualisiert einen Pressebeitrag in der Kategorie R�ckblicke mit Flie�text, Event-Bezug und Galerie-Verkn�pfung.</p></div>
+      <div><p class="eyebrow">Presse / Rückblicke</p><h2>Redaktionellen Rückblick steuern</h2><p class="muted">Erstellt oder aktualisiert einen Pressebeitrag in der Kategorie Rückblicke mit Fließtext, Event-Bezug und Galerie-Verknüpfung.</p></div>
       <div class="actions">
-        <button type="button" class="button button--primary button--small" data-create-event-retrospective="${escapeHtml(event.id)}">${retrospectiveArticle ? "R�ckblick aktualisieren" : "R�ckblick erstellen"}</button>
-        ${retrospectiveArticle ? `<a class="button button--secondary button--small" href="#/cms/edit?module=editorialContent&id=${escapeHtml(retrospectiveArticle.id)}&section=press">Beitrag �ffnen</a>` : ""}
+        <button type="button" class="button button--primary button--small" data-create-event-retrospective="${escapeHtml(event.id)}">${retrospectiveArticle ? "Rückblick aktualisieren" : "Rückblick erstellen"}</button>
+        ${retrospectiveArticle ? `<a class="button button--secondary button--small" href="#/cms/edit?module=editorialContent&id=${escapeHtml(retrospectiveArticle.id)}&section=press">Beitrag öffnen</a>` : ""}
       </div>
     </div>
-    <div id="event-retrospective-result" class="muted">${retrospectiveArticle ? `Verkn�pfter Beitrag: ${escapeHtml(retrospectiveArticle.title || retrospectiveArticle.id)}` : "Noch kein redaktioneller R�ckblick zu diesem Event vorhanden."}</div>
+    <div id="event-retrospective-result" class="muted">${retrospectiveArticle ? `Verknüpfter Beitrag: ${escapeHtml(retrospectiveArticle.title || retrospectiveArticle.id)}` : "Noch kein redaktioneller Rückblick zu diesem Event vorhanden."}</div>
     <input type="hidden" data-retrospective-article-id value="${escapeHtml(retrospectiveArticleId)}">
   </section>`;
   if (tab === "post" && retrospectiveArticle) {
@@ -1302,7 +1303,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   }
   let content;
   if (tab === "base") {
-    content = `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid is-save-aware"><div class="form-grid--two"><div class="field"><label>Titel</label><input name="title" value="${escapeHtml(event.title)}" required>${aiFieldActions([{ action: "generateEventDescription", target: "title", label: "Ueberschrift vorschlagen", entityId: event.id, fieldName: "title" }])}</div><div class="field"><label>Untertitel</label><input name="subtitle" value="${escapeHtml(event.subtitle)}"></div></div><div class="field"><label>Beschreibung</label><textarea name="description">${escapeHtml(event.description)}</textarea>${aiFieldActions([{ action: "improveText", target: "description", label: "Mit ChatGPT bearbeiten", entityId: event.id, fieldName: "description" }, { action: "shortenText", target: "description", label: "Fuer Mobile kuerzen", entityId: event.id, fieldName: "description" }, { action: "generateSeoMeta", target: "description", label: "SEO erzeugen", entityId: event.id, fieldName: "description" }])}</div><div class="form-grid--two"><div class="field"><label>Datum</label><input type="date" name="date" value="${event.date}"></div><div class="field"><label>Eventtyp</label><select name="eventType">${eventTypes.map((value) => `<option ${value === event.eventType ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select></div><div class="field"><label>Neuen Eventtyp hinzufuegen</label><input name="newEventType" placeholder="z. B. Fachgespraech"></div><div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Bilder werden im Bereich Bildergalerien freigegeben und dieser Galerie zugeordnet.</p></div>${eventImageEditor(event, mediaAssets, `#/cms/event/${event.id}?tab=base`)}<div class="field"><label>Aktiv / Inaktiv</label><select name="status"><option value="published" ${event.status === "published" ? "selected" : ""}>Aktiv</option><option value="inactive" ${event.status === "inactive" ? "selected" : ""}>Inaktiv</option><option value="draft" ${event.status === "draft" ? "selected" : ""}>Entwurf</option><option value="archived" ${event.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Beginn</label><input type="time" name="startTime" value="${event.startTime}"></div><div class="field"><label>Ende</label><input type="time" name="endTime" value="${event.endTime}"></div><div class="field"><label>Location</label><input name="locationName" value="${escapeHtml(event.locationName || "")}"></div><div class="field"><label>Adresse</label><input name="address" value="${escapeHtml(event.address || "")}"></div><div class="field"><label>Stadt</label><input name="city" value="${escapeHtml(event.city || "")}"></div><div class="field"><label>Telefon Location</label><input name="phone" value="${escapeHtml(event.phone || "")}"></div><div class="field"><label>Ablaufdatum / automatisch ausblenden</label><input type="datetime-local" name="expiresAt" value="${event.expiresAt ? event.expiresAt.slice(0, 16) : ""}"></div><div class="field"><label>Zugangsart</label><select name="accessType">${Object.entries(accessLabels).map(([key, value]) => `<option value="${key}" ${key === event.accessType ? "selected" : ""}>${value}</option>`).join("")}</select></div><div class="field"><label>Lifecycle</label><select name="lifecyclePhase">${Object.entries(lifecycleLabels).map(([key, value]) => `<option value="${key}" ${key === event.lifecyclePhase ? "selected" : ""}>${value}</option>`).join("")}</select></div></div><div class="actions"><button class="button button--primary">Event speichern</button>${id !== "new" ? `<button type="button" class="button button--secondary" data-delete-event="${event.id}">Event loeschen</button>` : ""}</div><div id="event-save-result"></div></form>`;
+    content = `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid is-save-aware"><div class="form-grid--two"><div class="field"><label>Titel</label><input name="title" value="${escapeHtml(event.title)}" required>${aiFieldActions([{ action: "generateEventDescription", target: "title", label: "Ueberschrift vorschlagen", entityId: event.id, fieldName: "title" }])}</div><div class="field"><label>Untertitel</label><input name="subtitle" value="${escapeHtml(event.subtitle)}"></div></div><div class="field"><label>Beschreibung</label><textarea name="description">${escapeHtml(event.description)}</textarea>${aiFieldActions([{ action: "improveText", target: "description", label: "Mit ChatGPT bearbeiten", entityId: event.id, fieldName: "description" }, { action: "shortenText", target: "description", label: "Für Mobile kuerzen", entityId: event.id, fieldName: "description" }, { action: "generateSeoMeta", target: "description", label: "SEO erzeugen", entityId: event.id, fieldName: "description" }])}</div><div class="form-grid--two"><div class="field"><label>Datum</label><input type="date" name="date" value="${event.date}"></div><div class="field"><label>Eventtyp</label><select name="eventType">${eventTypes.map((value) => `<option ${value === event.eventType ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select></div><div class="field"><label>Neuen Eventtyp hinzufuegen</label><input name="newEventType" placeholder="z. B. Fachgespraech"></div><div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Bilder werden im Bereich Bildergalerien freigegeben und dieser Galerie zugeordnet.</p></div>${eventImageEditor(event, mediaAssets, `#/cms/event/${event.id}?tab=base`)}<div class="field"><label>Aktiv / Inaktiv</label><select name="status"><option value="published" ${event.status === "published" ? "selected" : ""}>Aktiv</option><option value="inactive" ${event.status === "inactive" ? "selected" : ""}>Inaktiv</option><option value="draft" ${event.status === "draft" ? "selected" : ""}>Entwurf</option><option value="archived" ${event.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Beginn</label><input type="time" name="startTime" value="${event.startTime}"></div><div class="field"><label>Ende</label><input type="time" name="endTime" value="${event.endTime}"></div><div class="field"><label>Location</label><input name="locationName" value="${escapeHtml(event.locationName || "")}"></div><div class="field"><label>Adresse</label><input name="address" value="${escapeHtml(event.address || "")}"></div><div class="field"><label>Stadt</label><input name="city" value="${escapeHtml(event.city || "")}"></div><div class="field"><label>Telefon Location</label><input name="phone" value="${escapeHtml(event.phone || "")}"></div><div class="field"><label>Ablaufdatum / automatisch ausblenden</label><input type="datetime-local" name="expiresAt" value="${event.expiresAt ? event.expiresAt.slice(0, 16) : ""}"></div><div class="field"><label>Zugangsart</label><select name="accessType">${Object.entries(accessLabels).map(([key, value]) => `<option value="${key}" ${key === event.accessType ? "selected" : ""}>${value}</option>`).join("")}</select></div><div class="field"><label>Lifecycle</label><select name="lifecyclePhase">${Object.entries(lifecycleLabels).map(([key, value]) => `<option value="${key}" ${key === event.lifecyclePhase ? "selected" : ""}>${value}</option>`).join("")}</select></div></div><div class="actions"><button class="button button--primary">Event speichern</button>${id !== "new" ? `<button type="button" class="button button--secondary" data-delete-event="${event.id}">Event loeschen</button>` : ""}</div><div id="event-save-result"></div></form>`;
     if (isPastCmsEvent(event)) {
       content = content
         .replace(`<div class="field"><label>Telefon Location</label><input name="phone" value="${escapeHtml(event.phone || "")}"></div>`, "")
@@ -1313,10 +1314,10 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   } else if (tab === "topics") {
     content = eventTopicsEditor(event, topics, speakers, allEvents, query);
   } else if (tab === "__old_topics") {
-    content = `<h2>Zugeordnete Themen</h2><div class="filters">${topics.map((topic) => `<span class="filter ${event.topicIds.includes(topic.id) ? "active" : ""}">${escapeHtml(topic.title)}</span>`).join("")}</div><p>Themenspezifische Beschreibung und Sortierung koennen hier redaktionell erweitert werden.</p><div class="table-wrap" style="margin-top:22px"><table class="table"><thead><tr><th>Thema</th><th>Referenten</th></tr></thead><tbody>${topics.filter((topic) => event.topicIds.includes(topic.id)).map((topic) => { const topicSpeakers = speakers.filter((speaker) => speaker.topicId === topic.id || (event.speakerIds || []).includes(speaker.id)); return `<tr><td>${escapeHtml(topic.title)}</td><td>${topicSpeakers.length ? topicSpeakers.map((speaker) => `<div class="person"><div>${speaker.photoUrl ? `<img src="${escapeHtml(speaker.photoUrl)}" alt="">` : ""}</div><div><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" � "))}</small>${speaker.shortBio ? `<p>${escapeHtml(speaker.shortBio)}</p>` : ""}</div></div>`).join("") : "Noch kein Referent zugeordnet."}</td></tr>`; }).join("")}</tbody></table></div>`;
+    content = `<h2>Zugeordnete Themen</h2><div class="filters">${topics.map((topic) => `<span class="filter ${event.topicIds.includes(topic.id) ? "active" : ""}">${escapeHtml(topic.title)}</span>`).join("")}</div><p>Themenspezifische Beschreibung und Sortierung koennen hier redaktionell erweitert werden.</p><div class="table-wrap" style="margin-top:22px"><table class="table"><thead><tr><th>Thema</th><th>Referenten</th></tr></thead><tbody>${topics.filter((topic) => event.topicIds.includes(topic.id)).map((topic) => { const topicSpeakers = speakers.filter((speaker) => speaker.topicId === topic.id || (event.speakerIds || []).includes(speaker.id)); return `<tr><td>${escapeHtml(topic.title)}</td><td>${topicSpeakers.length ? topicSpeakers.map((speaker) => `<div class="person"><div>${speaker.photoUrl ? `<img src="${escapeHtml(speaker.photoUrl)}" alt="">` : ""}</div><div><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" · "))}</small>${speaker.shortBio ? `<p>${escapeHtml(speaker.shortBio)}</p>` : ""}</div></div>`).join("") : "Noch kein Referent zugeordnet."}</td></tr>`; }).join("")}</tbody></table></div>`;
   } else if (tab === "speakers") {
     const assignedSpeakers = speakers.filter((item) => (event.speakerIds || []).includes(item.id));
-    content = `<h2>Referenten im Eventkontext</h2><form id="event-speakers-form" data-event-id="${event.id}" class="form-grid"><div class="selection-grid">${speakers.length ? speakers.map((speaker) => `<label class="selection-item"><input type="checkbox" name="speakerIds" value="${speaker.id}" ${(event.speakerIds || []).includes(speaker.id) ? "checked" : ""}><span><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml(speaker.position || speaker.company || "")}</small></span>${status(speaker.status || "draft")}</label>`).join("") : `<div class="alert">Noch keine Referenten angelegt. Bitte zuerst im Bereich Referenten ein Profil mit Foto und Vita erstellen.</div>`}</div><div class="actions"><button class="button button--primary">Zuordnung speichern</button><a class="button button--secondary" href="#/cms/speakers">Referentenprofile verwalten</a></div><div id="speaker-assignment-result"></div></form>${assignedSpeakers.length ? `<div class="table-wrap" style="margin-top:24px"><table class="table"><thead><tr><th>Zugeordnet</th><th>Unternehmen</th><th>Profil</th></tr></thead><tbody>${assignedSpeakers.map((speaker) => `<tr><td>${escapeHtml(speaker.name)}</td><td>${escapeHtml(speaker.company || "-")}</td><td>${speaker.photoUrl ? "Foto vorhanden" : "Foto fehlt"} � ${speaker.shortBio || speaker.longBio ? "Vita vorhanden" : "Vita fehlt"}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
+    content = `<h2>Referenten im Eventkontext</h2><form id="event-speakers-form" data-event-id="${event.id}" class="form-grid"><div class="selection-grid">${speakers.length ? speakers.map((speaker) => `<label class="selection-item"><input type="checkbox" name="speakerIds" value="${speaker.id}" ${(event.speakerIds || []).includes(speaker.id) ? "checked" : ""}><span><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml(speaker.position || speaker.company || "")}</small></span>${status(speaker.status || "draft")}</label>`).join("") : `<div class="alert">Noch keine Referenten angelegt. Bitte zuerst im Bereich Referenten ein Profil mit Foto und Vita erstellen.</div>`}</div><div class="actions"><button class="button button--primary">Zuordnung speichern</button><a class="button button--secondary" href="#/cms/speakers">Referentenprofile verwalten</a></div><div id="speaker-assignment-result"></div></form>${assignedSpeakers.length ? `<div class="table-wrap" style="margin-top:24px"><table class="table"><thead><tr><th>Zugeordnet</th><th>Unternehmen</th><th>Profil</th></tr></thead><tbody>${assignedSpeakers.map((speaker) => `<tr><td>${escapeHtml(speaker.name)}</td><td>${escapeHtml(speaker.company || "-")}</td><td>${speaker.photoUrl ? "Foto vorhanden" : "Foto fehlt"} · ${speaker.shortBio || speaker.longBio ? "Vita vorhanden" : "Vita fehlt"}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
   } else if (tab === "partners") {
     content = eventPartnersEditor(event, sponsors, mediaAssets);
   } else if (tab === "registration") {
@@ -1329,33 +1330,33 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     content = `<h2>Vorlauf</h2><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="pre" class="form-grid is-save-aware"><div class="field"><label>Vorlauf-Status</label><select name="preStatus"><option value="save_the_date" ${preStatus === "save_the_date" ? "selected" : ""}>Save the date - Anmeldung geschlossen</option><option value="invitation_published" ${preStatus === "invitation_published" ? "selected" : ""}>Einladung aktiv - Anmeldung offen</option></select></div><div class="field"><label>Save-the-date-Text</label><textarea name="saveTheDateText">${escapeHtml(saveTheDateText)}</textarea></div><div class="field"><label>Einladungstext</label><textarea name="invitationText">${escapeHtml(invitationText)}</textarea>${aiFieldActions([{ action: "generateEventInvitation", target: "invitationText", label: "Einladungstext erzeugen", entityId: event.id, fieldName: "invitationText" }])}</div><div class="actions"><button class="button button--primary">Vorlauf speichern</button></div><div id="event-save-result"></div></form>`;
   } else if (tab === "ai") {
     const eventMedia = media.filter((item) => item.eventId === event.id);
-    content = `<h2>KI-Pruefung</h2><p class="muted" style="margin-bottom:18px">Diese Pruefung erzeugt redaktionelle Empfehlungen. Blocker kommen weiterhin aus der regelbasierten Pipeline-Validierung.</p><div class="ai-quality-card"><button type="button" class="button button--primary ai-action" data-ai-action="analyzeEventPipelineQuality" data-ai-target="ai-quality-context" data-ai-entity-type="event" data-ai-entity-id="${event.id}" data-ai-field="pipelineQuality">Pipeline mit ChatGPT pruefen</button><div id="ai-quality-context" hidden>${escapeHtml(JSON.stringify({ event, media: eventMedia }))}</div></div><div class="setup-steps" style="margin-top:20px"><div class="setup-step"><span>Pflichtfelder fehlen?</span><strong>${event.title && event.date && event.locationName ? "ok" : "pruefen"}</strong></div><div class="setup-step"><span>SEO-Daten vorhanden?</span><strong>${event.seoTitle && event.seoDescription ? "ok" : "Empfehlung"}</strong></div><div class="setup-step"><span>Alt-Texte bei Bildern?</span><strong>${eventMedia.some((item) => !item.altText) ? "Empfehlung" : "ok"}</strong></div></div>`;
+    content = `<h2>KI-Prüfung</h2><p class="muted" style="margin-bottom:18px">Diese Prüfung erzeugt redaktionelle Empfehlungen. Blocker kommen weiterhin aus der regelbasierten Pipeline-Validierung.</p><div class="ai-quality-card"><button type="button" class="button button--primary ai-action" data-ai-action="analyzeEventPipelineQuality" data-ai-target="ai-quality-context" data-ai-entity-type="event" data-ai-entity-id="${event.id}" data-ai-field="pipelineQuality">Pipeline mit ChatGPT prüfen</button><div id="ai-quality-context" hidden>${escapeHtml(JSON.stringify({ event, media: eventMedia }))}</div></div><div class="setup-steps" style="margin-top:20px"><div class="setup-step"><span>Pflichtfelder fehlen?</span><strong>${event.title && event.date && event.locationName ? "ok" : "prüfen"}</strong></div><div class="setup-step"><span>SEO-Daten vorhanden?</span><strong>${event.seoTitle && event.seoDescription ? "ok" : "Empfehlung"}</strong></div><div class="setup-step"><span>Alt-Texte bei Bildern?</span><strong>${eventMedia.some((item) => !item.altText) ? "Empfehlung" : "ok"}</strong></div></div>`;
   } else {
     const assigned = media.filter((item) => item.eventId === event.id);
-    content = `<h2>${tab === "post" ? "Event-Nacharbeit" : "Medien zum Event"}</h2>${tab === "post" ? `<section class="panel" style="background:var(--pdt-bg)"><h2>Event-Nachlauf mit KI</h2>${aiFieldActions([{ action: "generateArchiveText", target: "longDescription", label: "Nachbericht erzeugen", entityId: event.id, fieldName: "archiveText" }, { action: "generateEventSummary", target: "postEventSummary", label: "Kurztext erzeugen", entityId: event.id, fieldName: "postEventSummary" }])}</section>` : `<section class="panel" style="background:var(--pdt-bg)"><h2>Fotogalerie und Downloads mit KI</h2><p>Galerie und Downloads bleiben optional. Wenn keine Bilder oder Downloads vorhanden sind, entsteht kein Pflichtfehler.</p>${aiFieldActions([{ action: "generateGalleryIntro", target: "ai-media-context", label: "Galerie-Einleitung", entityId: event.id, fieldName: "galleryIntro" }, { action: "generateImageAltText", target: "ai-media-context", label: "Alt-Texte vorbereiten", entityId: event.id, fieldName: "altTexts" }, { action: "generateDownloadDescription", target: "ai-media-context", label: "Downloadbeschreibung", entityId: event.id, fieldName: "downloadDescription" }])}<div id="ai-media-context" hidden>${escapeHtml(JSON.stringify({ event, media: assigned }))}</div></section>`}${tab === "post" ? `${retrospectiveControl}<form id="event-edit-form" data-event-id="${event.id}" class="form-grid" style="margin-bottom:22px"><div class="field"><label>Nachbericht Kurztext</label><textarea name="postEventSummary">${escapeHtml(event.postEventSummary || event.postEventummary || "")}</textarea></div><div class="field"><label>Langtext / R�ckblicktext</label><textarea name="longDescription">${escapeHtml(event.longDescription || event.bodyText || event.articleText || event.archiveText || "")}</textarea><p class="muted">Dieser Text wird als Langtext fuer den redaktionellen R�ckblick verwendet.</p></div><div class="actions"><button class="button button--primary button--small">R�ckblicktext speichern</button></div><div id="event-save-result"></div></form>` : ""}<form id="media-upload-form" data-event-id="${event.id}" class="upload"><p><strong>Fotos, PDFs oder Praesentationen hochladen</strong></p><p>Drag-and-drop oder Dateiauswahl; Inhalte bleiben bis zur Freigabe intern.</p><input type="file" name="files" multiple style="margin-top:17px"><button class="button button--primary button--small" type="submit" style="margin:15px auto 0">Upload starten</button><div id="upload-result"></div></form><div class="table-wrap"><table class="table"><thead><tr><th>Datei</th><th>Typ</th><th>Sichtbarkeit</th><th>Freigabe</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((item) => `<tr><td>${escapeHtml(item.title)}</td><td>${item.mediaType}</td><td>${item.visibility}</td><td>${status(item.status)}</td><td><div class="table-actions"><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="approved">Aktiv</button><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="archived">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="eventMedia" data-record-id="${item.id}">Loeschen</button></div></td></tr>`).join("")}</tbody></table></div>`;
+    content = `<h2>${tab === "post" ? "Event-Nacharbeit" : "Medien zum Event"}</h2>${tab === "post" ? `<section class="panel" style="background:var(--pdt-bg)"><h2>Event-Nachlauf mit KI</h2>${aiFieldActions([{ action: "generateArchiveText", target: "longDescription", label: "Nachbericht erzeugen", entityId: event.id, fieldName: "archiveText" }, { action: "generateEventSummary", target: "postEventSummary", label: "Kurztext erzeugen", entityId: event.id, fieldName: "postEventSummary" }])}</section>` : `<section class="panel" style="background:var(--pdt-bg)"><h2>Fotogalerie und Downloads mit KI</h2><p>Galerie und Downloads bleiben optional. Wenn keine Bilder oder Downloads vorhanden sind, entsteht kein Pflichtfehler.</p>${aiFieldActions([{ action: "generateGalleryIntro", target: "ai-media-context", label: "Galerie-Einleitung", entityId: event.id, fieldName: "galleryIntro" }, { action: "generateImageAltText", target: "ai-media-context", label: "Alt-Texte vorbereiten", entityId: event.id, fieldName: "altTexts" }, { action: "generateDownloadDescription", target: "ai-media-context", label: "Downloadbeschreibung", entityId: event.id, fieldName: "downloadDescription" }])}<div id="ai-media-context" hidden>${escapeHtml(JSON.stringify({ event, media: assigned }))}</div></section>`}${tab === "post" ? `${retrospectiveControl}<form id="event-edit-form" data-event-id="${event.id}" class="form-grid" style="margin-bottom:22px"><div class="field"><label>Nachbericht Kurztext</label><textarea name="postEventSummary">${escapeHtml(event.postEventSummary || event.postEventummary || "")}</textarea></div><div class="field"><label>Langtext / Rückblicktext</label><textarea name="longDescription">${escapeHtml(event.longDescription || event.bodyText || event.articleText || event.archiveText || "")}</textarea><p class="muted">Dieser Text wird als Langtext für den redaktionellen Rückblick verwendet.</p></div><div class="actions"><button class="button button--primary button--small">Rückblicktext speichern</button></div><div id="event-save-result"></div></form>` : ""}<form id="media-upload-form" data-event-id="${event.id}" class="upload"><p><strong>Fotos, PDFs oder Praesentationen hochladen</strong></p><p>Drag-and-drop oder Dateiauswahl; Inhalte bleiben bis zur Freigabe intern.</p><input type="file" name="files" multiple style="margin-top:17px"><button class="button button--primary button--small" type="submit" style="margin:15px auto 0">Upload starten</button><div id="upload-result"></div></form><div class="table-wrap"><table class="table"><thead><tr><th>Datei</th><th>Typ</th><th>Sichtbarkeit</th><th>Freigabe</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((item) => `<tr><td>${escapeHtml(item.title)}</td><td>${item.mediaType}</td><td>${item.visibility}</td><td>${status(item.status)}</td><td><div class="table-actions"><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="approved">Aktiv</button><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="archived">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="eventMedia" data-record-id="${item.id}">Loeschen</button></div></td></tr>`).join("")}</tbody></table></div>`;
   }
   if (tab === "post") {
     const assigned = media.filter((item) => item.eventId === event.id);
     const selectedGallery = event.galleryId ? galleries.find((gallery) => gallery.id === event.galleryId) : null;
-    const postTitleValue = event.retrospectiveTitle || retrospectiveArticle?.title || `R�ckblick: ${event.title || "PROdigitalTV Event"}`;
+    const postTitleValue = event.retrospectiveTitle || retrospectiveArticle?.title || `Rückblick: ${event.title || "PROdigitalTV Event"}`;
     const postSummaryValue = event.postEventSummary || event.postEventummary || retrospectiveArticle?.introText || retrospectiveArticle?.subtitle || "";
     const postLongValue = event.longDescription || event.bodyText || event.articleText || event.archiveText || retrospectiveArticle?.longDescription || retrospectiveArticle?.bodyText || retrospectiveArticle?.articleText || retrospectiveArticle?.archiveText || "";
     const retrospectiveAudioTool = retrospectiveArticle
       ? audioGenerationPanel("editorialContent", retrospectiveArticle, { variant: "accessible", providerConfig: audioProviders })
-      : `<p class="muted">Bitte zuerst den R�ckblicktext speichern. Danach wird der redaktionelle R�ckblick-Beitrag angelegt und die Vorlesfunktion ist hier verf�gbar.</p>`;
+      : `<p class="muted">Bitte zuerst den Rückblicktext speichern. Danach wird der redaktionelle Rückblick-Beitrag angelegt und die Vorlesfunktion ist hier verfügbar.</p>`;
     const retrospectiveVideoTool = retrospectiveArticle
       ? articleVideoAttachmentEditor(retrospectiveArticle, videoLibrary)
-      : `<details class="editorial-tool-details" data-editor-tool-panel="videos"><summary><span>Medien</span><strong>Videoanhaenge</strong><em>optional</em></summary><div class="editor-tool-section editor-tool-section--videos"><p class="muted">Bitte zuerst den R�ckblicktext speichern. Danach wird der redaktionelle R�ckblick-Beitrag angelegt und Videos koennen am Beitrag angehaengt werden.</p></div></details>`;
+      : `<details class="editorial-tool-details" data-editor-tool-panel="videos"><summary><span>Medien</span><strong>Videoanhaenge</strong><em>optional</em></summary><div class="editor-tool-section editor-tool-section--videos"><p class="muted">Bitte zuerst den Rückblicktext speichern. Danach wird der redaktionelle Rückblick-Beitrag angelegt und Videos koennen am Beitrag angehaengt werden.</p></div></details>`;
     content = `<h2>Event-Nacharbeit</h2>
       <section class="panel event-post-ai-panel" style="background:var(--pdt-bg)">
         ${aiFieldActions([{ action: "generateArchiveText", target: "longDescription", label: "Nachbericht erzeugen", entityId: event.id, fieldName: "archiveText" }, { action: "generateEventSummary", target: "postEventSummary", label: "Kurztext erzeugen", entityId: event.id, fieldName: "postEventSummary" }])}
       </section>
       <form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="post" class="form-grid is-save-aware event-post-workspace" style="margin-bottom:22px">
         <div class="event-post-workspace__main">
-          <div class="field"><label>Headline R�ckblick</label><input name="retrospectiveTitle" value="${escapeHtml(postTitleValue)}"></div>
+          <div class="field"><label>Headline Rückblick</label><input name="retrospectiveTitle" value="${escapeHtml(postTitleValue)}"></div>
           <div class="field"><label>Nachbericht Kurztext</label><textarea name="postEventSummary">${escapeHtml(postSummaryValue)}</textarea></div>
-          <div class="field"><label>Langtext / R�ckblicktext</label><textarea name="longDescription">${escapeHtml(postLongValue)}</textarea><p class="muted">Dieser Text wird als Langtext fuer den redaktionellen R�ckblick verwendet.</p></div>
-          <div class="actions"><button class="button button--primary button--small">R�ckblicktext speichern</button></div><div id="event-save-result"></div>
+          <div class="field"><label>Langtext / Rückblicktext</label><textarea name="longDescription">${escapeHtml(postLongValue)}</textarea><p class="muted">Dieser Text wird als Langtext für den redaktionellen Rückblick verwendet.</p></div>
+          <div class="actions"><button class="button button--primary button--small">Rückblicktext speichern</button></div><div id="event-save-result"></div>
         </div>
         <aside class="event-post-toolbox">
           <details class="editorial-tool-details">
@@ -1368,7 +1369,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
           </details>
           <details class="editorial-tool-details">
             <summary><span>Medien</span><strong>Galerie</strong>${selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")}</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`}</summary>
-            <div class="editor-tool-section editor-tool-section--gallery"><div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Die Galerie wird mit dem Event und dem sp�teren R�ckblick verbunden.</p></div></div>
+            <div class="editor-tool-section editor-tool-section--gallery"><div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Die Galerie wird mit dem Event und dem späteren Rückblick verbunden.</p></div></div>
           </details>
           ${retrospectiveVideoTool}
         </aside>
@@ -1502,7 +1503,7 @@ function isNewsEditorialItem(item = {}) {
   if (isPressEditorialItem(item)) return false;
   if (item.page === "news" || item.section === "news") return true;
   if (["news", "daily_news", "monthly_topic", "topic"].includes(target)) return true;
-  if (category && !category.includes("presse") && !category.includes("rueckblick") && !category.includes("r�ckblick")) return true;
+  if (category && !category.includes("presse") && !category.includes("rueckblick") && !category.includes("rückblick")) return true;
   return Boolean(item.author_type === "ai" || item.authorType === "ai" || item.aiGenerated || item.ai_log_json || item.aiLogJson || item.source_snapshot_json || item.sourceSnapshotJson);
 }
 
@@ -1532,6 +1533,1446 @@ function isInternalEditorialItem(item = {}) {
     && !["pressRelease", "news"].includes(item.section)
     && (["home", "about", "join", "imprint", "privacy", "legal", "contact", "login", "members", "board"].includes(item.page)
       || ["intro", "hero", "legal", "internal", "footer"].includes(item.section));
+}
+
+const qualityCollectionNames = [
+  "events",
+  "editorialContent",
+  "topics",
+  "members",
+  "boardMembers",
+  "speakers",
+  "sponsors",
+  "galleries",
+  "eventMedia",
+  "media_assets",
+  "downloads",
+  "memberDocuments",
+  "videos"
+];
+
+function qualityText(value = "", fallback = "-") {
+  const text = String(value || "").trim();
+  return text || fallback;
+}
+
+function qualityUrl(value = "") {
+  return String(value || "").trim();
+}
+
+function qualitySeverityLabel(severity = "warning") {
+  return severity === "error" ? status("failed") : status("draft");
+}
+
+function qualityStatusLabel(value = "offen") {
+  return `<span class="status">${escapeHtml(value)}</span>`;
+}
+
+function qualityEditLink(issue = {}) {
+  return issue.editHref
+    ? `<a class="button button--secondary button--small" href="${escapeHtml(issue.editHref)}">Bearbeiten</a>`
+    : `<span class="muted">nicht eindeutig zuordenbar</span>`;
+}
+
+function qualityRecordTitle(item = {}) {
+  return qualityText(item.title || item.name || item.company || item.fileName || item.id, "Ohne Titel");
+}
+
+function qualityIsVisiblePublic(item = {}) {
+  const statusValue = String(item.status || "").toLowerCase();
+  const visibility = String(item.visibility || item.sichtbarkeit || "").toLowerCase();
+  return ["published", "active", "aktiv", "approved"].includes(statusValue)
+    && ["public", "oeffentlich", "öffentlich", ""].includes(visibility);
+}
+
+function qualityImageUrl(item = {}) {
+  return qualityUrl(item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || item.logoUrl || item.photoUrl || item.file_path_web_url || item.file_path_thumb_url || "");
+}
+
+function qualityHasAltText(item = {}) {
+  return Boolean(
+    item.thumbnail_alt
+    || item.thumbnailAlt
+    || item.imageAlt
+    || item.altText
+    || item.logoAlt
+    || item.posterImageAlt
+    || item.title
+    || item.headline
+    || item.name
+    || item.caption
+  );
+}
+
+function qualityLooksImageUrl(url = "") {
+  return /\.(avif|gif|jpe?g|png|svg|webp)(\?|#|$)/i.test(url) || /^data:image\//i.test(url);
+}
+
+function qualityImageFormat(value = "") {
+  const href = qualityNormalizeLink(value).split("?")[0].split("#")[0].toLowerCase();
+  if (/^data:image\/([^;,]+)/i.test(value)) return value.match(/^data:image\/([^;,]+)/i)?.[1] || "data";
+  const match = href.match(/\.([a-z0-9]+)$/i);
+  return match ? match[1].replace("jpeg", "jpg") : "";
+}
+
+function qualityAllowedImageFormat(value = "") {
+  const format = qualityImageFormat(value);
+  if (!format) return false;
+  return ["avif", "gif", "jpg", "jpeg", "png", "svg", "webp"].includes(format);
+}
+
+function qualityIsImagePath(value = "") {
+  return qualityLooksImageUrl(value) || /^blob:/i.test(qualityNormalizeLink(value));
+}
+
+function qualityIsAllowedImageStorage(value = "") {
+  const href = qualityNormalizeLink(value);
+  if (!href) return false;
+  if (/^data:image\//i.test(href)) return true;
+  if (/^blob:/i.test(href)) return true;
+  if (qualityIsInternalAbsoluteUrl(href)) {
+    try {
+      return qualityIsAllowedImageStorage(new URL(href).pathname);
+    } catch {
+      return false;
+    }
+  }
+  if (qualityIsExternalUrl(href)) {
+    try {
+      const host = new URL(href).hostname.toLowerCase();
+      return host.includes("firebasestorage.googleapis.com")
+        || host.includes("storage.googleapis.com")
+        || host.includes("googleusercontent.com")
+        || host.includes("img.youtube.com");
+    } catch {
+      return false;
+    }
+  }
+  return href.startsWith("/assets/") || href.startsWith("/images/") || href.startsWith("assets/") || href.startsWith("images/");
+}
+
+function qualityLooksPdfUrl(url = "") {
+  return /\.pdf(\?|#|$)/i.test(url) || String(url || "").toLowerCase().includes("application/pdf");
+}
+
+function qualityLooksDocumentUrl(url = "") {
+  return /\.(pdf|docx?|pptx?|xlsx?|csv|zip|txt)(\?|#|$)/i.test(String(url || ""));
+}
+
+function qualityInternalHref(value = "") {
+  const href = String(value || "").trim();
+  if (!href.startsWith("#/")) return "";
+  return href;
+}
+
+function qualityNormalizeLink(value = "") {
+  return String(value || "").trim();
+}
+
+function qualityUrlWithoutAnchor(value = "") {
+  return String(value || "").split("#")[0];
+}
+
+function qualityIsAnchorLink(value = "") {
+  const href = qualityNormalizeLink(value);
+  return href.startsWith("#") && !href.startsWith("#/");
+}
+
+function qualityIsExternalUrl(value = "") {
+  return /^https?:\/\//i.test(qualityNormalizeLink(value));
+}
+
+function qualityIsInternalAbsoluteUrl(value = "") {
+  const href = qualityNormalizeLink(value);
+  if (!qualityIsExternalUrl(href)) return false;
+  try {
+    const url = new URL(href);
+    const host = url.hostname.replace(/^www\./i, "").toLowerCase();
+    const currentHost = window.location.hostname.replace(/^www\./i, "").toLowerCase();
+    return host === currentHost || ["prodigitaltv.de", "prodigitaltv-da47b.web.app"].includes(host);
+  } catch {
+    return false;
+  }
+}
+
+function qualityIsRelativePath(value = "") {
+  const href = qualityNormalizeLink(value);
+  return href.startsWith("/") && !href.startsWith("//");
+}
+
+function qualityIsFileLike(value = "") {
+  const clean = qualityUrlWithoutAnchor(qualityNormalizeLink(value)).split("?")[0];
+  return /\.(avif|gif|jpe?g|png|svg|webp|pdf|docx?|pptx?|xlsx?|csv|zip|txt|mp4|mov|m4v|webm|mp3|wav)$/i.test(clean);
+}
+
+function qualityIsVideoUrl(value = "") {
+  const href = qualityNormalizeLink(value);
+  return /\.(mp4|mov|m4v|webm)(\?|#|$)/i.test(href)
+    || /(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/|live\/))/i.test(href);
+}
+
+function qualityClassifyLink(value = "") {
+  const href = qualityNormalizeLink(value);
+  if (!href) return "leer";
+  if (/^(mailto|tel):/i.test(href)) return "kontakt";
+  if (qualityIsAnchorLink(href)) return "anker";
+  if (href.startsWith("#/")) return qualityLooksDocumentUrl(href) ? "interner dokumentpfad" : "interne route";
+  if (qualityIsInternalAbsoluteUrl(href)) return qualityIsFileLike(href) ? "absolute interne datei-url" : "absolute interne url";
+  if (qualityIsExternalUrl(href)) return qualityIsVideoUrl(href) ? "externer videolink" : qualityLooksDocumentUrl(href) ? "externer dokumentlink" : "externer link";
+  if (qualityIsRelativePath(href)) return qualityIsFileLike(href) ? "relativer dateipfad" : "relativer interner pfad";
+  return qualityIsFileLike(href) ? "dateipfad" : "ungewoehnliches linkformat";
+}
+
+function qualityLinkIssue(issues, collection, item, overrides = {}) {
+  qualityRecordIssue(issues, collection, item, {
+    linkValue: overrides.linkValue || "",
+    linkType: overrides.linkType || qualityClassifyLink(overrides.linkValue || ""),
+    ...overrides
+  });
+}
+
+function qualityImageIssue(issues, collection, item, overrides = {}) {
+  const fallbackType = qualityFallbackType(overrides.imageType || "", collection);
+  const imageValue = overrides.imageValue || "";
+  const shouldUseFallback = overrides.fallbackUsed ?? qualityImageIssueUsesFallback(overrides, imageValue);
+  qualityRecordIssue(issues, collection, item, {
+    imageValue,
+    imageType: overrides.imageType || "Bild",
+    fallbackUsed: shouldUseFallback,
+    fallbackValue: overrides.fallbackValue || (shouldUseFallback ? fallbackImageUrl(fallbackType) : ""),
+    repairHint: overrides.repairHint || "Bild neu auswaehlen oder erneut hochladen",
+    expectedStorage: overrides.expectedStorage || "/images oder bestehender erlaubter Medien-/Asset-Bereich",
+    ...overrides
+  });
+}
+
+function qualityFallbackType(imageType = "", collection = "") {
+  const text = `${collection} ${imageType}`.toLowerCase();
+  if (text.includes("sponsor")) return "sponsor";
+  if (text.includes("member") || text.includes("mitglied") || text.includes("logo")) return "member";
+  if (text.includes("gallery") || text.includes("galerie")) return "gallery";
+  if (text.includes("video") || text.includes("poster") || text.includes("startbild")) return "video";
+  if (text.includes("event")) return "event";
+  if (text.includes("topic") || text.includes("thema")) return "topic";
+  if (text.includes("intern")) return "internal";
+  if (text.includes("dokument") || text.includes("download") || text.includes("pdf")) return "document";
+  if (text.includes("news") || text.includes("editorial")) return "news";
+  return "default";
+}
+
+function qualityImageIssueUsesFallback(overrides = {}, imageValue = "") {
+  if (overrides.severity !== "error") return false;
+  const text = `${overrides.faultType || ""} ${overrides.description || ""}`.toLowerCase();
+  if (!String(imageValue || "").trim()) return true;
+  return /(fehlt|nicht erreichbar|existiert nicht|leer|beschaedigt|beschädigt|nicht lesbar)/i.test(text);
+}
+
+function qualityCollectionStatus(collectionName, error = null) {
+  return {
+    collectionName,
+    ok: !error,
+    error: error ? String(error.message || error.code || error) : ""
+  };
+}
+
+function qualityEditHref(collection, item = {}) {
+  const id = encodeURIComponent(item.id || "");
+  if (!id) return "";
+  if (collection === "events") return `#/cms/event/${id}`;
+  if (collection === "eventMedia") return `#/cms/followup`;
+  if (collection === "media_assets") return `#/cms/media/edit?id=${id}`;
+  if (collection === "videos") return `#/cms/media/videos?mode=edit&id=${id}`;
+  if (collection === "galleries") return `#/cms/edit?module=galleries&id=${id}&section=all`;
+  if (collection === "members") return `#/cms/edit?module=members&id=${id}&section=all`;
+  if (collection === "editorialContent") return `#/cms/edit?module=editorialContent&id=${id}&section=${encodeURIComponent(item.section || item.page || "all")}`;
+  return `#/cms/edit?module=${encodeURIComponent(collection)}&id=${id}&section=all`;
+}
+
+function qualityPush(issues, issue) {
+  const baseKey = [
+    issue.area,
+    issue.contentType,
+    issue.title,
+    issue.faultType,
+    issue.description,
+    issue.linkValue || "",
+    issue.linkType || "",
+    issue.imageValue || "",
+    issue.imageType || "",
+    issue.editHref || ""
+  ].map((part) => String(part || "").trim().toLowerCase()).join("|");
+  issues.push({
+    desktop: issue.desktop ?? true,
+    mobile: issue.mobile ?? true,
+    status: "offen",
+    checkedAt: new Date().toISOString(),
+    category: qualityIssueCategory(issue),
+    key: qualityIssueKey(baseKey),
+    linkType: issue.linkType || (issue.linkValue ? qualityClassifyLink(issue.linkValue) : ""),
+    ...issue
+  });
+}
+
+function qualityRecordIssue(issues, collection, item, overrides = {}) {
+  qualityPush(issues, {
+    area: overrides.area || collection,
+    contentType: overrides.contentType || collection,
+    title: overrides.title || qualityRecordTitle(item),
+    editHref: overrides.editHref ?? qualityEditHref(collection, item),
+    ...overrides
+  });
+}
+
+function qualityLinkedGallery(item = {}, galleriesById = new Map()) {
+  const ids = [item.galleryId, item.gallery_id, item.linkedGalleryId, item.gallery].filter(Boolean);
+  if (!ids.length) return null;
+  return ids.map((id) => galleriesById.get(id)).find(Boolean) || null;
+}
+
+function qualityPdfAssets(item = {}) {
+  const assets = [
+    ...(Array.isArray(item.pdfAttachments) ? item.pdfAttachments : []),
+    ...(Array.isArray(item.documents) ? item.documents : []),
+    ...(Array.isArray(item.assets) ? item.assets : [])
+  ];
+  if (item.documentUrl || item.document_url || item.assetUrl || item.fileUrl) {
+    assets.push({
+      title: item.documentTitle || item.fileName || item.title || "PDF",
+      url: item.documentUrl || item.document_url || item.assetUrl || item.fileUrl,
+      type: item.fileType || item.mimeType || ""
+    });
+  }
+  return assets.filter((asset) => {
+    const url = qualityUrl(asset.url || asset.fileUrl || asset.assetUrl || asset.documentUrl || "");
+    const type = String(asset.type || asset.fileType || asset.mimeType || "").toLowerCase();
+    return type.includes("pdf") || qualityLooksPdfUrl(url) || qualityLooksPdfUrl(asset.title || asset.fileName || "");
+  });
+}
+
+function qualityVideoAssets(item = {}) {
+  return [
+    ...(Array.isArray(item.videoAttachments) ? item.videoAttachments : []),
+    ...(Array.isArray(item.videos) ? item.videos : [])
+  ];
+}
+
+function qualityKnownRoute(href = "", context = {}) {
+  let normalized = qualityNormalizeLink(href);
+  if (qualityIsInternalAbsoluteUrl(normalized)) {
+    try {
+      const url = new URL(normalized);
+      normalized = url.hash || url.pathname || "";
+      if (normalized.startsWith("/")) normalized = `#${normalized}`;
+    } catch {}
+  }
+  const route = normalized.replace(/^#\//, "").replace(/^\//, "").split("?")[0].split("#")[0];
+  const [path, id] = route.split("/");
+  if (["home", "events", "topics", "news", "about", "ueber-uns", "members", "board", "archive", "downloads", "join", "mitglied-werden", "login", "portal", "webapp-qr", "imprint", "privacy"].includes(path) && !id) return true;
+  if (path === "event") return context.eventPublicIds.has(id) || context.eventMemberIds.has(id);
+  if (path === "register") return context.eventPublicIds.has(id) || context.eventMemberIds.has(id);
+  if (path === "topic") return context.topicVisibleIds.has(id);
+  if (path === "news" || path === "retrospective") return context.editorialPublicIds.has(id) || context.editorialPublicSlugs.has(id);
+  if (path === "about" || path === "ueber-uns" || path === "join" || path === "mitglied-werden") return context.internalPublicSlugs.has(id);
+  if (path === "portal" && id === "article") return true;
+  return false;
+}
+
+function qualityRouteVisibilityProblem(href = "", context = {}) {
+  let normalized = qualityNormalizeLink(href);
+  if (qualityIsInternalAbsoluteUrl(normalized)) {
+    try {
+      const url = new URL(normalized);
+      normalized = url.hash || url.pathname || "";
+      if (normalized.startsWith("/")) normalized = `#${normalized}`;
+    } catch {}
+  }
+  const route = normalized.replace(/^#\//, "").replace(/^\//, "").split("?")[0].split("#")[0];
+  const [path, id] = route.split("/");
+  if (!id) return "";
+  if ((path === "event" || path === "register") && context.eventMemberIds.has(id) && !context.eventPublicIds.has(id)) return "Ziel ist ein Mitglieder-Event oder nicht oeffentlich sichtbar.";
+  if (path === "topic" && context.topicIds.has(id) && !context.topicVisibleIds.has(id)) return "Ziel-Thema existiert, ist aber nicht oeffentlich sichtbar.";
+  if ((path === "news" || path === "retrospective") && (context.editorialIds.has(id) || context.editorialSlugs.has(id)) && !(context.editorialPublicIds.has(id) || context.editorialPublicSlugs.has(id))) return "Ziel-Beitrag existiert, ist aber nicht oeffentlich sichtbar.";
+  return "";
+}
+
+function qualityAddLinkFinding(issues, collection, item, { field = "", href = "", area, contentType, faultType, description, severity = "warning", editHref } = {}) {
+  qualityLinkIssue(issues, collection, item, {
+    area,
+    contentType,
+    faultType,
+    description: description || `${field}: ${href}`,
+    severity,
+    linkValue: href,
+    linkType: qualityClassifyLink(href),
+    editHref
+  });
+}
+
+function qualityScanRecordLinks(issues, collection, item, context, options = {}) {
+  const linkFields = options.fields || ["button_ziel", "buttonUrl", "url", "website", "sourceUrl", "source_url", "original_url", "originalUrl", "documentUrl", "document_url", "assetUrl", "fileUrl", "downloadUrl", "embedUrl", "youtubeUrl", "linkedIn"];
+  linkFields.forEach((field) => {
+    const href = qualityNormalizeLink(item[field]);
+    if (!href) return;
+    if (/^(mailto|tel):/i.test(href)) return;
+    if (/^(data|blob):/i.test(href) || qualityLooksImageUrl(href)) return;
+    if (qualityIsAnchorLink(href)) {
+      qualityAddLinkFinding(issues, collection, item, {
+        field,
+        href,
+        area: options.area,
+        contentType: options.contentType,
+        faultType: "Ankerziel nicht eindeutig pruefbar",
+        description: `${field}: Anker ${href} kann ohne gerenderte Zielseite nicht sicher geprüft werden.`,
+        severity: "warning"
+      });
+      return;
+    }
+    if (href.startsWith("#/") || qualityIsInternalAbsoluteUrl(href)) {
+      if (qualityKnownRoute(href, context)) {
+        const visibilityProblem = qualityRouteVisibilityProblem(href, context);
+        if (visibilityProblem) {
+          qualityAddLinkFinding(issues, collection, item, {
+            field,
+            href,
+            area: options.area,
+            contentType: options.contentType,
+            faultType: "Interner Link mit falscher Sichtbarkeit",
+            description: `${field}: ${visibilityProblem}`,
+            severity: "error"
+          });
+        }
+        return;
+      }
+      qualityAddLinkFinding(issues, collection, item, {
+        field,
+        href,
+        area: options.area,
+        contentType: options.contentType,
+        faultType: "Interner Link fuehrt ins Leere",
+        description: `${field}: ${href}`,
+        severity: "error"
+      });
+      return;
+    }
+    if (!qualityIsExternalUrl(href) && !qualityIsRelativePath(href) && qualityClassifyLink(href) === "ungewoehnliches linkformat") {
+      qualityAddLinkFinding(issues, collection, item, {
+        field,
+        href,
+        area: options.area,
+        contentType: options.contentType,
+        faultType: "Linkformat ungewoehnlich",
+        description: `${field}: ${href}`,
+        severity: "warning"
+      });
+    }
+  });
+}
+
+function qualityIssueKey(value = "") {
+  let hash = 0;
+  String(value || "").split("").forEach((char) => {
+    hash = ((hash << 5) - hash) + char.charCodeAt(0);
+    hash |= 0;
+  });
+  return `q-${Math.abs(hash)}`;
+}
+
+function qualityIssueCategory(issue = {}) {
+  const text = `${issue.faultType || ""} ${issue.contentType || ""}`.toLowerCase();
+  if (/bild|thumbnail|alt-text|startbild|dateiname|asset/.test(text)) return "images";
+  if (/link|url|menue|menu|footer/.test(text)) return "links";
+  if (/pdf|download|dokument/.test(text)) return "documents";
+  if (/video/.test(text)) return "videos";
+  if (/galerie/.test(text)) return "galleries";
+  if (/upload/.test(text)) return "uploads";
+  if (/sichtbar|sichtbarkeit|mitgliederinhalt/.test(text)) return "visibility";
+  return "other";
+}
+
+function qualityEditorialArea(item = {}) {
+  if (isMemberAreaEditorialItem(item)) return "Mitgliederbereich";
+  if (isInternalEditorialItem(item)) return "Interna";
+  if (isPressEditorialItem(item)) return "Presse";
+  if (isNewsEditorialItem(item)) return "News";
+  if (item.page === "topics" || item.section === "topics") return "Themen";
+  return "unbekannter Bereich";
+}
+
+function qualityMetrics(collections = {}, issues = []) {
+  const allRecords = qualityCollectionNames.flatMap((name) => collections[name] || []);
+  const checkedImages = qualityCollectImageCandidates(collections).length;
+  const checkedLinks = qualityCollectLinkCandidates(collections).length;
+  const checkedAttachments = (collections.editorialContent || []).reduce((count, item) => count + qualityPdfAssets(item).length + qualityVideoAssets(item).length + (qualityLinkedGallery(item, new Map((collections.galleries || []).map((gallery) => [gallery.id, gallery]))) ? 1 : 0), 0)
+    + (collections.downloads || []).length
+    + (collections.memberDocuments || []).length
+    + (collections.eventMedia || []).length;
+  return {
+    checkedContent: allRecords.length,
+    checkedImages,
+    checkedLinks,
+    checkedAttachments,
+    errors: issues.filter((issue) => issue.severity === "error").length,
+    warnings: issues.filter((issue) => issue.severity !== "error").length,
+    desktop: issues.filter((issue) => issue.desktop).length,
+    mobile: issues.filter((issue) => issue.mobile).length
+  };
+}
+
+function qualityLinkCandidate(collection, item, field, value, overrides = {}) {
+  const href = qualityNormalizeLink(value);
+  if (!href || /^(mailto|tel):/i.test(href) || qualityIsAnchorLink(href)) return null;
+  if (/^(data|blob):/i.test(href) || qualityLooksImageUrl(href)) return null;
+  return {
+    collection,
+    item,
+    field,
+    href,
+    linkType: qualityClassifyLink(href),
+    area: overrides.area,
+    contentType: overrides.contentType,
+    title: overrides.title || qualityRecordTitle(item),
+    editHref: overrides.editHref ?? qualityEditHref(collection, item)
+  };
+}
+
+function qualityCollectRecordLinkCandidates(collection, item = {}, overrides = {}) {
+  const fields = [
+    "button_ziel", "buttonUrl", "url", "website", "sourceUrl", "source_url", "original_url", "originalUrl",
+    "documentUrl", "document_url", "assetUrl", "fileUrl", "downloadUrl", "embedUrl", "youtubeUrl", "linkedIn"
+  ];
+  const candidates = fields.map((field) => qualityLinkCandidate(collection, item, field, item[field], overrides)).filter(Boolean);
+  const nestedGroups = [
+    ["pdfAttachments", "PDF-Anhang"],
+    ["documents", "Dokument"],
+    ["assets", "Asset"],
+    ["videoAttachments", "Video"],
+    ["videos", "Video"],
+    ["sources", "Quelle"],
+    ["source_candidates", "Quelle"]
+  ];
+  nestedGroups.forEach(([fieldName, label]) => {
+    (Array.isArray(item[fieldName]) ? item[fieldName] : []).forEach((entry, index) => {
+      ["url", "fileUrl", "assetUrl", "documentUrl", "downloadUrl", "embedUrl", "youtubeUrl"].forEach((field) => {
+        const candidate = qualityLinkCandidate(collection, item, `${fieldName}.${index + 1}.${field}`, entry?.[field], {
+          ...overrides,
+          contentType: overrides.contentType || label
+        });
+        if (candidate) candidates.push(candidate);
+      });
+    });
+  });
+  return candidates;
+}
+
+function qualityStaticLinkCandidates() {
+  const menu = ["home", "events", "topics", "news", "about", "archive", "webapp-qr", "board", "members", "join"];
+  const footer = ["join", "downloads", "login", "imprint", "privacy"];
+  return [
+    ...menu.map((routeName) => qualityLinkCandidate("navigation", { id: `menu-${routeName}`, title: `Menue: ${routeName}` }, "href", `#/${routeName}`, { area: "Menue", contentType: "MenueLink", editHref: "" })),
+    ...footer.map((routeName) => qualityLinkCandidate("footer", { id: `footer-${routeName}`, title: `Footer: ${routeName}` }, "href", `#/${routeName}`, { area: "Footer", contentType: "FooterLink", editHref: "" }))
+  ].filter(Boolean);
+}
+
+function qualityCollectLinkCandidates(collections = {}) {
+  const candidates = [];
+  (collections.events || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("events", item, { area: "Events", contentType: "Event" })));
+  (collections.editorialContent || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("editorialContent", item, { area: qualityEditorialArea(item), contentType: isMemberAreaEditorialItem(item) ? "Mitgliederbeitrag" : "Beitrag" })));
+  (collections.topics || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("topics", item, { area: "Themen", contentType: "Thema" })));
+  (collections.members || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("members", item, { area: "Mitglieder", contentType: "Mitglied" })));
+  (collections.boardMembers || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("boardMembers", item, { area: "Ueber uns", contentType: "Vorstand" })));
+  (collections.sponsors || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("sponsors", item, { area: "Events", contentType: "Sponsor" })));
+  [...(collections.downloads || []), ...(collections.memberDocuments || [])].forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("downloads", item, { area: "Downloads", contentType: "Download" })));
+  (collections.eventMedia || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("eventMedia", item, { area: "Uploads", contentType: "Upload" })));
+  (collections.media_assets || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("media_assets", item, { area: "Medien", contentType: "Asset" })));
+  (collections.videos || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("videos", item, { area: "Medien", contentType: "Video" })));
+  (collections.galleries || []).forEach((gallery) => {
+    candidates.push(...qualityCollectRecordLinkCandidates("galleries", gallery, { area: "Galerien", contentType: "Galerie" }));
+    (Array.isArray(gallery.images) ? gallery.images : []).forEach((image, index) => {
+      ["url", "imageUrl", "assetUrl", "downloadUrl"].forEach((field) => {
+        const candidate = qualityLinkCandidate("galleries", gallery, `images.${index + 1}.${field}`, image?.[field], { area: "Galerien", contentType: "Galeriebild" });
+        if (candidate) candidates.push(candidate);
+      });
+    });
+  });
+  candidates.push(...qualityStaticLinkCandidates());
+  const seen = new Set();
+  return candidates.filter((candidate) => {
+    const key = [candidate.collection, candidate.item?.id, candidate.field, candidate.href].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function qualityImageCandidate(collection, item, field, value, overrides = {}) {
+  const src = qualityNormalizeLink(value);
+  if (!src) return null;
+  if (!qualityIsImagePath(src)) return null;
+  return {
+    collection,
+    item,
+    field,
+    src,
+    imageType: overrides.imageType || "Bild",
+    area: overrides.area,
+    contentType: overrides.contentType,
+    title: overrides.title || qualityRecordTitle(item),
+    required: Boolean(overrides.required),
+    desktop: overrides.desktop ?? true,
+    mobile: overrides.mobile ?? true,
+    expected: overrides.expected || "content",
+    editHref: overrides.editHref ?? qualityEditHref(collection, item)
+  };
+}
+
+function qualityCollectRecordImageCandidates(collection, item = {}, overrides = {}) {
+  const fields = [
+    ["imageUrl", "Bild"],
+    ["thumbnail_url", "Thumbnail"],
+    ["thumbnailUrl", "Thumbnail"],
+    ["assetUrl", "Bild"],
+    ["logoUrl", "Logo"],
+    ["logoDisplayUrl", "Logo"],
+    ["photoUrl", "Profilbild"],
+    ["file_path_web_url", "Web-Bild"],
+    ["file_path_thumb_url", "Thumbnail"],
+    ["file_path_original_url", "Originalbild"],
+    ["desktopImageUrl", "Desktop-Bild"],
+    ["mobileImageUrl", "Mobile-Bild"],
+    ["posterImageUrl", "Videostartbild"],
+    ["youtubeThumbnailUrl", "Videostartbild"],
+    ["thumbUrl", "Thumbnail"],
+    ["downloadUrl", "Bild"]
+  ];
+  const candidates = fields.map(([field, imageType]) => qualityImageCandidate(collection, item, field, item[field], {
+    ...overrides,
+    imageType,
+    desktop: field === "mobileImageUrl" ? false : true,
+    mobile: field === "desktopImageUrl" ? false : true
+  })).filter(Boolean);
+  const nestedGroups = [
+    ["videoAttachments", "Videostartbild"],
+    ["videos", "Videostartbild"],
+    ["assets", "Bild"],
+    ["documents", "Dokumentbild"]
+  ];
+  nestedGroups.forEach(([fieldName, imageType]) => {
+    (Array.isArray(item[fieldName]) ? item[fieldName] : []).forEach((entry, index) => {
+      ["posterImageUrl", "thumbnailUrl", "youtubeThumbnailUrl", "imageUrl", "assetUrl", "url", "downloadUrl"].forEach((field) => {
+        const candidate = qualityImageCandidate(collection, item, `${fieldName}.${index + 1}.${field}`, entry?.[field], {
+          ...overrides,
+          imageType,
+          contentType: overrides.contentType || imageType
+        });
+        if (candidate) candidates.push(candidate);
+      });
+    });
+  });
+  return candidates;
+}
+
+function qualityCollectImageCandidates(collections = {}) {
+  const candidates = [];
+  (collections.events || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("events", item, { area: "Events", contentType: "Event", imageType: "Eventbild", required: qualityIsVisiblePublic(item) })));
+  (collections.editorialContent || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("editorialContent", item, { area: qualityEditorialArea(item), contentType: isMemberAreaEditorialItem(item) ? "Mitgliederbeitrag" : isNewsEditorialItem(item) ? "News" : "Beitrag", imageType: isNewsEditorialItem(item) ? "News-Bild" : "Beitragsbild", required: (qualityIsVisiblePublic(item) || item.visible === true || item.visibility === "members") && !isInternalEditorialItem(item) })));
+  (collections.topics || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("topics", item, { area: "Themen", contentType: "Thema", imageType: "Themenbild", required: !["inactive", "archived", "deleted", "hidden"].includes(String(item.status || "").toLowerCase()) })));
+  (collections.members || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("members", item, { area: "Mitglieder", contentType: "Mitglied", imageType: "Mitgliederlogo", required: memberIsLive(item) })));
+  (collections.boardMembers || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("boardMembers", item, { area: "Ueber uns", contentType: "Vorstand", imageType: "Profilbild" })));
+  (collections.sponsors || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("sponsors", item, { area: "Events", contentType: "Sponsor", imageType: "Sponsorenlogo", required: String(item.status || "").toLowerCase() === "published" })));
+  (collections.speakers || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("speakers", item, { area: "Events", contentType: "Referent", imageType: "Profilbild" })));
+  (collections.eventMedia || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("eventMedia", item, { area: "Uploads", contentType: "Upload", imageType: "Uploadbild", required: String(item.mediaType || "").toLowerCase() === "image" })));
+  (collections.media_assets || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("media_assets", item, { area: "Medien", contentType: "Asset", imageType: "Mediathekbild", required: String(item.media_type || item.mediaType || item.type || "").toLowerCase().includes("image") })));
+  (collections.videos || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("videos", item, { area: "Medien", contentType: "Video", imageType: "Videostartbild", required: Boolean(item.youtubeVideoId || item.youtubeUrl || item.url || item.videoId) })));
+  (collections.galleries || []).forEach((gallery) => {
+    candidates.push(...qualityCollectRecordImageCandidates("galleries", gallery, { area: "Galerien", contentType: "Galerie", imageType: "Galeriebild" }));
+    (Array.isArray(gallery.images) ? gallery.images : []).forEach((image, index) => {
+      ["url", "imageUrl", "assetUrl", "downloadUrl", "thumbnailUrl"].forEach((field) => {
+        const candidate = qualityImageCandidate("galleries", gallery, `images.${index + 1}.${field}`, image?.[field], {
+          area: "Galerien",
+          contentType: "Galeriebild",
+          imageType: field === "thumbnailUrl" ? "Galerie-Thumbnail" : "Galeriebild",
+          required: true
+        });
+        if (candidate) candidates.push(candidate);
+      });
+    });
+  });
+  const seen = new Set();
+  return candidates.filter((candidate) => {
+    const key = [candidate.collection, candidate.item?.id, candidate.field, candidate.src].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function qualityFetchCheck(url, timeoutMs = 3500) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    let response = await fetch(url, { method: "HEAD", signal: controller.signal, cache: "no-store" });
+    if (response.status === 405 || response.status === 403) {
+      response = await fetch(url, { method: "GET", signal: controller.signal, cache: "no-store" });
+    }
+    return { ok: response.ok, status: response.status, error: "" };
+  } catch (error) {
+    return { ok: false, status: 0, error: error?.name === "AbortError" ? "Timeout" : String(error?.message || error || "Fetch fehlgeschlagen") };
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function qualityMapLimit(items, limit, mapper) {
+  const results = [];
+  let index = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (index < items.length) {
+      const currentIndex = index;
+      index += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+function qualityImageLoad(src = "", timeoutMs = 3500) {
+  return new Promise((resolve) => {
+    if (!src) {
+      resolve({ ok: false, width: 0, height: 0, error: "Bildpfad leer" });
+      return;
+    }
+    const image = new Image();
+    const timer = window.setTimeout(() => {
+      image.onload = null;
+      image.onerror = null;
+      resolve({ ok: false, width: 0, height: 0, error: "Timeout" });
+    }, timeoutMs);
+    image.onload = () => {
+      window.clearTimeout(timer);
+      resolve({ ok: true, width: image.naturalWidth || 0, height: image.naturalHeight || 0, error: "" });
+    };
+    image.onerror = () => {
+      window.clearTimeout(timer);
+      resolve({ ok: false, width: 0, height: 0, error: "Bild konnte nicht geoeffnet werden" });
+    };
+    image.src = src;
+  });
+}
+
+function qualityImageFetchUrl(src = "") {
+  const value = qualityNormalizeLink(src);
+  if (qualityIsInternalAbsoluteUrl(value)) {
+    try {
+      return new URL(value).pathname;
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+async function qualityImageHead(src = "", timeoutMs = 2500) {
+  if (/^(data|blob):/i.test(src)) return { ok: true, status: 0, size: src.length, type: src.match(/^data:([^;,]+)/i)?.[1] || "" };
+  if (qualityIsExternalUrl(src) && !qualityIsInternalAbsoluteUrl(src)) return { ok: true, status: 0, size: 0, type: "", skipped: true };
+  const result = await qualityFetchCheck(qualityImageFetchUrl(src), timeoutMs);
+  return { ...result, size: 0, type: "" };
+}
+
+function qualityAddImageFinding(issues, candidate, { faultType, description, severity = "warning", desktop, mobile } = {}) {
+  qualityImageIssue(issues, candidate.collection, candidate.item, {
+    area: candidate.area,
+    contentType: candidate.contentType,
+    faultType,
+    description,
+    severity,
+    imageValue: candidate.src,
+    imageType: candidate.imageType,
+    desktop: desktop ?? candidate.desktop,
+    mobile: mobile ?? candidate.mobile,
+    editHref: candidate.editHref
+  });
+}
+
+async function qualityTechnicalImageIssues(collections = {}) {
+  const issues = [];
+  const candidates = qualityCollectImageCandidates(collections).slice(0, 220);
+  await qualityMapLimit(candidates, 6, async (candidate) => {
+    const src = candidate.src;
+    const format = qualityImageFormat(src);
+    if (!qualityIsAllowedImageStorage(src)) {
+      qualityAddImageFinding(issues, candidate, {
+        faultType: "Bild liegt ausserhalb erlaubter Speicherbereiche",
+        description: `${candidate.field}: ${src}`,
+        severity: qualityIsExternalUrl(src) && !qualityIsInternalAbsoluteUrl(src) ? "warning" : "error"
+      });
+    }
+    if (format && !qualityAllowedImageFormat(src)) {
+      qualityAddImageFinding(issues, candidate, {
+        faultType: "Bildformat ungewoehnlich",
+        description: `${candidate.field}: Format ${format} ist nicht als Standardformat hinterlegt.`,
+        severity: "warning"
+      });
+    }
+    if (!format && !/^blob:/i.test(src)) {
+      qualityAddImageFinding(issues, candidate, {
+        faultType: "Bildformat nicht eindeutig pruefbar",
+        description: `${candidate.field}: Das Bildformat konnte aus dem Pfad nicht sicher ermittelt werden.`,
+        severity: "warning"
+      });
+    }
+    const head = await qualityImageHead(src, 2500);
+    if (!head.ok) {
+      qualityAddImageFinding(issues, candidate, {
+        faultType: candidate.imageType === "Videostartbild" ? "Erforderliches Videostartbild fehlt" : candidate.imageType === "Galeriebild" ? "Galerie verweist auf nicht vorhandene Bilder" : "Bilddatei existiert nicht",
+        description: `${candidate.field}: Bilddatei nicht erreichbar${head.status ? ` (HTTP ${head.status})` : head.error ? ` (${head.error})` : ""}.`,
+        severity: "error"
+      });
+      return;
+    }
+    if (/^data:image\//i.test(src) && src.length < 120) {
+      qualityAddImageFinding(issues, candidate, {
+        faultType: "Bilddatei ist leer oder beschaedigt",
+        description: `${candidate.field}: Data-URL ist auffaellig kurz.`,
+        severity: "error"
+      });
+    }
+    const loaded = await qualityImageLoad(src, 3500);
+    if (!loaded.ok) {
+      qualityAddImageFinding(issues, candidate, {
+        faultType: "Bilddatei ist nicht lesbar",
+        description: `${candidate.field}: ${loaded.error}.`,
+        severity: qualityIsExternalUrl(src) && !qualityIsInternalAbsoluteUrl(src) ? "warning" : "error"
+      });
+      return;
+    }
+    if (!loaded.width || !loaded.height) {
+      qualityAddImageFinding(issues, candidate, {
+        faultType: "Bildgroesse nicht eindeutig pruefbar",
+        description: `${candidate.field}: Bild wurde geladen, aber Breite/Hoehe konnten nicht sicher ermittelt werden.`,
+        severity: "warning"
+      });
+      return;
+    }
+    if (/^data:image\//i.test(src) && src.length > 900000) {
+      qualityAddImageFinding(issues, candidate, {
+        faultType: "Bild ist sehr gross",
+        description: `${candidate.field}: Data-URL ist groesser als 900 KB.`,
+        severity: "warning"
+      });
+    }
+  });
+  if (qualityCollectImageCandidates(collections).length > candidates.length) {
+    qualityPush(issues, {
+      area: "System",
+      contentType: "Prüfung",
+      title: "Bildpruefung",
+      faultType: "Prueflimit erreicht",
+      description: "Aus Performancegruenden wurden maximal 220 Bildverweise in diesem Lauf technisch geprüft.",
+      severity: "warning",
+      desktop: false,
+      mobile: false,
+      editHref: "",
+      imageValue: "",
+      imageType: "Bild"
+    });
+  }
+  return issues;
+}
+
+async function qualityTechnicalLinkIssues(collections = {}) {
+  const issues = [];
+  const candidates = qualityCollectLinkCandidates(collections);
+  const internalFileCandidates = candidates.filter((candidate) => {
+    const href = candidate.href;
+    return (qualityIsRelativePath(href) || qualityIsInternalAbsoluteUrl(href)) && qualityIsFileLike(href);
+  });
+  internalFileCandidates.forEach((candidate) => {
+    const href = candidate.href;
+    const path = qualityIsInternalAbsoluteUrl(href) ? new URL(href).pathname : href;
+    if (!path.startsWith("/assets/") && !path.startsWith("/images/") && !path.startsWith("/manifest.json") && !path.startsWith("/src/")) {
+      qualityAddLinkFinding(issues, candidate.collection, candidate.item, {
+        field: candidate.field,
+        href,
+        area: candidate.area,
+        contentType: candidate.contentType,
+        faultType: "Dateipfad zeigt auf nicht erlaubten Speicherort",
+        description: `${candidate.field}: ${href}`,
+        severity: "error",
+        editHref: candidate.editHref
+      });
+    }
+  });
+  await qualityMapLimit(internalFileCandidates, 4, async (candidate) => {
+    const href = qualityIsInternalAbsoluteUrl(candidate.href) ? new URL(candidate.href).pathname : candidate.href;
+    const result = await qualityFetchCheck(href, 2500);
+    if (result.ok) return;
+    qualityAddLinkFinding(issues, candidate.collection, candidate.item, {
+      field: candidate.field,
+      href: candidate.href,
+      area: candidate.area,
+      contentType: qualityLooksDocumentUrl(candidate.href) ? "Dokument" : candidate.contentType,
+      faultType: qualityLooksDocumentUrl(candidate.href) ? "Dokumentlink fehlt" : qualityIsVideoUrl(candidate.href) ? "Interne Videodatei fehlt" : "Upload-Datei fehlt",
+      description: `${candidate.field}: Datei nicht erreichbar${result.status ? ` (HTTP ${result.status})` : result.error ? ` (${result.error})` : ""}.`,
+      severity: "error",
+      editHref: candidate.editHref
+    });
+  });
+
+  const externalCandidates = candidates
+    .filter((candidate) => qualityIsExternalUrl(candidate.href) && !qualityIsInternalAbsoluteUrl(candidate.href))
+    .slice(0, 60);
+  await qualityMapLimit(externalCandidates, 4, async (candidate) => {
+    let parsed;
+    try {
+      parsed = new URL(candidate.href);
+    } catch {
+      qualityAddLinkFinding(issues, candidate.collection, candidate.item, {
+        field: candidate.field,
+        href: candidate.href,
+        area: candidate.area,
+        contentType: candidate.contentType,
+        faultType: "Externe URL ungueltig formatiert",
+        description: `${candidate.field}: ${candidate.href}`,
+        severity: "warning",
+        editHref: candidate.editHref
+      });
+      return;
+    }
+    const result = await qualityFetchCheck(parsed.href, 3500);
+    if (result.ok) return;
+    qualityAddLinkFinding(issues, candidate.collection, candidate.item, {
+      field: candidate.field,
+      href: candidate.href,
+      area: candidate.area,
+      contentType: qualityIsVideoUrl(candidate.href) ? "Video" : candidate.contentType,
+      faultType: qualityIsVideoUrl(candidate.href) ? "Externer Video-Link nicht sicher pruefbar" : "Externer Link nicht erreichbar",
+      description: `${candidate.field}: ${candidate.href}${result.status ? ` (HTTP ${result.status})` : result.error ? ` (${result.error})` : ""}.`,
+      severity: "warning",
+      editHref: candidate.editHref
+    });
+  });
+  if (candidates.filter((candidate) => qualityIsExternalUrl(candidate.href) && !qualityIsInternalAbsoluteUrl(candidate.href)).length > externalCandidates.length) {
+    qualityPush(issues, {
+      area: "System",
+      contentType: "Prüfung",
+      title: "Externe Linkpruefung",
+      faultType: "Prueflimit erreicht",
+      description: "Aus Performancegruenden wurden maximal 60 externe Links in diesem Lauf technisch abgefragt.",
+      severity: "warning",
+      desktop: false,
+      mobile: false,
+      editHref: "",
+      linkValue: "",
+      linkType: "externer link"
+    });
+  }
+  return issues;
+}
+
+function qualityFilterButton(id, label) {
+  return `<button class="filter" type="button" data-quality-filter="${escapeHtml(id)}">${escapeHtml(label)}</button>`;
+}
+
+async function qualityLoadCollections() {
+  const entries = await Promise.all(qualityCollectionNames.map(async (name) => {
+    try {
+      return [name, await list(name), qualityCollectionStatus(name)];
+    } catch (error) {
+      return [name, [], qualityCollectionStatus(name, error)];
+    }
+  }));
+  return {
+    collections: Object.fromEntries(entries.map(([name, records]) => [name, records])),
+    statuses: entries.map(([, , statusEntry]) => statusEntry)
+  };
+}
+
+function qualityAnalyze(collections, collectionStatuses) {
+  const issues = [];
+  const events = collections.events || [];
+  const editorial = collections.editorialContent || [];
+  const topics = collections.topics || [];
+  const members = collections.members || [];
+  const galleries = collections.galleries || [];
+  const eventMedia = collections.eventMedia || [];
+  const mediaAssets = collections.media_assets || [];
+  const downloads = [...(collections.downloads || []), ...(collections.memberDocuments || [])];
+  const videoLibrary = collections.videos || [];
+  const galleriesById = new Map(galleries.map((gallery) => [gallery.id, gallery]));
+  const mediaAssetIds = new Set(mediaAssets.map((asset) => asset.id).filter(Boolean));
+  const mediaUrls = new Set(mediaAssets.flatMap((asset) => [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl, asset.downloadUrl, asset.url]).filter(Boolean));
+  const publicEvents = events.filter((item) => qualityIsVisiblePublic(item) && item.accessType !== "members_only");
+  const memberEvents = events.filter((item) => item.accessType === "members_only" || item.visibility === "members");
+  const visibleTopics = topics.filter((item) => !["inactive", "archived", "deleted", "hidden"].includes(String(item.status || "").toLowerCase()));
+  const publicEditorial = editorial.filter((item) => qualityIsVisiblePublic(item));
+  const context = {
+    eventIds: new Set(events.map((item) => item.id).filter(Boolean)),
+    eventPublicIds: new Set(publicEvents.map((item) => item.id).filter(Boolean)),
+    eventMemberIds: new Set(memberEvents.map((item) => item.id).filter(Boolean)),
+    topicIds: new Set(topics.map((item) => item.id).filter(Boolean)),
+    topicVisibleIds: new Set(visibleTopics.map((item) => item.id).filter(Boolean)),
+    editorialIds: new Set(editorial.map((item) => item.id).filter(Boolean)),
+    editorialSlugs: new Set(editorial.flatMap((item) => [item.slug, item.key]).filter(Boolean)),
+    editorialPublicIds: new Set(publicEditorial.map((item) => item.id).filter(Boolean)),
+    editorialPublicSlugs: new Set(publicEditorial.flatMap((item) => [item.slug, item.key]).filter(Boolean)),
+    internalPublicSlugs: new Set(publicEditorial.filter(isInternalEditorialItem).flatMap((item) => [item.slug, item.key, item.id]).filter(Boolean))
+  };
+
+  collectionStatuses.filter((entry) => !entry.ok).forEach((entry) => {
+    qualityPush(issues, {
+      area: "System",
+      contentType: "Collection",
+      title: entry.collectionName,
+      faultType: "Nicht eindeutig pruefbar",
+      description: `Collection konnte nicht gelesen werden: ${entry.error}`,
+      severity: "warning",
+      desktop: false,
+      mobile: false,
+      editHref: ""
+    });
+  });
+
+  qualityStaticLinkCandidates().forEach((candidate) => {
+    if (qualityKnownRoute(candidate.href, context)) return;
+    qualityAddLinkFinding(issues, candidate.collection, candidate.item, {
+      field: candidate.field,
+      href: candidate.href,
+      area: candidate.area,
+      contentType: candidate.contentType,
+      faultType: candidate.collection === "footer" ? "Footerlink fuehrt ins Leere" : "Menue-Link fuehrt ins Leere",
+      description: `${candidate.field}: ${candidate.href}`,
+      severity: "error",
+      editHref: ""
+    });
+  });
+
+  events.forEach((event) => {
+    if (qualityIsVisiblePublic(event) && !qualityImageUrl(event)) {
+      qualityRecordIssue(issues, "events", event, {
+        area: "Events",
+        contentType: "Event",
+        faultType: "Bild fehlt vollstaendig",
+        description: "Das Eventbild wurde nicht gefunden.",
+        severity: "error"
+      });
+    }
+    const imageUrl = qualityImageUrl(event);
+    if (imageUrl && !qualityHasAltText(event)) {
+      qualityRecordIssue(issues, "events", event, {
+        area: "Events",
+        contentType: "Event",
+        faultType: "Alt-Text fehlt",
+        description: "Eventbild ist vorhanden, aber kein Alt-Text-Feld ist gefuellt.",
+        severity: "warning"
+      });
+    }
+    if (event.galleryId && !galleriesById.has(event.galleryId)) {
+      qualityRecordIssue(issues, "events", event, {
+        area: "Events",
+        contentType: "Event",
+        faultType: "Galerie-Link defekt",
+        description: `Verknuepfte Galerie ${event.galleryId} wurde nicht gefunden.`,
+        severity: "error"
+      });
+    }
+    qualityScanRecordLinks(issues, "events", event, context);
+  });
+
+  topics.forEach((topic) => {
+    if (context.topicVisibleIds.has(topic.id) && !qualityImageUrl(topic)) {
+      qualityImageIssue(issues, "topics", topic, {
+        area: "Themen",
+        contentType: "Thema",
+        faultType: "Erforderliches Themenbild fehlt",
+        description: "Das Thema ist aktiv, aber es ist kein Themenbild hinterlegt.",
+        severity: "error",
+        imageValue: "",
+        imageType: "Themenbild"
+      });
+    }
+    if (topic.galleryId && !galleriesById.has(topic.galleryId)) {
+      qualityRecordIssue(issues, "topics", topic, {
+        area: "Themen",
+        contentType: "Thema",
+        faultType: "Galerie-Link defekt",
+        description: `Verknuepfte Galerie ${topic.galleryId} wurde nicht gefunden.`,
+        severity: "error",
+        linkValue: topic.galleryId,
+        linkType: "galerie-id"
+      });
+    }
+    qualityScanRecordLinks(issues, "topics", topic, context, { area: "Themen", contentType: "Thema" });
+  });
+
+  editorial.forEach((item) => {
+    const visible = qualityIsVisiblePublic(item) || item.visible === true || item.visibility === "members";
+    const isMemberArea = isMemberAreaEditorialItem(item);
+    const editorialArea = qualityEditorialArea(item);
+    const editorialType = isMemberArea ? "Mitgliederbeitrag" : isInternalEditorialItem(item) ? "Interna" : isNewsEditorialItem(item) ? "News" : "Beitrag";
+    const imageUrl = qualityImageUrl(item);
+    if (visible && !imageUrl && !isInternalEditorialItem(item)) {
+      qualityRecordIssue(issues, "editorialContent", item, {
+        area: editorialArea,
+        contentType: editorialType,
+        faultType: "Bild fehlt vollstaendig",
+        description: "Das Beitragsbild wurde nicht gefunden.",
+        severity: "error"
+      });
+    }
+    if (imageUrl && !qualityHasAltText(item)) {
+      qualityRecordIssue(issues, "editorialContent", item, {
+        area: editorialArea,
+        contentType: editorialType,
+        faultType: "Alt-Text fehlt",
+        description: "Bild ist vorhanden, aber Alt-Text fehlt.",
+        severity: "warning"
+      });
+    }
+    if (imageUrl && !item.thumbnailUrl && !item.thumbnail_url) {
+      qualityRecordIssue(issues, "editorialContent", item, {
+        area: editorialArea,
+        contentType: editorialType,
+        faultType: "Thumbnail fehlt",
+        description: "Originalbild ist vorhanden, aber kein eigenes Thumbnail-Feld.",
+        severity: "warning"
+      });
+    }
+    if (isMemberArea && item.visibility === "public") {
+      qualityRecordIssue(issues, "editorialContent", item, {
+        area: "Mitgliederbereich",
+        contentType: "Mitgliederbeitrag",
+        faultType: "Mitgliederinhalt falsch sichtbar",
+        description: "Mitgliederinhalt steht auf public statt members.",
+        severity: "error"
+      });
+    }
+    const gallery = qualityLinkedGallery(item, galleriesById);
+    if ((item.galleryId || item.gallery_id || item.linkedGalleryId) && !gallery) {
+      qualityRecordIssue(issues, "editorialContent", item, {
+        area: editorialArea,
+        contentType: editorialType,
+        faultType: "Galerie-Link defekt",
+        description: "Verknuepfte Galerie wurde nicht gefunden.",
+        severity: "error"
+      });
+    }
+    qualityPdfAssets(item).forEach((pdf) => {
+      const url = qualityUrl(pdf.url || pdf.fileUrl || pdf.assetUrl || pdf.documentUrl || "");
+      if (!url) {
+        qualityRecordIssue(issues, "editorialContent", item, {
+          area: editorialArea,
+          contentType: "PDF-Anhang",
+          faultType: "PDF-Anhang fehlt",
+          description: `Der PDF-Anhang "${qualityText(pdf.title || pdf.fileName, "ohne Titel")}" ist nicht erreichbar.`,
+          severity: "error"
+        });
+      }
+    });
+    qualityVideoAssets(item).forEach((video) => {
+      const videoId = video.youtubeVideoId || video.youtubeId || video.videoId || video.youtubeUrl || video.url || "";
+      if (!videoId) {
+        qualityRecordIssue(issues, "editorialContent", item, {
+          area: editorialArea,
+          contentType: "Video",
+          faultType: "Video-ID fehlt",
+          description: `Video "${qualityText(video.title || video.caption, "ohne Titel")}" hat keine YouTube-ID oder URL.`,
+          severity: "error"
+        });
+      }
+      if (videoId && !video.posterImageUrl && !video.thumbnailUrl && !video.youtubeThumbnailUrl) {
+        qualityRecordIssue(issues, "editorialContent", item, {
+          area: editorialArea,
+          contentType: "Video",
+          faultType: "Videostartbild fehlt",
+          description: "Video ist verknuepft, aber kein Startbild gespeichert. YouTube-Fallback kann dennoch greifen.",
+          severity: "warning"
+        });
+      }
+    });
+    const markedAsVideo = /video/i.test(String(item.category || item.contentType || item.type || item.section || ""));
+    if (markedAsVideo && !qualityVideoAssets(item).length && !qualityUrl(item.youtubeVideoId || item.youtubeUrl || item.videoId || item.videoUrl)) {
+      qualityRecordIssue(issues, "editorialContent", item, {
+        area: editorialArea,
+        contentType: "Video",
+        faultType: "Video-ID fehlt",
+        description: "Beitrag ist als Video-Beitrag markiert, aber es ist kein Video hinterlegt.",
+        severity: "error"
+      });
+    }
+    qualityScanRecordLinks(issues, "editorialContent", item, context);
+  });
+
+  galleries.forEach((gallery) => {
+    const images = Array.isArray(gallery.images) ? gallery.images : [];
+    if (qualityIsVisiblePublic(gallery) && !images.length) {
+      qualityRecordIssue(issues, "galleries", gallery, {
+        area: "Galerien",
+        contentType: "Galerie",
+        faultType: "Galerie ist leer",
+        description: "Diese Galerie enthält keine Bilder.",
+        severity: "error"
+      });
+    }
+    if (gallery.eventId && !context.eventIds.has(gallery.eventId)) {
+      qualityRecordIssue(issues, "galleries", gallery, {
+        area: "Galerien",
+        contentType: "Galerie",
+        faultType: "Galerie nicht zuordenbar",
+        description: `Zugeordnetes Event ${gallery.eventId} wurde nicht gefunden.`,
+        severity: "error",
+        linkValue: gallery.eventId,
+        linkType: "event-id"
+      });
+    }
+    images.forEach((image, index) => {
+      const url = qualityUrl(image.url || image.imageUrl || image.assetUrl || image.downloadUrl || "");
+      if (!url) {
+        qualityRecordIssue(issues, "galleries", gallery, {
+          area: "Galerien",
+          contentType: "Galeriebild",
+          faultType: "Galerie verweist auf nicht vorhandene Bilder",
+          description: `Bild ${index + 1} hat keine URL.`,
+          severity: "error"
+        });
+      } else if (!qualityHasAltText(image)) {
+        qualityRecordIssue(issues, "galleries", gallery, {
+          area: "Galerien",
+          contentType: "Galeriebild",
+          faultType: "Alt-Text fehlt",
+          description: `Bild ${index + 1} hat keinen Alt-Text.`,
+          severity: "warning"
+        });
+      }
+    });
+  });
+
+  eventMedia.forEach((item) => {
+    const fileUrl = qualityUrl(item.fileUrl || item.assetUrl || item.downloadUrl || item.url || "");
+    if (["uploaded", "in_review", "pending"].includes(String(item.status || "").toLowerCase()) && !item.eventId && !item.galleryId && !item.linkedRecordId) {
+      qualityRecordIssue(issues, "eventMedia", item, {
+        area: "Uploads",
+        contentType: "Upload",
+        faultType: "Upload ist nicht zugeordnet",
+        description: "Der Upload wurde noch keiner Veranstaltung oder Galerie zugeordnet.",
+        severity: "error"
+      });
+    }
+    if (!fileUrl) {
+      qualityRecordIssue(issues, "eventMedia", item, {
+        area: "Uploads",
+        contentType: "Upload",
+        faultType: "Dateipfad fehlt",
+        description: "Upload-Datensatz hat keine Datei-URL.",
+        severity: "error"
+      });
+    }
+  });
+
+  mediaAssets.forEach((asset) => {
+    const url = qualityUrl(asset.file_path_web_url || asset.file_path_original_url || asset.imageUrl || asset.assetUrl || asset.downloadUrl || asset.url || "");
+    if (!url) {
+      qualityRecordIssue(issues, "media_assets", asset, {
+        area: "Medien",
+        contentType: "Asset",
+        faultType: "Dateipfad fehlt",
+        description: "Mediathek-Asset hat keine erreichbare URL im Datensatz.",
+        severity: "error"
+      });
+    }
+    if (url && qualityLooksImageUrl(url) && !asset.file_path_thumb_url && !asset.thumbnailUrl) {
+      qualityRecordIssue(issues, "media_assets", asset, {
+        area: "Medien",
+        contentType: "Asset",
+        faultType: "Thumbnail fehlt",
+        description: "Bild-Asset hat kein eigenes Thumbnail-Feld.",
+        severity: "warning"
+      });
+    }
+    if (asset.target_media_asset_id && !mediaAssetIds.has(asset.target_media_asset_id)) {
+      qualityRecordIssue(issues, "media_assets", asset, {
+        area: "Medien",
+        contentType: "Asset",
+        faultType: "Asset-Verknuepfung defekt",
+        description: `Verweis auf Asset ${asset.target_media_asset_id} wurde nicht gefunden.`,
+        severity: "error"
+      });
+    }
+    if (url && !mediaUrls.has(url) && !/^https?:\/\//i.test(url) && !url.startsWith("/") && !url.startsWith("data:")) {
+      qualityRecordIssue(issues, "media_assets", asset, {
+        area: "Medien",
+        contentType: "Asset",
+        faultType: "Dateiname uneinheitlich",
+        description: "Dateipfad ist weder absoluter Webpfad noch externe URL.",
+        severity: "warning"
+      });
+    }
+  });
+
+  downloads.forEach((item) => {
+    const url = qualityUrl(item.documentUrl || item.assetUrl || item.fileUrl || item.downloadUrl || item.url || "");
+    if (!url) {
+      qualityRecordIssue(issues, item.documentUrl !== undefined ? "downloads" : "memberDocuments", item, {
+        area: "Downloads",
+        contentType: "Download",
+        faultType: "Notwendiger Download fehlt",
+        description: "Download-Datensatz hat keine Datei-URL.",
+        severity: "error"
+      });
+    }
+    qualityScanRecordLinks(issues, "downloads", item, context);
+  });
+
+  members.forEach((member) => {
+    const memberHasManagedVisibility = ["company", "individual"].includes(member.membershipType || "");
+    if (!memberHasManagedVisibility && memberIsLive(member) && member.visibility && member.visibility !== "public") {
+      qualityRecordIssue(issues, "members", member, {
+        area: "Mitglieder",
+        contentType: "Mitglied",
+        faultType: "Fehlerhafte Sichtbarkeit",
+        description: `Sichtbares Mitglied hat visibility=${member.visibility}.`,
+        severity: "error"
+      });
+    }
+    qualityScanRecordLinks(issues, "members", member, context, { area: "Mitglieder", contentType: "Mitglied" });
+  });
+
+  [...(collections.boardMembers || []), ...(collections.sponsors || []), ...(collections.speakers || [])].forEach((item) => {
+    const collection = (collections.boardMembers || []).includes(item) ? "boardMembers" : (collections.sponsors || []).includes(item) ? "sponsors" : "speakers";
+    if (collection === "sponsors" && String(item.status || "").toLowerCase() === "published" && !qualityUrl(item.logoUrl || item.imageUrl || item.assetUrl)) {
+      qualityImageIssue(issues, "sponsors", item, {
+        area: "Events",
+        contentType: "Sponsor",
+        faultType: "Sponsorenlogo fehlt",
+        description: "Sponsor ist veroeffentlicht, aber es ist kein Logo hinterlegt.",
+        severity: "error",
+        imageValue: "",
+        imageType: "Sponsorenlogo"
+      });
+    }
+    qualityScanRecordLinks(issues, collection, item, context, {
+      area: collection === "boardMembers" ? "Ueber uns" : "Events",
+      contentType: collection === "boardMembers" ? "Vorstand" : collection === "sponsors" ? "Sponsor" : "Referent"
+    });
+  });
+
+  videoLibrary.forEach((video) => {
+    if (!qualityUrl(video.youtubeVideoId || video.youtubeUrl || video.url || video.videoId)) {
+      qualityRecordIssue(issues, "videos", video, {
+        area: "Medien",
+        contentType: "Video",
+        faultType: "Video-Datei oder Video-ID fehlt",
+        description: "Videoeintrag hat keine YouTube-ID oder URL.",
+        severity: "error"
+      });
+    }
+    if ((video.youtubeVideoId || video.youtubeUrl || video.url) && !video.posterImageUrl && !video.thumbnailUrl && !video.youtubeThumbnailUrl) {
+      qualityRecordIssue(issues, "videos", video, {
+        area: "Medien",
+        contentType: "Video",
+        faultType: "Videostartbild fehlt",
+        description: "Videoeintrag hat kein gespeichertes Startbild.",
+        severity: "warning"
+      });
+    }
+  });
+
+  return issues.sort((a, b) => {
+    if (a.severity !== b.severity) return a.severity === "error" ? -1 : 1;
+    return String(a.area).localeCompare(String(b.area), "de", { sensitivity: "base" })
+      || String(a.title).localeCompare(String(b.title), "de", { sensitivity: "base" });
+  });
+}
+
+export async function qualityPage() {
+  if (!hasCmsAccess()) return denied();
+  const mobileReadOnly = window.matchMedia?.("(max-width: 820px), (pointer: coarse)")?.matches;
+  const { collections, statuses } = await qualityLoadCollections();
+  const baseIssues = qualityAnalyze(collections, statuses);
+  const issues = [
+    ...baseIssues,
+    ...(mobileReadOnly ? [] : await qualityTechnicalImageIssues(collections)),
+    ...(mobileReadOnly ? [] : await qualityTechnicalLinkIssues(collections))
+  ].sort((a, b) => {
+    if (a.severity !== b.severity) return a.severity === "error" ? -1 : 1;
+    return String(a.area).localeCompare(String(b.area), "de", { sensitivity: "base" })
+      || String(a.title).localeCompare(String(b.title), "de", { sensitivity: "base" });
+  });
+  const metrics = qualityMetrics(collections, issues);
+  const checkedAt = new Date().toISOString();
+  const filters = [
+    ["all", "Alle"],
+    ["errors", "Nur Fehler"],
+    ["warnings", "Nur Warnungen"],
+    ["desktop", "Nur Desktop betroffen"],
+    ["mobile", "Nur Mobile betroffen"],
+    ["images", "Nur Bilder"],
+    ["links", "Nur Links"],
+    ["documents", "Nur PDFs / Dokumente"],
+    ["videos", "Nur Videos"],
+    ["galleries", "Nur Galerien"],
+    ["uploads", "Nur Uploads"],
+    ["visibility", "Nur Sichtbarkeit"]
+  ];
+  const rows = issues.map((issue) => `<tr data-quality-row
+    data-quality-key="${escapeHtml(issue.key || "")}"
+    data-quality-severity="${escapeHtml(issue.severity || "warning")}"
+    data-quality-category="${escapeHtml(issue.category || "other")}"
+    data-quality-desktop="${issue.desktop ? "1" : "0"}"
+    data-quality-mobile="${issue.mobile ? "1" : "0"}"
+    data-quality-area="${escapeHtml(issue.area || "")}"
+    data-quality-type="${escapeHtml(issue.contentType || "")}"
+    data-quality-title="${escapeHtml(issue.title || "")}"
+    data-quality-checked="${escapeHtml(issue.checkedAt || checkedAt)}">
+    <td>${escapeHtml(issue.area || "-")}</td>
+    <td>${escapeHtml(issue.contentType || "-")}</td>
+    <td>${escapeHtml(issue.title || "-")}</td>
+    <td>${escapeHtml(issue.faultType || "-")}</td>
+    <td>${escapeHtml(issue.description || "-")}</td>
+    <td>${escapeHtml(issue.linkValue || issue.imageValue || "-")}</td>
+    <td>${escapeHtml(issue.linkType || issue.imageType || "-")}</td>
+    <td>${issue.imageType ? escapeHtml(issue.fallbackUsed ? `ja: ${issue.fallbackValue || "-"}` : "nein") : "-"}</td>
+    <td>${issue.imageType ? escapeHtml([issue.expectedStorage ? `Erwartet: ${issue.expectedStorage}` : "", issue.repairHint || "Bild neu auswaehlen oder erneut hochladen"].filter(Boolean).join(" | ")) : "-"}</td>
+    <td>${issue.desktop ? "ja" : "nein"}</td>
+    <td>${issue.mobile ? "ja" : "nein"}</td>
+    <td>${qualitySeverityLabel(issue.severity)}</td>
+    <td data-quality-status-cell>${qualityStatusLabel(issue.status)}${mobileReadOnly ? "" : ` <button class="button button--secondary button--small" type="button" data-quality-toggle="${escapeHtml(issue.key || "")}">erledigt</button>`}</td>
+    <td>${escapeHtml(formatDateTime(issue.checkedAt || checkedAt))}</td>
+    <td>${mobileReadOnly ? `<span class="muted">nur Desktop</span>` : qualityEditLink(issue)}</td>
+  </tr>`).join("");
+  return protect(cmsShell("cms/quality", `${cmsTitle("Qualitätsprüfung", "Qualitätsprüfung")}
+    <section class="panel">
+      <div class="setup-steps">
+        <div class="setup-step"><span>Geprüfte Inhalte</span><strong>${metrics.checkedContent}</strong></div>
+        <div class="setup-step"><span>Geprüfte Bilder</span><strong>${metrics.checkedImages}</strong></div>
+        <div class="setup-step"><span>Geprüfte Links</span><strong>${metrics.checkedLinks}</strong></div>
+        <div class="setup-step"><span>Geprüfte Anhänge</span><strong>${metrics.checkedAttachments}</strong></div>
+        <div class="setup-step"><span>Fehler</span><strong>${metrics.errors}</strong></div>
+        <div class="setup-step"><span>Warnungen</span><strong>${metrics.warnings}</strong></div>
+        <div class="setup-step"><span>Desktop-Probleme</span><strong>${metrics.desktop}</strong></div>
+        <div class="setup-step"><span>Mobile-Probleme</span><strong>${metrics.mobile}</strong></div>
+        <div class="setup-step"><span>Letzte Prüfung</span><strong>${escapeHtml(formatDateTime(checkedAt))}</strong></div>
+      </div>
+      <p class="muted" style="margin-top:14px">Diese Prüfung ist nur lesend. Es werden keine Inhalte geändert, keine Bildpfade korrigiert und keine Veröffentlichungen blockiert.${mobileReadOnly ? " Mobile Ansicht: schnelle Nur-Lese-Auswertung ohne externe Netzwerkprüfung." : ""}</p>
+    </section>
+    <section class="panel">
+      <div class="filters" data-quality-filters>${filters.map(([id, label], index) => {
+        const html = qualityFilterButton(id, label);
+        return index === 0 ? html.replace('class="filter"', 'class="filter active"') : html;
+      }).join("")}</div>
+      <div class="field" style="max-width:320px;margin:0 0 16px"><label>Sortierung</label><select data-quality-sort>
+        <option value="errors">Fehler zuerst</option>
+        <option value="warnings">Warnungen zuerst</option>
+        <option value="area">Bereich</option>
+        <option value="type">Inhaltstyp</option>
+        <option value="title">Titel</option>
+        <option value="checked">Zeitpunkt der Prüfung</option>
+      </select></div>
+      <div class="table-wrap"><table class="table table--editorial">
+        <thead><tr><th>Bereich</th><th>Inhaltstyp</th><th>Titel</th><th>Fehlertyp</th><th>Beschreibung</th><th>Betroffener Link / Bildpfad</th><th>Linktyp / Bildtyp</th><th>Fallback verwendet</th><th>Reparaturhinweis</th><th>Desktop</th><th>Mobile</th><th>Einstufung</th><th>Status</th><th>Zeitpunkt</th><th>Bearbeiten</th></tr></thead>
+        <tbody data-quality-table>${rows || `<tr><td colspan="15">Keine Fehler oder Warnungen gefunden.</td></tr>`}</tbody>
+      </table></div>
+    </section>`));
 }
 
 export async function moduleListPage(module, section = "all") {
@@ -1868,7 +3309,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
     const linkedEventId = item.eventId || item.linkedEventId || "";
     const eventOptions = [`<option value="">Kein Event zugeordnet</option>`, ...events
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
-      .map((event) => `<option value="${escapeHtml(event.id)}" ${linkedEventId === event.id ? "selected" : ""}>${escapeHtml([event.date, event.title].filter(Boolean).join(" � "))}</option>`)].join("");
+      .map((event) => `<option value="${escapeHtml(event.id)}" ${linkedEventId === event.id ? "selected" : ""}>${escapeHtml([event.date, event.title].filter(Boolean).join(" · "))}</option>`)].join("");
     const imageKeys = new Set(images.flatMap((image) => [image.id, image.url, image.storagePath].filter(Boolean)));
     const candidateMedia = media
       .filter((entry) => entry.mediaType === "image" && entry.fileUrl)
@@ -1885,7 +3326,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
           <div class="field"><label>Alt-Text</label><input name="media-${index}-altText" value="${escapeHtml(medium.altText || medium.title || medium.fileName || "")}"></div>
           <label class="checkbox-line"><input type="checkbox" name="media-${index}-attach"> In Galerie aufnehmen</label>
           <label class="checkbox-line"><input type="checkbox" name="media-${index}-approve" checked> Freigeben</label>
-          <small>${escapeHtml([medium.eventId, medium.status, medium.visibility].filter(Boolean).join(" � "))}</small>
+          <small>${escapeHtml([medium.eventId, medium.status, medium.visibility].filter(Boolean).join(" · "))}</small>
         </article>`).join("")}</div>`
       : `<div class="alert">Der Uploadfolder enthaelt aktuell keine weiteren Bilder.</div>`;
     return protect(cmsShell("cms/galleries", `${cmsTitle("Bildergalerien", "Galerie bearbeiten", `<a class="button button--secondary button--small" href="#/cms/galleries">Zurueck</a>`)}
@@ -1905,7 +3346,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
             <input type="file" name="galleryImagesDrop" accept="image/*" multiple hidden>
           </label>
           <p class="muted">Reihenfolge: Bildkarten ziehen und vor dem Speichern neu anordnen.</p>
-          <div class="gallery-editor__grid" data-gallery-sortable>${images.length ? images.map((image, index) => `<article class="gallery-editor__item" draggable="true" data-gallery-image-item><button class="gallery-editor__drag" type="button" aria-label="Bild verschieben">?</button><img src="${escapeHtml(image.url)}" alt=""><input type="hidden" name="image-${index}-id" value="${escapeHtml(image.id || "")}"><input type="hidden" name="image-${index}-url" value="${escapeHtml(image.url || "")}"><input type="hidden" name="image-${index}-storagePath" value="${escapeHtml(image.storagePath || "")}"><input type="hidden" name="image-${index}-fileName" value="${escapeHtml(image.fileName || "")}"><div class="field"><label>Bildtitel / Caption</label><input name="image-${index}-caption" value="${escapeHtml(image.caption || image.title || "")}"></div><div class="field"><label>Alt-Text</label><input name="image-${index}-altText" value="${escapeHtml(image.altText || image.fileName || "")}"></div><label class="checkbox-line"><input type="checkbox" name="image-${index}-remove"> Bild aus Galerie entfernen</label></article>`).join("") : `<div class="alert">Noch keine Bilder. Bitte Bilder hochladen und speichern.</div>`}</div>
+          <div class="gallery-editor__grid" data-gallery-sortable>${images.length ? images.map((image, index) => `<article class="gallery-editor__item" draggable="true" data-gallery-image-item><button class="gallery-editor__drag" type="button" aria-label="Bild verschieben">?</button><img src="${escapeHtml(image.url)}" alt=""><input type="hidden" name="image-${index}-id" value="${escapeHtml(image.id || "")}"><input type="hidden" name="image-${index}-url" value="${escapeHtml(image.url || "")}"><input type="hidden" name="image-${index}-storagePath" value="${escapeHtml(image.storagePath || "")}"><input type="hidden" name="image-${index}-fileName" value="${escapeHtml(image.fileName || "")}"><input type="hidden" name="image-${index}-mediaAssetId" value="${escapeHtml(image.mediaAssetId || image.media_asset_id || "")}"><div class="gallery-editor__media-transfer">${image.mediaAssetId || image.media_asset_id ? `<a class="button button--secondary button--small" href="#/cms/media/edit?id=${escapeHtml(image.mediaAssetId || image.media_asset_id)}">In Mediathek</a>` : `<button class="button button--secondary button--small" type="button" data-gallery-image-to-media data-gallery-image-id="${escapeHtml(image.id || "")}">In Mediathek verschieben</button>`}</div><div class="field"><label>Bildtitel / Caption</label><input name="image-${index}-caption" value="${escapeHtml(image.caption || image.title || "")}"></div><div class="field"><label>Alt-Text</label><input name="image-${index}-altText" value="${escapeHtml(image.altText || image.fileName || "")}"></div><label class="checkbox-line"><input type="checkbox" name="image-${index}-remove"> Bild aus Galerie entfernen</label></article>`).join("") : `<div class="alert">Noch keine Bilder. Bitte Bilder hochladen und speichern.</div>`}</div>
         </section>
         <section class="gallery-editor">
           <div class="gallery-editor__head"><div><p class="eyebrow">Uploadfolder</p><h3>Bilder freigeben und zuordnen</h3></div></div>
@@ -1928,48 +3369,48 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
       .map((entry) => entry.category || (sectionKey === "press" ? "Presse" : sectionKey === "member-area" ? "Member Infos" : "News"))
       .filter(Boolean))).sort((a, b) => a.localeCompare(b));
     const categoryValue = item.category || (sectionKey === "press" ? "Presse" : sectionKey === "member-area" ? "Member Infos" : "News");
-    const categoryOptions = Array.from(new Set([categoryValue, sectionKey === "press" ? "R�ckblicke" : "", ...categories])).filter(Boolean);
+    const categoryOptions = Array.from(new Set([categoryValue, sectionKey === "press" ? "Rückblicke" : "", ...categories])).filter(Boolean);
     const backPath = sectionKey === "press" ? "editorial/press" : sectionKey === "member-area" ? "editorial/member-area" : "editorial/news";
-    const defaultRetrospectivePrompt = `Erstelle aus der folgenden Pressemitteilung einen redaktionellen R�ckblicksbeitrag f�r PROdigitalTV.
+    const defaultRetrospectivePrompt = `Erstelle aus der folgenden Pressemitteilung einen redaktionellen Rückblicksbeitrag für PROdigitalTV.
 
 Ziel:
-Der Text soll nicht wie eine Pressemitteilung wirken, sondern wie ein nachtr�glicher redaktioneller R�ckblick auf eine bereits stattgefundene Veranstaltung.
+Der Text soll nicht wie eine Pressemitteilung wirken, sondern wie ein nachträglicher redaktioneller Rückblick auf eine bereits stattgefundene Veranstaltung.
 
-chreibe vollst�ndig in der Vergangenheitsform.
+Schreibe vollständig in der Vergangenheitsform.
 
 Aufgaben:
-- Formuliere den Text journalistisch, seri�s und fl�ssig.
+- Formuliere den Text journalistisch, seriös und flüssig.
 - Ordne die Inhalte thematisch neu, nicht zwingend in der Reihenfolge der Pressemitteilung.
 - Beginne mit einem starken Einstieg, der Veranstaltung, Anlass und Bedeutung zusammenfasst.
-- Beschreibe danach die wichtigsten Themen, Aussagen, G�ste, Diskussionen und Erkenntnisse.
-- telle heraus, welchen Mehrwert die Veranstaltung f�r Mitglieder, G�ste und die Branche hatte.
-- Verwende klare Abs�tze mit Zwischen�berschriften.
+- Beschreibe danach die wichtigsten Themen, Aussagen, Gäste, Diskussionen und Erkenntnisse.
+- Stelle heraus, welchen Mehrwert die Veranstaltung für Mitglieder, Gäste und die Branche hatte.
+- Verwende klare Absätze mit Zwischenüberschriften.
 - Vermeide werbliche prache.
-- Keine reine Aufz�hlung der Pressemitteilung �bernehmen.
-- Keine Zukunftsank�ndigungen so formulieren, als st�nden sie noch bevor.
-- Falls in der Pressemitteilung Ank�ndigungen enthalten sind, wandle sie in R�ckblicksform um.
+- Keine reine Aufzählung der Pressemitteilung übernehmen.
+- Keine Zukunftsankündigungen so formulieren, als ständen sie noch bevor.
+- Falls in der Pressemitteilung Ankündigungen enthalten sind, wandle sie in Rückblicksform um.
 - Zitate nur verwenden, wenn sie im Ausgangstext vorhanden sind.
 - Keine Fakten erfinden.
-- Namen, Orte, Datum, Unternehmen und Veranstaltungsformate korrekt �bernehmen.
+- Namen, Orte, Datum, Unternehmen und Veranstaltungsformate korrekt übernehmen.
 
-Gew�nschte truktur:
+Gewünschte Struktur:
 1. Titel
-2. Kurzer Teaser mit 2 bis 3 �tzen
-3. Redaktioneller Flie�text mit Zwischen�berschriften
-4. Optionaler Abschlussabsatz mit Einordnung f�r PROdigitalTV
+2. Kurzer Teaser mit 2 bis 3 Sätzen
+3. Redaktioneller Fließtext mit Zwischenüberschriften
+4. Optionaler Abschlussabsatz mit Einordnung für PROdigitalTV
 
 Ton:
-Professionell, redaktionell, sachlich, hochwertig, verst�ndlich.
+Professionell, redaktionell, sachlich, hochwertig, verständlich.
 
 Ausgangstext:
 {{pressemitteilung}}`;
     const retrospectivePrompt = defaultRetrospectivePrompt;
     const eventOptions = [`<option value="">Kein Event verknuepfen</option>`, ...events
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
-      .map((event) => `<option value="${escapeHtml(event.id)}" ${item.linkedEventId === event.id ? "selected" : ""}>${escapeHtml([event.date, event.title].filter(Boolean).join(" � "))}</option>`)].join("");
+      .map((event) => `<option value="${escapeHtml(event.id)}" ${item.linkedEventId === event.id ? "selected" : ""}>${escapeHtml([event.date, event.title].filter(Boolean).join(" · "))}</option>`)].join("");
     const sponsorOptions = [`<option value="">Kein Sponsorlogo</option>`, ...sponsors
       .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
-      .map((sponsor) => `<option value="${escapeHtml(sponsor.id)}" ${item.sponsorId === sponsor.id ? "selected" : ""}>${escapeHtml([sponsor.name, sponsor.role].filter(Boolean).join(" � "))}</option>`)].join("");
+      .map((sponsor) => `<option value="${escapeHtml(sponsor.id)}" ${item.sponsorId === sponsor.id ? "selected" : ""}>${escapeHtml([sponsor.name, sponsor.role].filter(Boolean).join(" · "))}</option>`)].join("");
     const galleryOptions = [`<option value="">Keine Galerie</option>`, ...galleries
       .filter((gallery) => gallery.status !== "archived")
       .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")))
@@ -1983,11 +3424,11 @@ Ausgangstext:
           </div>
           ${galleryPlayerButton(selectedGallery, "Galerie abspielen")}
         </div>`
-      : `<div class="editor-gallery-preview editor-gallery-preview--empty" data-editor-gallery-preview><p class="muted">Keine Galerie ausgewaehlt. Nach dem Speichern erscheint hier der Playbutton fuer die verknuepfte Galerie.</p></div>`;
-    const isRetrospectiveEditor = sectionKey === "press" && (item.isRetrospective || ["R�ckblicke", "Rueckblicke"].includes(item.category) || item.linkedEventId);
+      : `<div class="editor-gallery-preview editor-gallery-preview--empty" data-editor-gallery-preview><p class="muted">Keine Galerie ausgewaehlt. Nach dem Speichern erscheint hier der Playbutton für die verknuepfte Galerie.</p></div>`;
+    const isRetrospectiveEditor = sectionKey === "press" && (item.isRetrospective || ["Rückblicke", "Rückblicke"].includes(item.category) || item.linkedEventId);
     const thumbState = `${editorialSummaryThumb(item)}${item.imageUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`}`;
     const audioState = item.audioUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
-    const galleryState = selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} � ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
+    const galleryState = selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
     const documentState = item.documentUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">PDF vorhanden</small>` : `<small class="editorial-tool-state">Kein PDF</small>`;
     const documentTitle = item.documentTitle || item.documentFileName || item.assetFileName || "PDF-Anhang";
     const publicArticlePath = sectionKey === "member-area" ? `portal/article/${item.id}` : isRetrospectiveEditor ? `retrospective/${item.id}` : sectionKey === "news" ? `news/${item.id}` : `retrospective/${item.id}`;
@@ -2013,7 +3454,7 @@ Ausgangstext:
             </div>
             <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Titel / Headline</label>${aiFieldActions([{ action: "improveText", target: "title", label: "Headline erzeugen", entityType: module, entityId: item.id, fieldName: "title" }])}</div><textarea name="title" rows="2" required>${escapeHtml(item.title || "")}</textarea></div>
             <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Subline</label>${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Subline erzeugen", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div><textarea name="subtitle" rows="2">${escapeHtml(item.subtitle || "")}</textarea></div>
-            <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Haupttext</label>${aiFieldActions(sectionKey === "press" ? [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }, { action: "rewritePressRetrospective", target: "bodyText", label: "R�ckblick aus Pressemitteilung", entityType: module, entityId: item.id, fieldName: "bodyText", promptField: "retrospectivePrompt" }] : [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div><textarea name="bodyText" required>${escapeHtml(item.bodyText || "")}</textarea></div>
+            <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Haupttext</label>${aiFieldActions(sectionKey === "press" ? [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }, { action: "rewritePressRetrospective", target: "bodyText", label: "Rückblick aus Pressemitteilung", entityType: module, entityId: item.id, fieldName: "bodyText", promptField: "retrospectivePrompt" }] : [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div><textarea name="bodyText" required>${escapeHtml(item.bodyText || "")}</textarea></div>
             <div class="field editorial-text-field"><div class="editorial-field-head"><label>Shorttext / Intro</label>${aiFieldActions([{ action: "shortenText", target: "introText", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "introText" }])}</div><textarea name="introText">${escapeHtml(item.introText || "")}</textarea></div>
             <div class="actions editorial-save-inline">
               <button class="button button--primary">Speichern</button>
@@ -2058,17 +3499,17 @@ Ausgangstext:
             </details>
             ${articleVideoAttachmentEditor(item, videoLibrary)}
             ${sectionKey === "member-area" ? "" : `<details class="editorial-tool-details">
-              <summary><span>Werkzeuge</span><strong>Rueckblick & Verknuepfungen</strong></summary>
+              <summary><span>Werkzeuge</span><strong>Rückblick & Verknüpfungen</strong></summary>
             <section class="retrospective-tool">
               ${sectionKey === "news" ? `<div class="field"><label>Quellen</label><textarea name="source_snapshot_json_text" placeholder='[{ "title": "", "url": "", "source_type": "" }]'>${escapeHtml(sourceJsonValue)}</textarea></div><div class="field"><label>Interne Hinweise</label><textarea name="editorial_note">${escapeHtml(item.editorial_note || item.editorialNote || "")}</textarea></div>` : ""}
-              <div class="field"><label>R�ckblick-Prompt</label><textarea name="retrospectivePrompt">${escapeHtml(retrospectivePrompt)}</textarea></div>
+              <div class="field"><label>Rückblick-Prompt</label><textarea name="retrospectivePrompt">${escapeHtml(retrospectivePrompt)}</textarea></div>
               <div class="field"><label>Event-Bezug</label><select name="linkedEventId">${eventOptions}</select></div>
               <div class="field"><label>Sponsorlogo</label><select name="sponsorId">${sponsorOptions}</select></div>
-              <label class="checkbox-line"><input type="checkbox" name="isRetrospective" ${item.isRetrospective ? "checked" : ""}> Unter R�ckblicke / Event-Nachlauf anzeigen</label>
+              <label class="checkbox-line"><input type="checkbox" name="isRetrospective" ${item.isRetrospective ? "checked" : ""}> Unter Rückblicke / Event-Nachlauf anzeigen</label>
               <label class="checkbox-line"><input type="checkbox" name="showGallery" ${item.showGallery ? "checked" : ""}> Bildergalerie aus Event-Medien anzeigen</label>
               <input type="hidden" name="galleryEventId" value="${escapeHtml(item.galleryEventId || item.linkedEventId || "")}">
-              <p class="muted">Im R�ckblick-Modus formuliert ChatGPT Headline, Subline und Haupttext als nachtr�gliche Berichterstattung �ber das vergangene Event.</p>
-              ${aiFieldActions([{ action: "rewritePressRetrospective", target: "bodyText", label: "R�ckblick-Fliesstext erzeugen", entityType: module, entityId: item.id, fieldName: "bodyText", promptField: "retrospectivePrompt" }])}
+              <p class="muted">Im Rückblick-Modus formuliert ChatGPT Headline, Subline und Haupttext als nachträgliche Berichterstattung über das vergangene Event.</p>
+              ${aiFieldActions([{ action: "rewritePressRetrospective", target: "bodyText", label: "Rückblick-Fliesstext erzeugen", entityType: module, entityId: item.id, fieldName: "bodyText", promptField: "retrospectivePrompt" }])}
             </section>
             </details>`}
           </aside>
@@ -2094,7 +3535,7 @@ Ausgangstext:
       : `<div class="editor-gallery-preview editor-gallery-preview--empty" data-editor-gallery-preview><p class="muted">Keine Galerie verknuepft. Galerie auswaehlen, speichern, danach kann sie hier abgespielt werden.</p></div>`;
     const thumbState = `${editorialSummaryThumb(item)}${item.imageUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`}`;
     const audioState = item.audioUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
-    const galleryState = selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} � ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
+    const galleryState = selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
     return protect(cmsShell("cms/topics", `${cmsTitle("Redaktion", "Thema bearbeiten", `<a class="button button--secondary button--small" href="#/cms/topics">Zurueck</a>`)}
       <section class="panel"><form id="topic-editor-form" data-topic-id="${item.id}" class="form-grid is-save-aware">
         <div class="editorial-workspace editorial-workspace--text-editor">
@@ -2282,9 +3723,9 @@ Ausgangstext:
           <div class="field"><label>Mitgliedschaftsstatus</label><select name="membershipAccessStatus">
             <option value="active" ${memberAccessStatus === "active" ? "selected" : ""}>Aktiv</option>
             <option value="inactive" ${memberAccessStatus === "inactive" ? "selected" : ""}>Inaktiv</option>
-            <option value="cancelled" ${memberAccessStatus === "cancelled" ? "selected" : ""}>Gek�ndigt</option>
+            <option value="cancelled" ${memberAccessStatus === "cancelled" ? "selected" : ""}>Gekündigt</option>
           </select></div>
-          <div class="field"><label>Gek�ndigt / inaktiv ab</label><input name="membershipAccessEffectiveAt" type="date" value="${escapeHtml(timestampInputDate(item?.membershipAccessEffectiveAt))}"><p class="muted">Leer = sofort.</p></div>
+          <div class="field"><label>Gekündigt / inaktiv ab</label><input name="membershipAccessEffectiveAt" type="date" value="${escapeHtml(timestampInputDate(item?.membershipAccessEffectiveAt))}"><p class="muted">Leer = sofort.</p></div>
         </div>
       </div>`
     : "";
@@ -2299,14 +3740,11 @@ Ausgangstext:
       : module === "sponsors"
         ? (() => { const asset = recordMediaAsset(item, editMediaAssets, "sponsors", "logoUrl"); const logoUrl = mediaAssetUrl(asset || {}) || item.logoUrl || ""; return `<div class="field"><label>Logo</label><div class="member-logo-editor"><div class="member-logo-editor__preview">${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(item.name || "")}">` : `<span>Noch kein Logo</span>`}</div><div class="member-logo-editor__actions">${linkedMediaActions({ collection: "sponsors", id: item.id, field: "logoUrl", altField: "altText", returnTo: `#/cms/edit?module=sponsors&id=${item.id}`, label: "Logo", assetId: asset?.id || "" })}<input type="file" name="assetFile" accept="image/*"><p class="muted">Logo aus der Mediathek waehlen oder direkt eine neue Datei hochladen.</p></div></div></div>`; })()
       : module === "memberDocuments"
-        ? `<div class="field"><label>Dokument hochladen</label><input type="file" name="assetFile" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,image/*,application/pdf"><p class="muted">PDF oder Datei fuer den Mitgliederbereich.</p></div>`
+        ? `<div class="field"><label>Dokument hochladen</label><input type="file" name="assetFile" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,image/*,application/pdf"><p class="muted">PDF oder Datei für den Mitgliederbereich.</p></div>`
       : module === "memberDirectories"
         ? `<div class="field"><label>Verzeichnis-Datei hochladen</label><input type="file" name="assetFile" accept=".pdf,.csv,.xlsx,.xls,application/pdf"><p class="muted">Optionales Mitgliederverzeichnis als Datei.</p></div>`
       : "";
   const speakerManager = module === "topics" ? topicSpeakerManager(item, topicSpeakers) : "";
-  const memberLiveControl = module === "members"
-    ? `<label class="checkbox-line"><input type="checkbox" name="isLive" ${item.isLive !== false ? "checked" : ""}> Live auf Website anzeigen</label><p class="muted">Nur aktive, oeffentliche und live freigegebene Mitglieder erscheinen auf der Website.</p>`
-    : "";
   const activeStatus = ["topics", "members", "boardMembers", "memberDirectories", "users"].includes(module) ? "active" : "published";
   const editorialBack = query.get("section") && editorialSections[query.get("section")] ? `editorial/${query.get("section")}` : item.page === "press" ? "editorial/press" : item.page === "news" ? "editorial/news" : module === "editorialContent" ? "editorial/interna" : "editorial";
   const backSection = { boardMembers: "board", editorialContent: editorialBack, speakers: "speakers", sponsors: "sponsors", memberDocuments: "member-documents", memberDirectories: "member-directories" }[module] || module;
@@ -2352,7 +3790,7 @@ Ausgangstext:
   const saveControls = module === "members"
     ? `<div class="member-edit-savebar"><button class="button button--primary">Speichern</button><div id="content-save-result"></div></div>`
     : `<button class="button button--primary">Speichern</button><div id="content-save-result"></div>`;
-  return protect(cmsShell(activeSection, `${cmsTitle("Bearbeiten", `${definition.title} pflegen`, `<a class="button button--secondary button--small" href="#/cms/${backSection}">Zurueck</a>`)}<section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="${formClass}">${memberEditHtml}${statusVisibilityControls}${module === "members" ? "" : memberLiveControl}${saveControls}</form></section>${speakerManager}`));
+  return protect(cmsShell(activeSection, `${cmsTitle("Bearbeiten", `${definition.title} pflegen`, `<a class="button button--secondary button--small" href="#/cms/${backSection}">Zurueck</a>`)}<section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="${formClass}">${memberEditHtml}${statusVisibilityControls}${saveControls}</form></section>${speakerManager}`));
 }
 
 export async function audioAdminPage() {
@@ -2409,8 +3847,8 @@ export async function audioAdminPage() {
       if (rankA !== rankB) return rankA - rankB;
       return String(a).localeCompare(String(b), "de");
     });
-  const subareaOptions = Array.from(new Set(rows.map((item) => item.audioSubarea).filter((value) => ["�ber uns", "Mitglied werden"].includes(value))))
-    .sort((a, b) => ["�ber uns", "Mitglied werden"].indexOf(a) - ["�ber uns", "Mitglied werden"].indexOf(b));
+  const subareaOptions = Array.from(new Set(rows.map((item) => item.audioSubarea).filter((value) => ["Über uns", "Mitglied werden"].includes(value))))
+    .sort((a, b) => ["Über uns", "Mitglied werden"].indexOf(a) - ["Über uns", "Mitglied werden"].indexOf(b));
   const rowHtml = rows.map((item) => {
     const collection = item.audioCollection;
     const title = item.title || item.titel || item.slug || item.id;
@@ -2454,14 +3892,14 @@ export async function audioAdminPage() {
         </label>
         <small data-audio-area-count>${rows.length} Inhalte</small>
       </div>
-      <div class="table-wrap"><table class="table table--editorial table--audio-service"><thead><tr><th>Inhalt</th><th>Bereich</th><th>Audio</th><th>Modell</th><th>Stimme</th><th>Aktion</th></tr></thead><tbody>${rowHtml || `<tr><td colspan="6">Noch keine audiof�higen Inhalte vorhanden.</td></tr>`}</tbody></table></div>
+      <div class="table-wrap"><table class="table table--editorial table--audio-service"><thead><tr><th>Inhalt</th><th>Bereich</th><th>Audio</th><th>Modell</th><th>Stimme</th><th>Aktion</th></tr></thead><tbody>${rowHtml || `<tr><td colspan="6">Noch keine audiofähigen Inhalte vorhanden.</td></tr>`}</tbody></table></div>
     </section>`));
 }
 
 export async function setupPage() {
   if (!hasCmsAccess(true)) return denied(true);
   const setup = await getOne("system", "setup");
-  return protect(cmsShell("cms/setup", `${cmsTitle("System / Einrichtung", "Firebase Setup-Assistent")}<div class="cms-columns"><section class="panel"><h2>Installationsstatus</h2><div class="setup-steps"><div class="setup-step"><span>Installation</span>${status(setup?.installed ? "installed" : "not_installed")}</div><div class="setup-step"><span>Version</span><strong>${setup?.version || "-"}</strong></div><div class="setup-step"><span>Demo-Daten</span>${status(setup?.demoDataInstalled ? "installed" : "optional")}</div></div><div class="actions" style="margin-top:22px;flex-wrap:wrap"><button class="button button--dark button--small" data-setup-action="connection">Verbindung testen</button><button class="button button--dark button--small" data-setup-action="structure">Struktur pruefen</button><button class="button button--primary button--small" data-setup-action="initialize">Basisdaten anlegen</button><button class="button button--secondary button--small" data-setup-action="demo">Demo-Daten anlegen</button><button class="button button--secondary button--small" data-setup-action="remove-demo">Demo-Daten entfernen</button></div><div id="setup-result" style="margin-top:18px"></div></section><section class="panel"><h2>Setup-Protokoll</h2>${(setup?.setupLog || []).length ? setup.setupLog.map((log) => `<div class="fact"><strong>${escapeHtml(log.message)}</strong><span class="muted">${formatDateTime(log.timestamp)}</span></div>`).join("") : `<p>Noch keine protokollierten Setup-Aktionen.</p>`}<div class="alert alert--warning" style="margin-top:19px">Demodaten entfernen und andere destruktive Aktionen benoetigen vor Ausfuehrung eine ausdrueckliche Bestaetigung.</div></section></div>`), true);
+  return protect(cmsShell("cms/setup", `${cmsTitle("System / Einrichtung", "Firebase Setup-Assistent")}<div class="cms-columns"><section class="panel"><h2>Installationsstatus</h2><div class="setup-steps"><div class="setup-step"><span>Installation</span>${status(setup?.installed ? "installed" : "not_installed")}</div><div class="setup-step"><span>Version</span><strong>${setup?.version || "-"}</strong></div><div class="setup-step"><span>Demo-Daten</span>${status(setup?.demoDataInstalled ? "installed" : "optional")}</div></div><div class="actions" style="margin-top:22px;flex-wrap:wrap"><button class="button button--dark button--small" data-setup-action="connection">Verbindung testen</button><button class="button button--dark button--small" data-setup-action="structure">Struktur prüfen</button><button class="button button--primary button--small" data-setup-action="initialize">Basisdaten anlegen</button><button class="button button--secondary button--small" data-setup-action="demo">Demo-Daten anlegen</button><button class="button button--secondary button--small" data-setup-action="remove-demo">Demo-Daten entfernen</button></div><div id="setup-result" style="margin-top:18px"></div></section><section class="panel"><h2>Setup-Protokoll</h2>${(setup?.setupLog || []).length ? setup.setupLog.map((log) => `<div class="fact"><strong>${escapeHtml(log.message)}</strong><span class="muted">${formatDateTime(log.timestamp)}</span></div>`).join("") : `<p>Noch keine protokollierten Setup-Aktionen.</p>`}<div class="alert alert--warning" style="margin-top:19px">Demodaten entfernen und andere destruktive Aktionen benoetigen vor Ausfuehrung eine ausdrueckliche Bestaetigung.</div></section></div>`), true);
 }
 
 export async function chatGptPage() {
@@ -2472,14 +3910,14 @@ export async function chatGptPage() {
     <div class="cms-columns">
       <section class="panel">
         <h2>Event-Admin-Pipeline</h2>
-        <p>ChatGPT erzeugt nur Vorschlaege. Redakteure muessen Inhalte pruefen, bearbeiten und bewusst speichern.</p>
+        <p>ChatGPT erzeugt nur Vorschlaege. Redakteure muessen Inhalte prüfen, bearbeiten und bewusst speichern.</p>
         <div class="setup-steps" style="margin-top:18px">
           <div class="setup-step"><span>Event-Vorlauf</span><strong>Beschreibung, Einladung, Agenda, FAQ</strong></div>
           <div class="setup-step"><span>Themen & Referenten</span><strong>keine erfundenen Personen</strong></div>
-          <div class="setup-step"><span>Nachlauf</span><strong>Rueckblick, Archiv, Newsletter</strong></div>
+          <div class="setup-step"><span>Nachlauf</span><strong>Rückblick, Archiv, Newsletter</strong></div>
           <div class="setup-step"><span>Fotogalerie / Downloads</span><strong>optional, keine Pflichtfehler</strong></div>
         </div>
-        <div style="margin-top:20px">${aiButton("analyzeEventPipelineQuality", "chatgpt-dashboard-context", "Pipeline-Beispiel pruefen", { entityId: sampleEvent.id || "", fieldName: "dashboardQuality" })}</div>
+        <div style="margin-top:20px">${aiButton("analyzeEventPipelineQuality", "chatgpt-dashboard-context", "Pipeline-Beispiel prüfen", { entityId: sampleEvent.id || "", fieldName: "dashboardQuality" })}</div>
         <div id="chatgpt-dashboard-context" hidden>${escapeHtml(JSON.stringify({ event: sampleEvent, media }))}</div>
       </section>
       <section class="panel">

@@ -2,7 +2,7 @@ import { currentUser, canUseCms } from "../firebase/authService.js?v=470";
 
 const nav = [
   ["home", "Start"], ["events", "Events"], ["topics", "Themen"], ["news", "News"], ["about", "Ueber uns"],
-  ["archive", "Rueckblick"], ["webapp-qr", "WebApp QR"]
+  ["archive", "Rückblick"], ["webapp-qr", "WebApp QR"]
 ];
 
 const aboutSubnav = [["board", "Vorstand"], ["members", "Mitglieder"], ["join", "Mitglied werden"]];
@@ -39,7 +39,7 @@ export function header(active) {
     </div>
     <button class="burger-button" type="button" data-public-menu-toggle aria-expanded="false" aria-label="Menue oeffnen"><span></span><span></span><span></span></button>
     <a class="mobile-qr" href="#/home" data-mobile-qr-link target="_blank" rel="noreferrer" aria-label="Diese Seite auf dem Smartphone oeffnen">
-      <img data-mobile-qr-code alt="QR-Code fuer die mobile Seite">
+      <img data-mobile-qr-code alt="QR-Code für die mobile Seite">
     </a>
   </div><nav class="public-mobile-menu" data-public-menu aria-label="Mobile Navigation">
     ${nav.map(menuLink).join("")}

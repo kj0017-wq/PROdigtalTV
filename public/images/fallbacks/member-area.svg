@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-label="PROdigitalTV Mitgliederbereich">
+  <rect width="1200" height="675" fill="#f4f8fb"/>
+  <rect x="120" y="115" width="960" height="445" rx="24" fill="#ffffff" stroke="#d8e1ea" stroke-width="3"/>
+  <circle cx="320" cy="310" r="82" fill="#123866"/>
+  <circle cx="510" cy="310" r="82" fill="#e30613"/>
+  <circle cx="700" cy="310" r="82" fill="#123866" opacity=".8"/>
+  <path d="M225 450c70-95 175-95 245 0M415 450c70-95 175-95 245 0M605 450c70-95 175-95 245 0" fill="none" stroke="#071f3f" stroke-width="22" stroke-linecap="round" opacity=".85"/>
+  <text x="150" y="185" font-family="Arial, Helvetica, sans-serif" font-size="38" font-weight="800" fill="#071f3f">Mitgliederbereich</text>
+</svg>

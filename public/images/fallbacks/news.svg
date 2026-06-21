@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-label="PROdigitalTV News">
+  <rect width="1200" height="675" fill="#f6f8fb"/>
+  <rect x="110" y="105" width="980" height="465" rx="20" fill="#ffffff" stroke="#d8e0ea" stroke-width="3"/>
+  <rect x="175" y="170" width="330" height="210" rx="12" fill="#123866" opacity=".92"/>
+  <path d="M220 335 300 265l65 56 46-39 55 53" fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="430" cy="215" r="26" fill="#e30613"/>
+  <path d="M570 190h345M570 260h410M570 330h360M175 430h790" stroke="#071f3f" stroke-width="22" stroke-linecap="round" opacity=".9"/>
+  <text x="175" y="520" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="800" fill="#e30613">News</text>
+</svg>

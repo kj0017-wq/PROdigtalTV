@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-label="PROdigitalTV Galerie">
+  <rect width="1200" height="675" fill="#eef4fb"/>
+  <rect x="145" y="135" width="390" height="270" rx="18" fill="#ffffff" stroke="#d7e0ea" stroke-width="3"/>
+  <rect x="430" y="220" width="390" height="270" rx="18" fill="#ffffff" stroke="#d7e0ea" stroke-width="3"/>
+  <rect x="665" y="145" width="390" height="270" rx="18" fill="#ffffff" stroke="#d7e0ea" stroke-width="3"/>
+  <path d="M205 345 300 265l70 62 44-38 66 56M725 355 820 275l70 62 44-38 66 56" fill="none" stroke="#123866" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="740" cy="220" r="28" fill="#e30613"/>
+  <text x="145" y="550" font-family="Arial, Helvetica, sans-serif" font-size="38" font-weight="800" fill="#071f3f">Galerie</text>
+</svg>
