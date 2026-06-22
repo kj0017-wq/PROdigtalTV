@@ -21,7 +21,6 @@ const sections = [
       ["cms/member-area", "Mitgliederbereich"],
       ["cms/editorial/member-area", "Mitgliederbeitraege"],
       ["cms/membership-applications", "Mitgliedsantraege"],
-      ["cms/member-documents", "Dokumente"],
       ["cms/board", "Vorstand"]
     ]
   },
@@ -40,7 +39,9 @@ const sections = [
     title: "Medien",
     children: [
       ["cms/media/library", "Bilder"],
+      ["cms/media/ai", "KI-Bilder"],
       ["cms/media/videos", "Videos"],
+      ["cms/member-documents", "Dokumente"],
       ["cms/galleries", "Bildergalerien"],
       ["cms/audio", "Audio & Barrierefreiheit"]
     ]

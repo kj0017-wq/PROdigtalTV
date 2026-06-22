@@ -50,6 +50,150 @@ const mediaUsagePresets = {
   thumb: { label: "Thumbnail", aspect: "1x1", width: 1200, height: 1200, portal: "Quadratisches Thumb", mobile: "Mobile Thumb 1:1" }
 };
 
+const mediaRenderVariants = [
+  ["news_desktop", "News Desktop", "1200 x 675", "16:9"],
+  ["news_mobile", "News Mobile", "800 x 1000", "4:5"],
+  ["hero_desktop", "Hero Desktop", "1920 x 800", "12:5"],
+  ["thumbnail", "Thumbnail", "480 x 320", "3:2"],
+  ["square", "Square", "800 x 800", "1:1"],
+  ["event_header", "Event Header", "1600 x 700", "16:7"],
+  ["member_teaser", "Member Teaser", "900 x 600", "3:2"],
+  ["sponsor_logo", "Sponsor Logo", "600 x 300", "2:1"],
+  ["social_share", "Social Share", "1200 x 630", "1.91:1"]
+];
+
+const mediaAiStyleOptions = [
+  ["premium_event_keyvisual", "Premium Event-Keyvisual"],
+  ["editorial_magazine", "Editorial / Magazin"],
+  ["photorealistic", "Photorealistisch"],
+  ["documentary", "Dokumentarisch / Roh"],
+  ["classic_serious", "Klassisch / Serioes"],
+  ["modern_gloss", "Modern / High Gloss"],
+  ["technical_futuristic", "Technisch / Futuristisch"],
+  ["minimalistic", "Minimalistisch"],
+  ["illustration", "Illustration"],
+  ["retro_broadcast", "Retro Broadcast / TV Archive"],
+  ["cinematic_noir", "Cinematic / Noir"],
+  ["surreal_concept", "Surreal / Konzeptstark"],
+  ["paper_collage", "Papier / Collage / Editorial Art"],
+  ["bold_brutalist", "Bold / Brutalist / Posterhaft"],
+  ["luminous_abstract", "Licht / Abstrakt / Atmosphaerisch"],
+  ["free_style", "Freestyle / Ganz neue Stilwelt"]
+];
+
+const mediaAiMotifOptions = [
+  ["symbol", "Symbolbild"],
+  ["event", "Eventbild"],
+  ["people", "Menschen / Gespraech"],
+  ["technology", "Technik / Infrastruktur"],
+  ["city", "Stadt / Location"],
+  ["abstract", "Abstrakt"]
+];
+
+const mediaAiEffectOptions = [
+  ["factual", "sachlich"],
+  ["premium", "hochwertig"],
+  ["dynamic", "dynamisch"],
+  ["calm", "ruhig"],
+  ["exclusive", "exklusiv"],
+  ["future", "zukunftsorientiert"]
+];
+
+const mediaAiTextAreaOptions = [
+  ["none", "keine"],
+  ["left", "links frei"],
+  ["right", "rechts frei"],
+  ["top", "oben frei"],
+  ["bottom", "unten frei"]
+];
+
+const mediaAiAreaOptions = [
+  ["news", "News"],
+  ["press", "Presse / Mitteilung"],
+  ["medienfruehstueck", "Medienfruehstueck"],
+  ["von_den_besten", "Von den Besten"],
+  ["rueckblick", "Rueckblick"],
+  ["versammlung", "Versammlungen"],
+  ["member", "Mitglieder / Netzwerk"],
+  ["general", "Allgemein"]
+];
+
+const mediaAiStyleTemplates = [
+  {
+    key: "luxury_event_photo",
+    title: "Premium Event Foto",
+    image: "/images/ai-style-templates/premium-event-foto.png",
+    text: "Fotorealistisches Luxury-Corporate-Keyvisual mit Golden Hour, Konferenzraum, Business-Fruehstueck, Berlin-Atmosphaere, Glas/Holz-Reflexen und ruhigem Textbereich.",
+    preset: "premium_event_keyvisual",
+    motif: "event",
+    effect: "exclusive",
+    color: "Cremeweiss, Champagner, Gold, Dunkelblau, Anthrazit, warme Sonnenstrahlen",
+    tone: "photo"
+  },
+  {
+    key: "documentary_press",
+    title: "Pressefoto Real",
+    image: "/images/ai-style-templates/pressefoto-real.png",
+    text: "Ungestellte dokumentarische Event- und Medienfoto-Optik, echte Lichtstimmung, natuerliche Perspektive, glaubwuerdige Menschen im Gespraech, kein Studio- oder Werbelook.",
+    preset: "documentary",
+    motif: "people",
+    effect: "factual",
+    color: "Natuerliche Farben, warme Innenraumtoene, dezenter Kontrast, glaubwuerdige Pressefoto-Anmutung",
+    tone: "photo"
+  },
+  {
+    key: "editorial_cover",
+    title: "Magazin Cover",
+    image: "/images/ai-style-templates/magazin-cover.png",
+    text: "Hochwertige internationale Magazin-Cover-Aesthetik, grosszuegiger Weissraum, starke visuelle Hierarchie, edle Typografie-Zone, art-directed Editorial Photography.",
+    preset: "editorial_magazine",
+    motif: "symbol",
+    effect: "premium",
+    color: "Reduzierte Premium-Palette, Weissraum, dunkle Akzente, feine warme Highlights",
+    tone: "design"
+  },
+  {
+    key: "tech_realism",
+    title: "Tech Realismus",
+    image: "/images/ai-style-templates/tech-realismus.png",
+    text: "Fotorealistische Medien- und Broadcast-Technologie: Kontrollraum, Streaming-Infrastruktur, Screens, Kabel, Signallicht, Architektur und echte Materialitaet.",
+    preset: "technical_futuristic",
+    motif: "technology",
+    effect: "future",
+    color: "Kuehle technische Lichtstimmung, Glas, Metall, dunkle Raeume, dezente elektrische Akzente",
+    tone: "photo"
+  },
+  {
+    key: "graphic_abstract",
+    title: "Grafisch Abstrakt",
+    image: "/images/ai-style-templates/grafisch-abstrakt.png",
+    text: "Bewusst nicht-fotografische Keyvisual-Welt mit Licht, Flaechen, Signalenergie, Premium-Gradienten und klarer Komposition fuer Themen ohne konkretes Motiv.",
+    preset: "luminous_abstract",
+    motif: "abstract",
+    effect: "dynamic",
+    color: "Lichtgetriebene Farbwelt, weiche Verlaeufe, Glasreflexe, kontrollierte atmosphaerische Akzente",
+    tone: "graphic"
+  }
+];
+
+function mediaAiStyleTemplateCards() {
+  return `<div class="media-ai-template-grid" data-media-ai-template-grid>${mediaAiStyleTemplates.map((item) => `
+    <button class="media-ai-template-card media-ai-template-card--${escapeHtml(item.tone)}" type="button"
+      data-media-ai-template
+      data-style-preset="${escapeHtml(item.preset)}"
+      data-motif-type="${escapeHtml(item.motif)}"
+      data-image-effect="${escapeHtml(item.effect)}"
+      data-color-world="${escapeHtml(item.color)}"
+      data-style="${escapeHtml(item.text)}">
+      <i aria-hidden="true"><img src="${escapeHtml(item.image)}" alt=""></i>
+      <span>
+        <strong>${escapeHtml(item.title)}</strong>
+        <em>Stil-Preset</em>
+        <small>${escapeHtml(item.text)}</small>
+      </span>
+    </button>`).join("")}</div>`;
+}
+
 function mediaUsagePreset(type = "upload") {
   return mediaUsagePresets[type] || mediaUsagePresets.upload;
 }
@@ -57,6 +201,14 @@ function mediaUsagePreset(type = "upload") {
 function mediaPresetSummary(type = "upload") {
   const preset = mediaUsagePreset(type);
   return `${preset.aspect} · ${preset.width} x ${preset.height}px · ${preset.portal} · ${preset.mobile}`;
+}
+
+function mediaVariantOptions(selected = "news_desktop") {
+  return mediaRenderVariants.map(([key, label, size, ratio]) => `<option value="${key}" ${key === selected ? "selected" : ""}>${escapeHtml(label)} · ${escapeHtml(size)} · ${escapeHtml(ratio)}</option>`).join("");
+}
+
+function mediaAiSelectOptions(options = [], selected = "") {
+  return options.map(([value, label]) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
 }
 
 function lastMediaAssetId() {
@@ -419,6 +571,11 @@ function mediaAspectStyle(format = "16x9") {
   const clean = String(format || "16x9").toLowerCase();
   if (clean === "1x1") return "1 / 1";
   if (clean === "4x5") return "4 / 5";
+  if (clean === "3x2") return "3 / 2";
+  if (clean === "12x5") return "12 / 5";
+  if (clean === "16x7") return "16 / 7";
+  if (clean === "2x1") return "2 / 1";
+  if (clean === "social") return "1200 / 630";
   if (clean === "logo") return "2.55 / 1";
   if (clean === "4x3") return "4 / 3";
   if (clean === "9x16") return "9 / 16";
@@ -517,7 +674,7 @@ function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altF
 function mediaPortalVariantButtons(active = "16x9") {
   const variants = [
     ["news", "News", "16 / 9", "16x9", "16:9", "wide"],
-    ["landscape", "Landscape", "16 / 9", "landscape", "16:9", "wide"],
+    ["landscape", "Thumb", "3 / 2", "3x2", "3:2", "wide"],
     ["portrait", "Hochkant", "9 / 16", "portrait", "9:16", "portrait"],
     ["board", "Vorstand", "1 / 1", "1x1", "1:1", "square"],
     ["logo", "Logo", "2.55 / 1", "logo", "2.55:1", "logo"]
@@ -533,46 +690,34 @@ function mediaVariantUrl(variant = {}) {
 }
 
 function mediaVariantChooser(asset = {}, variants = [], assets = []) {
-  const duplicateOriginalTypes = new Set(["original"]);
-  const variantKey = (variant = {}) => [
-    variant.derived_media_asset_id || variant.id || "",
-    variant.variant_type || variant.media_type || "",
-    variant.format || variant.aspect_ratio || "",
-    variant.filename || variant.filename_web || variant.filename_original || "",
-    mediaVariantUrl(variant)
-  ].join("|");
-  const derivedAssets = assets
-    .filter((item) => item.parent_media_asset_id === asset.id && mediaVariantUrl(item))
-    .map((item) => ({
-      id: item.id,
-      variant_type: item.media_type || item.usage_preset || "edited",
-      variant_label: item.title || mediaTypeLabels[item.media_type] || "Variante",
-      format: item.aspect_ratio || item.usage_preset_ratio || mediaDisplayAspect(item),
-      filename: item.filename_web || item.filename_original || item.original_filename || "",
-      version: item.version || "v1",
-      created_at: item.created_at || item.createdAt || item.updated_at || item.updatedAt || "",
-      url: mediaVariantUrl(item)
-    }));
   const derivedById = new Map(assets.filter((item) => item.id).map((item) => [item.id, item]));
-  const relatedVariants = [...variants
-    .filter((variant) => variant.media_asset_id === asset.id && !duplicateOriginalTypes.has(String(variant.variant_type || "").toLowerCase()))
+  const relatedVariants = variants
+    .filter((variant) => variant.media_asset_id === asset.id && String(variant.variant_key || variant.variant_type || "").toLowerCase() !== "original")
     .map((variant) => {
       const derived = variant.derived_media_asset_id ? derivedById.get(variant.derived_media_asset_id) : null;
+      const key = String(variant.variant_key || variant.variant_type || derived?.variant_key || derived?.usage_preset || "").toLowerCase();
       return {
         ...variant,
+        variant_key: key,
+        variant_type: key || variant.variant_type,
+        variant_label: variant.variant_label || derived?.title || mediaTypeLabels[key] || key || "Variante",
+        format: variant.format || derived?.usage_preset_ratio || derived?.aspect_ratio || asset.aspect_ratio || mediaDisplayAspect(asset) || "16x9",
+        filename: variant.filename || derived?.filename_web || derived?.filename_original || derived?.original_filename || "",
+        created_at: variant.created_at || variant.createdAt || variant.updated_at || variant.updatedAt || derived?.updated_at || derived?.updatedAt || derived?.created_at || derived?.createdAt || "",
         url: mediaVariantUrl(variant) || mediaVariantUrl(derived || {})
       };
     })
-    .filter((variant) => mediaVariantUrl(variant)), ...derivedAssets]
+    .filter((variant) => variant.variant_key && mediaVariantUrl(variant))
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))
     .filter((variant, index, items) => {
-      const key = variantKey(variant);
-      return items.findIndex((item) => variantKey(item) === key) === index;
+      const key = String(variant.variant_key || "").toLowerCase();
+      return items.findIndex((item) => String(item.variant_key || "").toLowerCase() === key) === index;
     })
     .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   if (!relatedVariants.length) return "";
   const originalUrl = mediaPreviewUrl(asset) || mediaUrl(asset);
   const original = originalUrl
-    ? `<button class="media-variant-choice is-active" type="button" data-media-load-variant data-media-variant-src="${escapeHtml(originalUrl)}" data-media-variant-format="${escapeHtml(asset.aspect_ratio || mediaDisplayAspect(asset) || "16x9")}" aria-pressed="true"><img src="${escapeHtml(originalUrl)}" alt=""><span><strong>Original</strong><small>${escapeHtml(asset.filename_original || asset.filename_web || "Ausgangsbild")}</small></span></button>`
+    ? `<button class="media-variant-choice is-active" type="button" data-media-load-variant data-media-variant-src="${escapeHtml(originalUrl)}" data-media-variant-format="${escapeHtml(asset.aspect_ratio || mediaDisplayAspect(asset) || "16x9")}" aria-pressed="true" title="${escapeHtml(asset.filename_original || asset.filename_web || "Ausgangsbild")}"><img src="${escapeHtml(originalUrl)}" alt=""><span><strong>Original</strong><small>${escapeHtml(asset.aspect_ratio || mediaDisplayAspect(asset) || "Ausgangsbild")}</small></span></button>`
     : "";
   const options = relatedVariants.map((variant) => {
     const label = variant.variant_label || mediaTypeLabels[variant.variant_type] || variant.variant_type || "Variante";
@@ -919,6 +1064,7 @@ function mediaSourceFilterOptions(assets = []) {
 
 function mediaAssetVisibleInLibrary(asset = {}, usageMap = new Map()) {
   if (asset.status === "archived") return false;
+  if (asset.parent_media_asset_id) return false;
   const usedIn = usageMap.get(asset.id) || [];
   if (inferredMediaType(asset, usedIn) === "logo") return true;
   const memberIds = new Set([
@@ -934,8 +1080,7 @@ function mediaAssetVisibleInLibrary(asset = {}, usageMap = new Map()) {
     if (!belongsToCurrentMember) return false;
     return true;
   }
-  if (!asset.parent_media_asset_id) return true;
-  return Boolean(usedIn.length || asset.target_collection || asset.linked_collection);
+  return true;
 }
 
 function trashAssetRow(asset = {}, usageMap = new Map()) {
@@ -966,7 +1111,7 @@ function trashAssetRow(asset = {}, usageMap = new Map()) {
 
 function libraryPage(assets = [], query = new URLSearchParams(), usageMap = new Map()) {
   const trashMode = query.get("trash") === "1";
-  const visibleAssets = newestMediaAssetsFirst(uniqueMediaAssets(assets.filter((asset) => trashMode ? asset.status === "archived" : mediaAssetVisibleInLibrary(asset, usageMap))));
+  const visibleAssets = newestMediaAssetsFirst(uniqueMediaAssets(assets.filter((asset) => trashMode ? asset.status === "archived" && !asset.parent_media_asset_id : mediaAssetVisibleInLibrary(asset, usageMap))));
   const contextQuery = mediaContextQuery(query);
   if (trashMode) {
     const stats = visibleAssets.reduce((acc, asset) => {
@@ -1112,19 +1257,45 @@ function aiTargetContext(record = null) {
 function aiPage(query = new URLSearchParams(), targetRecord = null) {
   const hasTarget = Boolean(query.get("targetCollection") && query.get("targetId"));
   const targetContext = aiTargetContext(targetRecord);
-  return `${mediaCreateChoice("ai")}<section class="panel media-work-panel">
+  return `<section class="panel media-work-panel media-ai-work-panel">
     <form id="media-ai-form" class="form-grid" data-media-ai-form ${mediaContextAttrs(query)}>
       <div class="media-form-head"><div><p class="eyebrow">KI-Grafik</p><h2>${hasTarget ? "KI-Thumb zum Beitrag erstellen" : "KI-Grafik erstellen"}</h2><p class="muted">${hasTarget ? "Das Bild wird als Mediathek-Asset gespeichert, mit dem redaktionellen Beitrag verknuepft und danach geht es zurueck in den Editor." : "Das Bild wird als Mediathek-Asset gespeichert und kann danach bearbeitet werden."}</p></div></div>
-      <div class="form-grid--two">
-        <div class="field"><label>Titel</label><input name="title" ${hasTarget ? "" : "required"} placeholder="${hasTarget ? "optional, sonst Beitragstitel" : ""}" value="${escapeHtml(targetContext.title)}"></div>
-        <div class="field"><label>Format</label><select name="aspect_ratio">${mediaFormatOptions("16x9")}</select></div>
-        <div class="field"><label>Stil</label><input name="style" value="professionell, sachlich, redaktionell"></div>
-        <div class="field"><label>Farbwelt</label><input name="color_world" value="PROdigitalTV Rot, Blau, helle Flaechen"></div>
+      <div class="media-ai-pipeline" data-media-ai-pipeline hidden aria-live="polite"></div>
+      <div class="field media-ai-template-field">
+        <label>Stilvorlagen</label>
+        ${mediaAiStyleTemplateCards()}
       </div>
-      <div class="field"><label>Kontext aus Editor</label><textarea name="source_text" placeholder="Headline, Thema, Keywords oder kurzer Artikeltext">${escapeHtml(targetContext.sourceText)}</textarea></div>
-      <div class="field"><label>Kreativ-Prompt</label><textarea name="generated_prompt" placeholder="Optional: Bildidee, Motiv, Stimmung oder kreative Richtung. Der Beitragskontext wird automatisch ergaenzt.">${escapeHtml(targetContext.prompt)}</textarea></div>
+      <div class="form-grid--two media-ai-main-fields">
+        <div class="field"><label>Titel</label><input name="title" ${hasTarget ? "" : "required"} placeholder="${hasTarget ? "optional, sonst Beitragstitel" : ""}" value="${escapeHtml(targetContext.title)}"></div>
+        <div class="field"><label>Bereich / Anlass</label><select name="target_area">${mediaAiSelectOptions(mediaAiAreaOptions, "general")}</select></div>
+        <div class="field"><label>Stilwelt</label><select name="style_preset">${mediaAiSelectOptions(mediaAiStyleOptions, "free_style")}</select></div>
+        <div class="field"><label>Farbwelt</label><input name="color_world" value="frei waehlbar, nicht zwingend PROdigitalTV Rot/Blau"></div>
+        <div class="field"><label>Motivart</label><select name="motif_type">${mediaAiSelectOptions(mediaAiMotifOptions, "symbol")}</select></div>
+        <div class="field"><label>Bildwirkung</label><select name="image_effect">${mediaAiSelectOptions(mediaAiEffectOptions, "premium")}</select></div>
+        <div class="field"><label>Textflaeche</label><select name="text_area">${mediaAiSelectOptions(mediaAiTextAreaOptions, "none")}</select></div>
+        <div class="field"><label>Text-Overlay / Covertext</label><input name="text_overlay" placeholder="z. B. MEDIENFRUEHSTUECK · BERLIN · 12. MAERZ"></div>
+        <div class="field"><label>Eigene Stilwelt / Referenzen</label><input name="style" placeholder="z. B. analoger Scan-Look, jap. Magazinlayout, Neon-Noir, rohe Pressefotografie, 70er TV-Grafik"></div>
+      </div>
+      <input type="hidden" name="aspect_ratio" value="16x9">
+      <div class="field media-ai-reference-field" data-media-ai-reference-dropzone>
+        <label>Referenzbild hochladen und analysieren</label>
+        <input name="reference_image" type="file" accept="image/jpeg,image/png,image/webp">
+        <div class="media-ai-reference-mode">
+          <label><input type="radio" name="reference_mode" value="style" checked> Nur fuer diese Grafik / Stil</label>
+          <label><input type="radio" name="reference_mode" value="area"> Fuer diesen Bereich merken</label>
+        </div>
+        <div class="media-ai-reference-preview" data-media-ai-reference-preview><span>Referenzbild hier hochladen oder ablegen.</span></div>
+        <div class="media-ai-reference-preview" data-media-ai-area-reference-preview><span>Default: kein Bereichs-Referenzfoto gespeichert.</span></div>
+        <div class="actions">
+          <button class="button button--secondary button--small" type="button" data-media-ai-area-reference-reset>Auf Default zuruecksetzen</button>
+        </div>
+      </div>
+      <div class="media-ai-prompt-grid">
+        <div class="field"><label>Kontext aus Editor</label><textarea name="source_text" placeholder="Headline, Thema, Keywords oder kurzer Artikeltext">${escapeHtml(targetContext.sourceText)}</textarea></div>
+        <div class="field"><label>Kreativ-Prompt optional</label><textarea name="generated_prompt" placeholder="Optional: z. B. Video-Cover, mehr Business-Fruehstueck, weniger Personen, Textbereich links frei ...">${escapeHtml(targetContext.prompt)}</textarea></div>
+      </div>
       <button class="button button--primary">${hasTarget ? "KI-Thumb erstellen und verknuepfen" : "KI-Grafik erstellen"}</button>
-      <div id="media-ai-result"></div>
+      <div id="media-ai-result" class="media-ai-result" aria-live="polite"></div>
     </form>
   </section>`;
 }
@@ -1136,27 +1307,38 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
   const showEventAssignment = events.length && (!hasTarget || contextQuery.get("targetCollection") === "events");
   const editorUrl = asset ? mediaEditorUrl(asset) : "";
   const previewUrl = asset ? mediaPreviewUrl(asset) || editorUrl : "";
-  return `<section class="panel media-work-panel">${asset ? `<form id="central-media-edit-form" class="form-grid" data-media-edit-form data-media-id="${escapeHtml(asset.id)}" data-media-aspect="${escapeHtml(asset.aspect_ratio || "16x9")}" ${mediaContextAttrs(contextQuery)}>
+  return `<section class="panel media-work-panel">${asset ? `<form id="central-media-edit-form" class="form-grid" data-media-edit-form data-media-id="${escapeHtml(asset.id)}" data-media-aspect="${escapeHtml(asset.aspect_ratio || "16x9")}" data-media-preview-src="${escapeHtml(previewUrl)}" data-media-editor-src="${escapeHtml(editorUrl)}" ${mediaContextAttrs(contextQuery)}>
     <div class="media-editor-layout">
       <div class="media-editor-preview">
         <div class="media-crop-stage" data-media-crop-stage style="--media-crop-aspect:${mediaAspectStyle(asset.aspect_ratio)}">
           ${editorUrl ? `<button class="media-fullscreen-button" type="button" data-media-fullscreen-open data-media-fullscreen-src="${escapeHtml(previewUrl)}" data-media-fullscreen-alt="${escapeHtml(asset.alt_text || asset.title || "Medienbild")}" title="Bild gross anzeigen" aria-label="Bild gross anzeigen">${mediaFullscreenIcon()}</button>
-          <img src="${escapeHtml(editorUrl)}" alt="${escapeHtml(asset.alt_text || asset.title || "Medienbild")}" data-media-crop-image>
+          <img src="${escapeHtml(editorUrl)}" alt="${escapeHtml(asset.alt_text || asset.title || "Medienbild")}" data-media-crop-image data-media-preview-src="${escapeHtml(previewUrl)}" data-media-editor-src="${escapeHtml(editorUrl)}">
           <span class="media-crop-frame" aria-hidden="true"></span>` : `<div class="alert alert--warning media-crop-empty">Dieses Bild hat noch keine verwendbare URL. Bitte ein anderes Bild waehlen oder die Datei neu hochladen.</div>`}
         </div>
+        <div class="media-crop-dimensions" data-media-crop-dimensions>
+          <span data-media-target-size>Zielrahmen: -</span>
+          <span data-media-source-size>Original: -</span>
+        </div>
         <div class="media-crop-tools">
+          <div class="field media-editor-variant-select">
+            <label>Webbild-Variante</label>
+            <select name="active_variant_key" data-media-active-variant>${mediaVariantOptions(asset.variant_key || "news_desktop")}</select>
+          </div>
           <div class="media-zoom-row">
             <button class="icon-button" type="button" data-media-zoom-step="-0.1" aria-label="Herauszoomen">-</button>
             <label><span>Zoom</span><input data-media-crop-scale type="range" min="0.2" max="4" step="0.01" value="${escapeHtml(asset.crop_scale ?? asset.crop_data?.scale ?? 1)}"></label>
             <button class="icon-button" type="button" data-media-zoom-step="0.1" aria-label="Hineinzoomen">+</button>
             <output data-media-zoom-label>${Math.round(Number(asset.crop_scale ?? asset.crop_data?.scale ?? 1) * 100)}%</output>
           </div>
-          <div class="media-crop-actions">
-            <button class="button button--secondary button--small" type="button" data-media-crop-fit>Original einpassen</button>
+          <div class="media-crop-actions media-crop-actions--top">
             <button class="button button--secondary button--small" type="button" data-media-crop-cover>Rahmen füllen</button>
-            <button class="button button--primary button--small" type="button" data-media-crop-apply>OK übernehmen</button>
+            <button class="button button--secondary button--small" type="button" data-media-crop-center>Zentrieren</button>
             <button class="button button--secondary button--small" type="button" data-media-crop-reset>Zurücksetzen</button>
           </div>
+        </div>
+        <div class="media-crop-actions media-crop-actions--bottom">
+          <button class="button button--primary button--small" type="button" data-media-crop-apply>Übernehmen</button>
+          <button class="button button--secondary button--small" type="button" data-media-render-variants>Varianten rendern</button>
         </div>
         <div class="field media-editor-assignment"><label>Bildzuordnung</label><select name="media_type" data-media-editor-type-update>${mediaTypeOptions(asset.media_type || "upload")}</select><p class="media-preset-hint" data-media-preset-hint>${escapeHtml(mediaPresetSummary(asset.media_type || "upload"))}</p></div>
         ${mediaPortalVariantButtons(asset.aspect_ratio || "16x9")}
@@ -1180,7 +1362,6 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
         <input type="hidden" name="file_size_label">
         <input type="hidden" name="original_filename">
         <input type="hidden" name="file_last_modified">
-        ${mediaVariantChooser(asset, variants, assets)}
       </div>
       <div class="form-grid">
         <div class="media-editor-topbar">
@@ -1199,8 +1380,8 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
         ${mediaMetadataBox(asset)}
         <input type="hidden" name="focal_point_x" value="${escapeHtml(asset.focal_point_x ?? 50)}">
         <input type="hidden" name="focal_point_y" value="${escapeHtml(asset.focal_point_y ?? 50)}">
-        <label class="checkbox-line"><input type="checkbox" name="createVariant" value="1"> Als neue Variante speichern</label>
-        <button class="button button--primary">${hasTarget ? "Als Thumb speichern" : "Aenderungen speichern"}</button><div id="media-edit-result"></div>
+        <button class="button button--primary">${hasTarget ? "Speichern" : "Alles speichern"}</button><div id="media-edit-result"></div>
+        ${mediaVariantChooser(asset, variants, assets)}
       </div>
     </div>
   </form>` : `<div class="alert">Bitte zuerst ein Bild aus der Mediathek auswaehlen.</div>`}</section>`;

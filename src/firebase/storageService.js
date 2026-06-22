@@ -1,6 +1,15 @@
 import { getFirebaseServices } from "./firebaseClient.js";
 import { upsert } from "./dataService.js";
 
+const STORAGE_TIMEOUT_MS = 12000;
+
+function withStorageTimeout(promise, timeoutMs = STORAGE_TIMEOUT_MS, label = "Storage") {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => window.setTimeout(() => reject(new Error(`${label} hat nicht rechtzeitig geantwortet.`)), timeoutMs))
+  ]);
+}
+
 function fileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -246,8 +255,19 @@ export async function uploadMediaAsset(file, storagePath) {
   if (!safePath.startsWith("images/")) throw new Error("Medien muessen unter images gespeichert werden.");
   try {
     const reference = firebase.storageLib.ref(firebase.storage, safePath);
-    await firebase.storageLib.uploadBytes(reference, file, { contentType: file.type });
-    return { url: await firebase.storageLib.getDownloadURL(reference), storagePath: safePath };
+    await withStorageTimeout(
+      firebase.storageLib.uploadBytes(reference, file, { contentType: file.type }),
+      STORAGE_TIMEOUT_MS,
+      `Storage-Upload (${safePath})`
+    );
+    return {
+      url: await withStorageTimeout(
+        firebase.storageLib.getDownloadURL(reference),
+        STORAGE_TIMEOUT_MS,
+        `Storage-Download-URL (${safePath})`
+      ),
+      storagePath: safePath
+    };
   } catch (error) {
     return {
       url: await imageAsOptimizedDataUrl(file),

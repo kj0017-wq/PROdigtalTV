@@ -5,6 +5,7 @@ import { escapeHtml, formatDate } from "./utils/format.js";
 
 const root = document.querySelector("#app");
 const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
+const mediaProxyFunctionUrl = "https://europe-west3-prodigitaltv-da47b.cloudfunctions.net/mediaAssetProxy";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 const localCodexStoreKey = "prodigitaltv-demo-db-official-assets-v7";
 
@@ -12,9 +13,10 @@ const lazy = {};
 const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=625");
 const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=591");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=490");
-const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=91");
+const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=102");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=12");
+const firebaseClientService = () => lazy.firebaseClientService ||= import("./firebase/firebaseClient.js?v=1");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
 const csvService = () => lazy.csvService ||= import("./utils/csv.js");
 const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=325");
@@ -28,6 +30,7 @@ const uploadEntityImage = async (...args) => (await storageService()).uploadEnti
 const uploadEventMedia = async (...args) => (await storageService()).uploadEventMedia(...args);
 const uploadGalleryImages = async (...args) => (await storageService()).uploadGalleryImages(...args);
 const uploadMediaAsset = async (...args) => (await storageService()).uploadMediaAsset(...args);
+const getFirebaseStorageServices = async () => (await firebaseClientService()).getFirebaseServices();
 const checkFirebaseConnection = async (...args) => (await setupService()).checkFirebaseConnection(...args);
 const checkFirestoreStructure = async (...args) => (await setupService()).checkFirestoreStructure(...args);
 const initializeDatabase = async (...args) => (await setupService()).initializeDatabase(...args);
@@ -1853,6 +1856,98 @@ async function generatedThumbToJpeg(dataUrl, fileName, size = { width: 1200, hei
   };
 }
 
+async function generatedImageToOriginalFile(dataUrl, fileName) {
+  const image = await loadImageFromDataUrl(dataUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth || 1536;
+  canvas.height = image.naturalHeight || 1024;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.92));
+  if (!blob) throw new Error("KI-Originalbild konnte nicht gespeichert werden.");
+  const safeName = String(fileName || "ki-original.webp").replace(/\.[^.]+$/, "") + `-${canvas.width}x${canvas.height}.webp`;
+  return {
+    file: new File([blob], safeName, { type: "image/webp" }),
+    dataUrl: canvas.toDataURL("image/webp", 0.92),
+    width: canvas.width,
+    height: canvas.height
+  };
+}
+
+async function mediaAiReferenceImageData(file) {
+  if (!file) return null;
+  if (!/^image\/(jpeg|png|webp)$/i.test(file.type || "")) {
+    throw new Error("Bitte ein JPG-, PNG- oder WebP-Referenzbild waehlen.");
+  }
+  const originalDataUrl = await readFileAsDataUrl(file);
+  const image = await loadImageFromDataUrl(originalDataUrl);
+  const maxEdge = 1400;
+  const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth || maxEdge, image.naturalHeight || maxEdge));
+  const width = Math.max(1, Math.round((image.naturalWidth || maxEdge) * scale));
+  const height = Math.max(1, Math.round((image.naturalHeight || maxEdge) * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.84);
+  return {
+    dataUrl,
+    fileName: file.name || "stilreferenz.jpg",
+    mimeType: "image/jpeg",
+    width,
+    height,
+    originalSize: file.size || 0
+  };
+}
+
+const mediaAiAreaReferenceCollection = "ai_image_area_references";
+
+function mediaAiAreaReferenceId(area = "general") {
+  return `area-reference-${String(area || "general").replace(/[^a-z0-9_-]+/gi, "-").toLowerCase() || "general"}`;
+}
+
+async function saveMediaAiAreaReference(area = "general", file) {
+  const normalized = await mediaAiReferenceImageData(file);
+  const uploadFile = dataUrlToFile(normalized.dataUrl, `${normalizeMediaSlug(area || "general")}-referenzfoto.jpg`);
+  if (!uploadFile) throw new Error("Referenzfoto konnte nicht vorbereitet werden.");
+  const now = new Date().toISOString();
+  const path = `images/ai-area-references/${normalizeMediaSlug(area || "general")}/${Date.now()}-${uploadFile.name}`;
+  const uploaded = await uploadMediaAsset(uploadFile, path);
+  const record = await upsert(mediaAiAreaReferenceCollection, {
+    id: mediaAiAreaReferenceId(area),
+    area,
+    title: `Referenzfoto ${area}`,
+    file_url: uploaded?.url || normalized.dataUrl,
+    storage_path: uploaded?.storagePath || "",
+    original_filename: file?.name || normalized.fileName || "",
+    mime_type: uploadFile.type || "image/jpeg",
+    width: normalized.width || 0,
+    height: normalized.height || 0,
+    status: "active",
+    updated_at: now,
+    updatedAt: now,
+    updated_by: currentUser()?.email || currentUser()?.uid || "cms"
+  });
+  return record;
+}
+
+async function loadMediaAiAreaReference(area = "general") {
+  const record = await getOne(mediaAiAreaReferenceCollection, mediaAiAreaReferenceId(area)).catch(() => null);
+  if (!record || record.status === "deleted" || !record.file_url) return null;
+  return record;
+}
+
+async function resetMediaAiAreaReference(area = "general") {
+  const record = await loadMediaAiAreaReference(area);
+  if (record?.storage_path) await deleteStoredAsset({ storagePath: record.storage_path }).catch(() => {});
+  await remove(mediaAiAreaReferenceCollection, mediaAiAreaReferenceId(area)).catch(() => {});
+}
+
 function fileToInput(input, file) {
   const transfer = new DataTransfer();
   transfer.items.add(file);
@@ -2453,6 +2548,20 @@ const mediaUsagePresets = {
   thumb: { aspect: "1x1", width: 1200, height: 1200, portal: "Quadratisches Thumb", mobile: "Mobile Thumb 1:1" }
 };
 
+const MEDIA_VARIANT_DEFINITIONS = Object.freeze({
+  news_desktop: { key: "news_desktop", label: "News Desktop", width: 1200, height: 675, aspect: "16x9", format: "image/webp", quality: .86, usage: "news_header", storageSuffix: "news-desktop" },
+  news_mobile: { key: "news_mobile", label: "News Mobile", width: 800, height: 1000, aspect: "4x5", format: "image/webp", quality: .86, usage: "news_mobile", storageSuffix: "news-mobile" },
+  hero_desktop: { key: "hero_desktop", label: "Hero Desktop", width: 1920, height: 800, aspect: "12x5", format: "image/webp", quality: .88, usage: "hero", storageSuffix: "hero-desktop" },
+  thumbnail: { key: "thumbnail", label: "Thumbnail", width: 480, height: 320, aspect: "3x2", format: "image/webp", quality: .82, usage: "thumbnail", storageSuffix: "thumbnail" },
+  square: { key: "square", label: "Square", width: 800, height: 800, aspect: "1x1", format: "image/webp", quality: .84, usage: "square", storageSuffix: "square" },
+  event_header: { key: "event_header", label: "Event Header", width: 1600, height: 700, aspect: "16x7", format: "image/webp", quality: .86, usage: "event_header", storageSuffix: "event-header" },
+  member_teaser: { key: "member_teaser", label: "Member Teaser", width: 900, height: 600, aspect: "3x2", format: "image/webp", quality: .84, usage: "member_teaser", storageSuffix: "member-teaser" },
+  sponsor_logo: { key: "sponsor_logo", label: "Sponsor Logo", width: 600, height: 300, aspect: "2x1", format: "image/webp", quality: .9, usage: "sponsor_logo", storageSuffix: "sponsor-logo" },
+  social_share: { key: "social_share", label: "Social Share", width: 1200, height: 630, aspect: "social", format: "image/webp", quality: .86, usage: "social_share", storageSuffix: "social-share" }
+});
+
+const MEDIA_VARIANT_ORDER = Object.freeze(Object.keys(MEDIA_VARIANT_DEFINITIONS));
+
 function mediaUsagePreset(type = "upload") {
   return mediaUsagePresets[normalizedMediaType(type)] || mediaUsagePresets.upload;
 }
@@ -2468,6 +2577,176 @@ function mediaPresetFields(type = "upload") {
     portal_usage: preset.portal,
     mobile_usage: preset.mobile,
     aspect_ratio: preset.aspect
+  };
+}
+
+function mediaVariantDefinition(key = "", asset = {}) {
+  const cleanKey = String(key || "").trim().toLowerCase();
+  if (MEDIA_VARIANT_DEFINITIONS[cleanKey]) return MEDIA_VARIANT_DEFINITIONS[cleanKey];
+  const fallbackKey = mediaDefaultVariantKey(asset);
+  return MEDIA_VARIANT_DEFINITIONS[fallbackKey] || MEDIA_VARIANT_DEFINITIONS.news_desktop;
+}
+
+function mediaDefaultVariantKey(asset = {}) {
+  const type = normalizedMediaType(asset.media_type || asset.usage_preset || "upload");
+  if (["member", "logo"].includes(type)) return "sponsor_logo";
+  if (["board", "person"].includes(type)) return "news_mobile";
+  if (type === "thumb") return "square";
+  if (type === "event") return "event_header";
+  return "news_desktop";
+}
+
+function mediaVariantAspectCss(key = "", asset = {}) {
+  return mediaAspectCss(mediaVariantDefinition(key, asset).aspect);
+}
+
+function mediaStagePreviewSize(width = 1, height = 1, maxWidth = 420, maxHeight = 360) {
+  const safeWidth = Math.max(1, Number(width || 1));
+  const safeHeight = Math.max(1, Number(height || 1));
+  const scale = Math.min(maxWidth / safeWidth, maxHeight / safeHeight, 1);
+  return {
+    width: Math.max(160, Math.round(safeWidth * scale)),
+    height: Math.max(120, Math.round(safeHeight * scale))
+  };
+}
+
+function mediaVariantCanvasSize(format = "16x9", asset = {}) {
+  const clean = String(format || "16x9").toLowerCase();
+  if (MEDIA_VARIANT_DEFINITIONS[clean]) {
+    const variant = MEDIA_VARIANT_DEFINITIONS[clean];
+    return { width: variant.width, height: variant.height, aspect: variant.aspect, key: variant.key };
+  }
+  const variant = Object.values(MEDIA_VARIANT_DEFINITIONS).find((entry) => entry.aspect === clean);
+  if (variant) return { width: variant.width, height: variant.height, aspect: variant.aspect, key: variant.key };
+  if (clean === "1x1") return { width: 1200, height: 1200, aspect: "1x1", key: "square" };
+  if (clean === "4x5") return { width: 800, height: 1000, aspect: "4x5", key: "news_mobile" };
+  if (clean === "9x16" || clean === "portrait" || clean === "hochkant") return { width: 1080, height: 1920, aspect: "9x16", key: "portrait" };
+  if (clean === "logo") return { width: 600, height: 300, aspect: "2x1", key: "sponsor_logo" };
+  if (clean === "4x3") return { width: 1200, height: 900, aspect: "4x3", key: "legacy_4x3" };
+  if (clean === "3x2") return { width: 900, height: 600, aspect: "3x2", key: "member_teaser" };
+  if (clean === "12x5") return { width: 1920, height: 800, aspect: "12x5", key: "hero_desktop" };
+  if (clean === "16x7") return { width: 1600, height: 700, aspect: "16x7", key: "event_header" };
+  if (clean === "social") return { width: 1200, height: 630, aspect: "social", key: "social_share" };
+  const fallback = mediaVariantDefinition("", asset);
+  return { width: fallback.width, height: fallback.height, aspect: fallback.aspect, key: fallback.key };
+}
+
+function mediaVariantFileCore(asset = {}) {
+  const preferred = asset.original_filename || asset.filename_original || asset.filename_web || asset.title || asset.slug || asset.id || "bild";
+  const cleanBase = String(preferred).split("/").pop().split("\\").pop().replace(/\.[^.]+$/, "");
+  return normalizeMediaSlug(cleanBase) || normalizeMediaSlug(asset.title || "bild") || "bild";
+}
+
+function mediaVariantOutputFileName(asset = {}, variantKey = "") {
+  const variant = mediaVariantDefinition(variantKey, asset);
+  return `${mediaVariantFileCore(asset)}_${variant.key}_${variant.width}x${variant.height}.webp`;
+}
+
+function mediaVariantOutputPath(asset = {}, variantKey = "") {
+  const variant = mediaVariantDefinition(variantKey, asset);
+  const basePath = String(asset.file_path_original || asset.file_path_web || asset.file_path_thumb || "").trim();
+  const baseDir = basePath ? basePath.replace(/\/[^/]*$/, "") : mediaStoragePath("placeholder.webp", normalizedMediaType(asset.media_type || "upload"), asset.media_code || "").replace(/\/[^/]*$/, "");
+  return `${baseDir}/${mediaVariantOutputFileName(asset, variant.key)}`;
+}
+
+function mediaAiStyleCatalog() {
+  return {
+    photorealistic: {
+      direction: "Strictly photorealistic editorial image, like a real full-frame camera photograph with believable materials, natural light and authentic media-industry atmosphere.",
+      composition: "Clear photographic depth, real-world scene, grounded lens perspective, credible camera optics, not illustration, not painting, not synthetic stock-like CGI.",
+      palette: "Color palette may be realistic and situation-driven, not forced into brand colors.",
+      freedom: "Vary setting, camera distance and mood boldly as long as the image stays credible as photography."
+    },
+    editorial_magazine: {
+      direction: "High-end editorial magazine visual language with crafted composition, restrained elegance and clear visual hierarchy.",
+      composition: "Art-directed composition, layered foreground/background, premium magazine pacing, strong crop discipline.",
+      palette: "Use a curated palette with a subtle PROdigitalTV accent only where it strengthens the image.",
+      freedom: "Seek a distinctive cover-story feeling, not a generic business visual."
+    },
+    classic_serious: {
+      direction: "Classic, serious and trustworthy visual tone with quiet authority and institutional clarity.",
+      composition: "Balanced geometry, measured framing, controlled light, low visual noise.",
+      palette: "Muted, elegant, sober colors; avoid loud trend aesthetics.",
+      freedom: "Stay conservative but not boring; use subtle symbolic depth."
+    },
+    modern_gloss: {
+      direction: "Modern premium high-gloss visual world with polished surfaces, cinematic highlights and confident graphic impact.",
+      composition: "Striking hero composition, premium reflections, decisive silhouettes, clean focal path.",
+      palette: "Controlled luxe palette with richer contrast and accent colors when useful.",
+      freedom: "Allow stronger style and visual confidence, but avoid cheesy ad aesthetics."
+    },
+    premium_event_keyvisual: {
+      direction: "Photorealistic luxury corporate event keyvisual for an international business, media and networking event with agency-level premium marketing polish.",
+      composition: "Real high-end event photography in a split or layered 16:9 composition with conference, breakfast, city/location and event-atmosphere cues, plus calm premium whitespace for text.",
+      palette: "Cream white, champagne, gold, dark blue, anthracite, warm golden-hour light and refined glass/wood reflections.",
+      freedom: "Use real-camera photorealism mixed with elegant editorial design discipline; avoid illustration, painting, cheap stock-photo mood and crowded layouts."
+    },
+    technical_futuristic: {
+      direction: "Technical futuristic world around media tech, broadcast infrastructure, streaming systems, signal paths and AI interfaces.",
+      composition: "Layered systems view, architectural depth, luminous interfaces, infrastructural detail.",
+      palette: "Can use cold technical palettes, electric accents, dark control-room atmospheres or data-light gradients.",
+      freedom: "Push into abstract systems imagery instead of default office scenes."
+    },
+    minimalistic: {
+      direction: "Minimalist visual language with generous empty space, a single strong idea and reduced formal vocabulary.",
+      composition: "Few elements, strong negative space, precise placement, calm confidence.",
+      palette: "Highly reduced palette; use color with discipline.",
+      freedom: "Allow radical simplicity and silence instead of filling the frame."
+    },
+    illustration: {
+      direction: "Sophisticated editorial illustration rather than photo realism, with conceptual clarity and crafted symbolic form.",
+      composition: "Readable conceptual scene, graphic shapes, metaphor-first thinking, polished illustration finish.",
+      palette: "Illustrative palette may be bolder, flatter or more stylized if coherent.",
+      freedom: "Move clearly away from the photo schema when this style is chosen."
+    },
+    documentary: {
+      direction: "Photorealistic raw documentary editorial mood, believable everyday reality, unstaged press-photo energy.",
+      composition: "Observed real-camera moment, imperfect realism, situational framing, atmospheric authenticity, no illustration or painted finish.",
+      palette: "Natural or slightly gritty tones; no glossy over-stylization.",
+      freedom: "Prefer truthfulness, texture and atmosphere over polish."
+    },
+    retro_broadcast: {
+      direction: "Retro broadcast design language inspired by archive TV, analog control rooms, CRT glow and legacy broadcast graphics.",
+      composition: "Vintage framing, layered screens, archive-era visual cues, broadcast nostalgia with contemporary control.",
+      palette: "Analog reds, faded blues, phosphor greens, warm grey plastics, tape-era tones.",
+      freedom: "Allow deliberate temporal character and media-history references."
+    },
+    cinematic_noir: {
+      direction: "Cinematic noir atmosphere with dramatic light, shadows, tension and moody editorial storytelling.",
+      composition: "Directional light, asymmetry, selective visibility, dramatic depth and suspense.",
+      palette: "Dark, contrast-rich palette with selective accent color and controlled glow.",
+      freedom: "May feel filmic, urban or psychologically charged rather than corporate."
+    },
+    surreal_concept: {
+      direction: "Surreal concept art with a serious editorial mind-set, not fantasy cliché; strong metaphor over literal scene building.",
+      composition: "Unexpected spatial logic, impossible scale, symbolic juxtapositions and striking concept image-making.",
+      palette: "Palette may be poetic, uncanny or sharply symbolic if it supports the concept.",
+      freedom: "Break realism decisively; do not fall back to default business visuals."
+    },
+    paper_collage: {
+      direction: "Editorial collage world using paper texture, cutout logic, layered fragments, print feel and tactile composition.",
+      composition: "Layered collage, torn edges, poster fragments, tactile surfaces, deliberate handmade rhythm.",
+      palette: "Print-like palette, paper tones, overprints, restrained but characterful color decisions.",
+      freedom: "Can be materially tactile and visibly constructed rather than clean digital."
+    },
+    bold_brutalist: {
+      direction: "Bold brutalist poster aesthetic with oversized shapes, assertive geometry and unapologetic visual force.",
+      composition: "Large forms, hard structure, poster-scale hierarchy, radical cropping and strong silhouette logic.",
+      palette: "High-contrast graphic palette allowed; can be stark, loud or reduced.",
+      freedom: "Reject safe corporate imagery; pursue a striking statement image."
+    },
+    luminous_abstract: {
+      direction: "Atmospheric abstract lightscape with signal energy, gradients, reflections, glass, haze and spatial ambiguity.",
+      composition: "No need for literal scene; create a believable abstract environment with depth and directional energy.",
+      palette: "Light-driven palette, luminous transitions, colored haze, optical glow, subtle material reflections.",
+      freedom: "Can be almost fully non-literal as long as it feels intentional and premium."
+    },
+    free_style: {
+      direction: "Create a completely fresh style world based primarily on the user's own style references and prompt, not on a fixed house schema.",
+      composition: "Choose the composition logic that best matches the requested style world rather than the default editorial recipe.",
+      palette: "Palette is entirely open and should follow the requested style direction.",
+      freedom: "Actively avoid falling back to the usual PROdigitalTV business-editorial pattern unless the user explicitly asks for it."
+    }
   };
 }
 
@@ -2487,15 +2766,61 @@ function creativeThumbPrompt(context = {}, userPrompt = "", variantNumber = 1) {
   const category = context.category ? `Rubrik: ${context.category}.` : "";
   const subtitle = context.subtitle ? `Subline: ${context.subtitle}.` : "";
   const bodyHint = context.bodyText ? `Inhaltlicher Kontext: ${String(context.bodyText).replace(/\s+/g, " ").slice(0, 520)}.` : "";
+  const areaCatalog = {
+    news: "Bereich/Anlass: News. Aktuelle redaktionelle Bildlogik, klare journalistische Relevanz, Website-Teaser-tauglich, nicht boulevardesk.",
+    press: "Bereich/Anlass: Presse/Mitteilung. Glaubwuerdige PR-/Kommunikationsoptik, institutionelle Klarheit, professioneller Ankuendigungscharakter.",
+    medienfruehstueck: "Bereich/Anlass: Medienfruehstueck. Business-Fruehstueck, Networking, Morgenlicht, Tischkultur, hochwertige Event-Atmosphaere.",
+    von_den_besten: "Bereich/Anlass: Von den Besten. Dialog, Lernen von Expertinnen und Experten, Premium-Gespraech, Wissenstransfer, menschlicher Austausch ohne Promi-Imitation.",
+    rueckblick: "Bereich/Anlass: Rueckblick. Erinnerung, Event-Atmosphaere, dokumentarischer Nachklang, Reflexion, wertige Recap-Energie.",
+    versammlung: "Bereich/Anlass: Versammlungen. Mitglieder, Beschluesse, Verein, Tagesordnung, Konferenztisch, professionelle Governance-Atmosphaere.",
+    member: "Bereich/Anlass: Mitglieder/Netzwerk. Partnerschaft, Kompetenz, Vertrauen, Branchenvernetzung, Business-Netzwerk.",
+    general: "Bereich/Anlass: Allgemein. PROdigitalTV-Kontext aus dem CMS und gewaehlt Stilwelt bestimmen die Bildidee."
+  };
+  const styleCatalog = mediaAiStyleCatalog();
+  const styleMeta = context.stylePreset && styleCatalog[context.stylePreset] ? styleCatalog[context.stylePreset] : styleCatalog.editorial_magazine;
+  const stylePreset = styleMeta?.direction ? `Stilwelt: ${styleMeta.direction}` : "";
+  const styleComposition = styleMeta?.composition ? `Kompositionslogik: ${styleMeta.composition}` : "";
+  const stylePalette = styleMeta?.palette ? `Farb-/Materialwelt: ${styleMeta.palette}` : "";
+  const styleFreedom = styleMeta?.freedom ? `Freiheitsgrad: ${styleMeta.freedom}` : "";
+  const customStyle = context.style ? `Eigene Stilreferenz des Users: ${context.style}. Diese Referenz hat Vorrang vor Standardmustern.` : "";
+  const colorWorld = context.colorWorld ? `Gewuenschte Farbwelt: ${context.colorWorld}.` : "";
+  const motifType = context.motifType ? `Motivart: ${context.motifType}.` : "";
+  const imageEffect = context.imageEffect ? `Bildwirkung: ${context.imageEffect}.` : "";
+  const textArea = context.textArea && context.textArea !== "none" ? `Textflaeche: ${context.textArea} frei halten.` : "";
+  const textOverlay = context.textOverlay
+    ? `Text-Overlay/Covertext: Setze diesen Text exakt und gut lesbar im Bild: "${String(context.textOverlay).slice(0, 180)}". Nutze hochwertige Typografie, viel Weissraum und keine zusaetzlichen Fantasiewoerter.`
+    : "";
+  const targetArea = context.targetArea && areaCatalog[context.targetArea] ? areaCatalog[context.targetArea] : "";
+  const baseIdea = context.stylePreset === "free_style"
+    ? "Bildidee: entwickle eine eigenstaendige visuelle Welt, die sich klar vom Standard-Redaktionslook unterscheidet und den Prompt ernst nimmt."
+    : "Bildidee: finde eine eigenstaendige visuelle Idee statt einer austauschbaren Standard-Thumbnail-Loesung.";
+  const antiGeneric = context.stylePreset === "free_style"
+    ? "Wichtig: kein Rueckfall in generische Business-, Stockfoto- oder Default-Editorial-Bilder. Lieber mutig, spezifisch und unverwechselbar."
+    : "Wichtig: nicht generisch, keine austauschbare Stockfoto-Optik, keine schematische Standard-Business-Komposition.";
+  const brandConstraint = context.stylePreset === "free_style"
+    ? ""
+    : "PROdigitalTV-Farbakzente nur einsetzen, wenn sie stilistisch wirklich passen; nicht in jedem Bild denselben Rot-Blau-Reflex wiederholen.";
   return [
     userPrompt,
     `Erzeuge Variante ${variantNumber} als eigenstaendiges, kreatives redaktionelles Thumbnail fuer den Beitrag "${title}".`,
     subtitle,
     category,
     bodyHint,
-    "Bildidee: ueberraschende, aber serioese visuelle Metapher aus digitaler Medienwirtschaft, Streaming, TV, Plattformen, Redaktion, Technologie oder Netzwerk.",
-    "Komposition: starkes zentrales Motiv, klare Tiefe, hochwertige Lichtfuehrung, moderne Business-/Editorial-Aesthetik, PROdigitalTV-Farbakzent in Rot und Dunkelblau.",
-    "Kreativitaet: nicht generisch, keine austauschbare tockfoto-Optik, gern abstrakte Datenraeume, Medieninterfaces, Lichtlinien, Glas, creens, tudio-Atmosphaere oder symbolische Branchenszenen.",
+    stylePreset,
+    styleComposition,
+    stylePalette,
+    styleFreedom,
+    customStyle,
+    colorWorld,
+    motifType,
+    imageEffect,
+    textArea,
+    textOverlay,
+    targetArea,
+    baseIdea,
+    antiGeneric,
+    brandConstraint,
+    "Der thematische Bezug zu digitaler Medienwirtschaft, Streaming, TV, Plattformen, Redaktion, Technologie oder Netzwerk soll spürbar sein, darf aber metaphorisch, abstrakt oder unerwartet geloest werden.",
     "Einschraenkungen: keine echten Logos, keine identifizierbaren realen Personen, keine Textfehler im Bild, keine Comic-Optik, keine irrefuehrenden Fakten.",
     "Format: 16:9, geeignet als Website-Thumbnail und Artikelkopf."
   ].filter(Boolean).join("\n");
@@ -2606,10 +2931,15 @@ function detectMediaAspectRatio({ width = 0, height = 0 } = {}) {
   const ratio = w / h;
   const candidates = [
     ["16x9", 16 / 9],
+    ["3x2", 3 / 2],
     ["1x1", 1],
     ["4x5", 4 / 5],
     ["9x16", 9 / 16],
     ["4x3", 4 / 3],
+    ["12x5", 12 / 5],
+    ["16x7", 16 / 7],
+    ["2x1", 2],
+    ["social", 1200 / 630],
     ["logo", 2.55]
   ];
   return candidates
@@ -2622,12 +2952,17 @@ function mediaAspectCss(format = "16x9") {
   if (clean === "1x1") return "1 / 1";
   if (clean === "4x5") return "4 / 5";
   if (clean === "9x16" || clean === "portrait" || clean === "hochkant") return "9 / 16";
+  if (clean === "3x2") return "3 / 2";
+  if (clean === "12x5") return "12 / 5";
+  if (clean === "16x7") return "16 / 7";
+  if (clean === "2x1") return "2 / 1";
+  if (clean === "social") return "1200 / 630";
   if (clean === "logo") return "2.55 / 1";
   if (clean === "4x3") return "4 / 3";
   return "16 / 9";
 }
 
-function mediaVariantCanvasSize(format = "16x9") {
+function legacyMediaVariantCanvasSize(format = "16x9") {
   const clean = String(format || "16x9").toLowerCase();
   if (clean === "1x1") return { width: 1200, height: 1200, aspect: "1x1" };
   if (clean === "4x5") return { width: 1200, height: 1500, aspect: "4x5" };
@@ -2640,15 +2975,41 @@ function mediaVariantCanvasSize(format = "16x9") {
 function canvasToFile(canvas, filename = "bild.webp", type = "image/webp", quality = .9) {
   return new Promise((resolve, reject) => {
     try {
+      if (typeof canvas.toBlob !== "function") {
+        const dataUrl = canvas.toDataURL(type, quality);
+        const file = dataUrlToFile(dataUrl, filename);
+        if (file) {
+          resolve(file);
+          return;
+        }
+        reject(new Error("Bildvariante konnte nicht erzeugt werden."));
+        return;
+      }
       canvas.toBlob((blob) => {
         if (!blob) {
+          try {
+            const dataUrl = canvas.toDataURL(type, quality);
+            const file = dataUrlToFile(dataUrl, filename);
+            if (file) {
+              resolve(file);
+              return;
+            }
+          } catch {}
           reject(new Error("Bildvariante konnte nicht erzeugt werden."));
           return;
         }
         resolve(new File([blob], filename, { type }));
       }, type, quality);
     } catch (error) {
-      reject(new Error("Bildvariante konnte nicht erzeugt werden. Bitte das Bild zuerst in die Mediathek hochladen und dann erneut zuschneiden."));
+      try {
+        const dataUrl = canvas.toDataURL(type, quality);
+        const file = dataUrlToFile(dataUrl, filename);
+        if (file) {
+          resolve(file);
+          return;
+        }
+      } catch {}
+      reject(new Error(error?.message || "Bildvariante konnte nicht erzeugt werden."));
     }
   });
 }
@@ -2755,6 +3116,419 @@ async function createOptimizedMediaUploads(file, { filename = "", path = "", med
     web: { ...web, filename: webFilename, path: webPath },
     thumb: { ...thumb, filename: thumbFilename, path: thumbPath }
   };
+}
+
+function cropOffsetRatio(value = 0, size = 1) {
+  return Math.abs(Number(size || 1)) > 0 ? Number(value || 0) / Number(size || 1) : 0;
+}
+
+function mediaCoverScaleForDimensions(sourceWidth = 1, sourceHeight = 1, viewportWidth = 1, viewportHeight = 1) {
+  const imageAspect = Math.max(1, Number(sourceWidth || 1)) / Math.max(1, Number(sourceHeight || 1));
+  const viewportAspect = Math.max(1, Number(viewportWidth || 1)) / Math.max(1, Number(viewportHeight || 1));
+  return imageAspect > viewportAspect ? imageAspect / viewportAspect : viewportAspect / imageAspect;
+}
+
+function mediaRenderMetrics({ sourceWidth = 1, sourceHeight = 1, viewportWidth = 1, viewportHeight = 1, zoomFactor = 1, offsetXRatio = 0, offsetYRatio = 0 } = {}) {
+  const vw = Math.max(1, Number(viewportWidth || 1));
+  const vh = Math.max(1, Number(viewportHeight || 1));
+  const sw = Math.max(1, Number(sourceWidth || 1));
+  const sh = Math.max(1, Number(sourceHeight || 1));
+  const baseScale = Math.min(vw / sw, vh / sh);
+  const drawWidth = sw * baseScale * Math.max(.05, Number(zoomFactor || 1));
+  const drawHeight = sh * baseScale * Math.max(.05, Number(zoomFactor || 1));
+  const drawX = (vw - drawWidth) / 2 + Number(offsetXRatio || 0) * vw;
+  const drawY = (vh - drawHeight) / 2 + Number(offsetYRatio || 0) * vh;
+  return { viewportWidth: vw, viewportHeight: vh, sourceWidth: sw, sourceHeight: sh, baseScale, drawWidth, drawHeight, drawX, drawY };
+}
+
+function mediaCropDataFromEditorState({ variant = {}, stageWidth = 1, stageHeight = 1, sourceWidth = 1, sourceHeight = 1, zoomFactor = 1, offsetX = 0, offsetY = 0, adjustments = {} } = {}) {
+  const metrics = mediaRenderMetrics({
+    sourceWidth,
+    sourceHeight,
+    viewportWidth: stageWidth,
+    viewportHeight: stageHeight,
+    zoomFactor,
+    offsetXRatio: cropOffsetRatio(offsetX, stageWidth),
+    offsetYRatio: cropOffsetRatio(offsetY, stageHeight)
+  });
+  const pixelsPerSourceX = metrics.drawWidth / metrics.sourceWidth;
+  const pixelsPerSourceY = metrics.drawHeight / metrics.sourceHeight;
+  const cropX = Math.max(0, (-metrics.drawX) / Math.max(.0001, pixelsPerSourceX));
+  const cropY = Math.max(0, (-metrics.drawY) / Math.max(.0001, pixelsPerSourceY));
+  const cropWidth = Math.min(metrics.sourceWidth, metrics.viewportWidth / Math.max(.0001, pixelsPerSourceX));
+  const cropHeight = Math.min(metrics.sourceHeight, metrics.viewportHeight / Math.max(.0001, pixelsPerSourceY));
+  return {
+    variantKey: variant.key || "",
+    viewportWidth: Math.round(stageWidth),
+    viewportHeight: Math.round(stageHeight),
+    zoomFactor: Number(zoomFactor || 1),
+    offsetXRatio: cropOffsetRatio(offsetX, stageWidth),
+    offsetYRatio: cropOffsetRatio(offsetY, stageHeight),
+    cropX: Math.max(0, Math.round(cropX)),
+    cropY: Math.max(0, Math.round(cropY)),
+    cropWidth: Math.max(1, Math.round(cropWidth)),
+    cropHeight: Math.max(1, Math.round(cropHeight)),
+    targetWidth: variant.width || 0,
+    targetHeight: variant.height || 0,
+    aspect: variant.aspect || "",
+    brightness: Number(adjustments.brightness || 0),
+    contrast: Number(adjustments.contrast || 0),
+    saturation: Number(adjustments.saturation || 0),
+    sharpness: Number(adjustments.sharpness || 0),
+    black_white: Boolean(adjustments.black_white),
+    isManual: true
+  };
+}
+
+function mediaDefaultCropData(asset = {}, variantKey = "") {
+  const variant = mediaVariantDefinition(variantKey, asset);
+  const sourceWidth = Number(asset.image_width || asset.file_metadata?.width || variant.width || 1);
+  const sourceHeight = Number(asset.image_height || asset.file_metadata?.height || variant.height || 1);
+  const zoomFactor = Math.max(1, mediaCoverScaleForDimensions(sourceWidth, sourceHeight, variant.width, variant.height));
+  return mediaCropDataFromEditorState({
+    variant,
+    stageWidth: variant.width,
+    stageHeight: variant.height,
+    sourceWidth,
+    sourceHeight,
+    zoomFactor,
+    offsetX: 0,
+    offsetY: 0,
+    adjustments: {}
+  });
+}
+
+function mediaRenderableSourceCandidates(asset = {}, preferredUrl = "") {
+  const candidates = [
+    preferredUrl,
+    asset.file_path_original_url,
+    asset.file_path_web_url,
+    asset.file_path_thumb_url,
+    asset.original_url,
+    asset.web_url,
+    asset.thumb_url,
+    asset.imageUrl,
+    asset.assetUrl,
+    asset.fileUrl,
+    asset.url,
+    asset.downloadUrl,
+    asset.thumbnail_url,
+    asset.thumbnailUrl,
+    asset.file_url,
+    mediaAssetUrl(asset)
+  ].map((value) => usableMediaAssetUrl(value)).filter(Boolean);
+  return [...new Set(candidates)];
+}
+
+function mediaAsyncTimeout(promise, timeoutMs = 12000, label = "Medienvorgang") {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => window.setTimeout(() => reject(new Error(`${label} hat nicht rechtzeitig geantwortet.`)), timeoutMs))
+  ]);
+}
+
+function mediaStoragePathFromDownloadUrl(url = "") {
+  const text = String(url || "").trim();
+  if (!text.includes("/o/")) return "";
+  try {
+    const match = text.match(/\/o\/([^?]+)/i);
+    return match?.[1] ? decodeURIComponent(match[1]) : "";
+  } catch {
+    return "";
+  }
+}
+
+function mediaSourceCanRenderSafely(source = "") {
+  const value = String(source || "").trim();
+  if (!value) return false;
+  if (/^(data:image\/|blob:)/i.test(value)) return true;
+  if (value.startsWith("/")) return true;
+  try {
+    const resolved = new URL(value, window.location.href);
+    return resolved.origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+function mediaProxyUrl(source = "", asset = {}) {
+  const url = String(source || "").trim();
+  const storagePath = [
+    asset.storage_path_original,
+    asset.storage_path_web,
+    asset.storage_path_thumb,
+    asset.file_path_original,
+    asset.file_path_web,
+    asset.file_path_thumb,
+    mediaStoragePathFromDownloadUrl(url)
+  ].find(Boolean);
+  try {
+    if (storagePath) return `${mediaProxyFunctionUrl}?path=${encodeURIComponent(String(storagePath).replace(/^\/+/, ""))}`;
+    if (/^https?:\/\//i.test(url)) return `${mediaProxyFunctionUrl}?url=${encodeURIComponent(url)}`;
+    return "";
+  } catch {
+    return "";
+  }
+}
+
+async function mediaDownloadObjectUrl(source = "") {
+  const url = String(source || "").trim();
+  if (!/^https?:\/\//i.test(url)) return null;
+  return new Promise((resolve) => {
+    try {
+      const request = new XMLHttpRequest();
+      request.open("GET", url, true);
+      request.responseType = "blob";
+      request.timeout = 10000;
+      request.onload = () => {
+        if (request.status >= 200 && request.status < 300 && request.response) {
+          const objectUrl = URL.createObjectURL(request.response);
+          resolve({
+            url: objectUrl,
+            cleanup: () => URL.revokeObjectURL(objectUrl)
+          });
+          return;
+        }
+        resolve(null);
+      };
+      request.onerror = () => resolve(null);
+      request.ontimeout = () => resolve(null);
+      request.send();
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function mediaBlobObjectUrlForSource(source = "", asset = {}) {
+  const storagePath = [
+    asset.storage_path_original,
+    asset.storage_path_web,
+    asset.storage_path_thumb,
+    asset.file_path_original,
+    asset.file_path_web,
+    asset.file_path_thumb,
+    mediaStoragePathFromDownloadUrl(source)
+  ].find(Boolean);
+  const firebase = await getFirebaseStorageServices().catch(() => null);
+  if (storagePath && firebase?.storageLib?.ref && (firebase?.storageLib?.getBlob || firebase?.storageLib?.getBytes)) {
+    try {
+      const reference = firebase.storageLib.ref(firebase.storage, String(storagePath).replace(/^\/+/, ""));
+      let blob = null;
+      if (firebase.storageLib.getBlob) {
+        blob = await mediaAsyncTimeout(
+          firebase.storageLib.getBlob(reference),
+          10000,
+          `Storage-Blob (${storagePath})`
+        );
+      } else if (firebase.storageLib.getBytes) {
+        const bytes = await mediaAsyncTimeout(
+          firebase.storageLib.getBytes(reference),
+          10000,
+          `Storage-Bytes (${storagePath})`
+        );
+        blob = new Blob([bytes], { type: asset.mime_type || asset.web_mime_type || "image/jpeg" });
+      }
+      if (blob) {
+        const objectUrl = URL.createObjectURL(blob);
+        return {
+          url: objectUrl,
+          cleanup: () => URL.revokeObjectURL(objectUrl)
+        };
+      }
+    } catch {
+      // Fall through to direct download fallback when Storage blob access is unavailable.
+    }
+  }
+  return await mediaDownloadObjectUrl(source);
+}
+
+async function loadMediaRenderableImage(input = "", asset = {}) {
+  const candidates = Array.isArray(input)
+    ? [...new Set(input.map((value) => usableMediaAssetUrl(value)).filter(Boolean))]
+    : mediaRenderableSourceCandidates(asset, input);
+  const directStorageSource = await mediaBlobObjectUrlForSource("", asset);
+  if (directStorageSource?.url) {
+    try {
+      const image = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.addEventListener("load", () => resolve(img), { once: true });
+        img.addEventListener("error", () => reject(new Error("Originalbild konnte nicht aus dem Storage geladen werden.")), { once: true });
+        img.src = directStorageSource.url;
+      });
+      return {
+        image,
+        sourceUrl: asset.file_path_original_url || asset.file_path_web_url || asset.file_path_thumb_url || "",
+        cleanup: directStorageSource.cleanup || null
+      };
+    } catch {
+      directStorageSource.cleanup?.();
+    }
+  }
+  if (!candidates.length) throw new Error("Originalbild nicht gefunden.");
+  let lastError = null;
+  for (const source of candidates) {
+    const proxySource = mediaProxyUrl(source, asset);
+    const blobSource = /^https?:\/\//i.test(source)
+      ? await mediaBlobObjectUrlForSource(source, asset)
+      : null;
+    const sourceCandidates = [
+      blobSource?.url,
+      proxySource,
+      mediaSourceCanRenderSafely(source) ? source : ""
+    ].filter(Boolean);
+    if (!sourceCandidates.length) {
+      blobSource?.cleanup?.();
+      lastError = new Error("Remote-Bild konnte nicht canvas-sicher geladen werden.");
+      continue;
+    }
+    for (const crossOriginMode of [true, false]) {
+      for (const candidateSource of sourceCandidates) {
+        try {
+          const image = await new Promise((resolve, reject) => {
+            const img = new Image();
+            if (crossOriginMode && !candidateSource.startsWith("data:") && !candidateSource.startsWith("blob:")) img.crossOrigin = "anonymous";
+            img.addEventListener("load", () => resolve(img), { once: true });
+            img.addEventListener("error", () => reject(new Error("Originalbild konnte nicht geladen werden.")), { once: true });
+            img.src = candidateSource;
+          });
+          return { image, sourceUrl: source, cleanup: blobSource?.cleanup || null };
+        } catch (error) {
+          lastError = error;
+        }
+      }
+    }
+    blobSource?.cleanup?.();
+  }
+  throw lastError || new Error("Originalbild konnte nicht geladen werden.");
+}
+
+async function listAssetVariantRecords(assetId = "") {
+  if (!assetId) return [];
+  return (await list("media_variants").catch(() => [])).filter((variant) => variant.media_asset_id === assetId);
+}
+
+function mediaVariantTimestamp(record = {}) {
+  return Date.parse(record.updated_at || record.updatedAt || record.created_at || record.createdAt || 0) || 0;
+}
+
+function mediaVariantSortScore(record = {}, preferredId = "") {
+  return [
+    record.id === preferredId ? 1 : 0,
+    record.file_url || record.file_path ? 1 : 0,
+    record.derived_media_asset_id ? 1 : 0,
+    mediaVariantTimestamp(record)
+  ];
+}
+
+function compareMediaVariantRecords(left = {}, right = {}, preferredId = "") {
+  const leftScore = mediaVariantSortScore(left, preferredId);
+  const rightScore = mediaVariantSortScore(right, preferredId);
+  for (let index = 0; index < leftScore.length; index += 1) {
+    if (leftScore[index] === rightScore[index]) continue;
+    return rightScore[index] - leftScore[index];
+  }
+  return String(right.id || "").localeCompare(String(left.id || ""));
+}
+
+async function removeDuplicateVariantAsset(assetId = "") {
+  if (!assetId) return;
+  const derivedAsset = await getOne("media_assets", assetId).catch(() => null);
+  if (!derivedAsset) return;
+  await deleteStoredAsset(derivedAsset).catch((error) => {
+    console.warn("Varianten-Datei konnte nicht aus dem Storage geloescht werden:", assetId, error);
+  });
+  await remove("media_assets", assetId).catch((error) => {
+    console.warn("Varianten-Asset konnte nicht geloescht werden:", assetId, error);
+  });
+}
+
+async function normalizeAssetVariantRecords(asset = {}) {
+  if (!asset?.id) return [];
+  const existing = await listAssetVariantRecords(asset.id);
+  if (!existing.length) return [];
+  const grouped = new Map();
+  existing.forEach((record) => {
+    const key = String(record.variant_key || record.variant_type || "").trim().toLowerCase();
+    if (!key) return;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(record);
+  });
+  const normalized = [];
+  for (const key of MEDIA_VARIANT_ORDER) {
+    const records = grouped.get(String(key).toLowerCase()) || [];
+    if (!records.length) continue;
+    const canonicalId = `media-variant-${asset.id}-${key}`;
+    const preferred = [...records].sort((left, right) => compareMediaVariantRecords(left, right, canonicalId))[0];
+    const variant = mediaVariantDefinition(key, asset);
+    const canonicalRecord = await upsert("media_variants", {
+      ...preferred,
+      id: canonicalId,
+      media_asset_id: asset.id,
+      variant_key: key,
+      variant_type: key,
+      variant_label: preferred.variant_label || variant.label,
+      format: preferred.format || variant.aspect,
+      width: preferred.width || variant.width,
+      height: preferred.height || variant.height,
+      updated_at: new Date().toISOString()
+    });
+    normalized.push(canonicalRecord);
+    for (const record of records) {
+      if (record.id === canonicalId) continue;
+      if (record.derived_media_asset_id && record.derived_media_asset_id !== canonicalRecord.derived_media_asset_id) {
+        await removeDuplicateVariantAsset(record.derived_media_asset_id);
+      }
+      await remove("media_variants", record.id).catch((error) => {
+        console.warn("Doppelte Varianten-Referenz konnte nicht geloescht werden:", record.id, error);
+      });
+    }
+  }
+  return normalized;
+}
+
+function variantCropRecordByKey(records = [], key = "") {
+  const clean = String(key || "").trim().toLowerCase();
+  return records.find((record) => String(record.variant_key || record.variant_type || "").toLowerCase() === clean) || null;
+}
+
+async function ensureAssetVariantRecords(asset = {}) {
+  if (!asset?.id) return [];
+  const existing = await normalizeAssetVariantRecords(asset);
+  const byKey = new Map(existing.map((record) => [String(record.variant_key || record.variant_type || "").toLowerCase(), record]));
+  const now = new Date().toISOString();
+  for (const key of MEDIA_VARIANT_ORDER) {
+    if (byKey.has(key)) continue;
+    const variant = mediaVariantDefinition(key, asset);
+    const cropData = mediaDefaultCropData(asset, key);
+    const created = await upsert("media_variants", {
+      id: `media-variant-${asset.id}-${key}`,
+      media_asset_id: asset.id,
+      variant_key: key,
+      variant_type: key,
+      variant_label: variant.label,
+      format: variant.aspect,
+      width: variant.width,
+      height: variant.height,
+      file_format: "webp",
+      quality: variant.quality,
+      render_status: "pending",
+      crop_data: cropData,
+      crop_x: cropData.cropX,
+      crop_y: cropData.cropY,
+      crop_width: cropData.cropWidth,
+      crop_height: cropData.cropHeight,
+      zoom_factor: cropData.zoomFactor,
+      offset_x_ratio: cropData.offsetXRatio,
+      offset_y_ratio: cropData.offsetYRatio,
+      source_original_url: asset.file_path_original_url || asset.file_path_web_url || "",
+      created_at: now,
+      updated_at: now,
+      created_by: currentUser()?.email || currentUser()?.uid || "cms"
+    });
+    byKey.set(key, created);
+  }
+  return [...byKey.values()];
 }
 
 function mediaDescriptionSuggestion(asset = {}, values = {}) {
@@ -3153,6 +3927,9 @@ async function saveCentralMediaUpload(form, file, { result = null, auto = false 
       created_by: currentUser()?.email || currentUser()?.uid || "cms"
     })
   ]);
+  await ensureAssetVariantRecords(asset).catch((error) => {
+    console.warn("Variant records could not be initialized", error);
+  });
   if (result) {
     const note = uploaded?.fallback
       ? `Bild-ID ${escapeHtml(mediaCode)} gespeichert. Storage war nicht erreichbar, deshalb wurde eine optimierte Web-Version in der Datenbank abgelegt. Bildbearbeitung wird geoeffnet, KI-Beschreibung laeuft nach ...`
@@ -3165,7 +3942,7 @@ async function saveCentralMediaUpload(form, file, { result = null, auto = false 
   return asset;
 }
 
-async function saveGeneratedThumbMediaAsset(form, file, { dataUrl = "", prompt = "", result = null, variantNumber = 1, contextOverride = null, targetContextOverride = null } = {}) {
+async function saveGeneratedThumbMediaAsset(form, file, { dataUrl = "", prompt = "", result = null, variantNumber = 1, contextOverride = null, targetContextOverride = null, attachToTarget = true } = {}) {
   const context = contextOverride || imageGenerationContext(form);
   const targetContext = targetContextOverride || {
     targetCollection: form?.dataset.module || (form?.id === "topic-editor-form" ? "topics" : "editorialContent"),
@@ -3235,6 +4012,12 @@ async function saveGeneratedThumbMediaAsset(form, file, { dataUrl = "", prompt =
     source_note: `KI-Thumbnail-Variante ${variantNumber}`,
     generated_prompt: prompt,
     prompt,
+    ai_style_preset: context.stylePreset || "",
+    ai_style_text: context.style || "",
+    ai_motif_type: context.motifType || "",
+    ai_image_effect: context.imageEffect || "",
+    ai_text_area: context.textArea || "",
+    ai_created_at: now,
     alt_text: context.title || title,
     thumbnail_alt: context.title || title,
     thumbnail_description: description,
@@ -3294,13 +4077,18 @@ async function saveGeneratedThumbMediaAsset(form, file, { dataUrl = "", prompt =
         created_by: currentUser()?.email || currentUser()?.uid || "cms"
       })
     ]);
+    await ensureAssetVariantRecords(asset).catch((error) => {
+      console.warn("AI variant records could not be initialized", error);
+    });
   } catch (error) {
     throw new Error(`Mediathek-Varianten konnten nicht gespeichert werden: ${error.message || String(error)}`);
   }
-  try {
-    await attachMediaAssetToTarget(asset, targetContext);
-  } catch (error) {
-    throw new Error(`Thumb konnte nicht mit dem Beitrag verknuepft werden: ${error.message || String(error)}`);
+  if (attachToTarget) {
+    try {
+      await attachMediaAssetToTarget(asset, targetContext);
+    } catch (error) {
+      throw new Error(`Thumb konnte nicht mit dem Beitrag verknuepft werden: ${error.message || String(error)}`);
+    }
   }
   return asset;
 }
@@ -4062,6 +4850,104 @@ function normalizeAiSuggestion(value, button, sourceField) {
 
 function progressMarkup(label, width = 45) {
   return `<span class="cms-progress"><span>${escapeHtml(label)}</span><span class="progress progress--indeterminate"><i style="width:${width}%"></i></span></span>`;
+}
+
+const mediaAiProgressSteps = [
+  ["context", "Kontext"],
+  ["prompt", "Prompt"],
+  ["generate", "KI-Grafik"],
+  ["save", "Speichern"],
+  ["variants", "Varianten"],
+  ["link", "Verknuepfen"]
+];
+
+function mediaAiProgressMarkup(activeStep, label, width = 20, detail = "") {
+  const activeIndex = Math.max(0, mediaAiProgressSteps.findIndex(([key]) => key === activeStep));
+  const stepItems = mediaAiProgressSteps.map(([key, name], index) => {
+    const state = index < activeIndex ? "is-done" : index === activeIndex ? "is-active" : "";
+    return `<li class="${state}"><span>${index < activeIndex ? "ok" : index + 1}</span>${escapeHtml(name)}</li>`;
+  }).join("");
+  return `<div class="media-ai-progress">
+    ${progressMarkup(label, width)}
+    ${detail ? `<p>${escapeHtml(detail)}</p>` : ""}
+    <ol>${stepItems}</ol>
+  </div>`;
+}
+
+function setMediaAiProgress(form, activeStep, label, width = 20, detail = "") {
+  const result = form?.querySelector("#media-ai-result");
+  const pipeline = form?.querySelector("[data-media-ai-pipeline]");
+  form?.classList.add("is-generating");
+  form?.setAttribute("aria-busy", "true");
+  const markup = mediaAiProgressMarkup(activeStep, label, width, detail);
+  if (pipeline) {
+    pipeline.hidden = false;
+    pipeline.innerHTML = markup;
+    if (activeStep === "context") {
+      pipeline.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+  if (result) result.innerHTML = "";
+}
+
+function clearMediaAiProgress(form) {
+  form?.classList.remove("is-generating");
+  form?.removeAttribute("aria-busy");
+}
+
+function mediaAiReviewMarkup(asset = {}, mediaContext = {}, imageUrl = "") {
+  const title = asset.title || "KI-Grafik";
+  const previewUrl = imageUrl || mediaAssetUrl(asset);
+  return `<div class="media-ai-review" data-media-ai-review data-media-ai-asset-id="${escapeHtml(asset.id || "")}">
+    <div class="media-ai-review__image">${previewUrl ? `<img src="${escapeHtml(previewUrl)}" alt="${escapeHtml(title)}">` : `<span>Vorschau nicht verfuegbar</span>`}</div>
+    <div class="media-ai-review__body">
+      <p class="eyebrow">KI-Grafik erzeugt</p>
+      <h3>${escapeHtml(title)}</h3>
+      <p>Bitte pruefen: Erst nach der Freigabe wird das Bild ${mediaContext?.targetId ? "mit dem Beitrag verknuepft und im Bildeditor geoeffnet" : "im Bildeditor geoeffnet"}.</p>
+      <div class="actions">
+        <button class="button button--primary" type="button" data-media-ai-approve="${escapeHtml(asset.id || "")}">Freigeben und bearbeiten</button>
+        <button class="button button--secondary" type="button" data-media-ai-discard="${escapeHtml(asset.id || "")}">Verwerfen</button>
+        <button class="button button--secondary" type="submit">Neu erstellen</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function wireMediaAiReviewActions(form, asset, mediaContext = {}) {
+  const result = form?.querySelector("#media-ai-result");
+  result?.querySelector("[data-media-ai-approve]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = "Freigabe wird gespeichert ...";
+    try {
+      if (mediaContext.targetCollection && mediaContext.targetId) {
+        await attachMediaAssetToTarget(asset, mediaContext);
+      }
+      await upsert("media_assets", {
+        ...asset,
+        review_status: "approved",
+        ai_review_status: "approved",
+        updated_at: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      window.location.hash = mediaEditHash(asset.id, form);
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Freigabe konnte nicht gespeichert werden: ${escapeHtml(error.message || String(error))}</div>${mediaAiReviewMarkup(asset, mediaContext)}`;
+      wireMediaAiReviewActions(form, asset, mediaContext);
+    }
+  });
+  result?.querySelector("[data-media-ai-discard]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = "Wird verworfen ...";
+    try {
+      await deleteMediaAssetCascade(asset);
+      if (result) result.innerHTML = `<div class="alert alert--success">KI-Kandidat wurde verworfen. Du kannst direkt eine neue Grafik erzeugen.</div>`;
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">KI-Kandidat konnte nicht geloescht werden: ${escapeHtml(error.message || String(error))}</div>${mediaAiReviewMarkup(asset, mediaContext)}`;
+      wireMediaAiReviewActions(form, asset, mediaContext);
+    }
+  });
 }
 
 function setAudioGenerationProgress(scope, result, label, width = 45) {
@@ -6410,7 +7296,106 @@ function wireCentralMediaUpload() {
 }
 
 function wireMediaAiDraft() {
-  document.querySelector("[data-media-ai-form]")?.addEventListener("submit", async (event) => {
+  const aiForm = document.querySelector("[data-media-ai-form]");
+  if (!aiForm) return;
+  const referenceInput = aiForm.elements.reference_image;
+  const referenceDropzone = aiForm.querySelector("[data-media-ai-reference-dropzone]");
+  const areaReferencePreview = aiForm.querySelector("[data-media-ai-area-reference-preview]");
+  const areaSelect = aiForm.elements.target_area;
+  let activeAreaReference = null;
+  const renderAreaReferencePreview = (record = null, area = areaSelect?.value || "general") => {
+    activeAreaReference = record;
+    if (!areaReferencePreview) return;
+    if (record?.file_url) {
+      areaReferencePreview.innerHTML = `<img src="${escapeHtml(record.file_url)}" alt="Bereichsreferenz"><span>Gespeichert fuer ${escapeHtml(area)} <small>${escapeHtml(record.original_filename || "Referenzfoto")}</small></span>`;
+      return;
+    }
+    areaReferencePreview.innerHTML = `<span>Default fuer ${escapeHtml(area)}: kein Bereichs-Referenzfoto gespeichert.</span>`;
+  };
+  const refreshAreaReferencePreview = async () => {
+    const area = areaSelect?.value || "general";
+    renderAreaReferencePreview(await loadMediaAiAreaReference(area), area);
+  };
+  const storeAreaReferenceFile = async (file) => {
+    const area = areaSelect?.value || "general";
+    const result = aiForm.querySelector("#media-ai-result");
+    if (!file) return;
+    if (result) result.innerHTML = `<div class="alert">${progressMarkup(`Referenzfoto fuer ${area} wird gespeichert ...`, 45)}</div>`;
+    const record = await saveMediaAiAreaReference(area, file);
+    renderAreaReferencePreview(record, area);
+    if (result) result.innerHTML = `<div class="alert alert--success">Referenzfoto fuer ${escapeHtml(area)} gespeichert. Es wird fuer kommende KI-Bilder in diesem Bereich genutzt.</div>`;
+  };
+  aiForm.querySelectorAll("[data-media-ai-template]").forEach((button) => {
+    button.addEventListener("click", () => {
+      aiForm.querySelectorAll("[data-media-ai-template]").forEach((item) => item.classList.remove("is-active"));
+      button.classList.add("is-active");
+      if (aiForm.elements.style_preset) aiForm.elements.style_preset.value = button.dataset.stylePreset || "free_style";
+      if (aiForm.elements.motif_type) aiForm.elements.motif_type.value = button.dataset.motifType || "symbol";
+      if (aiForm.elements.image_effect) aiForm.elements.image_effect.value = button.dataset.imageEffect || "premium";
+      if (aiForm.elements.color_world) aiForm.elements.color_world.value = button.dataset.colorWorld || "";
+      if (aiForm.elements.style) aiForm.elements.style.value = button.dataset.style || "";
+      const result = aiForm.querySelector("#media-ai-result");
+      if (result) result.innerHTML = `<div class="alert">Stilvorlage uebernommen. Du kannst Prompt, Stil oder ein echtes Referenzbild jetzt noch verfeinern.</div>`;
+    });
+  });
+  const refreshReferencePreview = async () => {
+    const preview = aiForm.querySelector("[data-media-ai-reference-preview]");
+    const file = referenceInput?.files?.[0];
+    if (!preview) return;
+    if (!file) {
+      preview.innerHTML = `<span>Noch kein Referenzbild gewaehlt.</span>`;
+      return;
+    }
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const mode = aiForm.elements.reference_mode?.value || "style";
+      preview.innerHTML = `<img src="${escapeHtml(dataUrl)}" alt="Referenzfoto"><span>${escapeHtml(file.name)} <small>${mode === "area" ? "fuer diesen Bereich merken" : "nur fuer diese Grafik"} · ${escapeHtml(mediaSizeLabel(file.size || 0))}</small></span>`;
+      if (mode === "area") await storeAreaReferenceFile(file);
+    } catch (error) {
+      preview.innerHTML = `<span>Referenzbild konnte nicht gelesen werden.</span>`;
+    }
+  };
+  referenceInput?.addEventListener("change", refreshReferencePreview);
+  aiForm.querySelectorAll('input[name="reference_mode"]').forEach((input) => input.addEventListener("change", refreshReferencePreview));
+  referenceDropzone?.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    referenceDropzone.classList.add("is-drag-over");
+  });
+  referenceDropzone?.addEventListener("dragleave", (event) => {
+    if (event.relatedTarget && referenceDropzone.contains(event.relatedTarget)) return;
+    referenceDropzone.classList.remove("is-drag-over");
+  });
+  referenceDropzone?.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    referenceDropzone.classList.remove("is-drag-over");
+    const file = Array.from(event.dataTransfer?.files || []).find((item) => /^image\/(jpeg|png|webp)$/i.test(item.type || ""));
+    const preview = aiForm.querySelector("[data-media-ai-reference-preview]");
+    if (!file || !referenceInput) {
+      if (preview) preview.innerHTML = `<span>Bitte ein JPG-, PNG- oder WebP-Bild ablegen.</span>`;
+      return;
+    }
+    filesToInput(referenceInput, [file]);
+    await refreshReferencePreview();
+  });
+  areaSelect?.addEventListener("change", () => {
+    refreshAreaReferencePreview().catch((error) => {
+      if (areaReferencePreview) areaReferencePreview.innerHTML = `<span>Referenzfoto konnte nicht geladen werden.</span>`;
+      console.warn("Area reference load failed", error);
+    });
+  });
+  aiForm.querySelector("[data-media-ai-area-reference-reset]")?.addEventListener("click", async () => {
+    const area = areaSelect?.value || "general";
+    const result = aiForm.querySelector("#media-ai-result");
+    try {
+      await resetMediaAiAreaReference(area);
+      renderAreaReferencePreview(null, area);
+      if (result) result.innerHTML = `<div class="alert alert--success">Bereichsreferenz fuer ${escapeHtml(area)} zurueckgesetzt. Es gilt wieder der Default.</div>`;
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Bereichsreferenz konnte nicht zurueckgesetzt werden: ${escapeHtml(error.message || String(error))}</div>`;
+    }
+  });
+  refreshAreaReferencePreview().catch(() => renderAreaReferencePreview(null, areaSelect?.value || "general"));
+  aiForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     const values = formObject(form);
@@ -6424,8 +7409,21 @@ function wireMediaAiDraft() {
     }
     let step = "Vorbereitung";
     try {
+      setMediaAiProgress(form, "context", "KI-Grafik wird vorbereitet ...", 12, "Formularwerte und Zielkontext werden gelesen.");
       step = "Zieldatensatz lesen";
       const target = mediaContext.targetCollection && mediaContext.targetId ? await getOne(mediaContext.targetCollection, mediaContext.targetId) : null;
+      setMediaAiProgress(form, "context", target ? "Beitragskontext wurde geladen ..." : "Freie KI-Grafik wird vorbereitet ...", 20, target ? "Der verknuepfte CMS-Datensatz ist gefunden." : "Es wird ohne Beitragsverknuepfung gearbeitet.");
+      step = "Referenzbild vorbereiten";
+      const referenceMode = values.reference_mode || "style";
+      const referenceFile = form.elements.reference_image?.files?.[0] || null;
+      const referenceImage = referenceFile && referenceMode !== "area"
+        ? await mediaAiReferenceImageData(referenceFile)
+        : null;
+      if (referenceImage) {
+        setMediaAiProgress(form, "context", "Referenzbild wurde vorbereitet ...", 24, `${referenceImage.fileName} (${referenceImage.width} x ${referenceImage.height}px) dient nur als Stilreferenz.`);
+      } else if (activeAreaReference?.file_url) {
+        setMediaAiProgress(form, "context", "Bereichsreferenz wird verwendet ...", 24, `${activeAreaReference.original_filename || "Referenzfoto"} dient als thematische Vorlage fuer ${values.target_area || "general"}.`);
+      }
       step = "Kontext vorbereiten";
       const targetContext = target
         ? imageGenerationContextFromRecord(target, mediaContext.targetCollection)
@@ -6438,12 +7436,19 @@ function wireMediaAiDraft() {
             module: "media_assets"
           };
       const variantNumber = Math.max(1, (Array.isArray(target?.thumbnail_variant_asset_ids) ? target.thumbnail_variant_asset_ids.length : 0) + 1);
+      setMediaAiProgress(form, "prompt", "Prompt und Stilwelt werden aufgebaut ...", 30, `${values.style_preset || "free_style"} / ${values.motif_type || "symbol"}`);
       const prompt = creativeThumbPrompt({
         ...targetContext,
         title: values.title || targetContext.title,
-        bodyText: [targetContext.bodyText, values.source_text].filter(Boolean).join("\n\n")
+        bodyText: [targetContext.bodyText, values.source_text].filter(Boolean).join("\n\n"),
+        stylePreset: values.style_preset || "",
+        motifType: values.motif_type || "",
+        imageEffect: values.image_effect || "",
+        textArea: values.text_area || "",
+        textOverlay: values.text_overlay || "",
+        targetArea: values.target_area || ""
       }, values.generated_prompt || "", variantNumber);
-      if (result) result.innerHTML = `<div class="alert">${progressMarkup("KI erzeugt ein redaktionelles Thumbnail mit Beitragsbezug ...", 35)}</div>`;
+      setMediaAiProgress(form, "generate", mediaContext.targetId ? "KI erzeugt den Thumb zum Beitrag ..." : "KI erzeugt die Grafik ...", 42, "Das kann je nach Modell und Bildgroesse etwas dauern.");
       step = "KI-Thumb erzeugen";
       const generated = await generateCmsThumbCollage({
         entityType: mediaContext.targetCollection || "media_assets",
@@ -6452,25 +7457,55 @@ function wireMediaAiDraft() {
         context: {
           ...targetContext,
           sourceText: values.source_text || "",
+          stylePreset: values.style_preset || "",
           style: values.style || "",
           colorWorld: values.color_world || "",
+          motifType: values.motif_type || "",
+          imageEffect: values.image_effect || "",
+          textArea: values.text_area || "",
+          textOverlay: values.text_overlay || "",
+          targetArea: values.target_area || "",
+          areaReferenceImageFileName: activeAreaReference?.original_filename || "",
+          referenceImageFileName: referenceImage?.fileName || "",
           variantNumber
         },
+        referenceImageDataUrl: referenceImage?.dataUrl || activeAreaReference?.file_url || "",
+        referenceImageName: referenceImage?.fileName || activeAreaReference?.original_filename || "",
+        referenceImageRole: referenceImage ? "style" : activeAreaReference?.file_url ? "area_theme" : "",
         size: "1536x1024",
         quality: "medium"
       });
+      setMediaAiProgress(form, "save", "KI-Bild wurde erzeugt und wird vorbereitet ...", 68, generated.fileName || "Originaldatei wird normalisiert.");
       step = "Bild normalisieren";
-      const normalized = await generatedThumbToJpeg(generated.imageDataUrl, generated.fileName || `${mediaContext.targetId || values.title || "ki-thumb"}-v${variantNumber}.png`, mediaVariantCanvasSize(values.aspect_ratio || "16x9"));
-      if (result) result.innerHTML = `<div class="alert">${progressMarkup("KI-Bild wurde erzeugt und wird gespeichert ...", 72)}</div>`;
+      const normalized = await generatedImageToOriginalFile(generated.imageDataUrl, generated.fileName || `${mediaContext.targetId || values.title || "ki-original"}-v${variantNumber}.webp`);
+      setMediaAiProgress(form, "save", "KI-Bild wird in der Mediathek gespeichert ...", 76, "Original, Metadaten und Vorschau werden angelegt.");
       step = "Mediathek speichern";
       const asset = await saveGeneratedThumbMediaAsset(form, normalized.file, {
         dataUrl: normalized.dataUrl,
         prompt: generated.prompt || prompt,
         result,
         variantNumber,
-        contextOverride: { ...targetContext, title: values.title || targetContext.title },
-        targetContextOverride: mediaContext.targetCollection && mediaContext.targetId ? mediaContext : null
+        contextOverride: {
+          ...targetContext,
+          title: values.title || targetContext.title,
+          stylePreset: values.style_preset || "",
+          style: values.style || "",
+          motifType: values.motif_type || "",
+          imageEffect: values.image_effect || "",
+          textArea: values.text_area || "",
+          textOverlay: values.text_overlay || "",
+          targetArea: values.target_area || ""
+        },
+        targetContextOverride: mediaContext.targetCollection && mediaContext.targetId ? mediaContext : null,
+        attachToTarget: false
       });
+      setMediaAiProgress(form, "variants", "Webvarianten werden erzeugt ...", 84, "Die Mediathek rendert die passenden Ausspielgroessen.");
+      step = "Webvarianten erzeugen";
+      await generateAssetVariants(asset, {
+        mode: "all",
+        result
+      });
+      setMediaAiProgress(form, "link", mediaContext.targetId ? "Bild wird verknuepft und protokolliert ..." : "KI-Erzeugung wird protokolliert ...", 94, mediaContext.targetId ? "Der Beitrag bekommt die neue Grafik als Bild." : "Das Asset bleibt als Hauptbild in der Mediathek.");
       step = "KI-Generierung protokollieren";
       await upsert("ai_image_generations", {
         id: `ai-image-generation-${crypto.randomUUID()}`,
@@ -6481,20 +7516,45 @@ function wireMediaAiDraft() {
         negative_prompt: "",
         model_name: "OpenAI Image",
         generation_status: "generated",
-        review_status: mediaContext.targetId ? "attached" : "draft",
+        review_status: "pending_review",
+        style_preset: values.style_preset || "",
+        reference_image_name: referenceImage?.fileName || "",
+        reference_image_used: Boolean(referenceImage),
+        area_reference_image_name: activeAreaReference?.original_filename || "",
+        area_reference_image_used: Boolean(!referenceImage && activeAreaReference?.file_url),
+        motif_type: values.motif_type || "",
+        image_effect: values.image_effect || "",
+        text_area: values.text_area || "",
+        text_overlay: values.text_overlay || "",
+        target_area: values.target_area || "",
         created_by: currentUser()?.email || currentUser()?.uid || "cms",
         created_at: new Date().toISOString()
       });
-      if (result) result.innerHTML = `<div class="alert alert--success">KI-Thumb wurde erzeugt, in der Mediathek gespeichert${mediaContext.targetId ? " und dem Beitrag zugeordnet" : ""}.</div>`;
-      if (mediaContext.returnTo) {
-        window.setTimeout(() => { window.location.hash = mediaContext.returnTo.replace(/^#\/?/, "#/"); }, 900);
-      } else {
-        window.setTimeout(() => { window.location.hash = mediaEditHash(asset.id, form); }, 900);
+      const reviewAsset = await upsert("media_assets", {
+        ...asset,
+        review_status: "pending_review",
+        ai_review_status: "pending_review",
+        updated_at: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      const pipeline = form.querySelector("[data-media-ai-pipeline]");
+      if (pipeline) {
+        pipeline.innerHTML = `<div class="media-ai-progress media-ai-progress--done">${progressMarkup("KI-Bild erzeugt. Bitte Ergebnis pruefen ...", 100)}<p>Die Grafik wartet jetzt auf Freigabe oder Verwerfen.</p></div>`;
+      }
+      if (result) {
+        result.innerHTML = `<div class="alert alert--success">KI-Bild wurde erzeugt. Bitte vor dem Bildeditor freigeben oder verwerfen.</div>${mediaAiReviewMarkup(reviewAsset, mediaContext, normalized.dataUrl)}`;
+        wireMediaAiReviewActions(form, reviewAsset, mediaContext);
       }
     } catch (error) {
       const code = error?.code ? ` (${error.code})` : "";
+      const pipeline = form.querySelector("[data-media-ai-pipeline]");
+      if (pipeline) {
+        pipeline.hidden = false;
+        pipeline.innerHTML = `<div class="media-ai-progress media-ai-progress--error"><strong>Pipeline gestoppt</strong><p>${escapeHtml(step)}${escapeHtml(code)} - ${escapeHtml(error.message || String(error))}</p></div>`;
+      }
       if (result) result.innerHTML = `<div class="alert alert--error">KI-Thumb konnte nicht erstellt werden: ${escapeHtml(step)}${escapeHtml(code)} - ${escapeHtml(error.message || String(error))}</div>`;
     } finally {
+      clearMediaAiProgress(form);
       if (submitButton) {
         submitButton.disabled = false;
         submitButton.textContent = originalLabel;
@@ -6670,25 +7730,6 @@ function wireMediaEdit() {
         updated_at: now
       };
       await upsert("media_assets", update);
-      if (values.createVariant === "1") {
-        const nextVersion = `v${Date.now().toString().slice(-6)}`;
-        const filename = buildMediaFileName({ title: update.title, mediaType: update.media_type || "upload", format: update.aspect_ratio || "16x9", version: "v1", extension: String(update.filename_web || "webp").split(".").pop() });
-        await upsert("media_variants", {
-          id: `media-variant-${crypto.randomUUID()}`,
-          media_asset_id: asset.id,
-          variant_type: "edited",
-          format: asset.aspect_ratio || "16x9",
-          file_path: asset.file_path_web || asset.file_path_original || "",
-          file_url: asset.file_path_web_url || asset.file_path_original_url || "",
-          filename,
-          crop_data: { x: update.crop_x, y: update.crop_y, scale: update.crop_scale, brightness: update.brightness, contrast: update.contrast, saturation: update.saturation, sharpness: update.sharpness },
-          focal_point_x: update.focal_point_x,
-          focal_point_y: update.focal_point_y,
-          version: nextVersion,
-          created_at: now,
-          created_by: currentUser()?.email || currentUser()?.uid || "cms"
-        });
-      }
       const presetVariants = mediaPresetVariants(update, values);
       await Promise.all(presetVariants.map((variant) => upsert("media_variants", variant)));
       if (mediaContext.targetCollection && mediaContext.targetId) {
@@ -6730,7 +7771,7 @@ function mediaPresetVariants(asset = {}, values = {}) {
   };
   const presets = [
     values.variant_news ? { type: "news", label: "News / Artikel", format: "16x9", usage_type: "news_header" } : null,
-    values.variant_landscape ? { type: "landscape", label: "Landscape", format: "16x9", usage_type: "landscape" } : null,
+    values.variant_landscape ? { type: "landscape", label: "Thumb", format: "3x2", usage_type: "thumbnail" } : null,
     values.variant_portrait ? { type: "portrait", label: "Hochkant", format: "9x16", usage_type: "portrait" } : null,
     values.variant_board ? { type: "board", label: "Vorstand / Person", format: "1x1", usage_type: "profile" } : null,
     values.variant_logo ? { type: "logo", label: "Logo / Mitglieder", format: "logo", usage_type: "logo_card" } : null
@@ -6755,6 +7796,214 @@ function mediaPresetVariants(asset = {}, values = {}) {
   }));
 }
 
+async function renderVariantFromOriginalAsset(asset = {}, variantKey = "", cropData = null, options = {}) {
+  if (!asset?.id) throw new Error("Bilddatensatz fehlt.");
+  const variant = mediaVariantDefinition(variantKey, asset);
+  const requestedSourceUrl = options.sourceUrl || asset.file_path_original_url || asset.file_path_web_url || asset.file_path_thumb_url || mediaAssetUrl(asset);
+  const candidateSources = [
+    ...(Array.isArray(options.sourceCandidates) ? options.sourceCandidates : []),
+    requestedSourceUrl
+  ];
+  const sharedImage = options.originalImage ? {
+    image: options.originalImage,
+    sourceUrl: options.originalSourceUrl || requestedSourceUrl,
+    cleanup: null
+  } : await loadMediaRenderableImage(candidateSources, asset);
+  const { image: originalImage, sourceUrl, cleanup } = sharedImage;
+  let file = null;
+  let upload = null;
+  let fallbackReason = "";
+  let effectiveCrop = cropData || mediaDefaultCropData({
+    ...asset,
+    image_width: originalImage.naturalWidth || asset.image_width,
+    image_height: originalImage.naturalHeight || asset.image_height
+  }, variant.key);
+  const filename = mediaVariantOutputFileName(asset, variant.key);
+  const path = mediaVariantOutputPath(asset, variant.key);
+  try {
+    const metrics = mediaRenderMetrics({
+      sourceWidth: originalImage.naturalWidth || asset.image_width || variant.width,
+      sourceHeight: originalImage.naturalHeight || asset.image_height || variant.height,
+      viewportWidth: variant.width,
+      viewportHeight: variant.height,
+      zoomFactor: effectiveCrop.zoomFactor || 1,
+      offsetXRatio: effectiveCrop.offsetXRatio || 0,
+      offsetYRatio: effectiveCrop.offsetYRatio || 0
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = variant.width;
+    canvas.height = variant.height;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    const brightness = 1 + (Number(effectiveCrop.brightness || 0) / 100);
+    const contrast = 1 + (Number(effectiveCrop.contrast || 0) / 100);
+    const saturation = 1 + (Number(effectiveCrop.saturation || 0) / 100);
+    context.filter = `brightness(${brightness}) contrast(${contrast}) saturate(${saturation})${effectiveCrop.black_white ? " grayscale(1)" : ""}`;
+    context.drawImage(originalImage, metrics.drawX, metrics.drawY, metrics.drawWidth, metrics.drawHeight);
+    context.filter = "none";
+    try {
+      file = await canvasToFile(canvas, filename, variant.format || "image/webp", variant.quality || .86);
+      upload = await uploadMediaAsset(file, path);
+    } catch (error) {
+      fallbackReason = error?.message || "WebP-Render fehlgeschlagen.";
+      throw new Error(fallbackReason);
+    }
+  } finally {
+    cleanup?.();
+  }
+  const now = new Date().toISOString();
+  const existingRecord = options.existingRecord || null;
+  const cropState = {
+    ...effectiveCrop,
+    variantKey: variant.key,
+    targetWidth: variant.width,
+    targetHeight: variant.height,
+    aspect: variant.aspect
+  };
+  const derivedAssetId = existingRecord?.derived_media_asset_id || `media-asset-${crypto.randomUUID()}`;
+  const derivedAsset = await upsert("media_assets", {
+    ...asset,
+    id: derivedAssetId,
+    parent_media_asset_id: asset.id,
+    variant_key: variant.key,
+    usage_preset: variant.key,
+    usage_preset_ratio: variant.aspect,
+    title: `${asset.title || asset.filename_original || "Bild"} ${variant.label}`,
+    slug: normalizeMediaSlug(`${asset.title || asset.filename_original || "bild"}-${variant.key}-${asset.media_code || ""}`),
+    media_type: asset.media_type || "upload",
+    filename_original: filename,
+    filename_web: filename,
+    filename_thumb: filename,
+    file_path_original: path,
+    file_path_web: path,
+    file_path_thumb: path,
+    file_path_original_url: upload?.url || "",
+    file_path_web_url: upload?.url || "",
+    file_path_thumb_url: upload?.url || "",
+    storage_path_original: upload?.storagePath || path,
+    storage_path_web: upload?.storagePath || path,
+    storage_path_thumb: upload?.storagePath || path,
+    mime_type: file?.type || "image/webp",
+    web_mime_type: file?.type || "image/webp",
+    thumb_mime_type: file?.type || "image/webp",
+    aspect_ratio: variant.aspect,
+    image_width: variant.width,
+    image_height: variant.height,
+    web_image_width: variant.width,
+    web_image_height: variant.height,
+    thumb_image_width: Math.min(variant.width, 640),
+    thumb_image_height: Math.min(variant.height, 640),
+    image_format: "WEBP",
+    web_image_format: "WEBP",
+    thumb_image_format: "WEBP",
+    source_type: "edited",
+    source_note: `Originalbasierte Webvariante ${variant.label}`,
+    alt_text: options.altText || asset.alt_text || asset.title || "",
+    description: options.description || asset.description || "",
+    crop_data: cropState,
+    crop_x: cropState.cropX,
+    crop_y: cropState.cropY,
+    crop_scale: cropState.zoomFactor,
+    brightness: cropState.brightness,
+    contrast: cropState.contrast,
+    saturation: cropState.saturation,
+    sharpness: cropState.sharpness,
+    black_white: cropState.black_white,
+    file_size: file?.size || 0,
+    file_size_label: mediaSizeLabel(file?.size || 0),
+    created_by: currentUser()?.email || currentUser()?.uid || "cms",
+    created_at: existingRecord?.derived_media_asset_id ? asset.created_at || now : now,
+    updated_at: now,
+    status: "active"
+  });
+  const variantRecord = await upsert("media_variants", {
+    id: existingRecord?.id || `media-variant-${asset.id}-${variant.key}`,
+    media_asset_id: asset.id,
+    derived_media_asset_id: derivedAsset.id,
+    variant_key: variant.key,
+    variant_type: variant.key,
+    variant_label: variant.label,
+    format: variant.aspect,
+    width: variant.width,
+    height: variant.height,
+    file_path: path,
+    file_url: upload?.url || "",
+    filename,
+    file_format: "webp",
+    codec: file?.type || "image/webp",
+    quality: variant.quality,
+    crop_data: cropState,
+    crop_x: cropState.cropX,
+    crop_y: cropState.cropY,
+    crop_width: cropState.cropWidth,
+    crop_height: cropState.cropHeight,
+    zoom_factor: cropState.zoomFactor,
+    offset_x_ratio: cropState.offsetXRatio,
+    offset_y_ratio: cropState.offsetYRatio,
+    source_original_url: sourceUrl,
+    render_status: "rendered",
+    error_text: fallbackReason,
+    is_manual_crop: Boolean(cropState.isManual),
+    version: existingRecord?.version || "v1",
+    created_at: existingRecord?.created_at || now,
+    updated_at: now,
+    created_by: currentUser()?.email || currentUser()?.uid || "cms"
+  });
+  return { variant, cropState, derivedAsset, variantRecord };
+}
+
+async function generateAssetVariants(asset = {}, { mode = "missing", activeVariantKey = "", cropData = null, result = null, targetContext = null, sourceCandidates = [] } = {}) {
+  const variantKeys = activeVariantKey ? [activeVariantKey] : MEDIA_VARIANT_ORDER;
+  const existing = await ensureAssetVariantRecords(asset);
+  const existingByKey = new Map(existing.map((record) => [String(record.variant_key || record.variant_type || "").toLowerCase(), record]));
+  const rendered = [];
+  const errors = [];
+  const plannedVariants = variantKeys
+    .map((key) => ({ key, record: existingByKey.get(String(key).toLowerCase()) || null }))
+    .filter(({ record }) => !(mode === "missing" && (record?.file_url || record?.derived_media_asset_id)));
+  if (!plannedVariants.length) return { rendered, errors };
+
+  const firstSourceUrl = asset.file_path_original_url || asset.file_path_web_url || asset.file_path_thumb_url || mediaAssetUrl(asset);
+  const sharedSource = await loadMediaRenderableImage([...(Array.isArray(sourceCandidates) ? sourceCandidates : []), firstSourceUrl], asset);
+  try {
+    for (const [index, item] of plannedVariants.entries()) {
+      const { key, record } = item;
+      if (result) {
+        const variantMeta = mediaVariantDefinition(key, asset);
+        result.innerHTML = `<div class="alert">${progressMarkup(`Variante ${index + 1} von ${plannedVariants.length}: ${variantMeta.label} (${variantMeta.width} x ${variantMeta.height}) wird gerendert ...`, 35 + Math.round(((index + 1) / Math.max(1, plannedVariants.length)) * 45))}</div>`;
+      }
+      try {
+        const renderResult = await renderVariantFromOriginalAsset(asset, key, cropData && key === activeVariantKey ? cropData : (record?.crop_data || mediaDefaultCropData(asset, key)), {
+          sourceCandidates,
+          originalImage: sharedSource.image,
+          originalSourceUrl: sharedSource.sourceUrl,
+          existingRecord: record
+        });
+        rendered.push(renderResult);
+        if (renderResult?.variantRecord) existingByKey.set(String(key).toLowerCase(), renderResult.variantRecord);
+      } catch (error) {
+        errors.push(`${key}: ${error.message || String(error)}`);
+        if (record?.id) {
+          await upsert("media_variants", {
+            ...record,
+            render_status: "error",
+            error_text: error.message || String(error),
+            updated_at: new Date().toISOString()
+          });
+        }
+      }
+    }
+  } finally {
+    sharedSource.cleanup?.();
+  }
+  if (targetContext?.targetCollection && targetContext?.targetId && activeVariantKey) {
+    const activeRender = rendered.find((entry) => entry.variant.key === activeVariantKey);
+    if (activeRender) await attachMediaAssetToTarget(activeRender.derivedAsset, targetContext);
+  }
+  return { rendered, errors };
+}
+
 function wireMediaCropMask() {
   const stage = document.querySelector("[data-media-crop-stage]");
   const image = document.querySelector("[data-media-crop-image]");
@@ -6764,10 +8013,14 @@ function wireMediaCropMask() {
   const yInput = document.querySelector("[data-media-crop-y]");
   const reset = document.querySelector("[data-media-crop-reset]");
   const apply = document.querySelector("[data-media-crop-apply]");
-  const fitButton = document.querySelector("[data-media-crop-fit]");
   const coverButton = document.querySelector("[data-media-crop-cover]");
+  const centerButton = document.querySelector("[data-media-crop-center]");
+  const renderVariantsButton = document.querySelector("[data-media-render-variants]");
   const zoomLabel = document.querySelector("[data-media-zoom-label]");
+  const targetSizeLabel = document.querySelector("[data-media-target-size]");
+  const sourceSizeLabel = document.querySelector("[data-media-source-size]");
   const form = document.querySelector("[data-media-edit-form]");
+  const variantSelect = form?.querySelector("[data-media-active-variant]");
   if (!stage || !image || !scaleInput || !scaleValue || !xInput || !yInput || stage.dataset.mediaCropWired === "1") return;
   stage.dataset.mediaCropWired = "1";
   const variantButtons = Array.from(document.querySelectorAll("[data-media-variant-button]"));
@@ -6779,12 +8032,16 @@ function wireMediaCropMask() {
     y: 0,
     scale: 1,
     format: form?.dataset.activeVariantFormat || form?.dataset.mediaAspect || "16x9",
+    activeVariantKey: variantSelect?.value || form?.dataset.activeVariantKey || "news_desktop",
     dragging: false,
     startX: 0,
     startY: 0,
     originX: 0,
     originY: 0
   };
+  let variantRecords = [];
+  let assetRecord = null;
+  let imageNatural = { width: 0, height: 0 };
   const render = () => {
     state.scale = Math.max(minCropScale, Number(state.scale || 1));
     image.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
@@ -6801,6 +8058,44 @@ function wireMediaCropMask() {
     yInput.value = String(Math.round(state.y));
     if (zoomLabel) zoomLabel.textContent = `${Math.round(state.scale * 100)}%`;
   };
+  const stageSize = () => {
+    const rect = stage.getBoundingClientRect();
+    return { width: Math.max(1, rect.width), height: Math.max(1, rect.height) };
+  };
+  const currentAdjustments = () => ({
+    brightness: Number(form?.elements.brightness?.value || 0),
+    contrast: Number(form?.elements.contrast?.value || 0),
+    saturation: Number(form?.elements.saturation?.value || 0),
+    sharpness: Number(form?.elements.sharpness?.value || 0),
+    black_white: Boolean(form?.elements.black_white?.checked)
+  });
+  const currentVariant = () => mediaVariantDefinition(state.activeVariantKey, assetRecord || {});
+  const editorSourceCandidates = () => [
+    image?.dataset.mediaPreviewSrc,
+    image?.dataset.mediaEditorSrc,
+    form?.dataset.mediaPreviewSrc,
+    form?.dataset.mediaEditorSrc,
+    image?.currentSrc,
+    image?.src
+  ].filter(Boolean);
+  const syncStagePreviewSize = () => {
+    const variant = currentVariant();
+    const preview = mediaStagePreviewSize(variant.width, variant.height);
+    stage.style.setProperty("--media-stage-preview-width", `${preview.width}px`);
+    if (targetSizeLabel) targetSizeLabel.textContent = `Zielrahmen: ${variant.width} x ${variant.height}px`;
+    const sourceWidth = imageNatural.width || image.naturalWidth || assetRecord?.image_width || 0;
+    const sourceHeight = imageNatural.height || image.naturalHeight || assetRecord?.image_height || 0;
+    if (sourceSizeLabel) sourceSizeLabel.textContent = sourceWidth && sourceHeight ? `Original: ${sourceWidth} x ${sourceHeight}px` : "Original: wird geladen";
+  };
+  const syncVariantAspect = () => {
+    const variant = currentVariant();
+    state.format = variant.aspect;
+    form.dataset.activeVariantFormat = variant.aspect;
+    form.dataset.activeVariantKey = variant.key;
+    stage.style.setProperty("--media-crop-aspect", mediaVariantAspectCss(variant.key, assetRecord || {}));
+    syncStagePreviewSize();
+    if (variantSelect) variantSelect.value = variant.key;
+  };
   const applyCrop = () => {
     xInput.value = String(Math.round(state.x));
     yInput.value = String(Math.round(state.y));
@@ -6812,13 +8107,6 @@ function wireMediaCropMask() {
     if (form) form.dataset.mediaCropDirty = "1";
     apply?.classList.remove("is-applied");
     if (apply) apply.textContent = "OK uebernehmen";
-  };
-  const activeFormat = () => {
-    return form?.dataset.activeVariantFormat || state.format || "16x9";
-  };
-  const stageSize = () => {
-    const rect = stage.getBoundingClientRect();
-    return { width: Math.max(1, rect.width), height: Math.max(1, rect.height) };
   };
   const imageAspect = () => Math.max(1, image.naturalWidth || 1) / Math.max(1, image.naturalHeight || 1);
   const stageAspect = () => {
@@ -6833,13 +8121,6 @@ function wireMediaCropMask() {
       ? currentImageAspect / currentStageAspect
       : currentStageAspect / currentImageAspect;
   };
-  const fitOriginal = ({ dirty = true } = {}) => {
-    state.x = 0;
-    state.y = 0;
-    state.scale = 1;
-    if (dirty) markDirty();
-    render();
-  };
   const fillCropFrame = ({ dirty = true } = {}) => {
     state.x = 0;
     state.y = 0;
@@ -6847,166 +8128,141 @@ function wireMediaCropMask() {
     if (dirty) markDirty();
     render();
   };
+  const centerCrop = ({ dirty = true } = {}) => {
+    state.x = 0;
+    state.y = 0;
+    if (dirty) markDirty();
+    render();
+  };
+  const currentCropData = () => {
+    const variant = currentVariant();
+    const size = stageSize();
+    return mediaCropDataFromEditorState({
+      variant,
+      stageWidth: size.width,
+      stageHeight: size.height,
+      sourceWidth: imageNatural.width || image.naturalWidth || assetRecord?.image_width || variant.width,
+      sourceHeight: imageNatural.height || image.naturalHeight || assetRecord?.image_height || variant.height,
+      zoomFactor: state.scale,
+      offsetX: state.x,
+      offsetY: state.y,
+      adjustments: currentAdjustments()
+    });
+  };
+  const applyCropDataToStage = (cropData = null) => {
+    const variant = currentVariant();
+    const effective = cropData || mediaDefaultCropData({
+      ...assetRecord,
+      image_width: imageNatural.width || assetRecord?.image_width || variant.width,
+      image_height: imageNatural.height || assetRecord?.image_height || variant.height
+    }, variant.key);
+    const size = stageSize();
+    state.scale = Number(effective.zoomFactor || 1);
+    state.x = Number(effective.offsetXRatio || 0) * size.width;
+    state.y = Number(effective.offsetYRatio || 0) * size.height;
+    if (form?.elements.brightness) form.elements.brightness.value = effective.brightness ?? neutralValues.brightness;
+    if (form?.elements.contrast) form.elements.contrast.value = effective.contrast ?? neutralValues.contrast;
+    if (form?.elements.saturation) form.elements.saturation.value = effective.saturation ?? neutralValues.saturation;
+    if (form?.elements.sharpness) form.elements.sharpness.value = effective.sharpness ?? neutralValues.sharpness;
+    if (form?.elements.black_white) form.elements.black_white.checked = Boolean(effective.black_white);
+    render();
+    applyCrop();
+  };
   const setAspect = (control) => {
     if (!control) return;
-    state.format = control.dataset.mediaVariantFormat || "16x9";
-    form.dataset.activeVariantFormat = state.format;
-    stage.style.setProperty("--media-crop-aspect", control.dataset.mediaVariantAspect || "16 / 9");
+    const format = control.dataset.mediaVariantFormat || "16x9";
+    const quickMap = { "16x9": "news_desktop", "3x2": "thumbnail", "9x16": "news_mobile", "1x1": "square", logo: "sponsor_logo" };
+    state.activeVariantKey = quickMap[format] || state.activeVariantKey;
+    syncVariantAspect();
     variantButtons.forEach((button) => {
       const active = button === control;
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-pressed", active ? "true" : "false");
     });
-    fitOriginal();
+    fillCropFrame({ dirty: false });
+    applyCrop();
   };
-  const loadVariantPreview = (control) => {
-    if (!control?.dataset.mediaVariantSrc) return;
-    image.src = control.dataset.mediaVariantSrc;
-    const fullscreen = document.querySelector("[data-media-fullscreen-open]");
-    if (fullscreen) fullscreen.dataset.mediaFullscreenSrc = control.dataset.mediaVariantSrc;
-    const format = control.dataset.mediaVariantFormat || state.format || "16x9";
-    state.format = format;
-    form.dataset.activeVariantFormat = format;
-    stage.style.setProperty("--media-crop-aspect", mediaAspectCss(format));
+  const loadVariantState = async (key = "") => {
+    state.activeVariantKey = key || state.activeVariantKey;
+    syncVariantAspect();
+    if (!assetRecord?.id) return;
+    variantRecords = variantRecords.length ? variantRecords : await ensureAssetVariantRecords(assetRecord);
+    const record = variantCropRecordByKey(variantRecords, state.activeVariantKey);
+    applyCropDataToStage(record?.crop_data || mediaDefaultCropData(assetRecord, state.activeVariantKey));
+  };
+  const loadVariantPreview = async (control) => {
+    const key = control?.dataset.mediaLoadVariantKey || control?.dataset.mediaVariantKey || "";
+    await loadVariantState(key || state.activeVariantKey);
     document.querySelectorAll("[data-media-load-variant]").forEach((button) => {
       const active = button === control;
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-pressed", active ? "true" : "false");
     });
-    fitOriginal();
   };
-  const saveEditedAsset = async () => {
+  const renderVariantAction = async (mode = "active") => {
     applyCrop();
-    const asset = await getOne("media_assets", form.dataset.mediaId);
-    if (!asset) return;
+    assetRecord = assetRecord || await getOne("media_assets", form.dataset.mediaId);
+    if (!assetRecord) return;
     const values = formObject(form);
-    const format = activeFormat();
-    const size = mediaVariantCanvasSize(format);
-    const sourceUrl = image.currentSrc || image.src || mediaAssetUrl(asset);
-    const sourceOrigin = (() => {
-      try { return new URL(sourceUrl, window.location.href).origin; } catch { return ""; }
-    })();
-    const canRenderCanvas = sourceUrl
-      && (/^(data:image\/|blob:)/i.test(sourceUrl) || sourceOrigin === window.location.origin);
-    const mediaCode = mediaShortCode();
-    const version = `v${Date.now().toString().slice(-6)}`;
-    const mediaType = format === "portrait" ? "portrait" : format === "landscape" ? "landscape" : asset.media_type || "upload";
-    const filename = buildMediaFileName({ title: values.title || asset.title || "bild", mediaType, format: size.aspect, version: "v1", extension: "webp", code: mediaCode });
-    const path = mediaStoragePath(filename, mediaType, mediaCode);
-    if (result) result.innerHTML = `<div class="alert">${progressMarkup("Variante wird als neues Bild gespeichert ...", 60)}</div>`;
-    let file = null;
-    let uploaded = null;
-    let fallbackUrl = canRenderCanvas ? "" : sourceUrl;
-    let fallbackReason = "";
-    if (!canRenderCanvas) {
-      fallbackReason = "Externes Bild wird ohne Canvas-Neuberechnung als URL-Variante gespeichert.";
-    } else {
-      const canvas = document.createElement("canvas");
-      canvas.width = size.width;
-      canvas.height = size.height;
-      const context = canvas.getContext("2d");
-      const stageRect = stage.getBoundingClientRect();
-      const baseScale = Math.min(stageRect.width / Math.max(1, image.naturalWidth), stageRect.height / Math.max(1, image.naturalHeight));
-      const outputScale = canvas.width / Math.max(1, stageRect.width);
-      const drawWidth = image.naturalWidth * baseScale * state.scale * outputScale;
-      const drawHeight = image.naturalHeight * baseScale * state.scale * outputScale;
-      const drawX = (canvas.width - drawWidth) / 2 + state.x * outputScale;
-      const drawY = (canvas.height - drawHeight) / 2 + state.y * outputScale;
-      context.fillStyle = "#ffffff";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      const brightness = 1 + (Number(values.brightness || 0) / 100);
-      const contrast = 1 + (Number(values.contrast || 0) / 100);
-      const saturation = 1 + (Number(values.saturation || 0) / 100);
-      context.filter = `brightness(${brightness}) contrast(${contrast}) saturate(${saturation})${values.black_white ? " grayscale(1)" : ""}`;
-      context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
-      context.filter = "none";
-      try {
-        file = await canvasToFile(canvas, filename, "image/webp", .9);
-        uploaded = await uploadMediaAsset(file, path);
-      } catch (error) {
-        fallbackUrl = sourceUrl || mediaAssetUrl(asset);
-        fallbackReason = error?.message || "Remote-Bild konnte nicht gerendert werden.";
-        if (!fallbackUrl) throw error;
+    const cropData = currentCropData();
+    const targetContext = mediaContextFromNode(form);
+    const runMode = mode === "active" ? "all" : mode;
+    const activeKey = mode === "active" ? state.activeVariantKey : "";
+    const { rendered, errors } = await generateAssetVariants(assetRecord, {
+      mode: runMode,
+      activeVariantKey: activeKey,
+      cropData,
+      result,
+      targetContext,
+      sourceCandidates: editorSourceCandidates()
+    });
+    variantRecords = await ensureAssetVariantRecords(assetRecord);
+    if (result) {
+      if (errors.length) {
+        result.innerHTML = `<div class="alert alert--warning">${rendered.length} Variante(n) gerendert. Fehler: ${escapeHtml(errors.join(" | "))}</div>`;
+      } else {
+        result.innerHTML = `<div class="alert alert--success">${rendered.length || (mode === "missing" ? 0 : 1)} Variante(n) aus dem Originalbild gerendert.</div>`;
       }
     }
-    const now = new Date().toISOString();
-    const newAsset = await upsert("media_assets", {
-      ...asset,
-      id: `media-asset-${crypto.randomUUID()}`,
-      media_code: mediaCode,
-      parent_media_asset_id: asset.id,
-      title: `${values.title || asset.title || "Bild"} ${format === "portrait" ? "Hochkant" : format === "landscape" ? "Landscape" : "Variante"}`,
-      slug: normalizeMediaSlug(`${values.title || asset.title || "bild"}-${format}-${mediaCode}`),
-      media_type: mediaType,
-      filename_original: filename,
-      filename_web: filename,
-      filename_thumb: filename,
-      file_path_original: path,
-      file_path_web: path,
-      file_path_thumb: path,
-      file_path_original_url: uploaded?.url || fallbackUrl,
-      file_path_web_url: uploaded?.url || fallbackUrl,
-      file_path_thumb_url: uploaded?.url || fallbackUrl,
-      storage_path_original: uploaded?.storagePath || "",
-      mime_type: file?.type || asset.mime_type || "",
-      aspect_ratio: size.aspect,
-      file_size: file?.size || asset.file_size || 0,
-      file_size_label: file ? mediaSizeLabel(file.size) : asset.file_size_label || "",
-      image_width: file ? size.width : image.naturalWidth || asset.image_width || 0,
-      image_height: file ? size.height : image.naturalHeight || asset.image_height || 0,
-      image_format: file ? "WEBP" : asset.image_format || "",
-      original_filename: asset.original_filename || asset.filename_original || filename,
-      source_type: "edited",
-      source_note: fallbackUrl ? `URL-basierte Variante aus ${asset.media_code ? `ID ${asset.media_code}` : asset.id}: ${fallbackReason}` : `Bearbeitete Variante aus ${asset.media_code ? `ID ${asset.media_code}` : asset.id}`,
-      alt_text: values.alt_text || asset.alt_text || values.title || asset.title || "Bildvariante",
-      description: values.description || asset.description || "",
-      crop_x: 0,
-      crop_y: 0,
-      crop_scale: 1,
-      brightness: Number(values.brightness || 0),
-      contrast: Number(values.contrast || 0),
-      saturation: Number(values.saturation || 0),
-      sharpness: Number(values.sharpness || 0),
-      black_white: Boolean(values.black_white),
-      file_metadata: {
-        format: file ? "WEBP" : asset.image_format || "",
-        mime_type: file?.type || asset.mime_type || "",
-        size_bytes: file?.size || asset.file_size || 0,
-        size_label: file ? mediaSizeLabel(file.size) : asset.file_size_label || "",
-        width: file ? size.width : image.naturalWidth || asset.image_width || 0,
-        height: file ? size.height : image.naturalHeight || asset.image_height || 0,
-        original_filename: asset.original_filename || asset.filename_original || filename,
-        edited_from: asset.id,
-        fallback_reason: fallbackReason
-      },
-      created_by: currentUser()?.email || currentUser()?.uid || "cms",
-      created_at: now,
-      updated_at: now,
-      status: "active"
-    });
-    await upsert("media_variants", {
-      id: `media-variant-${crypto.randomUUID()}`,
-      media_asset_id: asset.id,
-      derived_media_asset_id: newAsset.id,
-      variant_type: format,
-      format: size.aspect,
-      file_path: path,
-      file_url: uploaded?.url || fallbackUrl,
-      filename,
-      crop_data: { x: Number(xInput.value || 0), y: Number(yInput.value || 0), scale: Number(scaleValue.value || 1), brightness: Number(values.brightness || 0), contrast: Number(values.contrast || 0), saturation: Number(values.saturation || 0), sharpness: Number(values.sharpness || 0), black_white: Boolean(values.black_white) },
-      version,
-      created_at: now,
-      created_by: currentUser()?.email || currentUser()?.uid || "cms"
-    });
-    const mediaContext = mediaContextFromNode(form);
-    if (mediaContext.targetCollection && mediaContext.targetId) {
-      await attachMediaAssetToTarget(newAsset, mediaContext);
-      const assignmentLabel = mediaContext.targetCollection === "members" && mediaContext.targetField === "logoUrl" ? "Mitgliederlogo" : "Thumb";
-      if (result) result.innerHTML = `<div class="alert alert--success">Variante als neues ${assignmentLabel} gespeichert und zugeordnet.</div>`;
-      if (mediaContext.returnTo) window.setTimeout(() => { window.location.hash = mediaContext.returnTo.replace(/^#\/?/, "#/"); }, 700);
-    } else if (result) {
-      result.innerHTML = `<div class="alert alert--success">Variante als neues Bild gespeichert. <a href="#/cms/media/edit?id=${newAsset.id}">Neues Bild bearbeiten</a></div>`;
+    const activeDerived = rendered.find((entry) => entry.variant.key === state.activeVariantKey)?.derivedAsset;
+    if (targetContext.targetCollection && targetContext.targetId && activeDerived && targetContext.returnTo) {
+      window.setTimeout(() => { window.location.hash = targetContext.returnTo.replace(/^#\/?/, "#/"); }, 700);
     }
+    const update = {
+      ...assetRecord,
+      title: values.title || assetRecord.title,
+      alt_text: values.alt_text || assetRecord.alt_text || "",
+      description: values.description || assetRecord.description || "",
+      crop_x: cropData.cropX,
+      crop_y: cropData.cropY,
+      crop_scale: cropData.zoomFactor,
+      crop_data: cropData,
+      brightness: cropData.brightness,
+      contrast: cropData.contrast,
+      saturation: cropData.saturation,
+      sharpness: cropData.sharpness,
+      black_white: cropData.black_white,
+      updated_at: new Date().toISOString()
+    };
+    assetRecord = await upsert("media_assets", update);
+    delete form.dataset.mediaCropDirty;
+    applyCrop();
+  };
+  const refreshAssetContext = async () => {
+    assetRecord = await getOne("media_assets", form.dataset.mediaId);
+    if (!assetRecord) return;
+    const fallbackSource = editorSourceCandidates()[0] || "";
+    if (fallbackSource) {
+      assetRecord = {
+        ...assetRecord,
+        file_path_original_url: assetRecord.file_path_original_url || fallbackSource,
+        file_path_web_url: assetRecord.file_path_web_url || fallbackSource,
+        file_path_thumb_url: assetRecord.file_path_thumb_url || fallbackSource
+      };
+    }
+    variantRecords = await ensureAssetVariantRecords(assetRecord);
+    state.activeVariantKey = variantSelect?.value || mediaDefaultVariantKey(assetRecord);
+    syncVariantAspect();
   };
   stage.addEventListener("pointerdown", (event) => {
     state.dragging = true;
@@ -7020,6 +8276,7 @@ function wireMediaCropMask() {
     if (!state.dragging) return;
     state.x = state.originX + event.clientX - state.startX;
     state.y = state.originY + event.clientY - state.startY;
+    markDirty();
     render();
   });
   const stop = () => { state.dragging = false; };
@@ -7037,20 +8294,19 @@ function wireMediaCropMask() {
       render();
     });
   });
-  fitButton?.addEventListener("click", () => fitOriginal());
   coverButton?.addEventListener("click", () => fillCropFrame());
-  stage.addEventListener("pointermove", () => {
-    markDirty();
-  });
+  centerButton?.addEventListener("click", () => centerCrop());
   variantButtons.forEach((button) => button.addEventListener("click", () => setAspect(button)));
   document.querySelectorAll("[data-media-load-variant]").forEach((button) => {
     button.addEventListener("click", () => loadVariantPreview(button));
   });
+  variantSelect?.addEventListener("change", async () => {
+    await loadVariantState(variantSelect.value || state.activeVariantKey);
+  });
   apply?.addEventListener("click", async () => {
     setaveButtonFeedback(apply, "saving", "peichere ...");
     try {
-      await saveEditedAsset();
-      if (form) delete form.dataset.mediaCropDirty;
+      await renderVariantAction("active");
       setaveButtonFeedback(apply, "success", "Gespeichert");
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--error">Variante konnte nicht gespeichert werden: ${escapeHtml(error.message || String(error))}</div>`;
@@ -7059,8 +8315,18 @@ function wireMediaCropMask() {
       if (!apply.classList.contains("is-save-success") && !apply.classList.contains("is-save-error")) apply.disabled = false;
     }
   });
+  renderVariantsButton?.addEventListener("click", async () => {
+    setaveButtonFeedback(renderVariantsButton, "saving", "rendere ...");
+    try {
+      await renderVariantAction("missing");
+      setaveButtonFeedback(renderVariantsButton, "success", "Fertig");
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Varianten konnten nicht erzeugt werden: ${escapeHtml(error.message || String(error))}</div>`;
+      setaveButtonFeedback(renderVariantsButton, "error", "Fehler");
+    }
+  });
   reset?.addEventListener("click", () => {
-    fitOriginal({ dirty: false });
+    fillCropFrame({ dirty: false });
     ["brightness", "contrast", "saturation", "sharpness"].forEach((name) => {
       if (form?.elements[name]) form.elements[name].value = neutralValues[name];
     });
@@ -7085,16 +8351,30 @@ function wireMediaCropMask() {
   if (activeButton) {
     setAspect(activeButton);
   } else {
-    state.format = form?.dataset.mediaAspect || state.format || "16x9";
-    form.dataset.activeVariantFormat = state.format;
-    stage.style.setProperty("--media-crop-aspect", mediaAspectCss(state.format));
+    syncVariantAspect();
   }
   image.addEventListener("load", () => {
-    fitOriginal({ dirty: false });
+    imageNatural = { width: image.naturalWidth || 0, height: image.naturalHeight || 0 };
+    syncStagePreviewSize();
+    loadVariantState(state.activeVariantKey).catch((error) => {
+      console.warn("Variant state load failed", error);
+      fillCropFrame({ dirty: false });
+      applyCrop();
+    });
+  });
+  refreshAssetContext().then(() => {
+    imageNatural = { width: image.naturalWidth || 0, height: image.naturalHeight || 0 };
+    syncVariantAspect();
+    syncStagePreviewSize();
+    render();
+    loadVariantState(state.activeVariantKey).catch(() => {
+      fillCropFrame({ dirty: false });
+      applyCrop();
+    });
+  }).catch(() => {
+    render();
     applyCrop();
   });
-  render();
-  applyCrop();
 }
 
 function wireMediaDelete() {
@@ -7116,19 +8396,9 @@ function wireMediaDelete() {
         const asset = await getOne("media_assets", assetId);
         if (!asset) throw new Error("Bild wurde nicht gefunden.");
         if (permanent) {
-          await deleteStoredAsset(asset);
-          const variants = (await list("media_variants")).filter((variant) => variant.media_asset_id === assetId);
-          await Promise.all(variants.map((variant) => remove("media_variants", variant.id)));
-          await remove("media_assets", assetId);
+          await deleteMediaAssetCascade(asset);
         } else {
-          await upsert("media_assets", {
-            ...asset,
-            status: "archived",
-            deleted_at: new Date().toISOString(),
-            trash_status: "paperkorb",
-            updatedAt: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
+          await archiveMediaAssetCascade(asset);
         }
         const card = button.closest("[data-media-card]");
         if (card) card.remove();
@@ -7140,6 +8410,53 @@ function wireMediaDelete() {
       }
     });
   });
+}
+
+async function relatedMediaVariantBundle(asset = {}) {
+  const assetId = asset?.parent_media_asset_id || asset?.id || "";
+  if (!assetId) return { rootId: "", childAssets: [], variantRecords: [] };
+  const [assets, variants] = await Promise.all([
+    list("media_assets").catch(() => []),
+    list("media_variants").catch(() => [])
+  ]);
+  const variantRecords = variants.filter((variant) => variant.media_asset_id === assetId || variant.derived_media_asset_id === asset.id);
+  const derivedIds = new Set(variantRecords.map((variant) => variant.derived_media_asset_id).filter(Boolean));
+  const childAssets = assets.filter((item) => item.parent_media_asset_id === assetId || derivedIds.has(item.id));
+  return { rootId: assetId, childAssets, variantRecords };
+}
+
+async function archiveMediaAssetCascade(asset = {}) {
+  const now = new Date().toISOString();
+  const archivePatch = (item) => ({
+    ...item,
+    status: "archived",
+    deleted_at: now,
+    trash_status: "paperkorb",
+    updatedAt: now,
+    updated_at: now
+  });
+  const { childAssets, variantRecords } = await relatedMediaVariantBundle(asset);
+  await upsert("media_assets", archivePatch(asset));
+  await Promise.all(childAssets.filter((item) => item.id !== asset.id).map((item) => upsert("media_assets", archivePatch(item))));
+  await Promise.all(variantRecords.map((variant) => upsert("media_variants", {
+    ...variant,
+    render_status: "archived",
+    updated_at: now
+  })));
+}
+
+async function deleteMediaAssetCascade(asset = {}) {
+  const { rootId, childAssets, variantRecords } = await relatedMediaVariantBundle(asset);
+  const assetsToDelete = [asset, ...childAssets].filter((item, index, items) => item?.id && items.findIndex((candidate) => candidate.id === item.id) === index);
+  for (const item of assetsToDelete) {
+    await deleteStoredAsset(item);
+    await remove("media_assets", item.id);
+  }
+  const variantIds = new Set([
+    ...variantRecords.map((variant) => variant.id),
+    ...variantRecords.filter((variant) => variant.media_asset_id === rootId).map((variant) => variant.id)
+  ].filter(Boolean));
+  await Promise.all([...variantIds].map((id) => remove("media_variants", id)));
 }
 
 function wireMediaRestore() {
@@ -7159,16 +8476,7 @@ function wireMediaRestore() {
       try {
         const asset = await getOne("media_assets", assetId);
         if (!asset) throw new Error("Bild wurde nicht gefunden.");
-        await upsert("media_assets", {
-          ...asset,
-          status: asset.restore_status || "ready",
-          trash_status: "",
-          trash_reason: "",
-          deleted_at: "",
-          archivedAt: "",
-          updatedAt: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
+        await restoreMediaAssetCascade(asset);
         const row = button.closest("[data-media-card]");
         if (row) row.remove();
         if (result) result.innerHTML = `<div class="alert alert--success">Bild wurde wiederhergestellt.</div>`;
@@ -7203,14 +8511,7 @@ function wireArchiveMarkedMediaAssets() {
       for (const id of ids) {
         const asset = await getOne("media_assets", id);
         if (asset) {
-          await upsert("media_assets", {
-            ...asset,
-            status: "archived",
-            deleted_at: new Date().toISOString(),
-            trash_status: "paperkorb",
-            updatedAt: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
+          await archiveMediaAssetCascade(asset);
           done += 1;
         }
       }
@@ -7534,6 +8835,28 @@ function wireEditorialPreviewLayer() {
       if (record) openInternalPreviewLayer(record);
     });
   });
+}
+
+async function restoreMediaAssetCascade(asset = {}) {
+  const now = new Date().toISOString();
+  const restorePatch = (item) => ({
+    ...item,
+    status: item.restore_status || "ready",
+    trash_status: "",
+    trash_reason: "",
+    deleted_at: "",
+    archivedAt: "",
+    updatedAt: now,
+    updated_at: now
+  });
+  const { childAssets, variantRecords } = await relatedMediaVariantBundle(asset);
+  await upsert("media_assets", restorePatch(asset));
+  await Promise.all(childAssets.filter((item) => item.id !== asset.id).map((item) => upsert("media_assets", restorePatch(item))));
+  await Promise.all(variantRecords.map((variant) => upsert("media_variants", {
+    ...variant,
+    render_status: variant.file_url || variant.derived_media_asset_id ? "rendered" : "pending",
+    updated_at: now
+  })));
 }
 
 function wireEditorialToolJumps() {

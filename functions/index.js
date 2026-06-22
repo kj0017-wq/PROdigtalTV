@@ -1,8 +1,9 @@
 const { createHash, randomBytes } = require("node:crypto");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
+const { getStorage } = require("firebase-admin/storage");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const nodemailer = require("nodemailer");
@@ -10,6 +11,7 @@ const nodemailer = require("nodemailer");
 initializeApp();
 const db = getFirestore();
 const region = "europe-west3";
+const storageBucket = "prodigitaltv-da47b.firebasestorage.app";
 const SMTP_HOST = defineSecret("SMTP_HOST");
 const SMTP_PORT = defineSecret("SMTP_PORT");
 const SMTP_USER = defineSecret("SMTP_USER");
@@ -45,6 +47,19 @@ function clean(value = "") {
 
 function stripTags(value = "") {
   return clean(value).replace(/[<>]/g, "");
+}
+
+function storagePathFromMediaUrl(value = "") {
+  const text = clean(value);
+  if (!text) return "";
+  try {
+    const parsed = new URL(text);
+    if (!["firebasestorage.googleapis.com", "storage.googleapis.com"].includes(parsed.hostname)) return "";
+    const match = parsed.pathname.match(/\/o\/([^/]+)$/i);
+    return match?.[1] ? decodeURIComponent(match[1]) : "";
+  } catch {
+    return "";
+  }
 }
 
 function mailAddress(value = "") {
@@ -483,6 +498,48 @@ function chooseTopic(existingArticles = []) {
   const normalizedTitles = existingArticles.map((article) => normalizeStatus(article.title || article.headline));
   return topics.find((topic) => !normalizedTitles.some((title) => title.includes(normalizeStatus(topic.title).slice(0, 16)))) || topics[0];
 }
+
+exports.mediaAssetProxy = onRequest({ region, timeoutSeconds: 120, memory: "256MiB" }, async (req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") {
+    res.status(204).end();
+    return;
+  }
+  if (req.method !== "GET") {
+    res.status(405).send("Method Not Allowed");
+    return;
+  }
+  const requestedPath = clean(req.query.path) || storagePathFromMediaUrl(req.query.url);
+  const storagePath = String(requestedPath || "").replace(/^\/+/, "");
+  if (!storagePath || !storagePath.startsWith("images/")) {
+    res.status(400).send("Invalid media path");
+    return;
+  }
+  try {
+    const bucket = getStorage().bucket(storageBucket);
+    const file = bucket.file(storagePath);
+    const [exists] = await file.exists();
+    if (!exists) {
+      res.status(404).send("Not Found");
+      return;
+    }
+    const [metadata] = await file.getMetadata();
+    if (metadata.contentType) res.set("Content-Type", metadata.contentType);
+    res.set("Cache-Control", metadata.cacheControl || "public, max-age=3600");
+    file.createReadStream()
+      .on("error", (error) => {
+        console.error("mediaAssetProxy stream failed", storagePath, error);
+        if (!res.headersSent) res.status(502).send("Proxy stream failed");
+        else res.end();
+      })
+      .pipe(res);
+  } catch (error) {
+    console.error("mediaAssetProxy failed", storagePath, error);
+    res.status(500).send("Proxy failed");
+  }
+});
 
 function topicMessageText(topic = {}, sources = []) {
   const primarySource = sources[0] || {};

@@ -17,7 +17,37 @@ process.on("unhandledRejection", logCrash);
 
 const server = createServer((request, response) => {
   try {
-    const cleanUrl = decodeURIComponent((request.url || "/").split("?")[0]);
+    const url = new URL(request.url || "/", `http://localhost:${port}`);
+    if (url.pathname === "/__media_proxy") {
+      const target = url.searchParams.get("url") || "";
+      if (!/^https?:\/\//i.test(target)) {
+        response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+        response.end("Invalid proxy target");
+        return;
+      }
+      fetch(target)
+        .then(async (remote) => {
+          if (!remote.ok) {
+            response.writeHead(remote.status || 502, { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" });
+            response.end(`Proxy fetch failed: ${remote.status}`);
+            return;
+          }
+          response.writeHead(200, {
+            "Content-Type": remote.headers.get("content-type") || "application/octet-stream",
+            "Cache-Control": "no-store",
+            "Access-Control-Allow-Origin": "*"
+          });
+          const buffer = Buffer.from(await remote.arrayBuffer());
+          response.end(buffer);
+        })
+        .catch((error) => {
+          logCrash(error);
+          response.writeHead(502, { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" });
+          response.end("Proxy fetch failed");
+        });
+      return;
+    }
+    const cleanUrl = decodeURIComponent(url.pathname || "/");
     let file = join(root, cleanUrl === "/" ? "index.html" : cleanUrl);
     if (!existsSync(file) || statSync(file).isDirectory()) file = join(root, "index.html");
     response.setHeader("Content-Type", `${types[extname(file)] || "application/octet-stream"}; charset=utf-8`);

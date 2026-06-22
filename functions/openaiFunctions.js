@@ -228,14 +228,161 @@ function buildImagePrompt(payload = {}) {
   const manualPrompt = String(payload.prompt || "").trim();
   const title = context.title || payload.title || "";
   const subtitle = context.subtitle || "";
-  const text = context.longDescription || context.bodyText || context.introText || context.shortDescription || "";
+  const text = context.sourceText || context.longDescription || context.bodyText || context.introText || context.shortDescription || "";
   const source = [title, subtitle, text].filter(Boolean).join("\n\n");
+  const styleCatalog = {
+    photorealistic: {
+      direction: "Strictly photorealistic editorial image, like a real full-frame camera photograph with believable materials, natural light and authentic media-industry atmosphere.",
+      composition: "Clear photographic depth, real-world scene, grounded lens perspective, credible camera optics, not illustration, not painting, not synthetic stock-like CGI.",
+      palette: "Color palette may be realistic and situation-driven, not forced into brand colors.",
+      freedom: "Vary setting, camera distance and mood boldly as long as the image stays credible as photography."
+    },
+    editorial_magazine: {
+      direction: "High-end editorial magazine visual language with crafted composition, restrained elegance and clear visual hierarchy.",
+      composition: "Art-directed composition, layered foreground/background, premium magazine pacing, strong crop discipline.",
+      palette: "Use a curated palette with a subtle PROdigitalTV accent only where it strengthens the image.",
+      freedom: "Seek a distinctive cover-story feeling, not a generic business visual."
+    },
+    classic_serious: {
+      direction: "Classic, serious and trustworthy visual tone with quiet authority and institutional clarity.",
+      composition: "Balanced geometry, measured framing, controlled light, low visual noise.",
+      palette: "Muted, elegant, sober colors; avoid loud trend aesthetics.",
+      freedom: "Stay conservative but not boring; use subtle symbolic depth."
+    },
+    modern_gloss: {
+      direction: "Modern premium high-gloss visual world with polished surfaces, cinematic highlights and confident graphic impact.",
+      composition: "Striking hero composition, premium reflections, decisive silhouettes, clean focal path.",
+      palette: "Controlled luxe palette with richer contrast and accent colors when useful.",
+      freedom: "Allow stronger style and visual confidence, but avoid cheesy ad aesthetics."
+    },
+    premium_event_keyvisual: {
+      direction: "Photorealistic luxury corporate event keyvisual for an international business, media and networking event with agency-level premium marketing polish.",
+      composition: "Real high-end event photography in a split or layered 16:9 composition with conference, breakfast, city/location and event-atmosphere cues, plus calm premium whitespace for text.",
+      palette: "Cream white, champagne, gold, dark blue, anthracite, warm golden-hour light and refined glass/wood reflections.",
+      freedom: "Use real-camera photorealism mixed with elegant editorial design discipline; avoid illustration, painting, cheap stock-photo mood and crowded layouts."
+    },
+    technical_futuristic: {
+      direction: "Technical futuristic world around media tech, broadcast infrastructure, streaming systems, signal paths and AI interfaces.",
+      composition: "Layered systems view, architectural depth, luminous interfaces, infrastructural detail.",
+      palette: "Can use cold technical palettes, electric accents, dark control-room atmospheres or data-light gradients.",
+      freedom: "Push into abstract systems imagery instead of default office scenes."
+    },
+    minimalistic: {
+      direction: "Minimalist visual language with generous empty space, a single strong idea and reduced formal vocabulary.",
+      composition: "Few elements, strong negative space, precise placement, calm confidence.",
+      palette: "Highly reduced palette; use color with discipline.",
+      freedom: "Allow radical simplicity and silence instead of filling the frame."
+    },
+    illustration: {
+      direction: "Sophisticated editorial illustration rather than photo realism, with conceptual clarity and crafted symbolic form.",
+      composition: "Readable conceptual scene, graphic shapes, metaphor-first thinking, polished illustration finish.",
+      palette: "Illustrative palette may be bolder, flatter or more stylized if coherent.",
+      freedom: "Move clearly away from the photo schema when this style is chosen."
+    },
+    documentary: {
+      direction: "Photorealistic raw documentary editorial mood, believable everyday reality, unstaged press-photo energy.",
+      composition: "Observed real-camera moment, imperfect realism, situational framing, atmospheric authenticity, no illustration or painted finish.",
+      palette: "Natural or slightly gritty tones; no glossy over-stylization.",
+      freedom: "Prefer truthfulness, texture and atmosphere over polish."
+    },
+    retro_broadcast: {
+      direction: "Retro broadcast design language inspired by archive TV, analog control rooms, CRT glow and legacy broadcast graphics.",
+      composition: "Vintage framing, layered screens, archive-era visual cues, broadcast nostalgia with contemporary control.",
+      palette: "Analog reds, faded blues, phosphor greens, warm grey plastics, tape-era tones.",
+      freedom: "Allow deliberate temporal character and media-history references."
+    },
+    cinematic_noir: {
+      direction: "Cinematic noir atmosphere with dramatic light, shadows, tension and moody editorial storytelling.",
+      composition: "Directional light, asymmetry, selective visibility, dramatic depth and suspense.",
+      palette: "Dark, contrast-rich palette with selective accent color and controlled glow.",
+      freedom: "May feel filmic, urban or psychologically charged rather than corporate."
+    },
+    surreal_concept: {
+      direction: "Surreal concept art with a serious editorial mind-set, not fantasy cliche; strong metaphor over literal scene building.",
+      composition: "Unexpected spatial logic, impossible scale, symbolic juxtapositions and striking concept image-making.",
+      palette: "Palette may be poetic, uncanny or sharply symbolic if it supports the concept.",
+      freedom: "Break realism decisively; do not fall back to default business visuals."
+    },
+    paper_collage: {
+      direction: "Editorial collage world using paper texture, cutout logic, layered fragments, print feel and tactile composition.",
+      composition: "Layered collage, torn edges, poster fragments, tactile surfaces, deliberate handmade rhythm.",
+      palette: "Print-like palette, paper tones, overprints, restrained but characterful color decisions.",
+      freedom: "Can be materially tactile and visibly constructed rather than clean digital."
+    },
+    bold_brutalist: {
+      direction: "Bold brutalist poster aesthetic with oversized shapes, assertive geometry and unapologetic visual force.",
+      composition: "Large forms, hard structure, poster-scale hierarchy, radical cropping and strong silhouette logic.",
+      palette: "High-contrast graphic palette allowed; can be stark, loud or reduced.",
+      freedom: "Reject safe corporate imagery; pursue a striking statement image."
+    },
+    luminous_abstract: {
+      direction: "Atmospheric abstract lightscape with signal energy, gradients, reflections, glass, haze and spatial ambiguity.",
+      composition: "No need for literal scene; create a believable abstract environment with depth and directional energy.",
+      palette: "Light-driven palette, luminous transitions, colored haze, optical glow, subtle material reflections.",
+      freedom: "Can be almost fully non-literal as long as it feels intentional and premium."
+    },
+    free_style: {
+      direction: "Create a completely fresh style world based primarily on the user's own style references and prompt, not on a fixed house schema.",
+      composition: "Choose the composition logic that best matches the requested style world rather than the default editorial recipe.",
+      palette: "Palette is entirely open and should follow the requested style direction.",
+      freedom: "Actively avoid falling back to the usual PROdigitalTV business-editorial pattern unless the user explicitly asks for it."
+    }
+  };
+  const styleMeta = context.stylePreset && styleCatalog[context.stylePreset] ? styleCatalog[context.stylePreset] : styleCatalog.free_style;
+  const areaCatalog = {
+    news: "Bereich/Anlass: News. Aktuelle redaktionelle Bildlogik, klare journalistische Relevanz, Website-Teaser-tauglich, nicht boulevardesk.",
+    press: "Bereich/Anlass: Presse/Mitteilung. Glaubwuerdige PR-/Kommunikationsoptik, institutionelle Klarheit, professioneller Ankuendigungscharakter.",
+    medienfruehstueck: "Bereich/Anlass: Medienfruehstueck. Business-Fruehstueck, Networking, Morgenlicht, Tischkultur, hochwertige Event-Atmosphaere.",
+    von_den_besten: "Bereich/Anlass: Von den Besten. Dialog, Lernen von Expertinnen und Experten, Premium-Gespraech, Wissenstransfer, menschlicher Austausch ohne Promi-Imitation.",
+    rueckblick: "Bereich/Anlass: Rueckblick. Erinnerung, Event-Atmosphaere, dokumentarischer Nachklang, Reflexion, wertige Recap-Energie.",
+    versammlung: "Bereich/Anlass: Versammlungen. Mitglieder, Beschluesse, Verein, Tagesordnung, Konferenztisch, professionelle Governance-Atmosphaere.",
+    member: "Bereich/Anlass: Mitglieder/Netzwerk. Partnerschaft, Kompetenz, Vertrauen, Branchenvernetzung, Business-Netzwerk.",
+    general: "Bereich/Anlass: Allgemein. PROdigitalTV-Kontext aus dem CMS und gewaehlte Stilwelt bestimmen die Bildidee."
+  };
+  const stylePreset = styleMeta?.direction ? `Stilwelt: ${styleMeta.direction}` : "";
+  const styleComposition = styleMeta?.composition ? `Kompositionslogik: ${styleMeta.composition}` : "";
+  const stylePalette = styleMeta?.palette ? `Farb-/Materialwelt: ${styleMeta.palette}` : "";
+  const styleFreedom = styleMeta?.freedom ? `Freiheitsgrad: ${styleMeta.freedom}` : "";
+  const motifType = context.motifType ? `Motivart: ${context.motifType}.` : "";
+  const imageEffect = context.imageEffect ? `Bildwirkung: ${context.imageEffect}.` : "";
+  const textArea = context.textArea && context.textArea !== "none" ? `Textflaeche: ${context.textArea} frei halten.` : "";
+  const textOverlay = context.textOverlay
+    ? `Text-Overlay/Covertext: Setze diesen Text exakt und gut lesbar im Bild: "${String(context.textOverlay).slice(0, 180)}". Nutze hochwertige Typografie, viel Weissraum und keine zusaetzlichen Fantasiewoerter.`
+    : "";
+  const targetArea = context.targetArea && areaCatalog[context.targetArea] ? areaCatalog[context.targetArea] : "";
+  const customStyle = context.style ? `Eigene Stilreferenz der Redaktion: ${String(context.style).slice(0, 700)}. Diese Referenz hat Vorrang vor Standardmustern.` : "";
+  const colorWorld = context.colorWorld ? `Gewuenschte Farbwelt: ${String(context.colorWorld).slice(0, 300)}.` : "";
+  const referenceRole = String(payload.referenceImageRole || "").toLowerCase();
+  const referenceImage = payload.referenceImageDataUrl
+    ? referenceRole === "area_theme"
+      ? `Thematische Bereichsreferenz: Analysiere das gespeicherte Referenzfoto (${context.areaReferenceImageFileName || payload.referenceImageName || "Bereichsreferenz"}) fuer Anlass, Motivlogik, Atmosphaere, Raumgefuehl, Kameralogik und Bildaufbau. Wenn die Referenz fotorealistisch ist, muss auch das neue Bild fotorealistisch bleiben: echte Kameraoptik, reales Licht, keine Illustration, keine Grafik-Collage, kein alter Standardlook. Erzeuge ein neues, thematisch aehnlich gelagertes Bild, aber kopiere keine Personen, Logos, konkrete Motive oder Texte aus der Referenz.`
+      : `Visuelle Stilreferenz: Nutze das hochgeladene Referenzbild (${context.referenceImageFileName || payload.referenceImageName || "Referenzbild"}) nur fuer Stil, Licht, Farbwelt, Materialgefuehl, Layout-Charakter und Qualitaetsniveau. Kopiere keine Personen, Logos, konkrete Motive oder Texte aus der Referenz.`
+    : "";
+  const isFreeStyle = context.stylePreset === "free_style" || Boolean(context.style);
   return [
-    "Erzeuge ein hochwertiges redaktionelles Thumb-Bild fuer PROdigitalTV.",
-    "Stil: moderne B2B-Medienwirtschaft, abstrakte Collage, hochwertige TV-/Streaming-/Datenwelt, keine Logos, keine lesbaren Texte, keine Personenportraets, keine Marken.",
-    "Bildsprache: klare Komposition, professionelle digitale Collage, Navy/Weiss/Rot als dezente Markenfarben, geeignet fuer Website-Karten und Artikel-Header.",
+    isFreeStyle
+      ? "Erzeuge ein eigenstaendiges KI-Bild fuer PROdigitalTV mit einer frischen Stilwelt, die klar vom bisherigen Standardlook abweicht."
+      : "Erzeuge ein hochwertiges redaktionelles Thumb-Bild fuer PROdigitalTV mit einer klar unterscheidbaren Stilwelt.",
+    stylePreset,
+    styleComposition,
+    stylePalette,
+    styleFreedom,
+    customStyle,
+    colorWorld,
+    referenceImage,
+    motifType,
+    imageEffect,
+    textArea,
+    textOverlay,
+    targetArea,
     manualPrompt ? `Manueller Bildprompt der Redaktion, vorrangig umsetzen: ${manualPrompt.slice(0, 1200)}` : "",
-    source ? `Inhaltliche Grundlage aus dem CMS, nur als Kontext nutzen: ${source.slice(0, 1200)}` : ""
+    source ? `Inhaltliche Grundlage aus dem CMS, nur als Kontext nutzen: ${source.slice(0, 1200)}` : "",
+    isFreeStyle
+      ? "Wichtig: Kein Rueckfall in generische Business-Collage, Navy/Weiss/Rot-Standardpalette, Glas-Screen-Komposition oder austauschbare Medienwirtschaft-Symbolik."
+      : "Wichtig: PROdigitalTV-Farben nur einsetzen, wenn sie zur gewaehlten Stilwelt passen; kein automatischer Rot-Blau-Standardlook.",
+    context.textOverlay
+      ? "Keine echten Logos, keine Marken, keine identifizierbaren realen Personen, keine irrefuehrenden Fakten. Keine weiteren Texte ausser dem angegebenen Covertext."
+      : "Keine echten Logos, keine lesbaren Texte, keine Marken, keine identifizierbaren realen Personen, keine irrefuehrenden Fakten."
   ].filter(Boolean).join("\n\n");
 }
 
@@ -243,16 +390,31 @@ async function callOpenAiImage(payload, settings) {
   const key = openAiApiKey.value() || process.env.OPENAI_API_KEY;
   if (!key) throw new HttpsError("failed-precondition", "OPENAI_API_KEY ist nicht als Firebase Secret/Environment gesetzt.");
   const prompt = buildImagePrompt(payload);
-  const response = await fetch("https://api.openai.com/v1/images/generations", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: settings.imageModel || "gpt-image-1",
-      prompt,
-      size: payload.size || "1536x1024",
-      quality: payload.quality || "medium"
-    })
-  });
+  const referenceImage = await referenceImagePart(payload.referenceImageDataUrl, payload.referenceImageName || "style-reference.jpg");
+  const response = referenceImage
+    ? await fetch("https://api.openai.com/v1/images/edits", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}` },
+        body: (() => {
+          const form = new FormData();
+          form.append("model", settings.imageModel || "gpt-image-1");
+          form.append("prompt", prompt);
+          form.append("size", payload.size || "1536x1024");
+          form.append("quality", payload.quality || "medium");
+          form.append("image", referenceImage.blob, referenceImage.fileName);
+          return form;
+        })()
+      })
+    : await fetch("https://api.openai.com/v1/images/generations", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: settings.imageModel || "gpt-image-1",
+          prompt,
+          size: payload.size || "1536x1024",
+          quality: payload.quality || "medium"
+        })
+      });
   const data = await response.json();
   if (!response.ok) throw new HttpsError("internal", data.error?.message || "OpenAI Bildgenerierung fehlgeschlagen.");
   const imageBase64 = data.data?.[0]?.b64_json;
@@ -262,6 +424,35 @@ async function callOpenAiImage(payload, settings) {
     mimeType: "image/png",
     prompt,
     fileName: `${payload.entityId || "cms-thumb"}-ki-collage.png`
+  };
+}
+
+async function referenceImagePart(value = "", fileName = "style-reference.jpg") {
+  const source = String(value || "").trim();
+  if (!source) return null;
+  const dataPart = dataUrlToImagePart(source, fileName);
+  if (dataPart) return dataPart;
+  if (!/^https?:\/\//i.test(source)) return null;
+  const response = await fetch(source, { method: "GET" });
+  if (!response.ok) throw new HttpsError("internal", `Referenzfoto konnte nicht geladen werden (${response.status}).`);
+  const contentType = String(response.headers.get("content-type") || "").split(";")[0].toLowerCase();
+  if (!/^image\/(?:jpeg|png|webp)$/.test(contentType)) throw new HttpsError("invalid-argument", "Referenzfoto muss JPG, PNG oder WebP sein.");
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (!buffer.length) return null;
+  return {
+    blob: new Blob([buffer], { type: contentType }),
+    fileName: String(fileName || "style-reference.jpg").replace(/[^\w.-]+/g, "-").slice(0, 90) || "style-reference.jpg"
+  };
+}
+
+function dataUrlToImagePart(dataUrl = "", fileName = "style-reference.jpg") {
+  const match = String(dataUrl || "").match(/^data:(image\/(?:jpeg|png|webp));base64,([\s\S]+)$/i);
+  if (!match) return null;
+  const buffer = Buffer.from(match[2], "base64");
+  if (!buffer.length) return null;
+  return {
+    blob: new Blob([buffer], { type: match[1].toLowerCase() }),
+    fileName: String(fileName || "style-reference.jpg").replace(/[^\w.-]+/g, "-").slice(0, 90) || "style-reference.jpg"
   };
 }
 
