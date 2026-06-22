@@ -30,7 +30,7 @@ function denied(adminOnly = false) {
 
 function status(value) {
   const style = ["failed", "expired", "inactive", "cancelled", "archived"].includes(value) ? "status--error" : ["draft", "pending_email_confirmation", "queued", "in_review", "uploaded"].includes(value) ? "status--draft" : "";
-  const label = { active: "Aktiv", inactive: "Inaktiv", cancelled: "Gekuendigt", internal: "Intern", published: "Veroeffentlicht", draft: "Entwurf", archived: "Archiviert", approved: "Freigegeben", new: "Neu", queued: "Wartet", sent: "Gesendet", failed: "Fehler", in_review: "In Prüfung" }[value] || value;
+  const label = { active: "Aktiv", inactive: "Inaktiv", cancelled: "Gekündigt", internal: "Intern", published: "Veröffentlicht", draft: "Entwurf", archived: "Archiviert", approved: "Freigegeben", new: "Neu", queued: "Wartet", sent: "Gesendet", failed: "Fehler", in_review: "In Prüfung" }[value] || value;
   return `<span class="status ${style}">${escapeHtml(label)}</span>`;
 }
 
@@ -75,6 +75,21 @@ function lockedEditorialActionButtons(item, section, module) {
   return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a></div>`;
 }
 
+function internalEditorialActionButtons(item, section, module) {
+  const isActive = ["aktiv", "published", "active"].includes(String(item.status || "").toLowerCase());
+  const toggleStatus = isActive ? "inaktiv" : "aktiv";
+  const toggleClass = isActive ? "icon-button--visible" : "icon-button--hidden";
+  const toggleLabel = isActive ? "Sichtbar: ausblenden" : "Unsichtbar: sichtbar machen";
+  const usageKey = internalUsageKey(item);
+  const visibilityButton = usageKey === "legacy"
+    ? ""
+    : `<button class="icon-button ${toggleClass}" type="button" data-record-status="${module}" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ? "eye" : "eyeOff")}</button>`;
+  const deleteButton = usageKey === "legacy"
+    ? `<button class="icon-button icon-button--danger" type="button" data-delete-record="${module}" data-record-id="${item.id}" title="Altbestand loeschen" aria-label="Altbestand loeschen">${iconImage("trash")}</button>`
+    : "";
+  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a>${visibilityButton}${deleteButton}</div>`;
+}
+
 function mediaPicto(name) {
   if (name === "video") {
     return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="6.5" width="12" height="11" rx="2"></rect><path d="m15.5 10 5-3v10l-5-3z"></path></svg>`;
@@ -101,20 +116,23 @@ function editorialVisibilityListStatus(item) {
   return status(isPublished && item.visible === true ? "active" : "inactive");
 }
 
-function newsBulkToolbar(records = []) {
-  return `<div class="cms-bulk-toolbar" data-news-bulk-toolbar>
+function cmsBulkToolbar(records = [], { collection = "editorialContent", label = "Eintraege" } = {}) {
+  return `<div class="cms-bulk-toolbar" data-cms-bulk-toolbar data-cms-bulk-collection="${escapeHtml(collection)}" data-cms-bulk-label="${escapeHtml(label)}">
     <div class="cms-bulk-toolbar__select">
-      <label class="cms-bulk-checkbox"><input type="checkbox" data-news-bulk-select-all ${records.length ? "" : "disabled"}> <span>Alle</span></label>
-      <button class="button button--secondary button--small" type="button" data-news-bulk-clear>Auswahl aufheben</button>
-      <span class="muted" data-news-bulk-count>0 ausgewaehlt</span>
+      <label class="cms-bulk-checkbox"><input type="checkbox" data-cms-bulk-select-all ${records.length ? "" : "disabled"}> <span>Alle</span></label>
+      <button class="button button--secondary button--small" type="button" data-cms-bulk-clear>Auswahl aufheben</button>
+      <span class="muted" data-cms-bulk-count>0 ausgewaehlt</span>
     </div>
     <div class="actions">
-      <button class="button button--secondary button--small news-bulk-action news-bulk-action--icon" type="button" data-news-bulk-hide disabled>${iconImage("eyeOff")}<span>Unsichtbar</span></button>
-      <button class="button button--danger button--small news-bulk-action news-bulk-action--icon" type="button" data-news-bulk-delete disabled>${iconImage("trash")}<span>Loeschen</span></button>
+      <button class="button button--secondary button--small news-bulk-action news-bulk-action--icon news-bulk-action--visible" type="button" data-cms-bulk-show disabled>${iconImage("eye")}<span>Sichtbar</span></button>
+      <button class="button button--secondary button--small news-bulk-action news-bulk-action--icon news-bulk-action--hidden" type="button" data-cms-bulk-hide disabled>${iconImage("eyeOff")}<span>Unsichtbar</span></button>
+      <button class="button button--danger button--small news-bulk-action news-bulk-action--icon" type="button" data-cms-bulk-delete disabled>${iconImage("trash")}<span>Loeschen</span></button>
     </div>
-    <div id="news-bulk-result"></div>
+    <div data-cms-bulk-result></div>
   </div>`;
 }
+
+const newsBulkToolbar = (records = []) => cmsBulkToolbar(records, { collection: "editorialContent", label: "News" });
 
 function memberIsLive(item) {
   const hasManagedType = ["company", "individual"].includes(item.membershipType || "");
@@ -457,10 +475,26 @@ function aiFieldActions(actions) {
   return `<div class="ai-field-actions">${actions.map((item) => aiButton(item.action, item.target, item.label, item)).join("")}</div>`;
 }
 
+function cleanAudioTextPart(value = "") {
+  return String(value || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/^\s*#{1,6}\s*/gm, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/(?:^|\s)(keywords?|schlagworte|quelle|quellen)\s*:.*/is, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function primaryAudioBody(item = {}, fields = []) {
+  return fields.map((field) => cleanAudioTextPart(item[field])).find((value) => value.length > 20) || "";
+}
+
 function audioSourceText(collection, item = {}) {
-  return collection === "topics"
-    ? [item.subtitle, item.longDescription, item.bodyText, item.shortDescription].filter(Boolean).join("\n\n")
-    : [item.subtitle, item.longDescription, item.bodyText, item.articleText, item.archiveText, item.introText, item.shortText, item.teaserText, item.postEventSummary].filter(Boolean).join("\n\n");
+  const subtitle = cleanAudioTextPart(item.subtitle);
+  const body = collection === "topics"
+    ? primaryAudioBody(item, ["longDescription", "bodyText", "shortDescription"])
+    : primaryAudioBody(item, ["bodyText", "articleText", "longDescription", "archiveText", "introText", "shortText", "teaserText", "postEventSummary"]);
+  return [subtitle, body].filter(Boolean).join("\n\n");
 }
 
 function audioTextSignature(collection, item = {}) {
@@ -655,6 +689,21 @@ function audioPlayButtonState(state = "", hasAudio = false) {
   return { className: "audio-play-button--missing", label: "Audio erzeugen" };
 }
 
+function audioTooltipText(info = {}, buttonLabel = "Audio") {
+  if (!info.activeUrl) return `${buttonLabel}\nNoch keine Audiodatei vorhanden. Klick erzeugt Audio mit der aktuellen Standard-Konfiguration.`;
+  const lines = [
+    buttonLabel,
+    `Status: ${info.state || "bereit"}`,
+    `Anbieter: ${info.provider || "nicht angegeben"}`,
+    info.voiceName ? `Stimme: ${info.voiceName}` : "",
+    info.modelId ? `Modell: ${info.modelId}` : "",
+    info.version ? `Version: ${info.version}` : "",
+    info.generatedAt ? `Erzeugt: ${timestampText(info.generatedAt)}` : "",
+    info.karaokeEnabled ? "Timing/Karaoke: vorhanden" : "Timing/Karaoke: nicht vorhanden"
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
 function audioMetaLine(collection, item, variant) {
   const prefix = variant === "natural" ? "audioNatural" : "audioAccessible";
   const generatedAt = item[`${prefix}GeneratedAt`] || item.audioGeneratedAt || "";
@@ -709,9 +758,11 @@ function audioListCell(collection, item, options = {}) {
     : hasAudio
       ? (info.provider || "Audio")
       : "Audio fehlt";
+  const showMeta = options.showMeta !== false;
+  const tooltip = audioTooltipText(info, buttonState.label);
   return `<div class="audio-list-cell">
-    <button type="button" class="audio-play-button ${buttonState.className}" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}" data-tts-variant="all" data-audio-url="${escapeHtml(info.activeUrl)}" title="${escapeHtml(buttonState.label)}" aria-label="${escapeHtml(buttonState.label)}"><span></span></button>
-    <small>${escapeHtml(meta)}</small>
+    <button type="button" class="audio-play-button ${buttonState.className}" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}" data-tts-variant="all" data-audio-url="${escapeHtml(info.activeUrl)}" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(buttonState.label)}"><span></span></button>
+    ${showMeta ? `<small>${escapeHtml(meta)}</small>` : ""}
     <div class="audio-list-cell__result" data-speech-result></div>
   </div>`;
 }
@@ -1533,6 +1584,77 @@ function isInternalEditorialItem(item = {}) {
     && !["pressRelease", "news"].includes(item.section)
     && (["home", "about", "join", "imprint", "privacy", "legal", "contact", "login", "members", "board"].includes(item.page)
       || ["intro", "hero", "legal", "internal", "footer"].includes(item.section));
+}
+
+function internalAreaKey(item = {}) {
+  if (item.bereich === "ueber_uns" || item.page === "about" || item.page === "ueber-uns") return "ueber_uns";
+  if (item.bereich === "mitglied_werden" || item.page === "join" || item.page === "mitglied-werden") return "mitglied_werden";
+  return "sonstiges";
+}
+
+function internalAreaLabel(item = {}) {
+  const key = internalAreaKey(item);
+  if (key === "ueber_uns") return "Über uns";
+  if (key === "mitglied_werden") return "Mitglied werden";
+  return "Interna";
+}
+
+function internalAreaButton(item = {}) {
+  const key = internalAreaKey(item);
+  return `<button class="internal-area-pill internal-area-pill--${escapeHtml(key)} internal-preview-button" type="button" data-internal-preview="${escapeHtml(item.id || "")}">${escapeHtml(internalAreaLabel(item))}</button>`;
+}
+
+function internalTypeLabel(type = "") {
+  const labels = {
+    hero: "Hero",
+    textblock: "Textblock",
+    vorteil: "Vorteil",
+    eventformat: "Eventformat",
+    kachelgruppe: "Kachelgruppe",
+    cta: "CTA",
+    internal: "Altblock",
+    intro: "Intro",
+    footer: "Footer",
+    legal: "Rechtliches"
+  };
+  return labels[type] || type || "-";
+}
+
+function internalPortalVisibility(item = {}) {
+  const area = internalAreaKey(item);
+  const managed = item.editorialManaged || ["ueber_uns", "mitglied_werden"].includes(item.bereich);
+  const itemStatus = String(item.status || "").toLowerCase();
+  const itemVisibility = String(item.sichtbarkeit || item.visibility || "").toLowerCase();
+  return managed
+    && ["ueber_uns", "mitglied_werden"].includes(area)
+    && ["aktiv", "published"].includes(itemStatus)
+    && ["oeffentlich", "öffentlich", "public"].includes(itemVisibility);
+}
+
+function internalUsageKey(item = {}) {
+  if (internalPortalVisibility(item)) return "portal";
+  if (item.downloadId || item.download_id || String(item.key || "").startsWith("join.downloadInfo.")) return "download";
+  if (String(item.key || "").startsWith("footer.") || item.section === "footer") return "footer";
+  if (["imprint", "privacy", "legal"].includes(item.page) || item.section === "legal") return "legal";
+  if (["ueber_uns", "mitglied_werden"].includes(item.bereich) || item.editorialManaged) return "hidden";
+  return "legacy";
+}
+
+function internalUsageLabel(item = {}) {
+  const labels = {
+    portal: "Portal",
+    download: "Download-Info",
+    footer: "Footer",
+    legal: "Rechtliches",
+    hidden: "nicht sichtbar",
+    legacy: "Altbestand"
+  };
+  return labels[internalUsageKey(item)] || "Altbestand";
+}
+
+function internalStatusValue(item = {}) {
+  const value = String(item.status || "").toLowerCase();
+  return ["aktiv", "active", "published", "veroeffentlicht", "veröffentlicht"].includes(value) ? "active" : "inactive";
 }
 
 const qualityCollectionNames = [
@@ -3005,6 +3127,16 @@ export async function moduleListPage(module, section = "all") {
         if (sortA !== sortB) return sortA - sortB;
         return String(a.name || "").localeCompare(String(b.name || ""), "de", { sensitivity: "base" });
       }
+      if (module === "editorialContent" && section === "interna") {
+        const areaOrder = { ueber_uns: 1, mitglied_werden: 2, sonstiges: 3 };
+        const areaA = areaOrder[internalAreaKey(a)] || 9;
+        const areaB = areaOrder[internalAreaKey(b)] || 9;
+        if (areaA !== areaB) return areaA - areaB;
+        const sortA = Number.isFinite(Number(a.sortOrder ?? a.sortierung)) ? Number(a.sortOrder ?? a.sortierung) : 9999;
+        const sortB = Number.isFinite(Number(b.sortOrder ?? b.sortierung)) ? Number(b.sortOrder ?? b.sortierung) : 9999;
+        if (sortA !== sortB) return sortA - sortB;
+        return String(a.title || a.titel || "").localeCompare(String(b.title || b.titel || ""), "de", { sensitivity: "base" });
+      }
       const dateA = listDateSortValue(a);
       const dateB = listDateSortValue(b);
       if (dateA || dateB) return dateB - dateA;
@@ -3022,18 +3154,24 @@ export async function moduleListPage(module, section = "all") {
   const createParams = editorialConfig?.createParams || "";
   const emptyText = editorialConfig ? `Noch keine Inhalte in ${escapeHtml(title)}.` : "Noch keine Eintraege vorhanden.";
   if (module === "topics") {
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--topics table--with-audio"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table">${topicThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>Thema</td><td>${audioListCell("topics", item)}</td><td>${editorialMediaFlags(item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="7">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${cmsBulkToolbar(records, { collection: "topics", label: "Themen" })}<div class="table-wrap"><table class="table table--editorial table--topics table--with-audio"><thead><tr><th class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-select-all ${records.length ? "" : "disabled"} aria-label="Alle Themen auswaehlen"></th><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "Thema")} auswaehlen"></td><td><div class="topic-thumb topic-thumb--table">${topicThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>Thema</td><td>${audioListCell("topics", item)}</td><td>${editorialMediaFlags(item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "galleries") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--galleries"><thead><tr><th>Bild</th><th>Titel</th><th>Bilder</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table gallery-thumb--table">${galleryThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a><small>${escapeHtml(shortText(item.description || "-", 90))}</small></td><td>${(item.images || []).length}</td><td>${galleryListStatus(item)}</td><td>${galleryActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="5">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "editorialContent") {
-    const actionButtons = section === "interna" ? lockedEditorialActionButtons : editorialVisibilityActionButtons;
-    const isNewsList = section === "news";
-    const selectHead = isNewsList ? `<th class="cms-bulk-select-col"><input type="checkbox" data-news-bulk-select-all ${records.length ? "" : "disabled"} aria-label="Alle News auswaehlen"></th>` : "";
-    const selectCell = (item) => isNewsList ? `<td class="cms-bulk-select-col"><input type="checkbox" data-news-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "News")} auswaehlen"></td>` : "";
-    const emptyColspan = isNewsList ? 8 : 7;
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${isNewsList ? newsBulkToolbar(records) : ""}<div class="table-wrap"><table class="table table--editorial table--with-audio${section === "press" ? " table--press" : ""}${section === "news" ? " table--news" : ""}"><thead><tr>${selectHead}<th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr>${selectCell(item)}<td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td><td>${audioListCell("editorialContent", item)}</td><td>${editorialMediaFlags(item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${emptyColspan}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    const actionButtons = section === "interna" ? internalEditorialActionButtons : editorialVisibilityActionButtons;
+    const isBulkEditorialList = ["news", "press"].includes(section);
+    if (section === "interna") {
+      const legacyCount = records.filter((item) => internalUsageKey(item) === "legacy").length;
+      const legacyAction = legacyCount ? `<button class="button button--danger button--small" type="button" data-delete-internal-legacy>Altbestand löschen (${legacyCount})</button>` : "";
+      return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<div class="actions">${legacyAction}<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a></div>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--interna"><thead><tr><th>Bereich</th><th>Titel</th><th>Typ</th><th>Nutzung</th><th>Sortierung</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => { const usageKey = internalUsageKey(item); return `<tr class="internal-row internal-row--${escapeHtml(internalAreaKey(item))}" data-internal-usage="${escapeHtml(usageKey)}" data-record-id="${escapeHtml(item.id)}"><td>${internalAreaButton(item)}</td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || item.titel || "-")}">${escapeHtml(shortText(item.title || item.titel || "-", 76))}</a><small>${escapeHtml(shortText(item.introText || item.kurztext || item.bodyText || item.langtext || "-", 110))}</small></td><td><button class="internal-type-pill internal-preview-button" type="button" data-internal-preview="${escapeHtml(item.id)}">${escapeHtml(internalTypeLabel(item.typ || item.type || item.section))}</button></td><td><button class="internal-type-pill internal-usage-pill internal-usage-pill--${usageKey === "portal" ? "portal" : usageKey === "legacy" ? "legacy" : "other"} internal-preview-button" type="button" data-internal-preview="${escapeHtml(item.id)}">${escapeHtml(internalUsageLabel(item))}</button></td><td>${escapeHtml(String(item.sortOrder ?? item.sortierung ?? "-"))}</td><td>${status(internalStatusValue(item))}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`; }).join("") : `<tr><td colspan="7">${emptyText}</td></tr>`}</tbody></table></div><div id="internal-legacy-delete-result"></div></section>`));
+    }
+    const bulkLabel = section === "press" ? "Presse" : "News";
+    const selectHead = isBulkEditorialList ? `<th class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-select-all ${records.length ? "" : "disabled"} aria-label="Alle ${bulkLabel} auswaehlen"></th>` : "";
+    const selectCell = (item) => isBulkEditorialList ? `<td class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || bulkLabel)} auswaehlen"></td>` : "";
+    const emptyColspan = isBulkEditorialList ? 8 : 7;
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${isBulkEditorialList ? cmsBulkToolbar(records, { collection: "editorialContent", label: bulkLabel }) : ""}<div class="table-wrap"><table class="table table--editorial table--with-audio${section === "press" ? " table--press" : ""}${section === "news" ? " table--news" : ""}"><thead><tr>${selectHead}<th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr>${selectCell(item)}<td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td><td>${audioListCell("editorialContent", item, { showMeta: false })}</td><td>${editorialMediaFlags(item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${emptyColspan}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "members") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--members"><thead><tr><th>Logo</th><th>Mitglied</th><th>Ansprechperson</th><th>Kontakt</th><th>Art</th><th>Ort</th><th>Visible</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table member-logo-thumb--table">${memberLogoThumb(item, memberMediaAssets, section)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a>${memberProfileMissingCell(item)}</td><td>${escapeHtml(shortText(item.contactName || [item.firstName, item.lastName].filter(Boolean).join(" ") || "-", 70))}</td><td>${memberContactCell(item)}</td><td class="member-type-short" title="${escapeHtml(memberMembershipTypeTitle(item))}">${escapeHtml(memberMembershipTypeLabel(item))}</td><td>${escapeHtml([item.postalCode, item.city].filter(Boolean).join(" ") || "-")}</td><td>${memberVisibleToggleCell(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
@@ -3298,6 +3436,13 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
   const editMediaAssets = ["editorialContent", "topics", "sponsors"].includes(module) ? await list("media_assets").catch(() => []) : [];
   const audioProviders = ["editorialContent", "topics"].includes(module) ? await getOne("settings", "audioProviders").catch(() => null) : null;
   const videoLibrary = module === "editorialContent" ? await list("media_videos").catch(() => []) : [];
+  const documentLibrary = module === "editorialContent"
+    ? [
+      ...(await list("downloads").catch(() => [])).map((document) => ({ ...document, documentCollection: "downloads" })),
+      ...(await list("memberDocuments").catch(() => [])).map((document) => ({ ...document, documentCollection: "memberDocuments" }))
+    ].filter((document) => !["archived", "deleted"].includes(String(document.status || "").toLowerCase()))
+      .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || String(a.title || a.fileName || "").localeCompare(String(b.title || b.fileName || ""), "de"))
+    : [];
   const memberOptions = module === "users"
     ? (await list("members"))
       .filter((member) => (member.status || "active") === "active")
@@ -3429,8 +3574,13 @@ Ausgangstext:
     const thumbState = `${editorialSummaryThumb(item)}${item.imageUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`}`;
     const audioState = item.audioUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
     const galleryState = selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
-    const documentState = item.documentUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">PDF vorhanden</small>` : `<small class="editorial-tool-state">Kein PDF</small>`;
-    const documentTitle = item.documentTitle || item.documentFileName || item.assetFileName || "PDF-Anhang";
+    const selectedDocumentId = item.downloadId || item.download_id || item.documentId || item.document_id || "";
+    const selectedDocument = selectedDocumentId ? documentLibrary.find((document) => document.id === selectedDocumentId) : null;
+    const selectedDocumentUrl = selectedDocument?.documentUrl || selectedDocument?.assetUrl || selectedDocument?.fileUrl || selectedDocument?.downloadUrl || selectedDocument?.url || item.documentUrl || "";
+    const selectedDocumentTitle = selectedDocument?.title || selectedDocument?.fileName || item.documentTitle || item.documentFileName || item.assetFileName || "PDF-Anhang";
+    const documentOptions = documentLibrary.map((document) => `<option value="${escapeHtml(document.id)}" ${document.id === selectedDocumentId ? "selected" : ""}>${escapeHtml(document.title || document.fileName || document.id)}${document.documentCollection === "memberDocuments" ? " / Mitglieder" : ""}</option>`).join("");
+    const documentState = selectedDocumentUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">PDF vorhanden</small>` : `<small class="editorial-tool-state">Kein PDF</small>`;
+    const documentTitle = selectedDocumentTitle;
     const publicArticlePath = sectionKey === "member-area" ? `portal/article/${item.id}` : isRetrospectiveEditor ? `retrospective/${item.id}` : sectionKey === "news" ? `news/${item.id}` : `retrospective/${item.id}`;
     const publicArticleHref = `/?real=1#/${escapeHtml(publicArticlePath)}`;
     const sourceJsonValue = JSON.stringify(item.source_snapshot_json || item.sources || [], null, 2);
@@ -3458,7 +3608,6 @@ Ausgangstext:
             <div class="field editorial-text-field"><div class="editorial-field-head"><label>Shorttext / Intro</label>${aiFieldActions([{ action: "shortenText", target: "introText", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "introText" }])}</div><textarea name="introText">${escapeHtml(item.introText || "")}</textarea></div>
             <div class="actions editorial-save-inline">
               <button class="button button--primary">Speichern</button>
-              ${sectionKey === "news" ? `<button class="button button--secondary" type="button" data-news-publish-now="${escapeHtml(item.id)}">Veroeffentlichen</button>` : ""}
             </div><div id="content-save-result"></div>
           </div>
           <aside class="editorial-tools">
@@ -3492,9 +3641,8 @@ Ausgangstext:
             <details class="editorial-tool-details" data-editor-tool-panel="pdf">
               <summary><span>Medien</span><strong>PDF</strong>${documentState}</summary>
               <div class="editor-tool-section editor-tool-section--pdf">
-                ${item.documentUrl ? `<div class="member-pdf-asset"><strong>${escapeHtml(documentTitle)}</strong><a class="button button--secondary button--small" href="${escapeHtml(item.documentUrl)}" target="_blank" rel="noreferrer">PDF oeffnen</a></div>` : `<p class="muted">Noch kein PDF-Anhang vorhanden.</p>`}
-                <div class="field"><label>PDF hochladen</label><input type="file" name="documentFile" accept=".pdf,application/pdf"><p class="muted">Ein PDF pro Beitrag. Ein neuer Upload ersetzt den bisherigen PDF-Anhang.</p></div>
-                ${item.documentUrl ? `<label class="checkbox-line"><input type="checkbox" name="removeDocumentFile" value="1"> PDF-Anhang entfernen</label>` : ""}
+                ${selectedDocumentUrl ? `<div class="member-pdf-asset"><strong>${escapeHtml(documentTitle)}</strong><a class="button button--secondary button--small" href="${escapeHtml(selectedDocumentUrl)}" target="_blank" rel="noreferrer">PDF oeffnen</a></div>` : `<p class="muted">Noch kein PDF-Anhang vorhanden.</p>`}
+                <div class="field"><label>Dokument zuordnen</label><select name="downloadId"><option value="">Kein PDF zugeordnet</option>${documentOptions}</select><p class="muted">PDFs werden zentral in der Dokumentenverwaltung gepflegt und hier nur verknuepft.</p></div>
               </div>
             </details>
             ${articleVideoAttachmentEditor(item, videoLibrary)}
@@ -3578,61 +3726,131 @@ Ausgangstext:
       </form></section>`));
   }
   if (module === "editorialContent" && (item.key === "home.hero" || item.id === "home-hero")) {
-    return protect(cmsShell("cms/editorial/interna", `${cmsTitle("Startseite", "Hero bearbeiten", `<a class="button button--secondary button--small" href="#/cms/editorial/interna">Zurueck</a>`)}
-      <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid">
-        <div class="field"><label>Claim / Eyebrow</label><input name="teaserText" value="${escapeHtml(item.teaserText || "PROdigitalTV")}"></div>
-        <div class="field"><label>Hero-Headline</label><textarea name="title" required>${escapeHtml(item.title || "")}</textarea>${aiFieldActions([{ action: "improveText", target: "title", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "title" }])}</div>
-        <div class="field"><label>Hero-Subheadline</label><textarea name="subtitle">${escapeHtml(item.subtitle || "")}</textarea>${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div>
-        <div class="form-grid--two">
-          <div class="field"><label>CTA 1 Text</label><input name="buttonText" value="${escapeHtml(item.buttonText || "Naechstes Event")}"></div>
-          <div class="field"><label>CTA 1 Link</label><input name="buttonUrl" value="${escapeHtml(item.buttonUrl || "#/events")}"></div>
-          <div class="field"><label>CTA 2 Text</label><input name="secondaryButtonText" value="${escapeHtml(item.secondaryButtonText || "Mitglied werden")}"></div>
-          <div class="field"><label>CTA 2 Link</label><input name="secondaryButtonUrl" value="${escapeHtml(item.secondaryButtonUrl || "#/join")}"></div>
+    return protect(cmsShell("cms/editorial/interna", `${cmsTitle("Startseite", "Hero bearbeiten", `<div class="actions"><button class="button button--secondary button--small" type="button" data-internal-preview="${escapeHtml(item.id)}">Vorschau</button><a class="button button--secondary button--small" href="#/cms/editorial/interna">Zurueck</a></div>`)}
+      <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid is-save-aware">
+        <input type="hidden" name="status" value="${escapeHtml(item.status || "published")}">
+        <input type="hidden" name="visibility" value="${escapeHtml(item.visibility || "public")}">
+        <div class="editorial-workspace editorial-workspace--text-editor editorial-workspace--interna">
+          <div class="editorial-workspace__main">
+            <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Claim / Eyebrow</label>${aiFieldActions([{ action: "improveText", target: "teaserText", label: "Claim neu formulieren", entityType: module, entityId: item.id, fieldName: "teaserText" }])}</div><textarea name="teaserText" rows="2">${escapeHtml(item.teaserText || "PROdigitalTV")}</textarea></div>
+            <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Hero-Headline</label>${aiFieldActions([{ action: "improveText", target: "title", label: "Titel neu formulieren", entityType: module, entityId: item.id, fieldName: "title" }])}</div><textarea name="title" rows="2" required>${escapeHtml(item.title || "")}</textarea></div>
+            <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Hero-Subheadline</label>${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Text neu formulieren", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div><textarea name="subtitle">${escapeHtml(item.subtitle || "")}</textarea></div>
+            <div class="actions editorial-save-inline"><button class="button button--primary" type="submit">Speichern</button><div id="content-save-result"></div></div>
+          </div>
+          <aside class="editorial-tools">
+            <details class="editorial-tool-details">
+              <summary><span>Meta</span><strong>Startseiten-Hero</strong></summary>
+              <div class="editor-tool-section"><p class="muted">Sichtbarkeit und Status werden in der Liste ueber das Auge gesteuert.</p></div>
+            </details>
+            <details class="editorial-tool-details">
+              <summary><span>Aktion</span><strong>Buttons / Links</strong></summary>
+              <div class="editor-tool-section">
+                <div class="field"><label>CTA 1 Text</label><input name="buttonText" value="${escapeHtml(item.buttonText || "Naechstes Event")}"></div>
+                <div class="field"><label>CTA 1 Link</label><input name="buttonUrl" value="${escapeHtml(item.buttonUrl || "#/events")}"></div>
+                <div class="field"><label>CTA 2 Text</label><input name="secondaryButtonText" value="${escapeHtml(item.secondaryButtonText || "Mitglied werden")}"></div>
+                <div class="field"><label>CTA 2 Link</label><input name="secondaryButtonUrl" value="${escapeHtml(item.secondaryButtonUrl || "#/join")}"></div>
+              </div>
+            </details>
+            <details class="editorial-tool-details">
+              <summary><span>Medien</span><strong>Hero-Bild</strong></summary>
+              <div class="editor-tool-section"><div class="field"><label>Hero-Bild</label><div class="asset-preview">${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" alt="">` : `<p class="muted">Noch kein Bild zugeordnet.</p>`}</div>${linkedMediaActions({ collection: "editorialContent", id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=editorialContent&id=${item.id}&section=interna`, label: "Bild", assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, "editorialContent", "imageUrl")?.id || "" })}<p class="muted">Bild aus der Mediathek zuordnen oder dort neu erstellen.</p></div></div>
+            </details>
+          </aside>
         </div>
-        <div class="field"><label>Hero-Bild optional</label><input type="file" name="assetFile" accept="image/*"><p class="muted">${item.imageUrl ? "Aktuelles Bild ist zugeordnet. Neue Auswahl ersetzt es beim Speichern." : "Bild ueber Dateiauswahl zuordnen."}</p></div>
-        <div class="form-grid--two"><div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="published" ${item.status === "published" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Sichtbarkeit</label><select name="visibility"><option value="public" ${item.visibility === "public" ? "selected" : ""}>Oeffentlich</option><option value="members" ${item.visibility === "members" ? "selected" : ""}>Mitglieder</option><option value="internal" ${item.visibility === "internal" ? "selected" : ""}>Intern</option></select></div></div>
-        <button class="button button--primary">Speichern</button><div id="content-save-result"></div>
       </form></section>`));
   }
   if (module === "editorialContent" && isInternalEditorialItem(item)) {
     const managed = ["ueber_uns", "mitglied_werden"].includes(item.bereich) || item.editorialManaged;
+    const internalDownloads = [
+      ...(await list("downloads").catch(() => [])),
+      ...(await list("memberDocuments").catch(() => []))
+    ].filter((download) => !["archived", "deleted"].includes(String(download.status || "").toLowerCase()))
+      .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || String(a.title || "").localeCompare(String(b.title || ""), "de"));
+    const internalDownloadOptions = internalDownloads
+      .map((download) => `<option value="${escapeHtml(download.id)}" ${(item.downloadId || item.download_id) === download.id ? "selected" : ""}>${escapeHtml(download.title || download.fileName || download.id)}</option>`)
+      .join("");
+    const internalDocumentField = `<div class="field field--internal-download"><label>Dokument aus Dokumentenverwaltung</label><select name="downloadId"><option value="">Kein Dokument zugeordnet</option>${internalDownloadOptions}</select><p class="muted">Dokumente werden zentral gepflegt und hier nur verknuepft.</p></div>`;
+    const internalImageField = `<div class="field"><label>Bild</label><div class="asset-preview">${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" alt="">` : `<p class="muted">Noch kein Bild zugeordnet.</p>`}</div>${linkedMediaActions({ collection: "editorialContent", id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=editorialContent&id=${item.id}&section=interna`, label: "Bild", assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, "editorialContent", "imageUrl")?.id || "" })}<p class="muted">Bild aus der Mediathek zuordnen oder dort neu erstellen.</p></div>`;
     if (managed) {
+      const joinDownloadField = item.bereich === "mitglied_werden" ? internalDocumentField : "";
       const statusValue = item.status || "aktiv";
       const visibilityValue = item.sichtbarkeit || item.visibility || "oeffentlich";
-      return protect(cmsShell("cms/editorial/interna", `${cmsTitle("Interna", "Textbaustein bearbeiten", `<a class="button button--secondary button--small" href="#/cms/editorial/interna">Zurueck</a>`)}
-        <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid form-grid--compact">
-          <div class="form-grid--two">
-            <div class="field"><label>Slug</label><input name="slug" value="${escapeHtml(item.slug || item.id || "")}" required><p class="muted">Nach Anlage moeglichst nicht mehr aendern.</p></div>
-            <div class="field"><label>Icon</label><input name="icon" value="${escapeHtml(item.icon || "")}" placeholder="network, compass, law ..."></div>
-            <div class="field"><label>Bereich</label><select name="bereich"><option value="ueber_uns" ${item.bereich === "ueber_uns" ? "selected" : ""}>Ueber uns</option><option value="mitglied_werden" ${item.bereich === "mitglied_werden" ? "selected" : ""}>Mitglied werden</option></select></div>
-            <div class="field"><label>Typ</label><select name="typ">${["hero", "textblock", "vorteil", "eventformat", "kachelgruppe", "cta"].map((type) => `<option value="${type}" ${item.typ === type ? "selected" : ""}>${type}</option>`).join("")}</select></div>
-            <div class="field"><label>Sortierung</label><input name="sortierung" type="number" value="${escapeHtml(item.sortierung ?? item.sortOrder ?? 10)}"></div>
-            <div class="field"><label>Status</label><select name="status"><option value="aktiv" ${statusValue === "aktiv" ? "selected" : ""}>Aktiv</option><option value="inaktiv" ${statusValue === "inaktiv" ? "selected" : ""}>Inaktiv</option></select></div>
-            <div class="field"><label>Sichtbarkeit</label><select name="sichtbarkeit"><option value="oeffentlich" ${visibilityValue === "oeffentlich" || visibilityValue === "public" ? "selected" : ""}>Oeffentlich</option><option value="intern" ${visibilityValue === "intern" || visibilityValue === "internal" ? "selected" : ""}>Intern</option><option value="mitglieder" ${visibilityValue === "mitglieder" || visibilityValue === "members" ? "selected" : ""}>Mitglieder</option></select></div>
+      return protect(cmsShell("cms/editorial/interna", `${cmsTitle("Interna", "Textbaustein bearbeiten", `<div class="actions"><button class="button button--secondary button--small" type="button" data-internal-preview="${escapeHtml(item.id)}">Vorschau</button><a class="button button--secondary button--small" href="#/cms/editorial/interna">Zurueck</a></div>`)}
+        <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid is-save-aware">
+          <input type="hidden" name="status" value="${escapeHtml(statusValue)}">
+          <input type="hidden" name="sichtbarkeit" value="${escapeHtml(visibilityValue)}">
+          <div class="editorial-workspace editorial-workspace--text-editor editorial-workspace--interna">
+            <div class="editorial-workspace__main">
+              <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Titel</label>${aiFieldActions([{ action: "improveText", target: "titel", label: "Titel neu formulieren", entityType: module, entityId: item.id, fieldName: "titel" }])}</div><textarea name="titel" rows="2" required>${escapeHtml(item.titel || item.title || "")}</textarea></div>
+              <div class="field editorial-text-field"><div class="editorial-field-head"><label>Kurztext</label>${aiFieldActions([{ action: "shortenText", target: "kurztext", label: "Kurztext neu formulieren", entityType: module, entityId: item.id, fieldName: "kurztext" }])}</div><textarea name="kurztext">${escapeHtml(item.kurztext || item.introText || "")}</textarea></div>
+              <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Langtext</label>${aiFieldActions([{ action: "improveText", target: "langtext", label: "Text neu formulieren", entityType: module, entityId: item.id, fieldName: "langtext" }])}</div><textarea name="langtext">${escapeHtml(item.langtext || item.bodyText || "")}</textarea></div>
+              <div class="actions editorial-save-inline"><button class="button button--primary" type="submit">Speichern</button><div id="content-save-result"></div></div>
+            </div>
+            <aside class="editorial-tools">
+              <details class="editorial-tool-details">
+                <summary><span>Meta</span><strong>Interna-Block</strong></summary>
+                <div class="editor-tool-section">
+                <div class="field"><label>Slug</label><input name="slug" value="${escapeHtml(item.slug || item.id || "")}" required><p class="muted">Nach Anlage möglichst nicht mehr ändern.</p></div>
+                <div class="field field--internal-area"><label>Bereich</label><select name="bereich"><option value="ueber_uns" ${item.bereich === "ueber_uns" ? "selected" : ""}>Über uns</option><option value="mitglied_werden" ${item.bereich === "mitglied_werden" ? "selected" : ""}>Mitglied werden</option></select></div>
+                <div class="field field--internal-type"><label>Typ</label><select name="typ">${["hero", "textblock", "vorteil", "eventformat", "kachelgruppe", "cta"].map((type) => `<option value="${type}" ${item.typ === type ? "selected" : ""}>${type}</option>`).join("")}</select></div>
+                <div class="field"><label>Sortierung</label><input name="sortierung" type="number" value="${escapeHtml(item.sortierung ?? item.sortOrder ?? 10)}"></div>
+                <div class="field"><label>Icon</label><input name="icon" value="${escapeHtml(item.icon || "")}" placeholder="network, compass, law ..."></div>
+                <p class="muted">Sichtbarkeit und Status werden in der Liste über das Auge gesteuert.</p>
+                </div>
+              </details>
+              <details class="editorial-tool-details">
+                <summary><span>Aktion</span><strong>Button / Link</strong></summary>
+                <div class="editor-tool-section"><div class="field"><label>Button-Text optional</label><input name="button_text" value="${escapeHtml(item.button_text || item.buttonText || "")}"></div><div class="field"><label>Button-Ziel optional</label><input name="button_ziel" value="${escapeHtml(item.button_ziel || item.buttonUrl || "")}"></div></div>
+              </details>
+              <details class="editorial-tool-details">
+                <summary><span>Medien</span><strong>Bild</strong></summary>
+                <div class="editor-tool-section">${internalImageField}</div>
+              </details>
+              ${joinDownloadField ? `<details class="editorial-tool-details"><summary><span>Dokument</span><strong>Download</strong></summary><div class="editor-tool-section">${joinDownloadField}</div></details>` : ""}
+              <details class="editorial-tool-details">
+                <summary><span>Audio</span><strong>Audio & Barrierefreiheit</strong>${audioStatusBadge(audioVariantState("editorialContent", item, "accessible"))}</summary>
+                <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("editorialContent", item, { providerConfig: audioProviders })}</div>
+              </details>
+            </aside>
           </div>
-          <div class="field"><label>Titel</label><input name="titel" value="${escapeHtml(item.titel || item.title || "")}" required>${aiFieldActions([{ action: "improveText", target: "titel", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "titel" }])}</div>
-          <div class="field"><label>Kurztext</label><textarea name="kurztext">${escapeHtml(item.kurztext || item.introText || "")}</textarea>${aiFieldActions([{ action: "shortenText", target: "kurztext", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "kurztext" }])}</div>
-          <div class="field"><label>Langtext</label><textarea name="langtext">${escapeHtml(item.langtext || item.bodyText || "")}</textarea>${aiFieldActions([{ action: "improveText", target: "langtext", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "langtext" }])}</div>
-          <details class="editorial-tool-details" open>
-            <summary><span>Audio</span><strong>Audio & Barrierefreiheit</strong>${audioStatusBadge(audioVariantState("editorialContent", item, "accessible"))}</summary>
-            <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("editorialContent", item, { providerConfig: audioProviders })}</div>
-          </details>
-          <div class="form-grid--two"><div class="field"><label>Button-Text optional</label><input name="button_text" value="${escapeHtml(item.button_text || item.buttonText || "")}"></div><div class="field"><label>Button-Ziel optional</label><input name="button_ziel" value="${escapeHtml(item.button_ziel || item.buttonUrl || "")}"></div></div>
-          <button class="button button--primary">Speichern</button><div id="content-save-result"></div>
         </form></section>`));
     }
-    return protect(cmsShell("cms/editorial/interna", `${cmsTitle("Interna", "Textbaustein bearbeiten", `<a class="button button--secondary button--small" href="#/cms/editorial/interna">Zurueck</a>`)}
-      <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid form-grid--compact">
+    return protect(cmsShell("cms/editorial/interna", `${cmsTitle("Interna", "Textbaustein bearbeiten", `<div class="actions"><button class="button button--secondary button--small" type="button" data-internal-preview="${escapeHtml(item.id)}">Vorschau</button><a class="button button--secondary button--small" href="#/cms/editorial/interna">Zurueck</a></div>`)}
+      <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid is-save-aware">
         <input type="hidden" name="page" value="${escapeHtml(item.page || "")}">
         <input type="hidden" name="section" value="${escapeHtml(item.section || "")}">
         <input type="hidden" name="key" value="${escapeHtml(item.key || "")}">
         <input type="hidden" name="status" value="published">
         <input type="hidden" name="visibility" value="public">
-        <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(item.title || "")}">${aiFieldActions([{ action: "improveText", target: "title", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "title" }])}</div>
-        <div class="field"><label>Text</label><textarea name="bodyText">${escapeHtml(item.bodyText || "")}</textarea>${aiFieldActions([{ action: "improveText", target: "bodyText", label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div>
-        <div class="field"><label>Bild oder PDF</label>${item.imageUrl ? `<div class="asset-preview"><img src="${escapeHtml(item.imageUrl)}" alt=""></div>` : item.documentUrl || item.assetUrl ? `<p><a class="link" href="${escapeHtml(item.documentUrl || item.assetUrl)}" target="_blank" rel="noreferrer">${escapeHtml(item.assetFileName || "Datei oeffnen")}</a></p>` : `<p class="muted">Noch keine Datei gespeichert.</p>`}<input type="file" name="assetFile" accept="image/*,.pdf,application/pdf"><label class="checkbox-line"><input type="checkbox" name="removeAssetFile" value="1"> Datei loeschen</label><p class="muted">Bilder und PDFs koennen hier als Baustein-Asset hinterlegt werden.</p></div>
-        <p class="muted">Baustein: ${escapeHtml(item.key || [item.page, item.section].filter(Boolean).join(" / ") || item.id)}</p>
-        <button class="button button--primary">Speichern</button><div id="content-save-result"></div>
+        <div class="editorial-workspace editorial-workspace--text-editor editorial-workspace--interna">
+          <div class="editorial-workspace__main">
+            <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Titel</label>${aiFieldActions([{ action: "improveText", target: "title", label: "Titel neu formulieren", entityType: module, entityId: item.id, fieldName: "title" }])}</div><textarea name="title" rows="2">${escapeHtml(item.title || "")}</textarea></div>
+            <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Text</label>${aiFieldActions([{ action: "improveText", target: "bodyText", label: "Text neu formulieren", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div><textarea name="bodyText">${escapeHtml(item.bodyText || "")}</textarea></div>
+            <div class="actions editorial-save-inline"><button class="button button--primary" type="submit">Speichern</button><div id="content-save-result"></div></div>
+          </div>
+          <aside class="editorial-tools">
+            <details class="editorial-tool-details">
+              <summary><span>Meta</span><strong>Interna-Block</strong></summary>
+              <div class="editor-tool-section">
+              <div class="field"><label>Baustein</label><input value="${escapeHtml(item.key || [item.page, item.section].filter(Boolean).join(" / ") || item.id)}" readonly></div>
+              <div class="field"><label>Seite</label><input value="${escapeHtml(item.page || "-")}" readonly></div>
+              <div class="field"><label>Abschnitt</label><input value="${escapeHtml(item.section || "-")}" readonly></div>
+              <p class="muted">Sichtbarkeit und Status werden in der Liste ueber das Auge gesteuert.</p>
+              </div>
+            </details>
+            <details class="editorial-tool-details">
+              <summary><span>Medien</span><strong>Bild / Dokument</strong></summary>
+              <div class="editor-tool-section">
+                ${internalImageField}
+                ${internalDocumentField}
+              </div>
+            </details>
+            <details class="editorial-tool-details">
+              <summary><span>Audio</span><strong>Audio & Barrierefreiheit</strong>${audioStatusBadge(audioVariantState("editorialContent", item, "accessible"))}</summary>
+              <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("editorialContent", item, { providerConfig: audioProviders })}</div>
+            </details>
+          </aside>
+        </div>
       </form></section>`));
   }
   const fieldHtml = definition.fields.map(([field, label]) => {

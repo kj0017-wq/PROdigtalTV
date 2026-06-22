@@ -17,9 +17,32 @@ const storageBucket = "prodigitaltv-da47b.firebasestorage.app";
 function cleanText(value = "") {
   return String(value)
     .replace(/<[^>]*>/g, " ")
+    .replace(/^\s*#{1,6}\s*/gm, "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxCharacters);
+}
+
+function cleanAudioTextPart(value = "") {
+  return String(value || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/^\s*#{1,6}\s*/gm, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/(?:^|\s)(keywords?|schlagworte|quelle|quellen)\s*:.*/is, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function primaryAudioBody(item = {}, fields = []) {
+  return fields.map((field) => cleanAudioTextPart(item[field])).find((value) => value.length > 20) || "";
+}
+
+function audioSourceText(collection, item = {}) {
+  const subtitle = cleanAudioTextPart(item.subtitle);
+  const body = collection === "topics"
+    ? primaryAudioBody(item, ["longDescription", "bodyText", "shortDescription"])
+    : primaryAudioBody(item, ["bodyText", "articleText", "longDescription", "archiveText", "introText", "shortText", "teaserText", "postEventSummary"]);
+  return [subtitle, body].filter(Boolean).join("\n\n");
 }
 
 function textSignature(value = "") {
@@ -193,9 +216,7 @@ exports.generateArticleSpeechAsset = onCall({ region, secrets: [geminiApiKey], t
     const snapshot = await ref.get();
     if (!snapshot.exists) throw new HttpsError("not-found", "Artikel nicht gefunden.");
     const item = snapshot.data();
-    const text = collection === "topics"
-      ? [item.subtitle, item.longDescription, item.bodyText, item.shortDescription].filter(Boolean).join("\n\n")
-      : [item.subtitle, item.bodyText, item.introText, item.shortText, item.teaserText].filter(Boolean).join("\n\n");
+    const text = audioSourceText(collection, item);
     const signature = textSignature(text);
     const bucket = getStorage().bucket(storageBucket);
     const requestedVariant = request.data?.variant || "accessible";

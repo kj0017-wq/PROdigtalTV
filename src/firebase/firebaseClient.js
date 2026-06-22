@@ -87,7 +87,7 @@ export function realDataMode() {
   if (requested === "1") localStorage.setItem("prodigitaltv-real-data", "1");
   if (requested === "0") localStorage.removeItem("prodigitaltv-real-data");
   if (demoRequested) return false;
-  if (window.location.protocol !== "file:" && !["localhost", "127.0.0.1"].includes(window.location.hostname)) return true;
+  if (window.location.protocol !== "file:") return true;
   return localStorage.getItem("prodigitaltv-real-data") === "1";
 }
 

@@ -720,7 +720,11 @@ function ttsWords(text = "") {
     .replace(/\s+/g, " ")
     .trim()
     .split(" ")
-    .filter(Boolean);
+    .filter(isSpeakableTtsWord);
+}
+
+function isSpeakableTtsWord(word = "") {
+  return /[\p{L}\p{N}]/u.test(String(word || ""));
 }
 
 function ttsWordWeights(words = []) {
@@ -731,9 +735,17 @@ function ttsWordWeights(words = []) {
   });
 }
 
+function cropTimedWordsToSource(timedWords = [], sourceWords = []) {
+  if (!timedWords.length || !sourceWords.length) return { timedWords, stopAtTime: 0, legacyOverrun: false };
+  if (timedWords.length <= sourceWords.length + 8) return { timedWords, stopAtTime: 0, legacyOverrun: false };
+  const cropped = timedWords.slice(0, sourceWords.length);
+  return { timedWords: cropped, stopAtTime: cropped.at(-1)?.end || 0, legacyOverrun: true };
+}
+
 function ttsWordIndexForTime(state) {
+  const leadSeconds = Number(state.displayLeadSeconds || 0);
   if (state.timedWords?.length) {
-    const current = state.audio.currentTime || 0;
+    const current = (state.audio.currentTime || 0) + leadSeconds;
     const index = state.timedWords.findIndex((slot) => current >= slot.start && current < slot.end);
     if (index >= 0) return index;
     return current >= state.timedWords[state.timedWords.length - 1].end ? state.timedWords.length - 1 : 0;
@@ -753,9 +765,16 @@ function ttsWordIndexForTime(state) {
     });
     state.weightedDuration = duration;
   }
-  const current = state.audio.currentTime || 0;
+  const current = (state.audio.currentTime || 0) + leadSeconds;
   const index = state.wordWeights.findIndex((slot) => current >= slot.start && current < slot.end);
   return index >= 0 ? index : Math.max(0, Math.min(state.words.length - 1, state.words.length - 1));
+}
+
+function stopPublicTtsAtSourceEnd(state) {
+  if (!state?.stopAtTime || !state.audio) return;
+  if ((state.audio.currentTime || 0) >= state.stopAtTime + 0.16) {
+    closePublicTts();
+  }
 }
 
 function ttsSourceText(reader) {
@@ -891,8 +910,11 @@ async function startPublicTts(button) {
 
   const audio = new Audio(audioUrl);
   audio.preload = "metadata";
-  const timedWords = await loadTtsTiming(button.dataset.timingUrl || reader?.dataset.timingUrl || "");
+  const rawTimedWords = (await loadTtsTiming(button.dataset.timingUrl || reader?.dataset.timingUrl || ""))
+    .filter((word) => isSpeakableTtsWord(word.text));
   const sourceWords = ttsWords(ttsSourceText(reader));
+  const timingScope = cropTimedWordsToSource(rawTimedWords, sourceWords);
+  const timedWords = timingScope.timedWords;
   const words = timedWords.length ? timedWords.map((word) => word.text) : sourceWords;
   const inlineHighlight = { restore: [], nodes: [] };
   const inlineWordOffset = Number(reader?.dataset.ttsInlineOffset || 0) || 0;
@@ -920,6 +942,8 @@ async function startPublicTts(button) {
     pausedLabel,
     words,
     timedWords,
+    stopAtTime: timingScope.stopAtTime,
+    displayLeadSeconds: isAccessible ? (timedWords.length ? 0 : 0.45) : 0,
     inlineRestore: inlineHighlight.restore,
     inlineWordNodes: inlineHighlight.nodes,
     inlineWordOffset,
@@ -934,7 +958,12 @@ async function startPublicTts(button) {
   }, { once: true });
   if (isAccessible) {
     activePublicTts.timer = setInterval(() => updateAccessibleTtsWord(activePublicTts), 140);
-    audio.addEventListener("timeupdate", () => updateAccessibleTtsWord(activePublicTts));
+    audio.addEventListener("timeupdate", () => {
+      updateAccessibleTtsWord(activePublicTts);
+      stopPublicTtsAtSourceEnd(activePublicTts);
+    });
+  } else if (activePublicTts.stopAtTime) {
+    audio.addEventListener("timeupdate", () => stopPublicTtsAtSourceEnd(activePublicTts));
   }
   await audio.play();
 }
@@ -1525,10 +1554,26 @@ async function loadMailAdminData() {
   return { accounts, templates };
 }
 
+function cleanSpeechTextPart(value = "") {
+  return String(value || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/^\s*#{1,6}\s*/gm, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/(?:^|\s)(keywords?|schlagworte|quelle|quellen)\s*:.*/is, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function primarySpeechBody(item = {}, fields = []) {
+  return fields.map((field) => cleanSpeechTextPart(item[field])).find((value) => value.length > 20) || "";
+}
+
 function speechSourceText(collection, item = {}) {
-  return collection === "topics"
-    ? [item.subtitle, item.longDescription, item.bodyText, item.shortDescription].filter(Boolean).join("\n\n")
-    : [item.subtitle, item.longDescription, item.bodyText, item.articleText, item.archiveText, item.introText, item.shortText, item.teaserText, item.postEventSummary].filter(Boolean).join("\n\n");
+  const subtitle = cleanSpeechTextPart(item.subtitle);
+  const body = collection === "topics"
+    ? primarySpeechBody(item, ["longDescription", "bodyText", "shortDescription"])
+    : primarySpeechBody(item, ["bodyText", "articleText", "longDescription", "archiveText", "introText", "shortText", "teaserText", "postEventSummary"]);
+  return [subtitle, body].filter(Boolean).join("\n\n");
 }
 
 function speechTextSignature(collection, item = {}) {
@@ -1740,7 +1785,7 @@ function isProtectedInternalEditorialRecord(collection, record = {}) {
   if (["press", "news"].includes(record.page) || ["pressRelease", "news"].includes(record.section)) return false;
   if (["ueber_uns", "mitglied_werden"].includes(record.bereich)) return true;
   return ["home", "about", "join", "imprint", "privacy", "legal", "contact", "login", "members", "board"].includes(record.page)
-    || ["intro", "hero", "legal", "internal", "footer"].includes(record.section);
+    || ["intro", "hero", "legal", "footer"].includes(record.section);
 }
 
 function normalizeInternalEditorialValues(values = {}) {
@@ -1750,8 +1795,8 @@ function normalizeInternalEditorialValues(values = {}) {
   const publicVisibility = values.sichtbarkeit === "oeffentlich" ? "public" : values.sichtbarkeit === "mitglieder" ? "members" : "internal";
   return {
     ...values,
+    ...(values.id ? { id: values.id } : {}),
     slug,
-    id: values.id,
     page,
     section: "internal",
     key: `${values.bereich}.${slug || values.key || ""}`,
@@ -1761,6 +1806,8 @@ function normalizeInternalEditorialValues(values = {}) {
     sortOrder: Number(values.sortierung || values.sortOrder || 0),
     buttonText: values.button_text || values.buttonText || "",
     buttonUrl: values.button_ziel || values.buttonUrl || "",
+    downloadId: values.downloadId || values.download_id || "",
+    download_id: values.downloadId || values.download_id || "",
     visibility: publicVisibility,
     editorialManaged: true
   };
@@ -7329,6 +7376,26 @@ function editorialPreviewVideos(form) {
     return `<div class="article-video-poster editorial-preview-video-poster" data-youtube-video="${escapeHtml(video.youtubeVideoId)}" data-youtube-title="${escapeHtml(title)}" role="button" tabindex="0" aria-label="${escapeHtml(`${title} abspielen`)}">${video.poster ? `<img src="${escapeHtml(video.poster)}" alt="${escapeHtml(title)}">` : ""}${iframe}<span class="article-video-play" aria-hidden="true"></span><small>Mit Klick wird das Video gestartet.</small></div><h3>${escapeHtml(title)}</h3>`;
   }).join("")}</section>`;
 }
+
+function editorialPreviewSources(form) {
+  const raw = form.querySelector('[name="source_snapshot_json_text"]')?.value || "";
+  if (!raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return (Array.isArray(parsed) ? parsed : [parsed]).filter(Boolean).slice(0, 5);
+  } catch {
+    return raw.split(/\n+/).map((line) => ({ title: line.trim() })).filter((source) => source.title).slice(0, 5);
+  }
+}
+
+function editorialPreviewChips(value = "") {
+  return String(value || "")
+    .split(/[,;|]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
 function openEditorialPreviewLayer(form) {
   const values = formObject(form);
   const title = values.title || values.titel || "Redaktioneller Beitrag";
@@ -7339,20 +7406,59 @@ function openEditorialPreviewLayer(form) {
   const date = values.publishDate || values.validFrom || "";
   const imageUrl = form.querySelector("[data-image-preview] img")?.getAttribute("src") || "";
   const videoPreview = editorialPreviewVideos(form);
+  const isNewsPreview = values.page === "news" || values.section === "news";
+  const sources = editorialPreviewSources(form);
+  const tags = editorialPreviewChips(values.tags || values.seoKeywords || "");
+  const galleryLabel = form.querySelector('[name="galleryId"] option:checked')?.textContent?.trim() || "";
+  const documentLabel = form.querySelector('[name="downloadId"] option:checked')?.textContent?.trim() || "";
+  const hasGallery = Boolean(values.galleryId);
+  const hasDocument = Boolean(values.downloadId || values.documentId || values.documentUrl);
+  const previewHeaderHtml = isNewsPreview
+    ? (imageUrl ? `<figure class="editorial-preview-news-hero"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}"><figcaption><p class="eyebrow">${escapeHtml(category)}${date ? ` / ${escapeHtml(date)}` : ""}</p><h1>${escapeHtml(title)}</h1></figcaption></figure>` : `<div class="editorial-preview-news-head"><p class="eyebrow">${escapeHtml(category)}${date ? ` / ${escapeHtml(date)}` : ""}</p><h1>${escapeHtml(title)}</h1></div>`)
+    : (imageUrl ? `<figure class="editorial-preview-hero"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}"><figcaption><p class="eyebrow">${escapeHtml(category)}${date ? ` / ${escapeHtml(date)}` : ""}</p><h1>${escapeHtml(title)}</h1></figcaption></figure>` : `<p class="eyebrow">${escapeHtml(category)}${date ? ` / ${escapeHtml(date)}` : ""}</p><h1>${escapeHtml(title)}</h1>`);
   document.querySelector(".editorial-preview-backdrop")?.remove();
   const wrapper = document.createElement("div");
   wrapper.className = "editorial-preview-backdrop";
-  wrapper.innerHTML = `<div class="editorial-preview-layer" role="dialog" aria-modal="true" aria-label="Redaktionelle Vorschau">
+  wrapper.innerHTML = `<div class="editorial-preview-layer ${isNewsPreview ? "editorial-preview-layer--news" : ""}" role="dialog" aria-modal="true" aria-label="Redaktionelle Vorschau">
     <div class="editorial-preview-top">
       <div><p class="eyebrow">Vorschau</p><h2>${escapeHtml(title)}</h2></div>
       <button type="button" class="link-button" data-editorial-preview-close>Schliessen</button>
     </div>
-    <article class="editorial-preview-article">
+    <article class="editorial-preview-article ${isNewsPreview ? "editorial-preview-article--news" : ""}">
+      ${isNewsPreview ? `<div class="editorial-preview-news-grid"><section class="editorial-preview-news-main">` : ""}
       ${videoPreview}
-      ${imageUrl ? `<figure class="editorial-preview-hero"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}"><figcaption><p class="eyebrow">${escapeHtml(category)}${date ? ` · ${escapeHtml(date)}` : ""}</p><h1>${escapeHtml(title)}</h1></figcaption></figure>` : `<p class="eyebrow">${escapeHtml(category)}${date ? ` · ${escapeHtml(date)}` : ""}</p><h1>${escapeHtml(title)}</h1>`}
+      ${previewHeaderHtml}
       ${subtitle ? `<p class="editorial-preview-subline">${escapeHtml(subtitle)}</p>` : ""}
       ${intro ? `<p class="editorial-preview-intro">${escapeHtml(intro)}</p>` : ""}
       <div class="editorial-preview-body">${editorialPreviewParagraphs(body)}</div>
+      ${isNewsPreview ? `</section><aside class="editorial-preview-side">
+        <section>
+          <p class="eyebrow">Status</p>
+          <dl class="editorial-preview-meta-list">
+            <div><dt>Rubrik</dt><dd>${escapeHtml(category || "-")}</dd></div>
+            <div><dt>Datum</dt><dd>${escapeHtml(date || "-")}</dd></div>
+            <div><dt>Sichtbar</dt><dd>${escapeHtml(values.visibility || "-")}</dd></div>
+            <div><dt>Status</dt><dd>${escapeHtml(values.status || "-")}</dd></div>
+          </dl>
+        </section>
+        <section>
+          <p class="eyebrow">Quellen</p>
+          ${sources.length ? `<ul class="editorial-preview-source-list">${sources.map((source) => {
+            const label = source.publisher || source.source || source.title || source.name || source.domain || source.url || "Quelle";
+            const url = source.url || source.original_url || source.originalUrl || "";
+            return `<li><strong>${escapeHtml(label)}</strong>${url ? `<small>${escapeHtml(url)}</small>` : ""}</li>`;
+          }).join("")}</ul>` : `<p class="muted">Keine Quellen im Editor hinterlegt.</p>`}
+        </section>
+        <section>
+          <p class="eyebrow">Assets</p>
+          <div class="editorial-preview-asset-list">
+            <span class="${imageUrl ? "is-ready" : ""}">Bild ${imageUrl ? "vorhanden" : "fehlt"}</span>
+            <span class="${hasGallery ? "is-ready" : ""}">Galerie ${hasGallery ? escapeHtml(galleryLabel) : "nicht verknuepft"}</span>
+            <span class="${hasDocument ? "is-ready" : ""}">PDF ${hasDocument ? escapeHtml(documentLabel) : "nicht verknuepft"}</span>
+          </div>
+        </section>
+        ${tags.length ? `<section><p class="eyebrow">Keywords</p><div class="editorial-preview-chip-list">${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div></section>` : ""}
+      </aside></div>` : ""}
     </article>
   </div>`;
   document.body.append(wrapper);
@@ -7365,11 +7471,67 @@ function openEditorialPreviewLayer(form) {
   wrapper.querySelector("[data-editorial-preview-close]")?.focus();
 }
 
+function internalPreviewLabel(record = {}) {
+  if (record.bereich === "ueber_uns" || record.page === "about") return "Über uns";
+  if (record.bereich === "mitglied_werden" || record.page === "join") return "Mitglied werden";
+  if (record.section === "footer") return "Footer";
+  if (record.section === "legal" || ["imprint", "privacy", "legal"].includes(record.page)) return "Rechtliches";
+  return "Interna";
+}
+
+function openInternalPreviewLayer(record = {}) {
+  const title = record.titel || record.title || record.headline || record.id || "Interna-Block";
+  const intro = record.kurztext || record.introText || record.subtitle || "";
+  const body = record.langtext || record.bodyText || record.articleText || record.text || "";
+  const type = record.typ || record.type || record.section || "-";
+  const statusLabel = record.status || record.visibility || record.sichtbarkeit || "-";
+  document.querySelector(".editorial-preview-backdrop")?.remove();
+  const wrapper = document.createElement("div");
+  wrapper.className = "editorial-preview-backdrop";
+  wrapper.innerHTML = `<div class="editorial-preview-layer editorial-preview-layer--internal" role="dialog" aria-modal="true" aria-label="Interna Vorschau">
+    <div class="editorial-preview-top">
+      <div><p class="eyebrow">Vorschau</p><h2>${escapeHtml(title)}</h2></div>
+      <button type="button" class="link-button" data-editorial-preview-close>Schliessen</button>
+    </div>
+    <article class="editorial-preview-article editorial-preview-article--internal">
+      <p class="eyebrow">${escapeHtml(internalPreviewLabel(record))}</p>
+      <h1>${escapeHtml(title)}</h1>
+      <dl class="internal-preview-meta">
+        <div><dt>Typ</dt><dd>${escapeHtml(type)}</dd></div>
+        <div><dt>Status</dt><dd>${escapeHtml(statusLabel)}</dd></div>
+        <div><dt>Sortierung</dt><dd>${escapeHtml(String(record.sortOrder ?? record.sortierung ?? "-"))}</dd></div>
+      </dl>
+      ${intro ? `<p class="editorial-preview-intro">${escapeHtml(intro)}</p>` : ""}
+      <div class="editorial-preview-body">${editorialPreviewParagraphs(body)}</div>
+      <div class="editorial-preview-actions"><a class="button button--secondary button--small" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(record.id)}&section=interna" data-editorial-preview-edit>Bearbeiten</a></div>
+    </article>
+  </div>`;
+  document.body.append(wrapper);
+  const close = () => wrapper.remove();
+  wrapper.querySelectorAll("[data-editorial-preview-close]").forEach((button) => button.addEventListener("click", close));
+  wrapper.querySelectorAll("[data-editorial-preview-edit]").forEach((link) => link.addEventListener("click", close));
+  wrapper.addEventListener("click", (event) => {
+    if (event.target === wrapper) close();
+  });
+  document.addEventListener("keydown", function onKey(event) {
+    if (event.key !== "Escape") return;
+    document.removeEventListener("keydown", onKey);
+    close();
+  });
+  wrapper.querySelector("[data-editorial-preview-close]")?.focus();
+}
+
 function wireEditorialPreviewLayer() {
   document.querySelectorAll("[data-editorial-preview-layer]").forEach((button) => {
     button.addEventListener("click", () => {
       const form = button.closest("form");
       if (form) openEditorialPreviewLayer(form);
+    });
+  });
+  document.querySelectorAll("[data-internal-preview]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const record = await getOne("editorialContent", button.dataset.internalPreview).catch(() => null);
+      if (record) openInternalPreviewLayer(record);
     });
   });
 }
@@ -10582,9 +10744,31 @@ function wireActions() {
         values.longDescription = values.bodyText;
         values.articleText = values.bodyText;
       }
+      if (form.dataset.module === "editorialContent" && Object.prototype.hasOwnProperty.call(values, "downloadId")) {
+        const selectedDownloadId = values.downloadId || "";
+        values.download_id = selectedDownloadId;
+        values.documentId = selectedDownloadId;
+        values.document_id = selectedDownloadId;
+        if (selectedDownloadId) {
+          const linkedDocument = await getOne("downloads", selectedDownloadId).catch(() => null)
+            || await getOne("memberDocuments", selectedDownloadId).catch(() => null);
+          if (!linkedDocument) throw new Error("Das ausgewaehlte Dokument wurde nicht gefunden.");
+          const documentUrl = linkedDocument.documentUrl || linkedDocument.assetUrl || linkedDocument.fileUrl || linkedDocument.downloadUrl || linkedDocument.url || "";
+          if (!documentUrl) throw new Error("Das ausgewaehlte Dokument hat keinen Datei-Link.");
+          values.documentUrl = documentUrl;
+          values.documentFileName = linkedDocument.fileName || linkedDocument.assetFileName || linkedDocument.title || "PDF";
+          values.documentTitle = linkedDocument.title || linkedDocument.fileName || linkedDocument.assetFileName || "PDF";
+          values.documentType = linkedDocument.documentType || linkedDocument.assetType || "application/pdf";
+          values.documentStoragePath = linkedDocument.documentStoragePath || linkedDocument.assetStoragePath || linkedDocument.storagePath || "";
+        } else {
+          values.documentUrl = "";
+          values.documentFileName = "";
+          values.documentTitle = "";
+          values.documentType = "";
+          values.documentStoragePath = "";
+        }
+      }
       const image = imageFileFromDropzone(form, "assetFile", form.dataset.id);
-      const documentFile = form.dataset.module === "editorialContent" ? form.querySelector('input[name="documentFile"]')?.files?.[0] : null;
-      const removeDocumentRequested = values.removeDocumentFile === "1";
       if (removeAssetRequested) {
         values.imageUrl = "";
         values.documentUrl = "";
@@ -10623,21 +10807,6 @@ function wireActions() {
           }
         }
         values.assetStoragePath = asset.storagePath;
-      }
-      if (removeDocumentRequested) {
-        values.documentUrl = "";
-        values.documentFileName = "";
-        values.documentStoragePath = "";
-        values.documentType = "";
-      }
-      if (documentFile) {
-        const isPdf = documentFile.type === "application/pdf" || /\.pdf$/i.test(documentFile.name || "");
-        if (!isPdf) throw new Error("Bitte nur PDF-Dateien als Beitragsanhang auswaehlen.");
-        const uploadedDocument = await uploadEntityImage(form.dataset.module, form.dataset.id, documentFile);
-        values.documentUrl = uploadedDocument.url;
-        values.documentFileName = documentFile.name;
-        values.documentStoragePath = uploadedDocument.storagePath;
-        values.documentType = documentFile.type || "application/pdf";
       }
       delete values.assetFile;
       delete values.assetFileDataUrl;
@@ -10957,12 +11126,11 @@ function wireActions() {
     const articleId = button.dataset.newsVisibleToggle;
     const nextVisible = button.dataset.visible === "true";
     const form = button.closest("form");
-    const result = form?.querySelector("#content-save-result") || button.closest("td") || button.closest(".editorial-meta-panel");
+    const result = form?.querySelector("#content-save-result") || button.closest(".editorial-meta-panel");
     const originalLabel = button.textContent;
     const originalTitle = button.getAttribute("title") || "";
     button.disabled = true;
-    if (originalLabel.trim()) button.textContent = nextVisible ? "chalte frei ..." : "Blende aus ...";
-    else button.setAttribute("title", nextVisible ? "chalte frei ..." : "Blende aus ...");
+    if (!originalLabel.trim()) button.setAttribute("title", nextVisible ? "schalte frei ..." : "blende aus ...");
     try {
       const existing = await getOne("editorialContent", articleId);
       if (!existing) throw new Error("News-Beitrag nicht gefunden.");
@@ -10977,18 +11145,22 @@ function wireActions() {
         publishDate: nextVisible ? existing.publishDate || new Date().toISOString().slice(0, 10) : existing.publishDate || "",
         updatedAt: new Date().toISOString()
       });
+      button.dataset.visible = nextVisible ? "false" : "true";
+      button.classList.toggle("icon-button--visible", nextVisible);
+      button.classList.toggle("icon-button--hidden", !nextVisible);
+      const nextLabel = nextVisible ? "Sichtbar: ausblenden" : "Unsichtbar: sichtbar machen";
+      button.setAttribute("title", nextLabel);
+      button.setAttribute("aria-label", nextLabel);
       if (result) result.insertAdjacentHTML("beforeend", `<div class="alert alert--success">${nextVisible ? "News ist freigeschaltet." : "News ist unsichtbar geschaltet."}</div>`);
-      window.setTimeout(render, 500);
     } catch (error) {
       if (result) result.insertAdjacentHTML("beforeend", `<div class="alert alert--error">Sichtbarkeit konnte nicht geaendert werden: ${escapeHtml(error.message || String(error))}</div>`);
     } finally {
       button.disabled = false;
-      if (originalLabel.trim()) button.textContent = originalLabel;
-      else button.setAttribute("title", originalTitle);
+      if (!button.getAttribute("title")) button.setAttribute("title", originalTitle);
     }
   }));
 
-  document.querySelectorAll("[data-news-publish-now]").forEach((button) => button.addEventListener("click", async () => {
+  document.querySelectorAll("[data-disabled-news-publish]").forEach((button) => button.addEventListener("click", async () => {
     const articleId = button.dataset.newsPublishNow;
     const form = button.closest("form");
     const result = form?.querySelector("#content-save-result");
@@ -11372,10 +11544,6 @@ function wireActions() {
   }));
   document.querySelectorAll("[data-record-status]").forEach((button) => button.addEventListener("click", async () => {
     const record = await getOne(button.dataset.recordStatus, button.dataset.recordId);
-    if (isProtectedInternalEditorialRecord(button.dataset.recordStatus, record)) {
-      window.alert("CMS-Interna duerfen nicht unsichtbar geschaltet werden.");
-      return;
-    }
     if (button.dataset.recordStatus === "members") {
       const nextVisible = button.dataset.status === "active";
       await upsert("members", {
@@ -11409,77 +11577,94 @@ function wireActions() {
     await render();
   }));
 
-  const newsBulkItems = Array.from(document.querySelectorAll("[data-news-bulk-item]"));
-  if (newsBulkItems.length) {
-    const selectAllControls = Array.from(document.querySelectorAll("[data-news-bulk-select-all]"));
-    const clearButton = document.querySelector("[data-news-bulk-clear]");
-    const hideButton = document.querySelector("[data-news-bulk-hide]");
-    const deleteButton = document.querySelector("[data-news-bulk-delete]");
-    const countLabel = document.querySelector("[data-news-bulk-count]");
-    const result = document.querySelector("#news-bulk-result");
-    const selectedIds = () => newsBulkItems.filter((item) => item.checked).map((item) => item.dataset.newsBulkItem).filter(Boolean);
+  const cmsBulkToolbar = document.querySelector("[data-cms-bulk-toolbar]");
+  const cmsBulkItems = Array.from(document.querySelectorAll("[data-cms-bulk-item]"));
+  if (cmsBulkToolbar && cmsBulkItems.length) {
+    const collection = cmsBulkToolbar.dataset.cmsBulkCollection || "editorialContent";
+    const label = cmsBulkToolbar.dataset.cmsBulkLabel || "Eintraege";
+    const selectAllControls = Array.from(document.querySelectorAll("[data-cms-bulk-select-all]"));
+    const clearButton = document.querySelector("[data-cms-bulk-clear]");
+    const showButton = document.querySelector("[data-cms-bulk-show]");
+    const hideButton = document.querySelector("[data-cms-bulk-hide]");
+    const deleteButton = document.querySelector("[data-cms-bulk-delete]");
+    const countLabel = document.querySelector("[data-cms-bulk-count]");
+    const result = document.querySelector("[data-cms-bulk-result]");
+    const selectedIds = () => cmsBulkItems.filter((item) => item.checked).map((item) => item.dataset.cmsBulkItem).filter(Boolean);
     const syncBulkState = () => {
       const ids = selectedIds();
-      const allSelected = ids.length > 0 && ids.length === newsBulkItems.length;
+      const allSelected = ids.length > 0 && ids.length === cmsBulkItems.length;
       selectAllControls.forEach((control) => {
         control.checked = allSelected;
-        control.indeterminate = ids.length > 0 && ids.length < newsBulkItems.length;
+        control.indeterminate = ids.length > 0 && ids.length < cmsBulkItems.length;
       });
+      if (showButton) showButton.disabled = ids.length === 0;
       if (hideButton) hideButton.disabled = ids.length === 0;
       if (deleteButton) deleteButton.disabled = ids.length === 0;
       if (countLabel) countLabel.textContent = `${ids.length} ausgewaehlt`;
     };
-    newsBulkItems.forEach((item) => item.addEventListener("change", syncBulkState));
+    cmsBulkItems.forEach((item) => item.addEventListener("change", syncBulkState));
     selectAllControls.forEach((control) => control.addEventListener("change", () => {
-      newsBulkItems.forEach((item) => { item.checked = control.checked; });
+      cmsBulkItems.forEach((item) => { item.checked = control.checked; });
       syncBulkState();
     }));
     clearButton?.addEventListener("click", () => {
-      newsBulkItems.forEach((item) => { item.checked = false; });
+      cmsBulkItems.forEach((item) => { item.checked = false; });
       syncBulkState();
     });
-    hideButton?.addEventListener("click", async () => {
+    const setBulkVisibility = async (nextVisible, actionButton) => {
       const ids = selectedIds();
       if (!ids.length) return;
-      hideButton.disabled = true;
-      if (result) result.innerHTML = `<div class="alert">Ausgewaehlte News werden unsichtbar geschaltet ...</div>`;
+      actionButton.disabled = true;
+      if (result) result.innerHTML = `<div class="alert">Ausgewaehlte ${escapeHtml(label)} werden ${nextVisible ? "sichtbar" : "unsichtbar"} geschaltet ...</div>`;
       try {
         const now = new Date().toISOString();
         await Promise.all(ids.map(async (id) => {
-          const existing = await getOne("editorialContent", id);
+          const existing = await getOne(collection, id);
           if (!existing) return;
-          await upsert("editorialContent", {
-            ...existing,
-            visible: false,
-            visibility: "internal",
-            status: "draft",
-            page: "news",
-            section: "news",
-            updatedAt: now
-          });
+          const updates = { ...existing, updatedAt: now };
+          if (collection === "topics") {
+            updates.status = nextVisible ? "published" : "inactive";
+            updates.visibility = nextVisible ? "public" : "internal";
+          } else {
+            updates.visible = nextVisible;
+            updates.visibility = nextVisible ? "public" : "internal";
+            updates.status = nextVisible ? "published" : "draft";
+            updates.page = updates.page || "news";
+            updates.section = updates.section || "news";
+            if (nextVisible) {
+              const today = new Date().toISOString().slice(0, 10);
+              updates.publishDate = updates.publishDate || today;
+              updates.validFrom = updates.validFrom || updates.publishDate || today;
+            }
+          }
+          await upsert(collection, updates);
         }));
-        if (result) result.innerHTML = `<div class="alert alert--success">${ids.length} News unsichtbar geschaltet.</div>`;
+        if (result) result.innerHTML = `<div class="alert alert--success">${ids.length} ${escapeHtml(label)} ${nextVisible ? "sichtbar" : "unsichtbar"} geschaltet.</div>`;
         window.setTimeout(render, 350);
       } catch (error) {
         if (result) result.innerHTML = `<div class="alert alert--error">Sammelaktion fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
       } finally {
-        hideButton.disabled = false;
+        actionButton.disabled = false;
       }
+    };
+    showButton?.addEventListener("click", () => setBulkVisibility(true, showButton));
+    hideButton?.addEventListener("click", async () => {
+      await setBulkVisibility(false, hideButton);
     });
     deleteButton?.addEventListener("click", async () => {
       const ids = selectedIds();
       if (!ids.length) return;
-      if (!window.confirm(`${ids.length} ausgewaehlte News wirklich loeschen?`)) return;
+      if (!window.confirm(`${ids.length} ausgewaehlte ${label} wirklich loeschen?`)) return;
       deleteButton.disabled = true;
-      if (result) result.innerHTML = `<div class="alert">Ausgewaehlte News werden geloescht ...</div>`;
+      if (result) result.innerHTML = `<div class="alert">Ausgewaehlte ${escapeHtml(label)} werden geloescht ...</div>`;
       try {
         await Promise.all(ids.map(async (id) => {
-          const record = await getOne("editorialContent", id);
+          const record = await getOne(collection, id);
           if (!record) return;
           await deleteStoredAsset(record);
-          await remove("editorialContent", id);
+          await remove(collection, id);
         }));
-        if (result) result.innerHTML = `<div class="alert alert--success">${ids.length} News geloescht.</div>`;
+        if (result) result.innerHTML = `<div class="alert alert--success">${ids.length} ${escapeHtml(label)} geloescht.</div>`;
         window.setTimeout(render, 350);
       } catch (error) {
         if (result) result.innerHTML = `<div class="alert alert--error">Loeschen fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
@@ -11511,6 +11696,35 @@ function wireActions() {
     button.closest("tr")?.remove();
     await render();
   }));
+
+  document.querySelector("[data-delete-internal-legacy]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const rows = Array.from(document.querySelectorAll('[data-internal-usage="legacy"][data-record-id]'));
+    const ids = rows.map((row) => row.dataset.recordId).filter(Boolean);
+    const result = document.querySelector("#internal-legacy-delete-result");
+    if (!ids.length) {
+      if (result) result.innerHTML = `<div class="alert">Kein Altbestand gefunden.</div>`;
+      return;
+    }
+    if (!window.confirm(`${ids.length} Altbestand-Eintraege wirklich loeschen?`)) return;
+    button.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Altbestand wird geloescht ...</div>`;
+    try {
+      await Promise.all(ids.map(async (id) => {
+        const record = await getOne("editorialContent", id);
+        if (!record || isProtectedInternalEditorialRecord("editorialContent", record)) return;
+        await deleteStoredAsset(record);
+        await remove("editorialContent", id);
+      }));
+      if (result) result.innerHTML = `<div class="alert alert--success">${ids.length} Altbestand-Eintraege geloescht.</div>`;
+      rows.forEach((row) => row.remove());
+      window.setTimeout(render, 350);
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Altbestand konnte nicht geloescht werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   document.querySelectorAll("[data-export-event]").forEach((button) => button.addEventListener("click", async () => {
     const event = await getOne("events", button.dataset.exportEvent);

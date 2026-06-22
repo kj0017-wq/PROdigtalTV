@@ -1127,8 +1127,15 @@ function isElevenLabsAudio({ audio = {}, audioProvider = "", audioUrl = "", audi
     || isElevenLabsAudioUrl(audio.audioUrl || audioUrl || audioAccessibleUrl || audioNaturalUrl);
 }
 
-function ttsReader({ rubric = "Audio", title = "", label = title || "Vorlesen", text = "", inlineOffsetText = title, audio = {}, audioProvider = "", audioUrl = "", audioAccessibleUrl = "", audioNaturalUrl = "", timingUrl = "", audioStatus = "", audioAccessibleStatus = "", audioNaturalStatus = "" }) {
-  const readerText = [title, text].filter(Boolean).join("\n\n");
+function cleanTtsReaderText(value = "") {
+  return String(value || "")
+    .replace(/^\s*#{1,6}\s*/gm, "")
+    .replace(/(?:^|\s)(keywords?|schlagworte|quelle|quellen)\s*:.*/is, "")
+    .trim();
+}
+
+function ttsReader({ rubric = "Audio", title = "", label = title || "Vorlesen", text = "", inlineOffsetText = "", includeTitleInText = true, audio = {}, audioProvider = "", audioUrl = "", audioAccessibleUrl = "", audioNaturalUrl = "", timingUrl = "", audioStatus = "", audioAccessibleStatus = "", audioNaturalStatus = "" }) {
+  const readerText = [includeTitleInText ? cleanTtsReaderText(title) : "", cleanTtsReaderText(text)].filter(Boolean).join("\n\n");
   const serviceStatus = audio.status || audioStatus;
   const serviceUrl = isElevenLabsAudio({ audio, audioProvider, audioUrl, audioAccessibleUrl, audioNaturalUrl })
     ? availableAudioUrl(audio.audioUrl || audioAccessibleUrl || audioUrl, serviceStatus, audioStatus)
@@ -1707,7 +1714,7 @@ export async function newsDetailPage(id) {
         <figure class="news-detail-clean__hero"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${displayTitle || "News"}`)}" loading="eager" decoding="async" ${imageFallbackAttrs("news")}><figcaption><h1>${escapeHtml(displayTitle)}</h1></figcaption></figure>
         <div class="news-detail-clean__body">
           ${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}
-          ${ttsReader({ rubric: item.category || "News", title: displayTitle || "", label: "Vorlesen", text: [item.subtitle, displayText].filter(Boolean).join("\n\n"), inlineOffsetText: [displayTitle, item.subtitle].filter(Boolean).join("\n\n"), audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
+          ${ttsReader({ rubric: item.category || "News", title: displayTitle || "", label: "Vorlesen", text: [item.subtitle, displayText].filter(Boolean).join("\n\n"), inlineOffsetText: item.subtitle || "", audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
           <div class="editorial-text">${articleParagraphs(displayText)}</div>
           ${articleVideosBlock(item)}
           ${newsDetailSources(item)}
@@ -1726,7 +1733,7 @@ export async function newsDetailPage(id) {
           intro: item.subtitle || ""
         })}
         <figure class="news-detail__thumb news-detail__hero-image"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${item.title || "News"}`)}" loading="eager" decoding="async" ${imageFallbackAttrs(isRetrospective ? "event" : "news")}></figure>
-        ${ttsReader({ rubric: isRetrospective ? "Rückblick" : item.category || "News", title: item.title || "", text: [item.subtitle, text].filter(Boolean).join("\n\n"), audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
+        ${ttsReader({ rubric: isRetrospective ? "Rückblick" : item.category || "News", title: item.title || "", text: [item.subtitle, text].filter(Boolean).join("\n\n"), inlineOffsetText: item.subtitle || "", audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
         <div class="editorial-text">${leadMedia}${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}${articleParagraphs(text)}</div>
         ${articleVideosBlock(item)}
         ${articleSourcesList(item)}
@@ -1755,7 +1762,7 @@ export async function topicDetailPage(id) {
     : [];
   const leadMedia = attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "";
   const editorialBlock = topicText
-    ? `<section class="section section--white"><div class="container topic-article">${ttsReader({ rubric: "Thema", title: topic.title || "", text: topicAudioText || topicText, audio: topic.audio || {}, audioProvider: topic.audioProvider || "", audioUrl: topic.audioUrl || "", audioAccessibleUrl: topic.audioAccessibleUrl || "", audioNaturalUrl: topic.audioNaturalUrl || "", timingUrl: topic.timingUrl || "", audioStatus: topic.audioStatus || "", audioAccessibleStatus: topic.audioAccessibleStatus || "", audioNaturalStatus: topic.audioNaturalStatus || "" })}${topicVisibleText}</div></section>`
+    ? `<section class="section section--white"><div class="container topic-article">${ttsReader({ rubric: "Thema", title: topic.title || "", text: topicAudioText || topicText, inlineOffsetText: topic.subtitle || "", audio: topic.audio || {}, audioProvider: topic.audioProvider || "", audioUrl: topic.audioUrl || "", audioAccessibleUrl: topic.audioAccessibleUrl || "", audioNaturalUrl: topic.audioNaturalUrl || "", timingUrl: topic.timingUrl || "", audioStatus: topic.audioStatus || "", audioAccessibleStatus: topic.audioAccessibleStatus || "", audioNaturalStatus: topic.audioNaturalStatus || "" })}${topicVisibleText}</div></section>`
     : "";
   const relatedTopicsBlock = relatedTopics.length
     ? `<section class="section section--white section--related-topics"><div class="container"><div class="section-head"><div><p class="eyebrow">Weitere Themen</p><h2>Mehr aus der Rubrik</h2></div></div><div class="card-grid card-grid--four">${relatedTopics.map(topicCard).join("")}</div></div></section>`
@@ -1841,6 +1848,8 @@ function joinAside(downloads, editorial) {
   const publicDownloads = downloads
     .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
   const downloadInfo = (item) => {
+    const linked = editorial.find((content) => (content.downloadId || content.download_id) === item.id);
+    if (linked) return linked;
     const key = /satzung/i.test(item.title || item.fileName || "") ? "join.downloadInfo.satzung" : /beitrag/i.test(item.title || item.fileName || "") ? "join.downloadInfo.membershipFees" : "";
     return editorial.find((content) => content.key === key || content.title === item.title);
   };
@@ -2192,7 +2201,7 @@ export async function memberArticleDetailPage(id) {
         <h1>${escapeHtml(item.title || "Redaktioneller Beitrag")}</h1>
         ${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}
         ${memberArticleAssetBar(item, galleries)}
-        ${ttsReader({ rubric: item.category || "Member Info", title: item.title || "", text: [item.subtitle, text].filter(Boolean).join("\n\n"), audio: item.audio || {}, audioProvider: item.audioProvider || item.auaioProvider || "", audioUrl: item.audioUrl || item.auaioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || item.auaioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || item.auaioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || item.auaioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || item.auaioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || item.auaioNaturalStatus || "" })}
+        ${ttsReader({ rubric: item.category || "Member Info", title: item.title || "", text: [item.subtitle, text].filter(Boolean).join("\n\n"), inlineOffsetText: item.subtitle || "", audio: item.audio || {}, audioProvider: item.audioProvider || item.auaioProvider || "", audioUrl: item.audioUrl || item.auaioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || item.auaioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || item.auaioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || item.auaioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || item.auaioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || item.auaioNaturalStatus || "" })}
         <div class="editorial-text">${articleParagraphs(text)}</div>
         ${galleryImages.length ? galleryPlayCta(selectedGallery, galleryImages) : ""}
         ${articlePdfBlock(item)}

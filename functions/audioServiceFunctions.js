@@ -18,6 +18,7 @@ const voiceCacheMs = 24 * 60 * 60 * 1000;
 function cleanText(value = "") {
   return String(value)
     .replace(/<[^>]*>/g, " ")
+    .replace(/^\s*#{1,6}\s*/gm, "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxCharacters);
@@ -27,10 +28,26 @@ function textHash(value = "") {
   return createHash("sha256").update(cleanText(value), "utf8").digest("hex");
 }
 
+function cleanAudioTextPart(value = "") {
+  return String(value || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/^\s*#{1,6}\s*/gm, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/(?:^|\s)(keywords?|schlagworte|quelle|quellen)\s*:.*/is, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function primaryAudioBody(item = {}, fields = []) {
+  return fields.map((field) => cleanAudioTextPart(item[field])).find((value) => value.length > 20) || "";
+}
+
 function audioSourceText(collection, item = {}) {
-  return collection === "topics"
-    ? [item.subtitle, item.longDescription, item.bodyText, item.shortDescription].filter(Boolean).join("\n\n")
-    : [item.subtitle, item.longDescription, item.bodyText, item.articleText, item.archiveText, item.introText, item.shortText, item.teaserText, item.postEventSummary].filter(Boolean).join("\n\n");
+  const subtitle = cleanAudioTextPart(item.subtitle);
+  const body = collection === "topics"
+    ? primaryAudioBody(item, ["longDescription", "bodyText", "shortDescription"])
+    : primaryAudioBody(item, ["bodyText", "articleText", "longDescription", "archiveText", "introText", "shortText", "teaserText", "postEventSummary"]);
+  return [subtitle, body].filter(Boolean).join("\n\n");
 }
 
 async function requireEditor(request) {

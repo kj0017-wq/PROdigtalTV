@@ -1,5 +1,5 @@
 import { demoDatabase } from "../data/demoData.js?v=5";
-import { getFirebaseServices, getFirestoreServices, firebaseEnabled, realDataMode } from "./firebaseClient.js?v=2";
+import { getFirebaseServices, getFirestoreServices, firebaseEnabled, realDataMode } from "./firebaseClient.js?v=3";
 
 const STORE_KEY = "prodigitaltv-demo-db-official-assets-v7";
 const PUBLIC_LIST_CACHE_MS = 45000;
@@ -256,9 +256,7 @@ function memberPortalDataMode() {
 function localCmsDataFallbackAllowed() {
   const pageQuery = new URLSearchParams(window.location.search || "");
   const hashQuery = new URLSearchParams(String(window.location.hash || "").split("?")[1] || "");
-  const explicitLocalFallback = pageQuery.get("lite") === "1"
-    || hashQuery.get("lite") === "1"
-    || pageQuery.get("demo") === "1"
+  const explicitLocalFallback = pageQuery.get("demo") === "1"
     || hashQuery.get("demo") === "1";
   return cmsDataMode()
     && ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)
@@ -739,6 +737,9 @@ export async function upsert(collectionName, entity) {
     } catch (error) {
       if (!canFallbackToLocal(error)) throw error;
     }
+  }
+  if (realDataMode() && !localCmsDataFallbackAllowed()) {
+    throw new Error("Firebase ist im Real-Modus nicht erreichbar. Es wurde nicht lokal gespeichert.");
   }
   const db = localDb();
   const collection = db[collectionName] || (db[collectionName] = []);
