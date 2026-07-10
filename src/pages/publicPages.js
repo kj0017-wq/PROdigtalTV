@@ -1,7 +1,7 @@
-import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, getOne } from "../firebase/dataService.js?v=497";
+import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, getOne } from "../firebase/dataService.js?v=498";
 import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=470";
 import { firebaseEnabled, localPreviewMode, realDataMode } from "../firebase/firebaseClient.js?v=2";
-import { publicShell, logo } from "../components/layout.js?v=6";
+import { publicShell, logo } from "../components/layout.js?v=7";
 import { eventCard, topicCard } from "../components/cards.js?v=3";
 import { accessLabels, lifecycleLabels } from "../data/demoData.js?v=6";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
@@ -258,6 +258,27 @@ function publicEventMediaAsset(event = {}, mediaAssets = []) {
     })[0];
 }
 
+function upcomingEventMediaAsset(event = {}, mediaAssets = []) {
+  const eventImageFields = ["imageUrl", "thumbnail_url", "thumbnailUrl", "assetUrl"];
+  const directIds = [event.thumbnail_media_asset_id, event.thumbnailMediaAssetId, event.mediaAssetId, event.media_asset_id, event.assetId].filter(Boolean);
+  return mediaAssets
+    .filter((asset) => directIds.includes(asset.id)
+      || (assetTargetCollection(asset) === "events" && assetTargetId(asset) === event.id && eventImageFields.includes(assetTargetField(asset) || "imageUrl"))
+      || (assetLinkedCollection(asset) === "events" && assetLinkedId(asset) === event.id && eventImageFields.includes(assetLinkedField(asset) || "imageUrl")))
+    .filter((asset) => mediaAssetUrl(asset))
+    .sort((a, b) => {
+      const score = (asset = {}) => [
+        directIds.includes(asset.id) ? "5" : "0",
+        assetTargetCollection(asset) === "events" && assetTargetId(asset) === event.id && eventImageFields.includes(assetTargetField(asset) || "imageUrl") ? "4" : "0",
+        assetLinkedCollection(asset) === "events" && assetLinkedId(asset) === event.id && eventImageFields.includes(assetLinkedField(asset) || "imageUrl") ? "3" : "0",
+        asset.source_type === "edited" ? "2" : "0",
+        asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
+        asset.id || ""
+      ].join("|");
+      return score(b).localeCompare(score(a));
+    })[0];
+}
+
 const currentMemberIds = new Set([
   "bibel-tv-stiftung",
   "channel-21",
@@ -464,7 +485,7 @@ function articleParagraphs(text = "") {
 function archiveEventImageUrl(event = {}, mediaAssets = []) {
   const asset = publicEventMediaAsset(event, mediaAssets);
   const currentUrl = mediaAssetUrl(asset || {}) || versionedAssetUrl(event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "", event);
-  if (validEventImageUrl(currentUrl)) return currentUrl;
+  if (validEventImageUrl(currentUrl) && !blockedStaticEventPlaceholder(currentUrl, event)) return currentUrl;
   if (!isPastEvent(event)) return fallbackImageUrl("event");
   const fallback = eventFallbackImageUrl(event);
   if (fallback) return fallback;
@@ -497,6 +518,13 @@ function eventFallbackImageUrl(event = {}) {
   return fallbacks[event.id] || "";
 }
 
+function blockedStaticEventPlaceholder(url = "", event = {}) {
+  const value = String(url || "").trim();
+  if (!value) return false;
+  if (isPastEvent(event)) return false;
+  return /\/assets\/official\/events\/event-[^/]+\.svg(?:\?|$)/i.test(value);
+}
+
 function blockedLegacyEventImageUrl(url = "") {
   return /DSC06819\.jpg|Images%2FDSC06819\.jpg|Images\/DSC06819\.jpg/i.test(String(url || ""));
 }
@@ -510,7 +538,14 @@ function validEventImageUrl(url = "") {
 }
 
 function blockedHomeEventImageUrl(url = "") {
-  return blockedLegacyEventImageUrl(url);
+  return blockedLegacyEventImageUrl(url) || /\/assets\/official\/events\/event-[^/]+\.svg(?:\?|$)/i.test(String(url || ""));
+}
+
+function upcomingEventImageUrl(event = {}, mediaAssets = []) {
+  const directUrl = versionedAssetUrl(event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "", event);
+  const directAssetUrl = mediaAssetUrl(upcomingEventMediaAsset(event, mediaAssets) || {});
+  const candidates = [directAssetUrl, directUrl].filter(Boolean);
+  return candidates.find((url) => validEventImageUrl(url) && !blockedHomeEventImageUrl(url) && !blockedStaticEventPlaceholder(url, event)) || fallbackImageUrl("event");
 }
 
 function eventDetailImageUrl(event = {}, mediaAssets = [], blockedUrls = []) {
@@ -572,13 +607,15 @@ function retrospectiveLinkedEvent(item = {}, events = []) {
   return null;
 }
 
-function archiveListEvent(event, partners = [], mediaAssets = [], editorial = [], eventMedia = []) {
+function archiveListEvent(event, partners = [], mediaAssets = [], editorial = [], eventMedia = [], galleries = []) {
   const host = partners.find((partner) => partner.id === event.hostId);
   const retrospectiveArticle = editorial.find((item) => isRetrospectiveArticle(item) && retrospectiveLinkedEvent(item, [event])?.id === event.id);
   const displayTitle = retrospectiveArticle?.title || event.retrospectiveTitle || event.title;
   const dateLabel = event.displayDate || formatDate(event.date);
   const detailUrl = retrospectiveArticle?.id ? `#/retrospective/${escapeHtml(retrospectiveArticle.id)}` : `#/event/${escapeHtml(event.id)}`;
-  const imageUrl = eventMediaThumbUrl(event, eventMedia) || archiveEventImageUrl(event, mediaAssets);
+  const imageUrl = eventMediaThumbUrl(event, eventMedia)
+    || archiveEventImageUrl(event, mediaAssets)
+    || retrospectiveThumbUrl(retrospectiveArticle, event, galleries, mediaAssets);
   return `<article class="archive-article archive-article--list">
     <a class="archive-article__thumb" href="${detailUrl}" aria-label="Rückblick ${escapeHtml(displayTitle)} ansehen">
       ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="Rückblick ${escapeHtml(displayTitle)}" loading="eager" decoding="async">` : `<span>${escapeHtml(event.eventType || "Archiv")}</span>`}
@@ -1502,9 +1539,7 @@ export async function eventsPage() {
   const visible = events.filter((event) => event.accessType !== "invitation_only" && (event.visibility === "public" || isMember(user) || event.showPublicTeaser));
   const rawUpcoming = visible.filter((event) => !isPastEvent(event));
   const mediaAssets = await listPublicEventMediaAssets(mobileLeanStart() ? rawUpcoming.slice(0, 6) : rawUpcoming).catch(() => []);
-  const upcoming = rawUpcoming.map((event) => ({ ...event, imageDisplayUrl: archiveEventImageUrl(event, mediaAssets) }));
-  if (upcoming.length === 1) return eventDetailPage(upcoming[0].id);
-  if (upcoming.length === 0) return archivePage();
+  const upcoming = rawUpcoming.map((event) => ({ ...event, imageDisplayUrl: upcomingEventImageUrl(event, mediaAssets) }));
   return publicShell("events", `${subhero("Veranstaltungen", "Events", "Kuratierte Formate für Wissenstransfer, Partnerschaften und relevante Branchenkontakte.")}
     <section class="section"><div class="container"><div class="filters"><button class="filter active">Kommende Events</button><button class="filter">Öffentlich</button><button class="filter">Mitglieder</button><a class="filter" href="#/archive">Rückblicke</a></div>
     ${upcoming.length ? `<div class="card-grid card-grid--three">${upcoming.map((event) => eventCard(event, false, sponsors)).join("")}</div>` : `<div class="alert">Aktuell sind keine neuen Termine veröffentlicht. Im Eventarchiv finden Sie die letzten PROdigitalTV-Veranstaltungen.</div>`}</div></section>`);
@@ -1805,7 +1840,7 @@ export async function boardPage() {
 
 export async function archivePage() {
   const leanMobile = mobileLeanStart();
-  const [allEvents, sponsors, editorial, galleries, eventMedia] = await Promise.all([listPublicEvents(), listPublicContent("sponsors"), listPublicContent("editorialContent"), listPublicContent("galleries"), listPublicContent("eventMedia")]);
+  const [allEvents, sponsors, editorial, galleries, eventMedia] = await Promise.all([listPublicEvents(true), listPublicContent("sponsors"), listPublicContent("editorialContent"), listPublicContent("galleries"), listPublicContent("eventMedia")]);
   const events = allEvents.filter((event) => isPastEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
   const mediaAssets = await listPublicEventMediaAssets(mobileLeanStart() ? events.slice(0, 8) : events).catch(() => []);
@@ -1813,7 +1848,7 @@ export async function archivePage() {
     .filter(isRetrospectiveArticle)
     .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")));
   const items = events.length
-    ? events.map((event) => archiveListEvent(event, sponsors, mediaAssets, editorial, eventMedia)).join("")
+    ? events.map((event) => archiveListEvent(event, sponsors, mediaAssets, editorial, eventMedia, galleries)).join("")
     : retrospectives.map((item) => archiveListEditorial(item, sponsors, events, mediaAssets, galleries)).join("");
   return publicShell("archive", `${leanMobile ? "" : subhero("Rückblick", "Rückblick", "Nachbericht, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen.")}
     <section class="section"><div class="container"><div class="section-head archive-list-head"><div><p class="eyebrow">Medienfrühstücke</p><h2>Rückblick</h2><p>Vergangene Veranstaltungen mit Nachbericht, Ort, Co-Gastgeber und Detailseite.</p></div></div><div class="archive-list archive-list--compact">${items || `<div class="alert">Rückblicke werden aktuell vorbereitet.</div>`}</div></div></section>`);
@@ -2099,15 +2134,12 @@ export async function memberPortalPage() {
   const ownMember = adminMode
     ? null
     : user.memberId ? await getOne("members", user.memberId).catch(() => null) : null;
-  if (!adminMode && !memberHasPortalAccess(ownMember)) {
-    return publicShell("login", `${subhero("Mitgliederbereich", "Zugang nicht aktiv", "Dieser Mitgliederzugang ist nicht oder nicht mehr berechtigt.")}
-      <section class="section section--white"><div class="container"><div class="alert alert--warning">Ihr Mitgliedsprofil ist aktuell nicht für den Mitgliederbereich freigeschaltet. Bitte wenden Sie sich an die Administration, falls dies nicht korrekt ist.</div><button id="logout-button" class="button button--secondary" style="margin-top:18px">Abmelden</button></div></section>`);
-  }
+  const linkedMemberBlocked = !adminMode && ownMember?.id && !memberHasPortalAccess(ownMember);
   const [allEvents, sponsors, memberDocuments, members, memberVideos, galleries] = await Promise.all([
     listPublicEvents(true).catch(() => []),
     listPublicContent("sponsors").catch(() => []),
     list("memberDocuments").catch(() => []),
-    (adminMode ? list("members") : listPublicContent("members")).then(withPublicMemberLogos).catch(() => []),
+    list("members").catch(() => listPublicContent("members")).then(withPublicMemberLogos).catch(() => []),
     listMemberContent("editorialContent").catch(() => []),
     list("galleries").catch(() => [])
   ]);
@@ -2119,6 +2151,13 @@ export async function memberPortalPage() {
     ? sortedMembers.find((member) => member.id === adminSelectedId) || await getOne("members", adminSelectedId).catch(() => null)
     : null;
   const editableMember = adminMode ? adminSelectedMember : ownMember;
+  const profileAccessNotice = !adminMode && (!ownMember?.id || linkedMemberBlocked)
+    ? `<div class="alert alert--warning member-portal-link-warning">${linkedMemberBlocked
+      ? `Ihr Mitgliedsprofil ist aktuell nicht fuer die Profilpflege freigeschaltet. Die Mitgliederliste bleibt sichtbar.`
+      : user.memberId
+        ? `Das verknuepfte Mitgliedsprofil <code>${escapeHtml(user.memberId)}</code> wurde noch nicht gefunden. Die Mitgliederliste bleibt sichtbar; die Profilpflege ist erst nach korrekter Verknuepfung moeglich.`
+        : `Ihr Login ist noch keinem Mitgliedsprofil zugeordnet. Die Mitgliederliste bleibt sichtbar; die Profilpflege ist erst nach Verknuepfung mit einem Mitgliedsdatensatz moeglich.`}</div>`
+    : "";
   const adminDropdown = adminMode ? `<form class="form-card form-grid" data-admin-member-picker>
     <p class="eyebrow">Admin</p>
     <div class="field"><label>Mitglied auswählen</label><select name="memberId" data-admin-member-select>
@@ -2129,9 +2168,14 @@ export async function memberPortalPage() {
   const visibleDocuments = memberDocuments
     .filter((item) => item.status === "published" && (item.visibility || "members") === "members")
     .sort((a, b) => String(b.meetingDate || b.publishDate || b.year || b.updatedAt || "").localeCompare(String(a.meetingDate || a.publishDate || a.year || a.updatedAt || "")));
-  const visibleMembers = members
-    .filter((member) => ["company", "individual"].includes(member.membershipType || "") && member.visible !== false && !memberAccessBlocked(member) && !["inactive", "cancelled", "archived"].includes(member.status || ""))
-    .sort((a, b) => Number(a.sortOrder || 9999) - Number(b.sortOrder || 9999) || String(a.name || "").localeCompare(String(b.name || "")));
+  const visibleMembers = sortedMembers
+    .filter((member) => {
+      const status = String(member.status || "active").toLowerCase();
+      return member.visible !== false
+        && member.isLive !== false
+        && !memberAccessBlocked(member)
+        && !["inactive", "cancelled", "archived", "deleted"].includes(status);
+    });
   const visibleMemberArticles = memberVideos
     .filter((item) => (item.visibility || "members") === "members" || item.page === "member-area" || item.section === "member-area" || String(item.category || "").toLowerCase().includes("mitglied"))
     .filter((item) => !["archived", "deleted", "hidden"].includes(String(item.status || "published").toLowerCase()) && item.visible !== false)
@@ -2173,6 +2217,7 @@ export async function memberPortalPage() {
     <section class="section section--white member-portal-shell"><div class="container">
       <div class="section-head member-portal-userbar"><p class="muted">Angemeldet als ${escapeHtml(user.email || "")}</p><button id="logout-button" class="button button--secondary">Abmelden</button></div>
       ${tabNav}
+      ${profileAccessNotice}
       ${content}
     </div></section>`);
 }

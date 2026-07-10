@@ -22,9 +22,13 @@ export function logo() {
   return `<a class="logo" href="#/home" aria-label="PROdigitalTV Startseite"><span class="logo__asset"><img src="/assets/official/brand/prodigitaltv-logo-claim.png" alt="PROdigitalTV - Interessengemeinschaft Digitale Medien e.V."></span></a>`;
 }
 
+function showCmsLink(user) {
+  return canUseCms(user) || ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+}
+
 export function header(active) {
   const user = currentUser();
-  const cmsLink = canUseCms(user) ? `<a class="button button--secondary button--small header-auth header-auth--cms" href="/cms.html#/cms">CMS</a>` : "";
+  const cmsLink = showCmsLink(user) ? `<a class="button button--secondary button--small header-auth header-auth--cms" href="/cms.html#/cms">CMS</a>` : "";
   const navLink = ([route, label]) => route === "about"
     ? `<div class="desktop-nav__item desktop-nav__item--has-submenu"><a class="${active === route || aboutSubnav.some(([subRoute]) => active === subRoute) ? "active" : ""}" href="#/${route}" aria-haspopup="true">${label}</a><div class="desktop-subnav">${aboutSubnav.map(([subRoute, subLabel]) => `<a class="${active === subRoute ? "active" : ""}" href="#/${subRoute}">${subLabel}</a>`).join("")}</div></div>`
     : `<a class="${active === route ? "active" : ""}" href="#/${route}">${label}</a>`;
@@ -44,7 +48,7 @@ export function header(active) {
   </div><nav class="public-mobile-menu" data-public-menu aria-label="Mobile Navigation">
     ${nav.map(menuLink).join("")}
     <div class="public-mobile-submenu" aria-label="Ueber uns Untermenue">${aboutSubnav.map(([route, label]) => `<a class="${active === route ? "active" : ""}" href="#/${route}" data-public-menu-close>${label}</a>`).join("")}</div>
-    ${canUseCms(user) ? `<a href="/cms.html#/cms" data-public-menu-close>CMS</a>` : ""}
+    ${showCmsLink(user) ? `<a href="/cms.html#/cms" data-public-menu-close>CMS</a>` : ""}
     <a href="#/${user ? "portal" : "login"}" data-public-menu-close>${user ? "Profil" : "Login"}</a>
   </nav></header>`;
 }

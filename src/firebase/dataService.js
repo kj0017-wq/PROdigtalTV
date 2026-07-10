@@ -1,11 +1,31 @@
 import { demoDatabase } from "../data/demoData.js?v=5";
 import { getFirebaseServices, getFirestoreServices, firebaseEnabled, realDataMode } from "./firebaseClient.js?v=3";
 
-const STORE_KEY = "prodigitaltv-demo-db-official-assets-v7";
+const STORE_KEY = "prodigitaltv-demo-db-official-assets-v8";
+const LEGACY_STORE_KEYS = [
+  "prodigitaltv-demo-db-official-assets-v7",
+  "prodigitaltv-demo-db-official-assets-v4"
+];
+const CURRENT_LOCAL_EVENT_IDS = [
+  "event-salzburg-red-bull-hangar7-2026",
+  "event-berlinale-2026",
+  "event-leica-welt-2026",
+  "event-salzburg-2025"
+];
 const PUBLIC_LIST_CACHE_MS = 45000;
 const PUBLIC_SESSION_CACHE_MS = 180000;
 const PUBLIC_READ_TIMEOUT_MS = 4500;
 const publicListCache = new Map();
+const REMOVED_DEMO_EVENT_IDS = new Set([
+  "event-archive-60",
+  "event-archive-63",
+  "event-archive-66",
+  "event-archive-67",
+  "event-archive-72",
+  "event-archive-73",
+  "event-archive-77",
+  "event-archive-79"
+]);
 
 const currentMemberSeeds = [
   ["bibel-tv-stiftung", "Bibel TV Stiftung gGmbH", "Hamburg"],
@@ -263,6 +283,13 @@ function localCmsDataFallbackAllowed() {
     && explicitLocalFallback;
 }
 
+function localMemberDataFallbackAllowed() {
+  return localCmsDataFallbackAllowed()
+    || (memberPortalDataMode()
+      && ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)
+      && !realDataMode());
+}
+
 async function waitForFirebaseAuth(firebase) {
   if (!firebase?.auth || firebase.auth.currentUser || !realDataMode()) return;
   await new Promise((resolve) => {
@@ -329,6 +356,13 @@ function mergeMissingDemoRecords(db, collectionName) {
   return missing.length;
 }
 
+function purgeRemovedDemoEvents(db) {
+  db.events = (db.events || []).filter((event) => !REMOVED_DEMO_EVENT_IDS.has(event.id));
+  db.editorialContent = (db.editorialContent || []).filter((item) => !REMOVED_DEMO_EVENT_IDS.has(item.linkedEventId || ""));
+  db.eventMedia = (db.eventMedia || []).filter((item) => !REMOVED_DEMO_EVENT_IDS.has(item.eventId || ""));
+  db.galleries = (db.galleries || []).filter((item) => !REMOVED_DEMO_EVENT_IDS.has(item.eventId || ""));
+}
+
 function syncManagedInternalEditorial(db, bereich) {
   const seedRecords = (demoDatabase.editorialContent || [])
     .filter((record) => record.editorialManaged && record.bereich === bereich);
@@ -344,7 +378,8 @@ function syncManagedInternalEditorial(db, bereich) {
 }
 
 function localDb() {
-  const stored = localStorage.getItem(STORE_KEY);
+  const stored = localStorage.getItem(STORE_KEY)
+    || LEGACY_STORE_KEYS.map((key) => localStorage.getItem(key)).find(Boolean);
   if (stored) {
     const db = JSON.parse(stored);
     mergeMissingDemoRecords(db, "members");
@@ -361,8 +396,9 @@ function localDb() {
     mergeMissingDemoRecords(db, "ai_prompts");
     mergeMissingDemoRecords(db, "ai_prompt_versions");
     mergeMissingDemoRecords(db, "ai_editorial_logs");
+    purgeRemovedDemoEvents(db);
     syncManagedInternalEditorial(db, "mitglied_werden");
-    ["event-salzburg-red-bull-hangar7-2026", "event-berlinale-2026", "event-leica-welt-2026", "event-salzburg-2025"].forEach((eventId) => {
+    CURRENT_LOCAL_EVENT_IDS.forEach((eventId) => {
       const demoEvent = demoDatabase.events.find((event) => event.id === eventId);
       const localEvent = (db.events || []).find((event) => event.id === eventId);
       if (demoEvent && localEvent) {
@@ -439,7 +475,7 @@ function scrubOversizedInlineImages(record = {}) {
 }
 
 export async function list(collectionName) {
-  if (collectionName === "members" && localCmsDataFallbackAllowed()) {
+  if (collectionName === "members" && localMemberDataFallbackAllowed()) {
     return normalizedCurrentLocalMembers();
   }
   const firebase = await getDataFirebase();
@@ -485,7 +521,7 @@ function publicCacheKey(collectionName, predicates) {
 }
 
 function publicSessionCacheKey(key = "") {
-  return `pdtv-public-list:${key}`;
+  return `pdtv-public-list-v2:${key}`;
 }
 
 function publicSessionCacheAllowed(collectionName, predicates = []) {
@@ -554,6 +590,34 @@ function directMediaAssetIds(record = {}) {
   ].filter(Boolean);
 }
 
+function officialEventAssetUrl(url = "") {
+  return /^\/assets\/official\/events\//i.test(String(url || "").trim());
+}
+
+function filterPublicCurrentEventAssets(events = [], assets = []) {
+  const currentEventIds = new Set(events
+    .filter((event) => !["archive_published", "post_processing", "archived"].includes(String(event.lifecyclePhase || "").toLowerCase()))
+    .map((event) => event.id)
+    .filter(Boolean));
+  if (!currentEventIds.size) return assets;
+  return assets.filter((asset) => {
+    const targetId = asset.target_id || asset.targetId || "";
+    const linkedId = asset.linked_record_id || asset.linkedRecordId || asset.linked_id || asset.linkedId || "";
+    const eventBound = currentEventIds.has(targetId) || currentEventIds.has(linkedId);
+    if (!eventBound) return true;
+    const urls = [
+      asset.file_path_web_url,
+      asset.file_path_thumb_url,
+      asset.file_path_original_url,
+      asset.imageUrl,
+      asset.assetUrl,
+      asset.downloadUrl,
+      asset.url
+    ].filter(Boolean);
+    return !urls.length || urls.every(officialEventAssetUrl);
+  });
+}
+
 export async function listPublicEventMediaAssets(eventsOrIds = []) {
   const events = eventsOrIds.map((item) => typeof item === "string" ? { id: item } : item).filter((item) => item?.id);
   const eventIds = [...new Set(events.map((event) => event.id))];
@@ -563,11 +627,11 @@ export async function listPublicEventMediaAssets(eventsOrIds = []) {
   const firebase = await getDataFirebase();
   if (!firebase) {
     if (realDataMode()) return [];
-    return (localDb().media_assets || []).filter((asset) => {
+    return filterPublicCurrentEventAssets(events, (localDb().media_assets || []).filter((asset) => {
       if (!publicActiveMediaAsset(asset)) return false;
       if (directIds.includes(asset.id)) return true;
       return mediaAssetEventIds(asset).some((eventId) => eventIds.includes(eventId));
-    });
+    }));
   }
 
   const requests = eventIds.flatMap((eventId) => [
@@ -587,7 +651,7 @@ export async function listPublicEventMediaAssets(eventsOrIds = []) {
       .catch(() => [])
   );
 
-  const records = (await Promise.all(requests)).flat().filter(publicActiveMediaAsset);
+  const records = filterPublicCurrentEventAssets(events, (await Promise.all(requests)).flat().filter(publicActiveMediaAsset));
   return Array.from(new Map(records.filter(Boolean).map((record) => [record.id, record])).values());
 }
 
@@ -606,7 +670,7 @@ export async function listPublicEvents(includeMemberEvents = false) {
   const publicEvents = await cachedConstrainedList("events", [["status", "==", "published"], ["visibility", "==", "public"]]);
   const activePublicEvents = publicEvents.filter(isEventVisible);
   if (!includeMemberEvents) return activePublicEvents;
-  const memberEvents = await cachedConstrainedList("events", [["accessType", "==", "members_only"]]);
+  const memberEvents = await cachedConstrainedList("events", [["accessType", "==", "members_only"]]).catch(() => []);
   const activeMemberEvents = memberEvents.filter(isEventVisible);
   return [...activePublicEvents, ...activeMemberEvents.filter((event) => !activePublicEvents.some((publicEvent) => publicEvent.id === event.id))];
 }
@@ -706,7 +770,7 @@ export async function getOne(collectionName, id) {
   const firebase = await getDataFirebase();
   if (!firebase) {
     if (realDataMode() && !localCmsDataFallbackAllowed()) throw new Error("Firebase ist im Real-Modus nicht erreichbar.");
-    if (collectionName === "members" && localCmsDataFallbackAllowed()) {
+    if (collectionName === "members" && localMemberDataFallbackAllowed()) {
       return (localDb().members || []).find((item) => item.id === id) || normalizedCurrentLocalMembers().find((item) => item.id === id) || null;
     }
     return (localDb()[collectionName] || []).find((item) => item.id === id) || null;
@@ -719,7 +783,7 @@ export async function getOne(collectionName, id) {
       ? normalizedCurrentLocalMembers().find((item) => item.id === id) || null
       : (localDb()[collectionName] || []).find((item) => item.id === id) || null;
     if (canFallbackToLocal(error)) {
-      if (collectionName === "members" && localCmsDataFallbackAllowed()) return (localDb().members || []).find((item) => item.id === id) || normalizedCurrentLocalMembers().find((item) => item.id === id) || null;
+      if (collectionName === "members" && localMemberDataFallbackAllowed()) return (localDb().members || []).find((item) => item.id === id) || normalizedCurrentLocalMembers().find((item) => item.id === id) || null;
       return (localDb()[collectionName] || []).find((item) => item.id === id) || null;
     }
     throw error;

@@ -84,9 +84,11 @@ export function realDataMode() {
   const pageQuery = new URLSearchParams(window.location.search || "");
   const requested = pageQuery.get("real") || hashQuery.get("real");
   const demoRequested = pageQuery.get("demo") === "1" || hashQuery.get("demo") === "1";
+  const localHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
   if (requested === "1") localStorage.setItem("prodigitaltv-real-data", "1");
   if (requested === "0") localStorage.removeItem("prodigitaltv-real-data");
   if (demoRequested) return false;
+  if (localHost) return requested === "1";
   if (window.location.protocol !== "file:") return true;
   return localStorage.getItem("prodigitaltv-real-data") === "1";
 }
@@ -95,8 +97,9 @@ export function localPreviewMode() {
   const hashQuery = new URLSearchParams(String(window.location.hash || "").split("?")[1] || "");
   const pageQuery = new URLSearchParams(window.location.search || "");
   if (realDataMode()) return false;
+  const localHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
   const demoFlag = pageQuery.get("demo") === "1"
     || hashQuery.get("demo") === "1"
     || localStorage.getItem("prodigitaltv-local-demo") === "1";
-  return window.location.protocol === "file:" || demoFlag;
+  return window.location.protocol === "file:" || localHost || demoFlag;
 }

@@ -210,13 +210,9 @@ function officialArchiveEvent(officialId, date, title, locationName, city, optio
 }
 
 export const additionalArchiveEvents = [
-  officialArchiveEvent("79", "2025-10-22", "20 Prozent Rabatt für die Medientage Muenchen 2025", "Medientage Muenchen", "Muenchen", { accessType: "members_only", eventType: "Mitgliederveranstaltung" }),
-  officialArchiveEvent("77", "2025-09-24", "20 Prozent Rabatt für die MediaTech Hub Conference 2025", "Studio Babelsberg", "Babelsberg", { accessType: "members_only", eventType: "Mitgliederveranstaltung" }),
   officialArchiveEvent("76", "2025-05-15", "Medienfruehstueck in Muenchen", "Kanzlei Heuking Kuehn Lueer Wojtek", "Muenchen", { imageUrl: "/assets/official/events/archive-76.jpg", summary: "Am 15. Mai 2025 lud PROdigitalTV zum Medienfruehstueck nach Muenchen ein. Die Veranstaltung in der Kanzlei Heuking Kuehn Lueer Wojtek verband aktuelle Branchenthemen mit persoenlichem Austausch." }),
   officialArchiveEvent("75", "2025-02-18", "Medienfruehstueck in Berlin: Die Agenda", "Kanzlei HEUSSEN", "Berlin", { hostId: "heussen" }),
   officialArchiveEvent("74", "2024-11-28", "Medienfruehstueck bei Red Bull in Salzburg", "Red Bull Arena / Bull's Corner", "Salzburg", { hostId: "red-bull-members-club" }),
-  officialArchiveEvent("73", "2024-10-23", "Rabatt für die Muenchner Medientage 2024", "Medientage Muenchen", "Muenchen", { accessType: "members_only", eventType: "Mitgliederveranstaltung" }),
-  officialArchiveEvent("72", "2024-09-25", "Rabatt für die MediaTech Hub Conference 2024", "Studio Babelsberg", "Babelsberg", { accessType: "members_only", eventType: "Mitgliederveranstaltung" }),
   officialArchiveEvent("71", "2024-06-27", "Mitgliederversammlung 2024", "Niederlassung Adesso", "Hamburg", { accessType: "members_only", eventType: "Mitgliederveranstaltung", hostId: "adesso" }),
   officialArchiveEvent("70", "2024-02-20", "PROdigitalTV Medienfruehstueck in Berlin", "HEUSSEN Rechtsanwaltsgesellschaft mbH", "Berlin", { hostId: "heussen", imageUrl: "/assets/official/events/archive-70.jpg" }),
   officialArchiveEvent("69", "2023-11-17", "PROdigitalTV Medienfruehstueck in Salzburg", "Red Bull Hangar-7", "Salzburg", { hostId: "red-bull-members-club", imageUrl: "/assets/official/events/archive-69.jpg" }),

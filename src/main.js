@@ -1,6 +1,6 @@
 import { route, onRouteChange, go } from "./utils/router.js";
 import { currentUser, canUseCms, isAdmin, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=470";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=492";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=493";
 import { escapeHtml, formatDate } from "./utils/format.js";
 
 const root = document.querySelector("#app");
@@ -10,7 +10,7 @@ const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9
 const localCodexStoreKey = "prodigitaltv-demo-db-official-assets-v7";
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=625");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=628");
 const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=591");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=490");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=102");
