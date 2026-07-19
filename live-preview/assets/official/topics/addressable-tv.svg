@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" role="img" aria-label="Addressable TV Themenbild">
+  <defs><linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#071a33"/><stop offset="1" stop-color="#123a70"/></linearGradient></defs>
+  <rect width="1200" height="720" fill="url(#bg)"/>
+  <rect x="170" y="170" width="650" height="375" rx="34" fill="#fff"/>
+  <rect x="215" y="215" width="560" height="250" rx="20" fill="#0b2446"/>
+  <circle cx="750" cy="235" r="115" fill="#e30613"/>
+  <circle cx="750" cy="235" r="62" fill="none" stroke="#fff" stroke-width="18"/>
+  <circle cx="750" cy="235" r="15" fill="#fff"/>
+  <path d="M845 330l185 185" stroke="#fff" stroke-opacity=".55" stroke-width="18" stroke-linecap="round"/>
+  <path d="M320 352h260M320 405h170" stroke="#fff" stroke-opacity=".55" stroke-width="18" stroke-linecap="round"/>
+  <text x="90" y="105" fill="#fff" font-family="Arial, sans-serif" font-size="44" font-weight="700">Addressable TV</text>
+</svg>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" role="img" aria-label="Content Management Themenbild">
+  <defs><linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#071a33"/><stop offset="1" stop-color="#0f2f5c"/></linearGradient></defs>
+  <rect width="1200" height="720" fill="url(#bg)"/>
+  <rect x="185" y="160" width="830" height="420" rx="32" fill="#fff"/>
+  <rect x="245" y="220" width="210" height="125" rx="18" fill="#e8eef7"/>
+  <rect x="495" y="220" width="210" height="125" rx="18" fill="#e8eef7"/>
+  <rect x="745" y="220" width="210" height="125" rx="18" fill="#e8eef7"/>
+  <rect x="245" y="395" width="460" height="125" rx="18" fill="#e8eef7"/>
+  <rect x="745" y="395" width="210" height="125" rx="18" fill="#0f2f5c"/>
+  <path d="M282 272h118M532 272h118M782 272h118M282 447h300" stroke="#0f2f5c" stroke-width="18" stroke-linecap="round"/>
+  <path d="M785 458l48 35 78-86" fill="none" stroke="#e30613" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="90" y="105" fill="#fff" font-family="Arial, sans-serif" font-size="44" font-weight="700">Content Management</text>
+</svg>

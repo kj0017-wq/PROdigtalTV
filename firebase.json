@@ -21,9 +21,21 @@
     ],
     "headers": [
       {
+        "source": "/",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-store" }
+        ]
+      },
+      {
         "source": "/index.html",
         "headers": [
-          { "key": "Cache-Control", "value": "no-cache" }
+          { "key": "Cache-Control", "value": "no-store" }
+        ]
+      },
+      {
+        "source": "/cms.html",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-store" }
         ]
       },
       {

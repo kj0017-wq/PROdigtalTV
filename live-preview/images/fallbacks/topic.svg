@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-label="PROdigitalTV Thema">
+  <rect width="1200" height="675" fill="#eef4fb"/>
+  <circle cx="360" cy="338" r="170" fill="#123866" opacity=".95"/>
+  <circle cx="615" cy="338" r="132" fill="#ffffff" stroke="#d7e0ea" stroke-width="4"/>
+  <circle cx="835" cy="338" r="110" fill="#e30613" opacity=".9"/>
+  <path d="M265 338h665M615 190v296" stroke="#ffffff" stroke-width="24" stroke-linecap="round" opacity=".9"/>
+  <text x="120" y="120" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="800" fill="#071f3f">PROdigitalTV</text>
+  <text x="120" y="568" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="800" fill="#123866">Thema</text>
+</svg>

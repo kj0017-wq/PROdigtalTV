@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" role="img" aria-label="FAST Channels Themenbild">
+  <defs><linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#071a33"/><stop offset="1" stop-color="#123a70"/></linearGradient></defs>
+  <rect width="1200" height="720" fill="url(#bg)"/>
+  <circle cx="1010" cy="120" r="220" fill="#fff" opacity=".06"/>
+  <g transform="translate(135 148)">
+    <rect width="290" height="188" rx="24" fill="#fff"/>
+    <rect x="350" width="290" height="188" rx="24" fill="#e8eef7"/>
+    <rect x="700" width="290" height="188" rx="24" fill="#fff"/>
+    <rect y="245" width="290" height="188" rx="24" fill="#e8eef7"/>
+    <rect x="350" y="245" width="290" height="188" rx="24" fill="#fff"/>
+    <rect x="700" y="245" width="290" height="188" rx="24" fill="#e8eef7"/>
+    <path d="M80 95h125M430 95h125M780 95h125M80 340h125M430 340h125M780 340h125" stroke="#0f2f5c" stroke-width="18" stroke-linecap="round"/>
+    <circle cx="235" cy="95" r="28" fill="#e30613"/>
+    <circle cx="585" cy="340" r="28" fill="#e30613"/>
+  </g>
+  <text x="90" y="105" fill="#fff" font-family="Arial, sans-serif" font-size="44" font-weight="700">FAST Channels</text>
+</svg>

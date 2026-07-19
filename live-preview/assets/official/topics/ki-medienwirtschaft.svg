@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" role="img" aria-label="KI in der Medienwirtschaft Themenbild">
+  <defs><linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#071a33"/><stop offset="1" stop-color="#0f2f5c"/></linearGradient></defs>
+  <rect width="1200" height="720" fill="url(#bg)"/>
+  <g fill="none" stroke="#ffffff" stroke-opacity=".45" stroke-width="10">
+    <path d="M360 360h480M600 165v390M440 230l320 260M760 230L440 490"/>
+  </g>
+  <g fill="#f5f7fb">
+    <circle cx="600" cy="360" r="105"/>
+    <circle cx="360" cy="360" r="48"/><circle cx="840" cy="360" r="48"/>
+    <circle cx="600" cy="165" r="48"/><circle cx="600" cy="555" r="48"/>
+    <circle cx="440" cy="230" r="38"/><circle cx="760" cy="230" r="38"/>
+    <circle cx="440" cy="490" r="38"/><circle cx="760" cy="490" r="38"/>
+  </g>
+  <circle cx="600" cy="360" r="70" fill="#e30613"/>
+  <text x="556" y="383" fill="#fff" font-family="Arial, sans-serif" font-size="64" font-weight="800">KI</text>
+  <text x="90" y="105" fill="#fff" font-family="Arial, sans-serif" font-size="44" font-weight="700">KI in der Medienwirtschaft</text>
+</svg>

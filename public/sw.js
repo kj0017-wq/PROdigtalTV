@@ -1,4 +1,4 @@
-﻿const CACHE = "pdt-platform-v757";
+const CACHE = "pdt-platform-v758";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.keys().then((keys) => Promise.all(keys
@@ -9,7 +9,8 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(caches.keys().then((keys) => Promise.all(keys
-    .filter((key) => key !== CACHE && (key.startsWith("pdt-platform-") || key.startsWith("prodigitaltv-pwa-")))
+    .filter((key) => key !== CACHE && (key.startsWith("pdt-platform-") || key.startsWith("prodigitaltv-pwa-"))
+    )
     .map((key) => caches.delete(key)))));
   self.clients.claim();
 });

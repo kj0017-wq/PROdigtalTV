@@ -4,14 +4,14 @@ Premium-B2B-Website, mobile Progressive Web App und CMS fuer **PROdigitalTV - Da
 
 ## 1. Architekturuebersicht
 
-Die Anwendung ist als mobile-first Single Page App mit nativen ES-Modulen aufgebaut. Sie laeuft ohne Build-Abhaengigkeiten sofort im Demo-Modus und nutzt im Produktionsbetrieb Firebase als gemeinsame Datenbasis fuer Website, App und CMS.
+Die Anwendung ist als mobile-first Single Page App mit nativen ES-Modulen aufgebaut. Website, App und CMS nutzen Firebase als gemeinsame Live-Datenbasis.
 
 | Ebene | Umsetzung |
 | --- | --- |
 | Public Website / PWA | `public/index.html`, Views und Komponenten in `src/`, Service Worker und Manifest |
 | CMS | Geschuetzte CMS-Routen unter `#/cms/*`, rollenbasierte Navigation und Bearbeitungsdialoge |
-| Datenzugriff | Repository-Schicht `src/firebase/dataService.js`, Demo-Fallback oder Cloud Firestore |
-| Authentifizierung | Firebase Authentication; Demo-Rollenumschaltung fuer lokale Vorschau |
+| Datenzugriff | Repository-Schicht `src/firebase/dataService.js` und Cloud Firestore |
+| Authentifizierung | Firebase Authentication mit Rollen aus Firestore |
 | Medien | Firebase Storage Adapter fuer Eventfotos, Logos und Downloads |
 | E-Mail-Bestaetigung | Firestore `mailQueue` und Cloud Functions in `functions/index.js` |
 | Bereitstellung | Firebase Hosting, Regeln und Indizes im Projektroot |
@@ -40,7 +40,7 @@ Die oeffentliche Website, mobile Darstellung und das CMS lesen dieselben Entitae
 | `system` | Installationsstatus | Dokument `setup` |
 | `auditLog` | Revisionsprotokoll | `entityType`, `entityId` |
 
-Felddefinitionen und produktionsnahe Beispieldaten stehen in [`src/data/demoData.js`](src/data/demoData.js). Alle IDs in Demo-Daten sind stabil, damit die idempotente Einrichtung keine Duplikate erzeugt.
+Felddefinitionen und Standardwerte stehen in `src/data/platformConstants.js`. Inhalte werden ausschliesslich in Firestore gepflegt.
 
 Referenten koennen im CMS mit `photoUrl`, `shortBio` und `longBio` gepflegt werden. Veroeffentlichte Profile werden ausschliesslich innerhalb ihrer zugeordneten Events mit Portrait und Vita ausgegeben.
 
@@ -98,10 +98,9 @@ CMS-Routen sind fuer `admin` und `editor` vorgesehen:
 
 - Verbindungstest fuer Firestore, Authentication und Storage
 - Strukturpruefung und initiale Settings/Rollen/Statuswerte
-- Optionale Demo-Daten
 - Setup- und Audit-Protokoll
 
-Die Routine ergaenzt fehlende Basisdokumente und ueberschreibt keine produktiven Inhalte. Das Entfernen von Demo-Daten ist in der UI bestaetigungspflichtig.
+Die Routine ergaenzt fehlende Basisdokumente und ueberschreibt keine produktiven Inhalte.
 
 ## Verwaltete Interna-Inhalte
 
@@ -114,7 +113,7 @@ Die oeffentlichen Rubriken `Ueber uns` und `Mitglied werden` werden ueber vorhan
 .\scripts\serve.ps1
 ```
 
-Danach im Browser `http://localhost:4173` oeffnen. Ohne Firebase-Konfiguration nutzt die Anwendung die Demo-Daten im lokalen Speicher. Im Login kann fuer die Produktvorschau eine Rolle gewaehlt werden.
+Danach im Browser `http://localhost:4173` oeffnen. Ohne erreichbare Firebase-Konfiguration werden keine lokalen Ersatzdaten geladen.
 
 Alternativ stehen fuer Umgebungen mit Node.js `node scripts/build.mjs` und `node scripts/serve.mjs` bereit.
 
@@ -124,38 +123,11 @@ Alternativ stehen fuer Umgebungen mit Node.js `node scripts/build.mjs` und `node
 2. Werte in `src/firebase/firebaseConfig.js` eintragen und `useFirebase: true` setzen.
 3. E-Mail/Passwort-Login und Google-Login in Firebase Authentication aktivieren.
 4. Service Account in Firebase erzeugen: Projekteinstellungen -> Dienstkonten -> Neuen privaten Schluessel generieren. Die JSON-Datei lokal z. B. unter `.secrets/prodigitaltv-service-account.json` ablegen und nicht committen.
-5. Abhaengigkeiten installieren und Demo-Daten nach Firestore exportieren:
+5. Abhaengigkeiten installieren:
 
 ```bash
 npm install
-npm run firebase:seed -- --service-account ./.secrets/prodigitaltv-service-account.json --admin-email admin@example.com
 ```
-
-Wenn Bilder, Logos und Vorstandsfotos ebenfalls nach Firebase Storage uebernommen werden sollen:
-
-```bash
-npm run firebase:seed -- --service-account ./.secrets/prodigitaltv-service-account.json --admin-email admin@example.com --upload-assets
-```
-
-Falls der Admin-User in Firebase Authentication noch nicht existiert:
-
-```bash
-npm run firebase:seed -- --service-account ./.secrets/prodigitaltv-service-account.json --admin-email admin@example.com --admin-password "SICHERES_PASSWORT"
-```
-
-Das Script schreibt alle Demo-Collections idempotent nach Firestore, entfernt Altseiten-Referenzen, markiert die importierten Datensaetze mit `demo: true` und legt fuer den Admin `users/{uid}` sowie den Custom Claim `role=admin` an.
-
-### Event-Pipeline fuer CMS-Rubriken
-
-Wenn Events und Event-Nachlauf neu klassifiziert oder neu aufgebaut werden sollen, nutzt die Pipeline `scripts/eventsPipeline.mjs`.
-
-```bash
-npm run firebase:events:pipeline -- --service-account ./.secrets/prodigitaltv-service-account.json --backup
-npm run firebase:events:pipeline -- --service-account ./.secrets/prodigitaltv-service-account.json --repair --dry-run
-npm run firebase:events:pipeline -- --service-account ./.secrets/prodigitaltv-service-account.json --reset-from-seed --dry-run
-```
-
-`--repair` markiert bestehende Events anhand von Datum, `expiresAt` und `lifecyclePhase`. `--reset-from-seed` erstellt zuerst ein Backup, leert `events` und importiert die Seed-Events neu. Echte Schreib- oder Loeschaktionen benoetigen zusaetzlich `--yes`.
 
 6. Regeln und Indizes deployen:
 

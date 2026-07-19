@@ -1,117 +1,10 @@
-import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, getOne } from "../firebase/dataService.js?v=498";
-import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=470";
-import { firebaseEnabled, localPreviewMode, realDataMode } from "../firebase/firebaseClient.js?v=2";
+import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, getOne } from "../firebase/dataService.js?v=514";
+import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=471";
 import { publicShell, logo } from "../components/layout.js?v=7";
-import { eventCard, topicCard } from "../components/cards.js?v=3";
-import { accessLabels, lifecycleLabels } from "../data/demoData.js?v=6";
+import { eventCard, topicCard } from "../components/cards.js?v=4";
+import { accessLabels, lifecycleLabels } from "../data/platformConstants.js?v=1";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
-import { fallbackImageUrl, imageFallbackAttrs, stableImageUrl } from "../utils/imageFallbacks.js?v=1";
-
-function editorialThumbDataUrl(title = "", label = "", context = "") {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675">
-    <defs>
-      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#071f3f"/>
-        <stop offset=".58" stop-color="#123866"/>
-        <stop offset="1" stop-color="#e30613"/>
-      </linearGradient>
-      <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#ffffff" stop-opacity=".96"/>
-        <stop offset="1" stop-color="#eaf2fb" stop-opacity=".88"/>
-      </linearGradient>
-    </defs>
-    <rect width="1200" height="675" fill="url(#bg)"/>
-    <path d="M0 485 C260 380 350 520 560 425 C775 326 840 180 1200 240 L1200 675 L0 675 Z" fill="#ffffff" opacity=".12"/>
-    <path d="M140 128 H486 V486 H140 Z" rx="28" fill="url(#panel)"/>
-    <path d="M730 128 H1070 V486 H730 Z" rx="28" fill="#081a33" opacity=".72"/>
-    <path d="M285 276 h58 v-72 h46 v72 h58 v42 h-58 v72 h-46 v-72 h-58z" fill="#e30613"/>
-    <path d="M805 342 C850 260 954 260 999 342" fill="none" stroke="#ffffff" stroke-width="22" stroke-linecap="round"/>
-    <path d="M815 380 C885 328 930 328 990 380" fill="none" stroke="#e30613" stroke-width="18" stroke-linecap="round"/>
-    <path d="M557 205 h86 v270 h-86z" fill="#ffffff" opacity=".92"/>
-    <path d="M508 475 h184" stroke="#ffffff" stroke-width="20" stroke-linecap="round"/>
-    <path d="M526 255 h148" stroke="#ffffff" stroke-width="16" stroke-linecap="round"/>
-    <path d="M526 255 l-62 128 h124z" fill="none" stroke="#ffffff" stroke-width="14" stroke-linejoin="round"/>
-    <path d="M674 255 l-62 128 h124z" fill="none" stroke="#ffffff" stroke-width="14" stroke-linejoin="round"/>
-    <text x="80" y="82" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="800" letter-spacing="3">${escapeHtml(label)}</text>
-    <text x="80" y="592" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="900">${escapeHtml(title)}</text>
-    <text x="82" y="632" fill="#dce8f7" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700">${escapeHtml(context)}</text>
-  </svg>`;
-  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-}
-
-const editorialFallbackNews = [
-  {
-    id: "news-gema-suno-ki-musik-urheberrecht",
-    title: "GEMA gegen Suno: KI-Musik wird zum Grundsatzfall für die Kreativwirtschaft",
-    headline: "GEMA gegen Suno: KI-Musik wird zum Grundsatzfall für die Kreativwirtschaft",
-    subtitle: "Vor dem Landgericht München geht es um die Frage, ob KI-Musik mit geschützten Werken trainiert wurde. Der Fall koennte wichtige Standards für Vergütung, Lizenzen und kreative Rechte setzen.",
-    subline: "Vor dem Landgericht München geht es um die Frage, ob KI-Musik mit geschützten Werken trainiert wurde. Der Fall koennte wichtige Standards für Vergütung, Lizenzen und kreative Rechte setzen.",
-    shortText: "Der Streit zwischen GEMA und Suno koennte zum europaeischen Musterfall für KI-Musik werden.",
-    bodyText: [
-      "Der Rechtsstreit zwischen der GEMA und dem US-Unternehmen Suno gehoert zu den wichtigsten Verfahren rund um generative KI in der Musikbranche. Suno bietet ein KI-Tool an, mit dem Nutzer per Texteingabe vollständige Songs erzeugen können. Die GEMA wirft dem Unternehmen vor, geschützte Werke aus ihrem Repertoire ohne Lizenz für das Training des Systems genutzt zu haben. Ausserdem sollen erzeugte KI-Songs bekannten Titeln teilweise so stark ähneln, dass Urheberrechte verletzt sein könnten.",
-      "Die Klage wurde am 21. Januar 2025 beim Landgericht München eingereicht. Am 9. Maerz 2026 wurde der Fall dort verhandelt. Nach Einschaetzung der GEMA handelt es sich um das erste europaeische Verfahren, das sich direkt mit der Nutzung von Audioinhalten durch KI-Unternehmen befasst. Ein Urteil steht noch aus; ein Copyright-Tracker von Taylor Wessing nennt den 12. Juni 2026 als erwarteten Entscheidungstermin.",
-      "Im Kern geht es um eine zentrale Frage für die digitale Medien- und Kreativwirtschaft: Darf ein KI-System mit urheberrechtlich geschützter Musik trainiert werden, ohne dass die Komponisten, Textautoren und Musikverlage zustimmen oder verguetet werden? Die GEMA argumentiert, dass der wirtschaftliche Erfolg solcher KI-Systeme auf menschlicher Kreativitaet beruht und die Rechteinhaber deshalb an der Nutzung beteiligt werden müssen.",
-      "Für die Medienbranche ist der Fall weit über Musik hinaus relevant. Wenn Gerichte klarstellen, dass KI-Training mit geschützten Inhalten lizenzpflichtig ist, haette das Folgen für viele Bereiche: Musikproduktion, TV, Streaming, Werbung, Archivnutzung, Synchronisation, Voice-Cloning, Trailer-Produktion und automatisierte Content-Erstellung. Besonders betroffen waeren Geschaeftsmodelle, bei denen KI neue Inhalte erzeugt, die auf bestehenden Werken, Stimmen, Stilen oder Produktionen beruhen.",
-      "Gleichzeitig zeigt der internationale Markt, dass sich die Branche bereits neu sortiert. In den USA haben grosse Musikunternehmen Verfahren gegen KI-Musikdienste wie Suno und Udio gefuehrt oder teilweise beigelegt. Reuters berichtete Anfang Juni 2026 zudem über eine neue Klage der US-Musikergewerkschaft gegen Warner und Universal, weil deren KI-Lizenzvereinbarungen aus Sicht der Musiker nicht ausreichend kompensieren.",
-      "Der Fall GEMA gegen Suno ist deshalb mehr als ein einzelner Urheberrechtsstreit. Er steht für die Frage, ob KI-Anbieter kreative Leistungen einfach als Trainingsmaterial nutzen dürfen - oder ob dafür klare Lizenzmodelle entstehen müssen. Für Kreative, Rechteinhaber, Medienhäuser und Plattformbetreiber geht es um nicht weniger als die wirtschaftliche Grundlage professioneller Inhalteproduktion im KI-Zeitalter.",
-      "Kurzfazit: Der Streit zwischen GEMA und Suno koennte zum europaeischen Musterfall für KI-Musik werden. Entscheidend wird sein, ob Gerichte das Training und die Ausgabe KI-generierter Musik als lizenzpflichtige Nutzung geschützter Werke bewerten."
-    ].join("\n\n"),
-    page: "news",
-    section: "news",
-    category: "KI / Musikrechte / Medienrecht / Digitale Medien",
-    tags: ["GEMA", "Suno", "KI-Musik", "Urheberrecht", "generative KI", "Musikrechte", "Lizenzierung", "Medienrecht", "Kreativwirtschaft", "AI Act"],
-    thumbnail_idea: "Geteiltes Bild: links ein klassisches Tonstudio mit Noten und Mischpult, rechts ein KI-Musikgenerator mit Wellenform und AI-Music-Label. In der Mitte eine Waage als Symbol für Urheberrecht und faire Vergütung.",
-    thumbnail_prompt: "Serioese redaktionelle Illustration für eine Medienbranchen-News, Thema GEMA gegen Suno, KI-Musik und Urheberrecht, links Tonstudio mit Noten und Mischpult, rechts digitales KI-Musikinterface mit Audiowellenform, zentrale Waage als Rechtssymbol, professioneller Stil, klare Linien, seriöse Farben, keine Comicoptik, geeignet für TV-, Streaming- und Digitalbranche.",
-    imageUrl: editorialThumbDataUrl("GEMA vs. Suno", "KI-Musik", "Urheberrecht und faire Vergütung"),
-    thumbnail_url: editorialThumbDataUrl("GEMA vs. Suno", "KI-Musik", "Urheberrecht und faire Vergütung"),
-    thumbnail_alt: "Redaktionelles Thumb zu GEMA gegen Suno mit Studio, KI-Musik und Rechtssymbol.",
-    source_snapshot_json: [
-      { title: "GEMA klagt gegen Suno: Landgericht München verhandelt erstes Verfahren im Bereich Audio-KI", publisher: "GEMA", url: "https://www.gema.de/de/w/gema-klagt-gegen-suno-2026", source_type: "Verwertungsgesellschaft" },
-      { title: "Suno AI und Open AI: GEMA klagt für faire Vergütung", publisher: "GEMA", url: "https://www.gema.de/de/aktuelles/ki-und-musik/ki-klage", source_type: "Verwertungsgesellschaft" },
-      { title: "Musicians union sues record labels over AI licensing", publisher: "Reuters", url: "https://www.reuters.com/legal/litigation/musicians-union-sues-record-labels-over-ai-licensing-2026-06-05/", source_type: "Nachrichtenagentur" }
-    ],
-    publishDate: "2026-06-07",
-    validFrom: "2026-06-07",
-    status: "published",
-    visibility: "public",
-    visible: true
-  },
-  {
-    id: "news-ki-kennzeichnungspflicht-transparenz-medienanbieter",
-    title: "KI-Kennzeichnungspflicht: Transparenz wird zur Pflichtaufgabe für Medienanbieter",
-    headline: "KI-Kennzeichnungspflicht: Transparenz wird zur Pflichtaufgabe für Medienanbieter",
-    subtitle: "Ab August 2026 gelten neue EU-Regeln für KI-generierte Inhalte. Für Medienanbieter wird Transparenz damit zur Pflichtaufgabe.",
-    subline: "Ab August 2026 gelten neue EU-Regeln für KI-generierte Inhalte. Für Medienanbieter wird Transparenz damit zur Pflichtaufgabe.",
-    shortText: "Medienanbieter sollten schon jetzt klare Regeln für Kennzeichnung, redaktionelle Pruefung und Verantwortlichkeit vorbereiten.",
-    bodyText: [
-      "Kuenstliche Intelligenz ist laengst in der Medienproduktion angekommen. Texte werden mit KI vorbereitet, Pressemitteilungen redaktionell umformuliert, Bilder generiert, Stimmen synthetisch erzeugt und Videos automatisiert bearbeitet. Was bisher oft eine technische oder redaktionelle Entscheidung war, wird mit dem europaeischen AI Act zunehmend auch zu einer Frage von Transparenz, Verantwortung und Vertrauen.",
-      "Die Transparenzpflichten des AI Act sollen ab 2. August 2026 gelten. Sie betreffen unter anderem KI-Systeme, mit denen Menschen direkt interagieren, sowie bestimmte KI-generierte oder manipulierte Inhalte. Die Europaeische Kommission nennt ausdruecklich synthetische Inhalte, Deepfakes und KI-generierte Veroeffentlichungen zu Themen von oeffentlichem Interesse.",
-      "Für Medienanbieter ist dabei entscheidend: Nicht jede Nutzung von KI muss automatisch gross sichtbar gekennzeichnet werden. Es macht einen Unterschied, ob KI nur bei Recherche, Zusammenfassung, Uebersetzung oder Formulierung unterstuetzt - oder ob Inhalte so erzeugt oder veraendert wurden, dass das Publikum über deren Ursprung getaeuscht werden koennte.",
-      "Besonders relevant wird die Kennzeichnung bei Bild-, Audio- und Videoinhalten, die reale Personen, Stimmen oder Ereignisse täuschend echt darstellen oder verändern. Wer solche Deepfakes oder synthetischen Medien veröffentlicht, muss künftig klarer offenlegen, dass KI eingesetzt wurde. Auch Anbieter generativer KI-Systeme sollen technische Markierungen ermöglichen, damit künstlich erzeugte oder manipulierte Inhalte maschinenlesbar erkannt werden können.",
-      "Auch Texte können betroffen sein, wenn sie mit KI erstellt und veröffentlicht werden, um die Öffentlichkeit über Themen von allgemeinem Interesse zu informieren. Für Redaktionen bleibt deshalb wichtig, dass KI-generierte Inhalte redaktionell geprüft, eingeordnet und verantwortet werden. Genau hier liegt die Chance für professionelle Medienanbieter: Nicht die KI selbst ist das Problem, sondern ein unklarer oder verdeckter Einsatz.",
-      "Für TV-, Streaming- und Digitalanbieter sollte KI-Transparenz künftig direkt im Redaktionssystem mitgedacht werden. Sinnvoll ist eine einfache Dokumentation: Wurde KI für Text, Bild, Audio, Video, Zusammenfassung oder Uebersetzung genutzt? Wurde der Inhalt redaktionell geprüft? Wer traegt die finale Verantwortung? Solche Informationen helfen nicht nur bei der rechtlichen Einordnung, sondern staerken auch die Glaubwuerdigkeit gegenueber Publikum, Partnern und Mitgliedern.",
-      "Die KI-Kennzeichnungspflicht ist damit kein reines Warnschild gegen neue Technologie. Sie ist ein Instrument, um Vertrauen in digitale Medien zu sichern. Wer KI offen, nachvollziehbar und redaktionell kontrolliert einsetzt, kann neue Produktionsmoeglichkeiten nutzen, ohne journalistische Standards aufzugeben.",
-      "Kurzfazit: Medienanbieter sollten schon jetzt klare Regeln für den Einsatz von KI vorbereiten. Dazu gehoeren Kennzeichnung, redaktionelle Pruefung, Verantwortlichkeit und eine einfache Dokumentation im CMS."
-    ].join("\n\n"),
-    page: "news",
-    section: "news",
-    category: "Medienrecht / KI / Digitale Medien",
-    tags: ["KI-Kennzeichnungspflicht", "AI Act", "Kuenstliche Intelligenz", "Medienrecht", "Deepfake", "Transparenzpflicht", "Redaktion", "CMS", "generative KI", "digitale Medien"],
-    thumbnail_idea: "Moderner digitaler Newsroom mit Monitoren, KI-Symbol und dezenter Label-Markierung AI. Der Stil sollte seriös, klar und redaktionell wirken - keine uebertriebene Science-Fiction.",
-    thumbnail_prompt: "Serioese redaktionelle Illustration für eine Medienbranchen-News, moderner digitaler Newsroom, Monitore, dezentes KI-Symbol, transparente Label-Markierung AI, europaeischer Regulierungs-Kontext, professionelle Atmosphaere, klare Linien, seriöser Stil, geeignet für TV-, Streaming- und Digitalbranche.",
-    imageUrl: editorialThumbDataUrl("AI Label", "KI-Transparenz", "Kennzeichnungspflicht für Medienanbieter"),
-    thumbnail_url: editorialThumbDataUrl("AI Label", "KI-Transparenz", "Kennzeichnungspflicht für Medienanbieter"),
-    thumbnail_alt: "Redaktionelles Thumb zur KI-Kennzeichnungspflicht mit Newsroom, AI-Label und Regulierungskontext.",
-    source_snapshot_json: [
-      { title: "Consultation on the draft guidelines on transparency obligations under AI Act", publisher: "Digitale Strategie Europa", url: "https://digital-strategy.ec.europa.eu/en/consultations/consultation-draft-guidelines-transparency-obligations-under-ai-act", source_type: "EU-Kommission" }
-    ],
-    publishDate: "2026-06-07",
-    validFrom: "2026-06-07",
-    status: "published",
-    visibility: "public",
-    visible: true
-  }
-];
+import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=1";
 
 function subhero(eyebrow, title, text) {
   return `<section class="subhero"><div class="container">${eyebrow ? `<p class="eyebrow">${eyebrow}</p>` : ""}<h1>${title}</h1><p>${text}</p></div></section>`;
@@ -124,7 +17,7 @@ function articleHeader({ eyebrow = "", title = "", intro = "", logoUrl = "", log
       <h1>${escapeHtml(title)}</h1>
       ${intro ? `<p>${escapeHtml(intro)}</p>` : ""}
     </div>
-    ${logoUrl ? `<figure class="article-header__logo"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(logoAlt || title)}" ${imageFallbackAttrs("topic")}></figure>` : ""}
+    ${logoUrl ? `<figure class="article-header__logo"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(logoAlt || title)}" ${liveImageAttrs("topic")}></figure>` : ""}
   </header>`;
 }
 
@@ -132,7 +25,7 @@ function memberLogo(member, options = {}) {
   const logoClass = `member-logo member-logo--${String(member.id || "").replace(/[^a-z0-9-]/gi, "").toLowerCase()}`;
   const logoUrl = safeMemberLogoUrl(member, member.logoDisplayUrl || member.logoUrl || "");
   return logoUrl
-    ? `<img class="${logoClass}" src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(member.name)}" ${imageFallbackAttrs("member")}>`
+    ? `<img class="${logoClass}" src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(member.name)}" ${liveImageAttrs("member")}>`
     : options.initialFallback
       ? `<span class="member-logo-initials" aria-hidden="true">${escapeHtml(initials(member.name || "Mitglied"))}</span>`
       : escapeHtml(member.name);
@@ -320,12 +213,6 @@ function publicMemberTypeKey(member = {}) {
   return "";
 }
 
-function explicitDemoMode() {
-  const hashQuery = new URLSearchParams(String(window.location.hash || "").split("?")[1] || "");
-  const pageQuery = new URLSearchParams(window.location.search || "");
-  return pageQuery.get("demo") === "1" || hashQuery.get("demo") === "1";
-}
-
 async function publicManagedMembers() {
   const liveMembers = (await listPublicContent("members").catch(() => []))
     .filter((member) => !memberAccessBlocked(member)
@@ -389,23 +276,28 @@ function publicMemberLogoAsset(member = {}, mediaAssets = []) {
 }
 
 function publicSponsorLogoAsset(sponsor = {}, mediaAssets = []) {
+  const collectionMatches = (value = "") => ["sponsors", "sponsor", "partners", "partner", "hosts", "host", "co_hosts", "coHosts"].includes(String(value || ""));
+  const fieldMatches = (value = "") => {
+    const normalized = String(value || "logoUrl").toLowerCase().replace(/[_-]/g, "");
+    return ["logourl", "logo", "imageurl", "image", "asseturl", "thumbnailurl"].includes(normalized);
+  };
   return mediaAssets
     .filter((asset) => {
-      const logoUrl = sponsor.logoUrl || "";
-      const directIds = [sponsor.logo_media_asset_id, sponsor.logoMediaAssetId, sponsor.thumbnail_media_asset_id, sponsor.mediaAssetId, sponsor.media_asset_id].filter(Boolean);
-      const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
+      const logoUrl = sponsor.logoUrl || sponsor.logo_url || sponsor.imageUrl || sponsor.image_url || sponsor.assetUrl || "";
+      const directIds = [sponsor.logo_media_asset_id, sponsor.logoMediaAssetId, sponsor.logoAssetId, sponsor.thumbnail_media_asset_id, sponsor.thumbnailMediaAssetId, sponsor.mediaAssetId, sponsor.media_asset_id, sponsor.assetId].filter(Boolean);
+      const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.image_url, asset.assetUrl, asset.url].filter(Boolean);
       return directIds.includes(asset.id)
-        || (asset.target_collection === "sponsors" && asset.target_id === sponsor.id && (asset.target_field || "logoUrl") === "logoUrl")
-        || (asset.linked_collection === "sponsors" && asset.linked_record_id === sponsor.id && (asset.linked_field || "logoUrl") === "logoUrl")
+        || (collectionMatches(assetTargetCollection(asset)) && assetTargetId(asset) === sponsor.id && fieldMatches(assetTargetField(asset)))
+        || (collectionMatches(assetLinkedCollection(asset)) && assetLinkedId(asset) === sponsor.id && fieldMatches(assetLinkedField(asset)))
         || (logoUrl && urls.includes(logoUrl));
     })
     .filter((asset) => mediaAssetUrl(asset))
     .sort((a, b) => {
-      const directIds = [sponsor.logo_media_asset_id, sponsor.logoMediaAssetId, sponsor.thumbnail_media_asset_id, sponsor.mediaAssetId, sponsor.media_asset_id].filter(Boolean);
+      const directIds = [sponsor.logo_media_asset_id, sponsor.logoMediaAssetId, sponsor.logoAssetId, sponsor.thumbnail_media_asset_id, sponsor.thumbnailMediaAssetId, sponsor.mediaAssetId, sponsor.media_asset_id, sponsor.assetId].filter(Boolean);
       const score = (asset = {}) => [
         directIds.includes(asset.id) ? "5" : "0",
-        asset.target_collection === "sponsors" && asset.target_id === sponsor.id && (asset.target_field || "logoUrl") === "logoUrl" ? "4" : "0",
-        asset.linked_collection === "sponsors" && asset.linked_record_id === sponsor.id && (asset.linked_field || "logoUrl") === "logoUrl" ? "3" : "0",
+        collectionMatches(assetTargetCollection(asset)) && assetTargetId(asset) === sponsor.id && fieldMatches(assetTargetField(asset)) ? "4" : "0",
+        collectionMatches(assetLinkedCollection(asset)) && assetLinkedId(asset) === sponsor.id && fieldMatches(assetLinkedField(asset)) ? "3" : "0",
         asset.source_type === "edited" ? "2" : "0",
         asset.status === "active" ? "2" : "1",
         asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
@@ -417,7 +309,7 @@ function publicSponsorLogoAsset(sponsor = {}, mediaAssets = []) {
 
 function publicSponsorLogoUrl(sponsor = {}, mediaAssets = []) {
   const asset = publicSponsorLogoAsset(sponsor, mediaAssets);
-  return mediaAssetUrl(asset || {}) || sponsor.logoUrl || "";
+  return mediaAssetUrl(asset || {}) || sponsor.logoUrl || sponsor.logo_url || sponsor.imageUrl || sponsor.image_url || sponsor.assetUrl || "";
 }
 
 async function withPublicMemberLogos(members = []) {
@@ -439,13 +331,13 @@ async function withPublicMemberLogos(members = []) {
 
 function boardPortrait(person) {
   return person.photoUrl
-    ? `<img src="${escapeHtml(person.photoUrl)}" alt="Portraet ${escapeHtml(person.name)}" ${imageFallbackAttrs("member")}>`
+    ? `<img src="${escapeHtml(person.photoUrl)}" alt="Portraet ${escapeHtml(person.name)}" ${liveImageAttrs("member")}>`
     : initials(person.name);
 }
 
 function speakerPortrait(speaker) {
   return speaker.photoUrl
-    ? `<img src="${escapeHtml(speaker.photoUrl)}" alt="Portraet ${escapeHtml(speaker.name)}" ${imageFallbackAttrs("member")}>`
+    ? `<img src="${escapeHtml(speaker.photoUrl)}" alt="Portraet ${escapeHtml(speaker.name)}" ${liveImageAttrs("member")}>`
     : `<span class="avatar">${initials(speaker.name)}</span>`;
 }
 
@@ -484,45 +376,21 @@ function articleParagraphs(text = "") {
 
 function archiveEventImageUrl(event = {}, mediaAssets = []) {
   const asset = publicEventMediaAsset(event, mediaAssets);
-  const currentUrl = mediaAssetUrl(asset || {}) || versionedAssetUrl(event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "", event);
-  if (validEventImageUrl(currentUrl) && !blockedStaticEventPlaceholder(currentUrl, event)) return currentUrl;
-  if (!isPastEvent(event)) return fallbackImageUrl("event");
-  const fallback = eventFallbackImageUrl(event);
-  if (fallback) return fallback;
-  const archivePhotoExtensions = {
-    32: "jpg",
-    33: "jpg",
-    37: "jpg",
-    45: "jpg",
-    48: "png",
-    61: "jpg",
-    62: "jpg",
-    69: "jpg",
-    70: "jpg",
-    76: "jpg"
-  };
-  const archiveUrl = (id) => `/assets/official/events/archive-${id}.${archivePhotoExtensions[id] || "svg"}`;
-  if (event.officialId) return archiveUrl(event.officialId);
-  const match = String(event.id || "").match(/event-archive-(\d+)/);
-  if (match) return archiveUrl(match[1]);
-  return event.id ? `/assets/official/events/${escapeHtml(event.id)}.svg` : fallbackImageUrl("event");
+  const candidates = [
+    mediaAssetUrl(asset || {}),
+    versionedAssetUrl(event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "", event)
+  ].filter(Boolean);
+  return candidates.find((url) => validEventImageUrl(url)) || "";
 }
 
-function eventFallbackImageUrl(event = {}) {
-  const fallbacks = {
-    "event-salzburg-red-bull-hangar7-2026": "/assets/official/events/event-salzburg-red-bull-hangar7-2026.svg",
-    "event-salzburg-2025": "/assets/official/events/event-salzburg-2025.svg",
-    "event-berlinale-2026": "/assets/official/events/event-berlinale-2026.svg",
-    "event-leica-welt-2026": "/assets/official/events/event-leica-welt-2026.svg"
-  };
-  return fallbacks[event.id] || "";
-}
-
-function blockedStaticEventPlaceholder(url = "", event = {}) {
+function staticOfficialEventImageUrl(url = "") {
   const value = String(url || "").trim();
   if (!value) return false;
-  if (isPastEvent(event)) return false;
-  return /\/assets\/official\/events\/event-[^/]+\.svg(?:\?|$)/i.test(value);
+  return /(?:\/|%2F)assets(?:\/|%2F)official(?:\/|%2F)events(?:\/|%2F)/i.test(value);
+}
+
+function blockedStaticEventPlaceholder(url = "") {
+  return staticOfficialEventImageUrl(url);
 }
 
 function blockedLegacyEventImageUrl(url = "") {
@@ -532,20 +400,22 @@ function blockedLegacyEventImageUrl(url = "") {
 function validEventImageUrl(url = "") {
   const value = String(url || "").trim();
   if (!value) return false;
-  if (/^data:image\//i.test(value)) return false;
+  if (value.startsWith("data:image/")) return false;
   if (blockedLegacyEventImageUrl(value)) return false;
+  if (staticOfficialEventImageUrl(value)) return false;
   return true;
 }
 
 function blockedHomeEventImageUrl(url = "") {
-  return blockedLegacyEventImageUrl(url) || /\/assets\/official\/events\/event-[^/]+\.svg(?:\?|$)/i.test(String(url || ""));
+  return blockedLegacyEventImageUrl(url) || staticOfficialEventImageUrl(url);
 }
 
-function upcomingEventImageUrl(event = {}, mediaAssets = []) {
+function upcomingEventImageUrl(event = {}, mediaAssets = [], options = {}) {
   const directUrl = versionedAssetUrl(event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "", event);
   const directAssetUrl = mediaAssetUrl(upcomingEventMediaAsset(event, mediaAssets) || {});
   const candidates = [directAssetUrl, directUrl].filter(Boolean);
-  return candidates.find((url) => validEventImageUrl(url) && !blockedHomeEventImageUrl(url) && !blockedStaticEventPlaceholder(url, event)) || fallbackImageUrl("event");
+  const match = candidates.find((url) => validEventImageUrl(url) && !blockedHomeEventImageUrl(url));
+  return match || "";
 }
 
 function eventDetailImageUrl(event = {}, mediaAssets = [], blockedUrls = []) {
@@ -554,10 +424,7 @@ function eventDetailImageUrl(event = {}, mediaAssets = [], blockedUrls = []) {
   if (candidate && !blocked.has(candidate)) return candidate;
   const direct = event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "";
   if (validEventImageUrl(direct) && !blocked.has(direct)) return direct;
-  if (!isPastEvent(event)) return fallbackImageUrl("event");
-  const fallback = eventFallbackImageUrl(event);
-  if (fallback && !blocked.has(fallback)) return fallback;
-  return fallbackImageUrl("event");
+  return "";
 }
 
 function eventTalkSpeakers(topic = {}, event = {}, speakers = []) {
@@ -613,12 +480,12 @@ function archiveListEvent(event, partners = [], mediaAssets = [], editorial = []
   const displayTitle = retrospectiveArticle?.title || event.retrospectiveTitle || event.title;
   const dateLabel = event.displayDate || formatDate(event.date);
   const detailUrl = retrospectiveArticle?.id ? `#/retrospective/${escapeHtml(retrospectiveArticle.id)}` : `#/event/${escapeHtml(event.id)}`;
-  const imageUrl = eventMediaThumbUrl(event, eventMedia)
-    || archiveEventImageUrl(event, mediaAssets)
-    || retrospectiveThumbUrl(retrospectiveArticle, event, galleries, mediaAssets);
+  const imageUrl = archiveEventImageUrl(event, mediaAssets)
+    || retrospectiveThumbUrl(retrospectiveArticle, event, galleries, mediaAssets)
+    || eventMediaThumbUrl(event, eventMedia);
   return `<article class="archive-article archive-article--list">
     <a class="archive-article__thumb" href="${detailUrl}" aria-label="Rückblick ${escapeHtml(displayTitle)} ansehen">
-      ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="Rückblick ${escapeHtml(displayTitle)}" loading="eager" decoding="async">` : `<span>${escapeHtml(event.eventType || "Archiv")}</span>`}
+      ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="Rückblick ${escapeHtml(displayTitle)}" loading="lazy" decoding="async">` : `<span>${escapeHtml(event.eventType || "Archiv")}</span>`}
     </a>
     <div class="archive-article__body">
       <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` · ${escapeHtml(event.city)}` : ""}</p>
@@ -647,14 +514,12 @@ function retrospectiveThumbUrl(item = {}, linkedEvent = null, galleries = [], me
   const articleAsset = publicEditorialMediaAsset(item, mediaAssets);
   const hasBrokenDirectAssetReference = directAssetIds.length && !articleAsset;
   const linkedEventThumb = linkedEvent ? archiveEventImageUrl(linkedEvent, mediaAssets) : "";
-  const linkedEventFallback = linkedEvent ? eventFallbackImageUrl(linkedEvent) : "";
-  const linkedEventHasOnlyFallback = linkedEventThumb && linkedEventFallback && linkedEventThumb === linkedEventFallback;
-  const preferredLinkedEventThumb = linkedEventThumb && !linkedEventHasOnlyFallback ? linkedEventThumb : "";
+  const preferredLinkedEventThumb = linkedEventThumb || "";
   const articleThumb = mediaAssetUrl(articleAsset || {}) || versionedAssetUrl(item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || "", item);
   const galleryThumb = galleryThumbUrlForRetrospective(item, linkedEvent, galleries);
   if (hasBrokenDirectAssetReference && preferredLinkedEventThumb) return preferredLinkedEventThumb;
-  if (articleThumb && !blockedLegacyEventImageUrl(articleThumb)) return articleThumb;
-  if (galleryThumb && !blockedLegacyEventImageUrl(galleryThumb)) return galleryThumb;
+  if (validEventImageUrl(articleThumb)) return articleThumb;
+  if (validEventImageUrl(galleryThumb)) return galleryThumb;
   return preferredLinkedEventThumb || linkedEventThumb;
 }
 
@@ -666,7 +531,7 @@ function archiveListEditorial(item, partners = [], events = [], mediaAssets = []
   const detailUrl = `#/retrospective/${escapeHtml(item.id)}`;
   return `<article class="archive-article archive-article--list">
     <a class="archive-article__thumb" href="${detailUrl}" aria-label="Rückblick ${escapeHtml(item.title || "Rückblick")} lesen">
-      ${thumbUrl ? `<img src="${escapeHtml(thumbUrl)}" alt="Rückblick ${escapeHtml(item.title || "")}" loading="eager" decoding="async">` : `<span>Rückblick</span>`}
+      ${thumbUrl ? `<img src="${escapeHtml(thumbUrl)}" alt="Rückblick ${escapeHtml(item.title || "")}" loading="lazy" decoding="async">` : `<span>Rückblick</span>`}
     </a>
     <div class="archive-article__body">
       <p class="eyebrow">${dateLabel ? formatDate(dateLabel.slice(0, 10)) : "Rückblick"}${sponsor ? ` · ${escapeHtml(sponsor.name)}` : ""}</p>
@@ -676,6 +541,33 @@ function archiveListEditorial(item, partners = [], events = [], mediaAssets = []
       <a class="link" href="${detailUrl}">Rückblick lesen -></a>
     </div>
   </article>`;
+}
+
+async function hydrateArchiveEventImages(events = [], mediaAssets = []) {
+  const hydrateOne = async (event) => {
+    if (archiveEventImageUrl(event, mediaAssets)) return event;
+    const freshEvent = await getOne("events", event.id).catch(() => null);
+    if (!freshEvent) return event;
+    return {
+      ...event,
+      imageUrl: freshEvent.imageUrl || event.imageUrl || "",
+      thumbnail_url: freshEvent.thumbnail_url || event.thumbnail_url || "",
+      thumbnailUrl: freshEvent.thumbnailUrl || event.thumbnailUrl || "",
+      assetUrl: freshEvent.assetUrl || event.assetUrl || "",
+      mediaAssetId: freshEvent.mediaAssetId || event.mediaAssetId || "",
+      media_asset_id: freshEvent.media_asset_id || event.media_asset_id || "",
+      thumbnail_media_asset_id: freshEvent.thumbnail_media_asset_id || event.thumbnail_media_asset_id || "",
+      thumbnailMediaAssetId: freshEvent.thumbnailMediaAssetId || event.thumbnailMediaAssetId || "",
+      updatedAt: freshEvent.updatedAt || event.updatedAt || "",
+      updated_at: freshEvent.updated_at || event.updated_at || ""
+    };
+  };
+  const hydrated = [];
+  for (let index = 0; index < events.length; index += 4) {
+    const chunk = events.slice(index, index + 4);
+    hydrated.push(...await Promise.all(chunk.map(hydrateOne)));
+  }
+  return hydrated;
 }
 
 const internalPageMeta = {
@@ -1092,29 +984,6 @@ function dedupeNewsItems(items = []) {
   return Array.from(byKey.values());
 }
 
-function mergeNewsWithFallback(cmsNews = [], fallbackNews = []) {
-  const byKey = new Map();
-  cmsNews.forEach((item) => byKey.set(newsIdentity(item), item));
-  fallbackNews.forEach((fallback) => {
-    const key = newsIdentity(fallback);
-    const existing = byKey.get(key);
-    if (!existing) {
-      byKey.set(key, fallback);
-      return;
-    }
-    const fallbackThumb = newsThumbUrl(fallback);
-    if (!newsThumbUrl(existing) && fallbackThumb) {
-      byKey.set(key, {
-        ...existing,
-        imageUrl: fallbackThumb,
-        thumbnail_url: fallback.thumbnail_url || fallbackThumb,
-        thumbnail_alt: existing.thumbnail_alt || fallback.thumbnail_alt || existing.title || fallback.title || ""
-      });
-    }
-  });
-  return Array.from(byKey.values());
-}
-
 function isRetrospectiveArticle(item = {}) {
   const category = String(item.category || "")
     .normalize("NFD")
@@ -1279,7 +1148,7 @@ function visibleGalleryImages(gallery = {}) {
   return (Array.isArray(gallery.images) ? gallery.images : [])
     .filter((image) => image.url || image.imageUrl || image.assetUrl || image.downloadUrl)
     .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
-    .map((image) => ({ ...image, url: image.url || image.imageUrl || image.assetUrl || image.downloadUrl, fallbackUrl: fallbackImageUrl("gallery") }));
+    .map((image) => ({ ...image, url: image.url || image.imageUrl || image.assetUrl || image.downloadUrl }));
 }
 
 function articleHasAudio(item = {}) {
@@ -1332,7 +1201,7 @@ function articleVideosBlock(item = {}) {
     const title = video.title || video.caption || "Video abspielen";
     return `<article class="article-video-card">
       <div class="article-video-poster" data-youtube-video="${escapeHtml(video.youtubeVideoId)}" data-youtube-title="${escapeHtml(title)}" role="button" tabindex="0" aria-label="${escapeHtml(`${title} abspielen`)}">
-        <img src="${escapeHtml(stableImageUrl(poster, "video"))}" alt="${escapeHtml(video.posterImageAlt || title)}" loading="lazy" decoding="async" ${imageFallbackAttrs("video")}>
+        <img src="${escapeHtml(stableImageUrl(poster, "video"))}" alt="${escapeHtml(video.posterImageAlt || title)}" loading="lazy" decoding="async" ${liveImageAttrs("video")}>
         ${articleVideoFrame(video, title)}
         <span class="article-video-play" aria-hidden="true"></span>
         <small>Mit Klick wird das Video gestartet.</small>
@@ -1349,7 +1218,7 @@ function articleVideoHero(item = {}) {
   const poster = video.posterImageUrl || video.youtubeThumbnailUrl || `https://img.youtube.com/vi/${escapeHtml(video.youtubeVideoId)}/hqdefault.jpg`;
   const title = video.title || video.caption || item.title || "Video abspielen";
   return `<div class="article-video-poster member-article-card__hero" data-youtube-video="${escapeHtml(video.youtubeVideoId)}" data-youtube-title="${escapeHtml(title)}" role="button" tabindex="0" aria-label="${escapeHtml(`${title} abspielen`)}">
-    <img src="${escapeHtml(stableImageUrl(poster, "video"))}" alt="${escapeHtml(video.posterImageAlt || title)}" loading="lazy" decoding="async" ${imageFallbackAttrs("video")}>
+    <img src="${escapeHtml(stableImageUrl(poster, "video"))}" alt="${escapeHtml(video.posterImageAlt || title)}" loading="lazy" decoding="async" ${liveImageAttrs("video")}>
     ${articleVideoFrame(video, title)}
     <span class="article-video-play" aria-hidden="true"></span>
     <small>Mit Klick wird das Video gestartet.</small>
@@ -1364,7 +1233,7 @@ function memberArticleImageHero(item = {}, loading = "lazy") {
   const imageUrl = stableImageUrl(memberArticleImageUrl(item), "memberArea");
   const alt = item.thumbnail_alt || item.thumbnailAlt || item.imageAlt || item.title || "Artikelbild";
   return `<figure class="member-article-card__hero member-article-card__image">
-    <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(alt)}" loading="${escapeHtml(loading)}" decoding="async" ${imageFallbackAttrs("memberArea")}>
+    <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(alt)}" loading="${escapeHtml(loading)}" decoding="async" ${liveImageAttrs("memberArea")}>
   </figure>`;
 }
 
@@ -1412,7 +1281,9 @@ function eventExpires(event) {
 }
 
 function isPastEvent(event) {
-  return event.lifecyclePhase === "archive_published" || event.lifecyclePhase === "post_processing" || eventExpires(event) || (event.date && event.date < "2026-05-26");
+  const today = new Date().toISOString().slice(0, 10);
+  if (event.date && event.date >= today) return false;
+  return event.lifecyclePhase === "archive_published" || event.lifecyclePhase === "post_processing" || eventExpires(event) || (event.date && event.date < today);
 }
 
 function mobileLeanStart() {
@@ -1426,7 +1297,7 @@ export async function homePage() {
     listPublicContent("editorialContent")
   ]);
   const members = rawMembers;
-  const upcoming = events.filter((event) => !isPastEvent(event) && event.visibility === "public").sort((a, b) => a.date.localeCompare(b.date));
+  const upcoming = events.filter((event) => !isPastEvent(event)).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const next = upcoming[0];
   const mediaAssets = next ? await listPublicEventMediaAssets([next]) : [];
   const latestNewsItems = publicNewsItems(editorial)
@@ -1447,14 +1318,7 @@ export async function homePage() {
     ["#/members", "members", "Mitglieder", "Unser Netzwerk, Vorteile und Mitglied werden"],
     ["#/about", "about", "Über uns", "Der Verband, Vorstand und Ziele"]
   ];
-  const nextImageCandidates = next ? [
-    archiveEventImageUrl(next, mediaAssets),
-    versionedAssetUrl(next.imageUrl || "", next),
-    versionedAssetUrl(next.thumbnail_url || "", next),
-    versionedAssetUrl(next.thumbnailUrl || "", next),
-    versionedAssetUrl(next.assetUrl || "", next)
-  ].filter(Boolean) : [];
-  const nextImageUrl = nextImageCandidates.find((url) => !blockedHomeEventImageUrl(url)) || "";
+  const nextImageUrl = next ? upcomingEventImageUrl(next, mediaAssets, { fallback: false }) : "";
   const nextImageStyle = nextImageUrl ? ` style="--home-event-card-image:url(&quot;${escapeHtml(nextImageUrl)}&quot;)"` : "";
   const mobileNextImageStyle = nextImageUrl ? ` style="--mobile-event-card-image:url(&quot;${escapeHtml(nextImageUrl)}&quot;)"` : "";
   const mobileHome = `<section class="pdtv-mobile-home" aria-label="Mobile Startseite">
@@ -1463,6 +1327,7 @@ export async function homePage() {
         <h1>Digitaler Content.<br>Starke Verbindungen.<br>Gemeinsam für die <span>Medienzukunft.</span></h1>
         <p>PROdigitalTV ist das Netzwerk für digitale Medien, Streaming, Smart-TV, Plattformen und regionale Anbieter.</p>
         <article class="pdtv-mobile-next-event ${nextImageUrl ? "pdtv-mobile-next-event--with-image" : ""}"${mobileNextImageStyle}>
+          ${nextImageUrl ? `<img class="pdtv-mobile-next-event__image" src="${escapeHtml(nextImageUrl)}" alt="" loading="eager" decoding="async" fetchpriority="high">` : ""}
           <span class="pdtv-mobile-icon" aria-hidden="true">?</span>
           <div>
             <p>Nächstes Medienfrühstück</p>
@@ -1476,6 +1341,7 @@ export async function homePage() {
     </div>
   </section>`;
   const nextEventCard = next ? `<article class="home-event-card ${nextImageUrl ? "home-event-card--with-image" : ""}"${nextImageStyle}>
+    ${nextImageUrl ? `<img class="home-event-card__image" src="${escapeHtml(nextImageUrl)}" alt="" loading="eager" decoding="async" fetchpriority="high">` : ""}
     <div class="home-event-card__icon" aria-hidden="true"><span></span></div>
     <p class="eyebrow">Nächstes Medienfrühstück</p>
     <h2>${escapeHtml(next.title || "Naechste Veranstaltung")}</h2>
@@ -1494,7 +1360,7 @@ export async function homePage() {
     const thumb = stableImageUrl(newsThumbUrl(item), "news");
     const date = item.publishDate || item.validFrom || item.updatedAt || "";
     return `<a class="home-news-card" href="#/news/${escapeHtml(item.id)}">
-      <figure class="home-news-card__thumb"><img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${imageFallbackAttrs("news")}></figure>
+      <figure class="home-news-card__thumb"><img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${liveImageAttrs("news")}></figure>
       <div class="home-news-card__body">
         <div class="home-news-card__meta"><span>${escapeHtml(item.category || "News")}</span>${date ? `<time>${escapeHtml(formatDate(date))}</time>` : ""}</div>
         <h3>${escapeHtml(item.title || "Aktuelles von PROdigitalTV")}</h3>
@@ -1536,7 +1402,7 @@ export async function eventsPage() {
     listPublicContent("sponsors").catch(() => [])
   ]);
   const user = currentUser();
-  const visible = events.filter((event) => event.accessType !== "invitation_only" && (event.visibility === "public" || isMember(user) || event.showPublicTeaser));
+  const visible = events.filter((event) => event.accessType !== "invitation_only" || isMember(user) || event.showPublicTeaser);
   const rawUpcoming = visible.filter((event) => !isPastEvent(event));
   const mediaAssets = await listPublicEventMediaAssets(mobileLeanStart() ? rawUpcoming.slice(0, 6) : rawUpcoming).catch(() => []);
   const upcoming = rawUpcoming.map((event) => ({ ...event, imageDisplayUrl: upcomingEventImageUrl(event, mediaAssets) }));
@@ -1587,18 +1453,18 @@ export async function eventDetailPage(id) {
   const registrationCta = registrationAllowed
     ? `<div class="event-registration-cta"><a class="button button--primary" href="#/register/${escapeHtml(event.id)}">Zum Event anmelden</a></div>`
     : `<div class="alert event-registration-cta">${event.accessType === "invitation_only" ? "Teilnahme nur auf Einladung." : "Anmeldung derzeit nicht verfuegbar."}</div>`;
-  const eventInfoBlock = restricted ? "" : `<section class="venue-stage event-info-stage"><div class="event-info-stage__facts"><p class="eyebrow">Daten</p><div class="event-info-facts"><div class="event-info-fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>${event.startTime ? `<div class="event-info-fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}<div class="event-info-fact"><label>Status</label><strong>${escapeHtml(lifecycleLabels[event.lifecyclePhase] || event.lifecyclePhase || "Anmeldung")}</strong></div></div></div><div class="venue-stage__place"><p class="eyebrow">Adresse</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${imageFallbackAttrs("sponsor")}>` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><span class="tag tag--red">Co-Gastgeber</span><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`;
+  const eventInfoBlock = restricted ? "" : `<section class="venue-stage event-info-stage"><div class="event-info-stage__facts"><p class="eyebrow">Daten</p><div class="event-info-facts"><div class="event-info-fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>${event.startTime ? `<div class="event-info-fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}<div class="event-info-fact"><label>Status</label><strong>${escapeHtml(lifecycleLabels[event.lifecyclePhase] || event.lifecyclePhase || "Anmeldung")}</strong></div></div></div><div class="venue-stage__place"><p class="eyebrow">Adresse</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><span class="tag tag--red">Co-Gastgeber</span><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`;
   return publicShell("events", `${subhero(event.eventType, event.title, event.subtitle)}
     <section class="section event-detail-section"><div class="container detail-grid event-detail-grid">
       <article class="detail-main">
-        <figure class="event-detail-image"><img src="${escapeHtml(stableImageUrl(eventImageUrl, "event"))}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy" ${imageFallbackAttrs("event")}></figure>
+        <figure class="event-detail-image"><img src="${escapeHtml(stableImageUrl(eventImageUrl, "event"))}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy" ${liveImageAttrs("event")}></figure>
         ${restricted ? `<div class="alert alert--warning">Details und Anmeldung dieses Mitglieder-Events stehen nach dem Login zur Verfuegung.</div>` : ""}
         <h2>Zum Event</h2>${introText ? `<p class="lead">${escapeHtml(introText)}</p>` : ""}
         ${restricted ? "" : registrationCta}
         ${haseparateLongText ? `<h2>Rückblick</h2><div class="editorial-text">${articleParagraphs(longText)}</div>` : ""}
         ${eventTalksMarkup(topics, speakers, event)}
         ${event.lunchNote ? `<div class="alert">${escapeHtml(event.lunchNote)}</div>` : ""}
-        ${restricted ? "" : `<section class="venue-stage"><div class="venue-stage__place"><p class="eyebrow">Veranstaltungsort</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${imageFallbackAttrs("sponsor")}>` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><span class="tag tag--red">Co-Gastgeber</span><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`}
+        ${restricted ? "" : `<section class="venue-stage"><div class="venue-stage__place"><p class="eyebrow">Veranstaltungsort</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><span class="tag tag--red">Co-Gastgeber</span><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`}
         ${assignedGalleryImages.length ? galleryPlayCta(assignedGallery, assignedGalleryImages) : ""}
         ${restricted ? "" : registrationCta}
       </article>
@@ -1606,7 +1472,7 @@ export async function eventDetailPage(id) {
         <div class="event-host-card">
           <p class="eyebrow">Gastgeber</p>
           <strong>PROdigitalTV</strong>
-          ${coHost ? `<div class="event-host-card__cohost"><span>Co-Gastgeber</span>${coHostLogo ? `<img src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${imageFallbackAttrs("sponsor")}>` : ""}<b>${escapeHtml(coHost.name || "")}</b></div>` : ""}
+          ${coHost ? `<div class="event-host-card__cohost"><span>Co-Gastgeber</span>${coHostLogo ? `<img src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : ""}<b>${escapeHtml(coHost.name || "")}</b></div>` : ""}
         </div>
         <span class="tag ${event.accessType !== "public" ? "tag--red" : ""}">${accessLabels[event.accessType]}</span>
         <div class="fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>
@@ -1653,9 +1519,7 @@ export async function topicsPage() {
 
 export async function newsPage(query = new URLSearchParams()) {
   const cmsNews = publicNewsItems(await listPublicContent("editorialContent"));
-  const fallbackNews = realDataMode() ? [] : editorialFallbackNews;
-  const news = mergeNewsWithFallback(cmsNews, fallbackNews)
-    .sort(editorialPrioritySort);
+  const news = cmsNews.sort(editorialPrioritySort);
   const selectedCategory = String(query?.get?.("category") || "").trim();
   const categoryHref = (category) => `#/news?category=${encodeURIComponent(category || "News")}`;
   const newsCategories = (item = {}) => {
@@ -1679,7 +1543,7 @@ export async function newsPage(query = new URLSearchParams()) {
     const teaser = item.shortText || item.teaserText || item.introText || item.bodyText || "";
     const category = newsCategories(item)[0] || "News";
     const detailHref = `#/news/${escapeHtml(item.id)}`;
-    return `<article class="quick-card news-card"><a class="news-card__thumb-link" href="${detailHref}"><figure class="news-card__thumb"><img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${imageFallbackAttrs("news")}></figure></a><div class="news-card__body"><p class="eyebrow news-category-list">${categoryLinks(item)}</p><h3><a href="${detailHref}">${escapeHtml(item.title || "")}</a></h3>${item.subtitle ? `<p class="news-card__subtitle">${escapeHtml(item.subtitle)}</p>` : ""}<p class="news-card__teaser">${escapeHtml(teaser).slice(0, 320)}</p></div></article>`;
+    return `<article class="quick-card news-card"><a class="news-card__thumb-link" href="${detailHref}"><figure class="news-card__thumb"><img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${liveImageAttrs("news")}></figure></a><div class="news-card__body"><p class="eyebrow news-category-list">${categoryLinks(item)}</p><h3><a href="${detailHref}">${escapeHtml(item.title || "")}</a></h3>${item.subtitle ? `<p class="news-card__subtitle">${escapeHtml(item.subtitle)}</p>` : ""}<p class="news-card__teaser">${escapeHtml(teaser).slice(0, 320)}</p></div></article>`;
   };
   const newsListItem = (item) => {
     const date = item.publishDate || item.validFrom || item.updatedAt || item.createdAt || "";
@@ -1687,7 +1551,7 @@ export async function newsPage(query = new URLSearchParams()) {
     const category = newsCategories(item)[0] || "News";
     const thumb = stableImageUrl(newsThumbUrl(item), "news");
     return `<article class="news-list-item">
-      <a class="news-list-item__thumb" href="#/news/${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "News")}"><img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${imageFallbackAttrs("news")}></a>
+      <a class="news-list-item__thumb" href="#/news/${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "News")}"><img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${liveImageAttrs("news")}></a>
       <div class="news-list-item__body">
         <span class="news-list-item__meta">${categoryLinks(item)}${date ? ` / ${escapeHtml(formatDate(date))}` : ""}</span>
         <strong><a href="#/news/${escapeHtml(item.id)}">${escapeHtml(item.title || "")}</a></strong>
@@ -1705,15 +1569,9 @@ export async function newsPage(query = new URLSearchParams()) {
 }
 
 export async function newsDetailPage(id) {
-  const fallbackNews = realDataMode() ? [] : editorialFallbackNews;
   const publicEditorialContent = await listPublicContent("editorialContent").catch(() => []);
   let item = publicEditorialContent.find((entry) => [entry.id, entry.slug, entry.key].filter(Boolean).includes(id))
-    || await getOne("editorialContent", id).catch(() => null)
-    || fallbackNews.find((entry) => entry.id === id);
-  const fallbackSourceItem = editorialFallbackNews.find((entry) => entry.id === id || [item?.id, item?.slug, item?.key].filter(Boolean).includes(entry.id));
-  if (item && fallbackSourceItem && !articleSources(item).length) {
-    item = { ...item, source_snapshot_json: fallbackSourceItem.source_snapshot_json || [] };
-  }
+    || await getOne("editorialContent", id).catch(() => null);
   const isRetrospective = isRetrospectiveArticle(item);
   if (!item || (item.page !== "news" && item.section !== "news" && !isRetrospective)) return notFoundPage();
   if (!isRetrospective && !publicNewsItems([item]).length) return notFoundPage();
@@ -1746,7 +1604,7 @@ export async function newsDetailPage(id) {
     return publicShell("news", `<section class="section news-detail-clean-section"><div class="container">
       <article class="news-detail-clean">
         <a class="link news-detail-clean__back" href="#/news">Zur&uuml;ck zu News</a>
-        <figure class="news-detail-clean__hero"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${displayTitle || "News"}`)}" loading="eager" decoding="async" ${imageFallbackAttrs("news")}><figcaption><h1>${escapeHtml(displayTitle)}</h1></figcaption></figure>
+        <figure class="news-detail-clean__hero"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${displayTitle || "News"}`)}" loading="eager" decoding="async" ${liveImageAttrs("news")}><figcaption><h1>${escapeHtml(displayTitle)}</h1></figcaption></figure>
         <div class="news-detail-clean__body">
           ${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}
           ${ttsReader({ rubric: item.category || "News", title: displayTitle || "", label: "Vorlesen", text: [item.subtitle, displayText].filter(Boolean).join("\n\n"), inlineOffsetText: item.subtitle || "", audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
@@ -1767,14 +1625,14 @@ export async function newsDetailPage(id) {
           title: item.title || "",
           intro: item.subtitle || ""
         })}
-        <figure class="news-detail__thumb news-detail__hero-image"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${item.title || "News"}`)}" loading="eager" decoding="async" ${imageFallbackAttrs(isRetrospective ? "event" : "news")}></figure>
+        <figure class="news-detail__thumb news-detail__hero-image"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${item.title || "News"}`)}" loading="eager" decoding="async" ${liveImageAttrs(isRetrospective ? "event" : "news")}></figure>
         ${ttsReader({ rubric: isRetrospective ? "Rückblick" : item.category || "News", title: item.title || "", text: [item.subtitle, text].filter(Boolean).join("\n\n"), inlineOffsetText: item.subtitle || "", audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
         <div class="editorial-text">${leadMedia}${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}${articleParagraphs(text)}</div>
         ${articleVideosBlock(item)}
         ${articleSourcesList(item)}
       </article>
       <aside class="detail-aside">
-        ${sponsor?.logoUrl ? `<div class="sponsor-logo-card"><span>${escapeHtml(sponsor.role || "Sponsor")}</span><img src="${escapeHtml(sponsor.logoUrl)}" alt="Logo ${escapeHtml(sponsor.name || "")}" ${imageFallbackAttrs("sponsor")}><strong>${escapeHtml(sponsor.name || "")}</strong></div>` : ""}
+        ${sponsor?.logoUrl ? `<div class="sponsor-logo-card"><span>${escapeHtml(sponsor.role || "Sponsor")}</span><img src="${escapeHtml(sponsor.logoUrl)}" alt="Logo ${escapeHtml(sponsor.name || "")}" ${liveImageAttrs("sponsor")}><strong>${escapeHtml(sponsor.name || "")}</strong></div>` : ""}
         <div class="fact"><label>Rubrik</label><strong>${escapeHtml(item.isRetrospective ? "Rückblick" : item.category || "News")}</strong></div>
         ${date ? `<div class="fact"><label>Datum</label><strong>${formatDate(date)}</strong></div>` : ""}
         <a class="button button--secondary" href="${backHref}">${allText}</a>
@@ -1785,7 +1643,7 @@ export async function newsDetailPage(id) {
 export async function topicDetailPage(id) {
   const [topic, events, sponsors, galleries, allTopics] = await Promise.all([getOne("topics", id), listPublicEvents(), listPublicContent("sponsors"), listPublicContent("galleries"), listPublicContent("topics")]);
   if (!topic) return notFoundPage();
-  const linked = events.filter((event) => event.topicIds.includes(id) && event.visibility === "public" && !isPastEvent(event));
+  const linked = events.filter((event) => (event.topicIds || []).includes(id) && !isPastEvent(event));
   const relatedTopics = allTopics.filter((entry) => entry.id !== topic.id).slice(0, 4);
   const topicIntro = "Einordnung, Hintergruende und Praxisbezug zu zentralen Begriffen der digitalen Medienwirtschaft.";
   const topicText = topic.longDescription || topic.bodyText || topic.shortDescription || "";
@@ -1840,18 +1698,32 @@ export async function boardPage() {
 
 export async function archivePage() {
   const leanMobile = mobileLeanStart();
+  const archiveQuery = new URLSearchParams(String(window.location.hash || "").split("?")[1] || "");
+  const showAll = archiveQuery.get("all") === "1";
+  const initialLimit = leanMobile ? 8 : 12;
   const [allEvents, sponsors, editorial, galleries, eventMedia] = await Promise.all([listPublicEvents(true), listPublicContent("sponsors"), listPublicContent("editorialContent"), listPublicContent("galleries"), listPublicContent("eventMedia")]);
   const events = allEvents.filter((event) => isPastEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
-  const mediaAssets = await listPublicEventMediaAssets(mobileLeanStart() ? events.slice(0, 8) : events).catch(() => []);
+  const visibleEvents = showAll ? events : events.slice(0, initialLimit);
+  const mediaLookupEvents = visibleEvents
+    .filter((event) => !archiveEventImageUrl(event, []))
+    .slice(0, leanMobile ? 8 : 16);
+  const mediaAssets = await listPublicEventMediaAssets(mediaLookupEvents).catch(() => []);
+  const archiveEvents = visibleEvents;
   const retrospectives = editorial
     .filter(isRetrospectiveArticle)
     .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")));
-  const items = events.length
-    ? events.map((event) => archiveListEvent(event, sponsors, mediaAssets, editorial, eventMedia, galleries)).join("")
-    : retrospectives.map((item) => archiveListEditorial(item, sponsors, events, mediaAssets, galleries)).join("");
+  const visibleRetrospectives = showAll ? retrospectives : retrospectives.slice(0, initialLimit);
+  const items = archiveEvents.length
+    ? archiveEvents.map((event) => archiveListEvent(event, sponsors, mediaAssets, editorial, eventMedia, galleries)).join("")
+    : visibleRetrospectives.map((item) => archiveListEditorial(item, sponsors, archiveEvents, mediaAssets, galleries)).join("");
+  const totalCount = events.length || retrospectives.length;
+  const visibleCount = archiveEvents.length || visibleRetrospectives.length;
+  const moreLink = !showAll && totalCount > visibleCount
+    ? `<div class="archive-more"><a class="button button--secondary" href="#/archive?all=1">Alle ${totalCount} R&uuml;ckblicke anzeigen</a></div>`
+    : "";
   return publicShell("archive", `${leanMobile ? "" : subhero("Rückblick", "Rückblick", "Nachbericht, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen.")}
-    <section class="section"><div class="container"><div class="section-head archive-list-head"><div><p class="eyebrow">Medienfrühstücke</p><h2>Rückblick</h2><p>Vergangene Veranstaltungen mit Nachbericht, Ort, Co-Gastgeber und Detailseite.</p></div></div><div class="archive-list archive-list--compact">${items || `<div class="alert">Rückblicke werden aktuell vorbereitet.</div>`}</div></div></section>`);
+    <section class="section"><div class="container"><div class="section-head archive-list-head"><div><p class="eyebrow">Medienfrühstücke</p><h2>Rückblick</h2><p>Vergangene Veranstaltungen mit Nachbericht, Ort, Co-Gastgeber und Detailseite.</p></div></div><div class="archive-list archive-list--compact">${items || `<div class="alert">Rückblicke werden aktuell vorbereitet.</div>`}</div>${moreLink}</div></section>`);
 }
 
 export async function downloadsPage() {
@@ -1938,17 +1810,10 @@ export async function joinPage() {
 }
 
 export async function loginPage() {
-  const localHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-  const realMode = realDataMode();
-  const demoAvailable = !realMode && (!firebaseEnabled() || localPreviewMode() || localHost);
   const user = currentUser();
-  const demoControls = demoAvailable ? `<div class="field"><label>Demo-Rolle für lokale Vorschau</label><select name="role"><option value="admin">Admin</option><option value="editor">Redakteur</option><option value="member">Mitglied</option></select></div>` : "";
-  const emailValue = demoAvailable ? "admin@prodigitaltv.de" : "";
-  const passwordValue = demoAvailable ? "demo" : "";
   const activeSession = user ? `<div class="alert" style="margin-bottom:18px">Aktuell angemeldet als ${escapeHtml(user.email || user.displayName || user.uid || "Benutzer")} mit Rolle ${escapeHtml(user.role || "guest")}.</div><button id="logout-button" class="button button--secondary" type="button">Abmelden / Session loeschen</button>` : "";
-  return publicShell("login", `<section class="login-wrap"><div class="container"><form id="login-form" class="form-card login-card">${logo()}<p class="eyebrow">Mitgliederbereich</p><h1 style="margin-bottom:10px">Anmelden</h1><p style="margin-bottom:25px">Zugriff auf exklusive Events, Downloads und CMS-Funktionen. Nach erfolgreichem Login wird ein Firebase-ID-Token für die aktuelle Sitzung gespeichert.</p>${activeSession}<div class="form-grid"><button id="google-login-button" class="button button--secondary" type="button">Mit Google anmelden</button><div class="login-divider"><span>oder mit E-Mail</span></div><div class="field"><label>E-Mail</label><input name="email" type="email" value="${emailValue}" required></div><div class="field"><label>Passwort</label><input name="password" type="password" value="${passwordValue}" required></div>${demoControls}<button class="button button--primary">Einloggen</button><p class="muted">Produktiv zaehlt die Rolle aus Firestore unter <code>users/{uid}</code>. Der Token wird automatisch erneuert und beim Logout geloescht.</p><div id="login-result"></div></div></form></div></section>`);
+  return publicShell("login", `<section class="login-wrap"><div class="container"><form id="login-form" class="form-card login-card">${logo()}<p class="eyebrow">Mitgliederbereich</p><h1 style="margin-bottom:10px">Anmelden</h1><p style="margin-bottom:25px">Zugriff auf exklusive Events, Downloads und CMS-Funktionen. Nach erfolgreichem Login wird ein Firebase-ID-Token fuer die aktuelle Sitzung gespeichert.</p>${activeSession}<div class="form-grid"><button id="google-login-button" class="button button--secondary" type="button">Mit Google anmelden</button><div class="login-divider"><span>oder mit E-Mail</span></div><div class="field"><label>E-Mail</label><input name="email" type="email" value="" required></div><div class="field"><label>Passwort</label><input name="password" type="password" value="" required></div><button class="button button--primary">Einloggen</button><p class="muted">Produktiv zaehlt die Rolle aus Firestore unter <code>users/{uid}</code>. Der Token wird automatisch erneuert und beim Logout geloescht.</p><div id="login-result"></div></div></form></div></section>`);
 }
-
 export async function portalPage() {
   const user = currentUser();
   if (!user) return loginPage();
@@ -1958,7 +1823,7 @@ export async function portalPage() {
   const [allEvents, sponsors] = await Promise.all([listPublicEvents(true), listPublicContent("sponsors")]);
   const events = allEvents.filter((event) => event.accessType === "members_only");
   return publicShell("login", `${subhero("Mitgliederbereich", `Willkommen, ${escapeHtml(user.displayName)}.`, "Exklusive Inhalte und Ihre Veranstaltungen auf einen Blick.")}
-    <section class="section"><div class="container"><div class="section-head"><div><h2>Mitglieder-Events</h2><p class="muted">Angemeldet als ${escapeHtml(user.email || "")} · Rolle: ${escapeHtml(user.role || "guest")} · Token bis: ${escapeHtml(user.tokenExpiresAt || "Demo")}</p></div><button id="logout-button" class="button button--secondary">Abmelden</button></div><div class="card-grid card-grid--three">${events.map((event) => eventCard(event, false, sponsors)).join("")}</div></div></section>`);
+    <section class="section"><div class="container"><div class="section-head"><div><h2>Mitglieder-Events</h2><p class="muted">Angemeldet als ${escapeHtml(user.email || "")} · Rolle: ${escapeHtml(user.role || "guest")} · Token bis: ${escapeHtml(user.tokenExpiresAt || "nicht verfuegbar")}</p></div><button id="logout-button" class="button button--secondary">Abmelden</button></div><div class="card-grid card-grid--three">${events.map((event) => eventCard(event, false, sponsors)).join("")}</div></div></section>`);
 }
 
 function memberDirectoryContact(member = {}) {
@@ -2256,14 +2121,14 @@ export async function memberArticleDetailPage(id) {
 
 export async function legalPage(type) {
   const privacy = type === "privacy";
-  const fallback = privacy
-    ? { title: "Datenschutz bei Event-Anmeldungen", introText: "Informationen zur Verarbeitung personenbezogener Daten.", bodyText: "Anmeldedaten werden ausschliesslich zur Organisation des gewaelten Events, zur Bestaetigung der E-Mail-Adresse und für erteilte Einwilligungen verarbeitet. Die finale Datenschutzerklaerung ist vor Livegang rechtlich abzustimmen." }
-    : { title: "PROdigitalTV - Interessengemeinschaft Digitale Medien e.V.", introText: "Angaben gemaess den gesetzlichen Informationspflichten.", bodyText: "Vereins- und Geschaeftssitz:\nWandalenweg 26\n20097 Hamburg\nTelefon: +49 40 44506617\nE-Mail: post@prodigitaltv.de\nInternet: www.prodigitaltv.de\n\nEingetragen im Vereinsregister Hamburg: VR 19974\nVerantwortliche Personen: Vorstand von PROdigitalTV." };
-  const content = await getOne("editorialContent", privacy ? "legal-privacy" : "legal-imprint") || fallback;
-  return publicShell("", `${subhero("Rechtliches", privacy ? "Datenschutz" : "Impressum", content.introText || fallback.introText)}
-  <section class="section"><div class="container detail-main" style="max-width:820px"><h2>${escapeHtml(content.title || fallback.title)}</h2><div class="editorial-text">${articleParagraphs(content.bodyText || fallback.bodyText)}</div></div></section>`);
+  const content = await getOne("editorialContent", privacy ? "legal-privacy" : "legal-imprint");
+  if (!content) {
+    return publicShell("", `${subhero("Rechtliches", privacy ? "Datenschutz" : "Impressum", "Live-Inhalt ist aktuell nicht gespeichert.")}
+    <section class="section"><div class="container detail-main" style="max-width:820px"><div class="alert">Dieser Inhalt fehlt in Firestore.</div></div></section>`);
+  }
+  return publicShell("", `${subhero("Rechtliches", privacy ? "Datenschutz" : "Impressum", content.introText || "")}
+  <section class="section"><div class="container detail-main" style="max-width:820px"><h2>${escapeHtml(content.title || "")}</h2><div class="editorial-text">${articleParagraphs(content.bodyText || "")}</div></div></section>`);
 }
-
 export function notFoundPage() {
   return publicShell("", `<section class="section"><div class="container empty"><h1>Seite nicht gefunden</h1><p>Die angeforderte Seite ist nicht verfuegbar.</p><a class="button button--primary" style="margin-top:20px" href="#/home">Zur Startseite</a></div></section>`);
 }

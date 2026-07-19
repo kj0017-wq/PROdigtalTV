@@ -1,0 +1,19 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">EINLADUNG! PROdigitalTV lädt zum Medienfrühstück zur Berlinale ein</title>
+  <desc id="desc">Eventbild für den PROdigitalTV Rückblick EINLADUNG! PROdigitalTV lädt zum Medienfrühstück zur Berlinale ein.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#061526"/><stop offset=".68" stop-color="#164b7a"/><stop offset="1" stop-color="#e30613"/></linearGradient>
+    <radialGradient id="glow" cx="75%" cy="45%" r="52%"><stop offset="0" stop-color="#ffffff" stop-opacity=".28"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect width="1200" height="675" fill="url(#glow)"/>
+  <path d="M0 498 C198 376 335 540 534 424 C735 306 872 322 1200 210 L1200 675 L0 675 Z" fill="#ffffff" opacity=".13"/>
+  <rect x="72" y="72" width="1056" height="531" rx="34" fill="#ffffff" opacity=".09" stroke="#ffffff" stroke-opacity=".22"/>
+  <text x="92" y="142" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="800" letter-spacing="4">PROdigitalTV Rückblick</text>
+  <text x="92" y="210" fill="#e30613" font-family="Arial, Helvetica, sans-serif" font-size="70" font-weight="900">2026</text>
+  <text x="92" y="260" fill="#dce9f8" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700">Berlin</text>
+  <text x="92" y="334" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="46" font-weight="850">EINLADUNG! PROdigitalTV lädt</text>
+  <text x="92" y="392" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="46" font-weight="850">zum Medienfrühstück zur</text>
+  <text x="92" y="450" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="46" font-weight="850">Berlinale ein</text>
+  <g transform="translate(822 374)"><rect x="0" y="0" width="218" height="138" rx="20" fill="#ffffff" opacity=".15"/><path d="M43 92 L88 48 L122 72 L150 48 L184 92" fill="none" stroke="#ffffff" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/><circle cx="160" cy="38" r="15" fill="#e30613"/></g>
+</svg>

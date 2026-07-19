@@ -38,29 +38,9 @@ service cloud.firestore {
     }
     function publicMemberRecord(memberData) {
       return memberData.visible == true
-        && (
-          !memberData.keys().hasAny(["visibility"])
-          || memberData.visibility == "public"
-          || memberData.visibility == "portal"
-        )
-        && (
-          !memberData.keys().hasAny(["isLive"])
-          || memberData.isLive != false
-        )
-        && (
-          !memberData.keys().hasAny(["status"])
-          || (
-            memberData.status != "inactive"
-            && memberData.status != "cancelled"
-            && memberData.status != "archived"
-            && memberData.status != "deleted"
-          )
-        )
-        && (
-          !memberData.keys().hasAny(["visible"])
-          || memberData.visible != false
-        )
-        && !memberAccessBlocked(memberData);
+        && memberData.isLive == true
+        && memberData.status == "active"
+        && memberData.visibility == "public";
     }
     function memberRecordActive(memberId) {
       return exists(/databases/$(database)/documents/members/$(memberId))
