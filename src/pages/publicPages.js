@@ -1,10 +1,11 @@
-import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, getOne } from "../firebase/dataService.js?v=514";
+import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, getOne } from "../firebase/dataService.js?v=516";
 import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=471";
 import { publicShell, logo } from "../components/layout.js?v=7";
-import { eventCard, topicCard } from "../components/cards.js?v=4";
+import { eventCard, topicCard } from "../components/cards.js?v=5";
 import { accessLabels, lifecycleLabels } from "../data/platformConstants.js?v=1";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
 import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=1";
+import { checkInWithStoredTicket, linkTicketDevice, readStoredTicket, validateStoredTicket } from "../firebase/registrationService.js?v=13";
 
 function subhero(eyebrow, title, text) {
   return `<section class="subhero"><div class="container">${eyebrow ? `<p class="eyebrow">${eyebrow}</p>` : ""}<h1>${title}</h1><p>${text}</p></div></section>`;
@@ -747,7 +748,7 @@ function rubricRotator(items, renderItem, emptyHtml = "") {
 }
 
 function aboutStickyContent(events = [], board = [], members = [], topics = []) {
-  const upcomingEvents = events.filter((event) => !isPastEvent(event)).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  const upcomingEvents = events.filter(upcomingEventIsVisible).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const eventSlides = upcomingEvents.length ? upcomingEvents.slice(0, 5) : events.slice(0, 5);
   const topicSlides = topics.slice(0, 6);
   const boardSlides = chunkItems(board.slice(0, 8), 2);
@@ -1286,6 +1287,30 @@ function isPastEvent(event) {
   return event.lifecyclePhase === "archive_published" || event.lifecyclePhase === "post_processing" || eventExpires(event) || (event.date && event.date < today);
 }
 
+function upcomingEventIsVisible(event = {}) {
+  if (isPastEvent(event)) return false;
+  const status = String(event.status || "").toLowerCase();
+  if (["archived", "archive", "deleted", "cancelled", "canceled", "draft", "inactive", "inaktiv"].includes(status)) return false;
+  if (event.visible === false || event.isLive === false) return false;
+  return true;
+}
+
+function eventRegistrationIsOpen(event = {}) {
+  const registrationState = String(event.registrationStatus || event.registration_state || event.registrationState || "").toLowerCase();
+  return Boolean(event.registrationEnabled)
+    || (event.accessType === "public" && event.allowPublicRegistration === true)
+    || (event.accessType === "members_only" && event.allowMemberRegistration === true)
+    || ["open", "offen", "active", "aktiv", "registration_open"].includes(registrationState)
+    || event.preStatus === "invitation_published"
+    || event.lifecyclePhase === "registration_open";
+}
+
+function eventRegistrationStatusLabel(event = {}) {
+  if (event.accessType === "invitation_only") return "Teilnahme nur auf Einladung";
+  if (eventRegistrationIsOpen(event)) return "Anmeldung geoeffnet";
+  return "Anmeldung geschlossen";
+}
+
 function mobileLeanStart() {
   return Boolean(window.matchMedia?.("(max-width: 760px)").matches);
 }
@@ -1297,7 +1322,7 @@ export async function homePage() {
     listPublicContent("editorialContent")
   ]);
   const members = rawMembers;
-  const upcoming = events.filter((event) => !isPastEvent(event)).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  const upcoming = events.filter(upcomingEventIsVisible).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const next = upcoming[0];
   const mediaAssets = next ? await listPublicEventMediaAssets([next]) : [];
   const latestNewsItems = publicNewsItems(editorial)
@@ -1403,22 +1428,29 @@ export async function eventsPage() {
   ]);
   const user = currentUser();
   const visible = events.filter((event) => event.accessType !== "invitation_only" || isMember(user) || event.showPublicTeaser);
-  const rawUpcoming = visible.filter((event) => !isPastEvent(event));
+  const rawUpcoming = visible.filter(upcomingEventIsVisible);
   const mediaAssets = await listPublicEventMediaAssets(mobileLeanStart() ? rawUpcoming.slice(0, 6) : rawUpcoming).catch(() => []);
-  const upcoming = rawUpcoming.map((event) => ({ ...event, imageDisplayUrl: upcomingEventImageUrl(event, mediaAssets) }));
+  const ticketChecks = await Promise.all(rawUpcoming.map((event) => validateStoredTicket(event.id).catch(() => readStoredTicket(event.id))));
+  const upcoming = rawUpcoming.map((event, index) => ({ ...event, imageDisplayUrl: upcomingEventImageUrl(event, mediaAssets), storedTicket: ticketChecks[index] }));
   return publicShell("events", `${subhero("Veranstaltungen", "Events", "Kuratierte Formate für Wissenstransfer, Partnerschaften und relevante Branchenkontakte.")}
     <section class="section"><div class="container"><div class="filters"><button class="filter active">Kommende Events</button><button class="filter">Öffentlich</button><button class="filter">Mitglieder</button><a class="filter" href="#/archive">Rückblicke</a></div>
     ${upcoming.length ? `<div class="card-grid card-grid--three">${upcoming.map((event) => eventCard(event, false, sponsors)).join("")}</div>` : `<div class="alert">Aktuell sind keine neuen Termine veröffentlicht. Im Eventarchiv finden Sie die letzten PROdigitalTV-Veranstaltungen.</div>`}</div></section>`);
 }
 
 async function getPublicRouteEvent(id, includeMemberEvents = false) {
-  try {
-    return await getOne("events", id);
-  } catch (error) {
-    const events = await listPublicEvents(includeMemberEvents);
+  const directEvent = getOne("events", id).then((event) => {
+    if (event) return event;
+    throw new Error(`Event ${id} nicht gefunden`);
+  });
+  const listedEvent = listPublicEvents(includeMemberEvents).then((events) => {
     const event = events.find((item) => item.id === id);
     if (event) return event;
-    throw error;
+    throw new Error(`Event ${id} nicht in oeffentlicher Liste`);
+  });
+  try {
+    return await Promise.any([directEvent, listedEvent]);
+  } catch {
+    return null;
   }
 }
 
@@ -1430,6 +1462,7 @@ export async function eventDetailPage(id) {
     return publicShell("events", `${subhero("Geschuetzter Bereich", "Login erforderlich", "Dieses Event ist nur für berechtigte Personen sichtbar.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
   }
   if (!event) return notFoundPage();
+  if (!isPastEvent(event) && !upcomingEventIsVisible(event)) return notFoundPage();
   const [speakers, sponsors, topics, galleries, mediaAssets] = await Promise.all([
     listPublicContent("speakers").catch(() => []),
     listPublicContent("sponsors").catch(() => []),
@@ -1437,7 +1470,8 @@ export async function eventDetailPage(id) {
     listPublicContent("galleries").catch(() => []),
     listPublicEventMediaAssets([event]).catch(() => [])
   ]);
-  const restricted = event.accessType === "members_only" && !isMember();
+  const registrationOpen = eventRegistrationIsOpen(event);
+  const restricted = event.accessType === "members_only" && !isMember() && !registrationOpen;
   if (restricted && !event.showPublicTeaser) return publicShell("events", subhero("Geschuetzter Bereich", "Nur für Mitglieder", "Bitte melden Sie sich an, um dieses Event zu sehen."));
   const coHost = sponsors.find((sponsor) => sponsor.id === event.hostId) || null;
   const coHostLogo = coHost ? publicSponsorLogoUrl(coHost, mediaAssets) : "";
@@ -1445,7 +1479,17 @@ export async function eventDetailPage(id) {
   const assignedGalleryImages = Array.isArray(assignedGallery?.images)
     ? [...assignedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 24)
     : [];
-  const registrationAllowed = event.registrationEnabled && (!restricted || isMember());
+  const registrationAllowed = registrationOpen;
+  const storedTicket = await validateStoredTicket(event.id).catch(() => readStoredTicket(event.id));
+  const ticketStatusCard = storedTicket ? `<section class="mobile-ticket-card" aria-label="Gespeichertes Handy-Ticket">
+    <div class="mobile-ticket-card__icon" aria-hidden="true"></div>
+    <div class="mobile-ticket-card__body">
+      <p class="eyebrow">Handy-Ticket aktiv</p>
+      <h2>${escapeHtml(event.title || storedTicket.eventTitle || "PROdigitalTV Event")}</h2>
+      <p>${escapeHtml([storedTicket.firstName, storedTicket.lastName].filter(Boolean).join(" ") || "Dieses Geraet")}</p>
+      <span>Dieses Handy ist fuer den Einlass vorbereitet.</span>
+    </div>
+  </section>` : "";
   const eventImageUrl = eventDetailImageUrl(event, mediaAssets, [coHostLogo]);
   const introText = event.description || event.shortDescription || event.subtitle || "";
   const longText = event.postEventummary || event.archiveText || event.longDescription || event.bodyText || event.articleText || "";
@@ -1453,20 +1497,20 @@ export async function eventDetailPage(id) {
   const registrationCta = registrationAllowed
     ? `<div class="event-registration-cta"><a class="button button--primary" href="#/register/${escapeHtml(event.id)}">Zum Event anmelden</a></div>`
     : `<div class="alert event-registration-cta">${event.accessType === "invitation_only" ? "Teilnahme nur auf Einladung." : "Anmeldung derzeit nicht verfuegbar."}</div>`;
-  const eventInfoBlock = restricted ? "" : `<section class="venue-stage event-info-stage"><div class="event-info-stage__facts"><p class="eyebrow">Daten</p><div class="event-info-facts"><div class="event-info-fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>${event.startTime ? `<div class="event-info-fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}<div class="event-info-fact"><label>Status</label><strong>${escapeHtml(lifecycleLabels[event.lifecyclePhase] || event.lifecyclePhase || "Anmeldung")}</strong></div></div></div><div class="venue-stage__place"><p class="eyebrow">Adresse</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><span class="tag tag--red">Co-Gastgeber</span><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`;
+  const eventInfoBlock = restricted ? "" : `<section class="venue-stage event-info-stage"><div class="event-info-stage__facts"><p class="eyebrow">Daten</p><div class="event-info-facts"><div class="event-info-fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>${event.startTime ? `<div class="event-info-fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}<div class="event-info-fact"><label>Status</label><strong>${escapeHtml(eventRegistrationStatusLabel(event))}</strong></div></div></div><div class="venue-stage__place"><p class="eyebrow">Adresse</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`;
   return publicShell("events", `${subhero(event.eventType, event.title, event.subtitle)}
     <section class="section event-detail-section"><div class="container detail-grid event-detail-grid">
       <article class="detail-main">
         <figure class="event-detail-image"><img src="${escapeHtml(stableImageUrl(eventImageUrl, "event"))}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy" ${liveImageAttrs("event")}></figure>
+        ${ticketStatusCard}
         ${restricted ? `<div class="alert alert--warning">Details und Anmeldung dieses Mitglieder-Events stehen nach dem Login zur Verfuegung.</div>` : ""}
         <h2>Zum Event</h2>${introText ? `<p class="lead">${escapeHtml(introText)}</p>` : ""}
         ${restricted ? "" : registrationCta}
         ${haseparateLongText ? `<h2>Rückblick</h2><div class="editorial-text">${articleParagraphs(longText)}</div>` : ""}
         ${eventTalksMarkup(topics, speakers, event)}
         ${event.lunchNote ? `<div class="alert">${escapeHtml(event.lunchNote)}</div>` : ""}
-        ${restricted ? "" : `<section class="venue-stage"><div class="venue-stage__place"><p class="eyebrow">Veranstaltungsort</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><span class="tag tag--red">Co-Gastgeber</span><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`}
+        ${restricted ? "" : `<section class="venue-stage venue-stage--event-detail"><div class="venue-stage__identity"><p class="eyebrow">Veranstaltungsort</p>${coHost && coHostLogo ? `<img class="venue-stage__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : ""}<h2>${escapeHtml(coHost?.name || event.locationName)}</h2><p>${escapeHtml(event.locationName || "")}${event.locationName ? "<br>" : ""}${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}</p></div><div class="venue-stage__description"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : `<p>${escapeHtml(coHost.name)} begleitet dieses PROdigitalTV Event als Co-Gastgeber.</p>`}` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`}
         ${assignedGalleryImages.length ? galleryPlayCta(assignedGallery, assignedGalleryImages) : ""}
-        ${restricted ? "" : registrationCta}
       </article>
       <aside class="detail-aside">
         <div class="event-host-card">
@@ -1478,8 +1522,7 @@ export async function eventDetailPage(id) {
         <div class="fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>
         ${event.startTime ? `<div class="fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}
         <div class="fact"><label>Ort</label><strong>${escapeHtml(event.locationName)}<br>${escapeHtml(event.city)}</strong></div>
-        <div class="fact"><label>Status</label><strong>${lifecycleLabels[event.lifecyclePhase]}</strong></div>
-        ${registrationAllowed ? `<a class="button button--primary" style="width:100%;margin-top:20px" href="#/register/${event.id}">Zum Event anmelden</a>` : `<div class="alert" style="margin-top:20px">${event.accessType === "invitation_only" ? "Teilnahme nur auf Einladung." : "Anmeldung derzeit nicht verfuegbar."}</div>`}
+        <div class="fact"><label>Status</label><strong>${escapeHtml(eventRegistrationStatusLabel(event))}</strong></div>
       </aside>
     </div></section>`);
 }
@@ -1489,26 +1532,46 @@ export async function registrationPage(id) {
   try {
     event = await getPublicRouteEvent(id, true);
   } catch {
-    return publicShell("events", `${subhero("Anmeldung", "Login erforderlich", "Bitte melden Sie sich an, um die Anmeldung fortzusetzen.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
+    return publicShell("events", `${subhero("Anmeldung", "Eventdaten konnten nicht geladen werden", "Bitte oeffnen Sie die Anmeldung aus der Eventseite erneut.")}<section class="section"><div class="container"><a class="button button--primary" href="#/events">Zu den Events</a></div></section>`);
   }
   if (!event) return notFoundPage();
-  if (event.accessType === "members_only" && !isMember()) {
-    return publicShell("events", `${subhero("Anmeldung", "Login erforderlich", "Dieses Event ist exklusiv für Mitglieder.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
+  if (!eventRegistrationIsOpen(event)) {
+    return publicShell("events", `${subhero("Anmeldung", event.title, "Fuer dieses Event ist aktuell keine Anmeldung moeglich.")}
+      <section class="section"><div class="container" style="max-width:820px"><div class="alert">Die Anmeldung ist derzeit geschlossen.</div><a class="button button--secondary" href="#/event/${escapeHtml(event.id)}">Zurueck zum Event</a></div></section>`);
   }
   return publicShell("events", `${subhero("Anmeldung", event.title, `${formatDate(event.date)} · ${event.locationName}, ${event.city}`)}
-    <section class="section"><div class="container" style="max-width:820px"><form id="registration-form" data-event-id="${event.id}" class="form-card form-grid">
+    <section class="section"><div class="container registration-container"><form id="registration-form" data-event-id="${event.id}" class="form-card registration-form">
+      <div class="registration-summary">
+        <div><span>Event</span><strong>${escapeHtml(event.title || "")}</strong></div>
+        <div><span>Termin</span><strong>${escapeHtml(formatDate(event.date))}${event.startTime ?` - ${escapeHtml(event.startTime)} Uhr` : ""}</strong></div>
+        <div><span>Ort</span><strong>${escapeHtml([event.locationName, event.city].filter(Boolean).join(", "))}</strong></div>
+      </div>
       <div class="alert">Ihre Anmeldung ist erst nach Bestaetigung Ihrer E-Mail-Adresse gueltig.</div>
-      <div class="form-grid--two"><div class="field"><label for="firstName">Vorname *</label><input id="firstName" name="firstName" required></div><div class="field"><label for="lastName">Nachname *</label><input id="lastName" name="lastName" required></div></div>
-      <div class="form-grid--two"><div class="field"><label for="company">Unternehmen *</label><input id="company" name="company" required></div><div class="field"><label for="position">Position / Funktion *</label><input id="position" name="position" required></div></div>
-      <div class="form-grid--two"><div class="field"><label for="email">E-Mail *</label><input id="email" name="email" type="email" required></div><div class="field"><label for="phone">Telefon</label><input id="phone" name="phone"></div></div>
-      ${event.invitationCodeRequired ? `<div class="field"><label for="invitationCode">Einladungscode *</label><input id="invitationCode" name="invitationCode" required></div>` : ""}
-      <div class="field"><label for="message">Bemerkung</label><textarea id="message" name="message"></textarea></div>
-      <label class="checkbox"><input type="checkbox" name="isMember"> Ich bin Mitglied von PROdigitalTV.</label>
-      <label class="checkbox"><input type="checkbox" name="photoVideoConsent"> Ich willige in Foto- und Videoaufnahmen des Events ein.</label>
-      <label class="checkbox"><input type="checkbox" name="newsletterConsent"> Ich moechte Hinweise zu weiteren Veranstaltungen erhalten.</label>
-      <label class="checkbox"><input type="checkbox" name="privacyAccepted" required> Ich akzeptiere die Datenschutzerklaerung zur Verarbeitung meiner Anmeldedaten. *</label>
-      <button class="button button--primary" type="submit">Anmeldung absenden</button><div id="form-result"></div>
+      <fieldset class="registration-section"><legend>Person und Kontakt</legend>
+      <div class="form-grid--two"><div class="field"><label for="firstName">Vorname *</label><input id="firstName" name="firstName" autocomplete="given-name" required></div><div class="field"><label for="lastName">Nachname *</label><input id="lastName" name="lastName" autocomplete="family-name" required></div></div>
+      <div class="form-grid--two"><div class="field"><label for="company">Unternehmen *</label><input id="company" name="company" autocomplete="organization" required></div><div class="field"><label for="position">Position / Funktion *</label><input id="position" name="position" autocomplete="organization-title" required></div></div>
+      <div class="form-grid--two"><div class="field"><label for="email">E-Mail *</label><input id="email" name="email" type="email" autocomplete="email" required></div><div class="field"><label for="phone">Telefon</label><input id="phone" name="phone" autocomplete="tel"></div></div>
+      ${event.invitationCodeRequired ? `<div class="field"><label for="invitationCode">Einladungscode *</label><input id="invitationCode" name="invitationCode" autocomplete="one-time-code" required></div>` : ""}
+      </fieldset>
+      <fieldset class="registration-section registration-section--compact"><legend>Hinweise und Einwilligungen</legend>
+      <div class="field"><label for="message">Bemerkung</label><textarea id="message" name="message" rows="3"></textarea></div>
+      <div class="registration-consents">
+      <label class="checkbox"><input type="checkbox" name="notifyForThisEvent"> Ich moechte an diese Veranstaltung und zukuenftige PROdigitalTV-Veranstaltungen erinnert werden.</label>
+      <div class="notification-device-status" data-notification-device-status>Benachrichtigung: noch nicht aktiviert. Falls Browser-Push auf diesem Geraet nicht moeglich ist, erfolgt die Erinnerung per E-Mail.</div>
+      <label class="checkbox checkbox--required registration-consent-info"><input type="checkbox" name="privacyMediaConsent" required><span>Datenschutz akzeptiert und Foto-/Video-Hinweis zur Veranstaltung zur Kenntnis genommen *</span><button class="consent-info-button" type="button" aria-label="Erklaerung zu Datenschutz und Foto-/Video-Hinweis" title="Erklaerung">i</button><small>Ihre Daten werden zur Organisation der Veranstaltung verarbeitet. Bei PROdigitalTV-Veranstaltungen koennen Foto- und Videoaufnahmen entstehen, die fuer Dokumentation und Oeffentlichkeitsarbeit genutzt werden.</small></label>
+      </div></fieldset>
+      <div class="registration-submit"><button class="button button--primary" type="submit">Anmeldung absenden</button><div id="form-result"></div></div>
     </form></div></section>`);
+}
+
+export async function notificationUnsubscribePage(hash = "") {
+  return publicShell("events", `${subhero("Benachrichtigungen", "Veranstaltungserinnerungen abmelden", "Wenn Sie keine PROdigitalTV-Veranstaltungserinnerungen mehr erhalten moechten, koennen Sie diese hier abbestellen.")}
+    <section class="section"><div class="container"><div class="form-card login-card">
+      <h2>Erinnerungen abbestellen</h2>
+      <p class="muted">Diese Abmeldung betrifft nur freiwillige Veranstaltungshinweise und Erinnerungen. Notwendige Mails zu bestehenden Anmeldungen, Tickets oder Stornierungen bleiben davon unberuehrt.</p>
+      <button class="button button--primary" type="button" data-notification-unsubscribe="${escapeHtml(hash || "")}">Keine Erinnerungen mehr erhalten</button>
+      <div id="notification-unsubscribe-result" style="margin-top:18px"></div>
+    </div></div></section>`);
 }
 
 export async function topicsPage() {
@@ -1643,7 +1706,7 @@ export async function newsDetailPage(id) {
 export async function topicDetailPage(id) {
   const [topic, events, sponsors, galleries, allTopics] = await Promise.all([getOne("topics", id), listPublicEvents(), listPublicContent("sponsors"), listPublicContent("galleries"), listPublicContent("topics")]);
   if (!topic) return notFoundPage();
-  const linked = events.filter((event) => (event.topicIds || []).includes(id) && !isPastEvent(event));
+  const linked = events.filter((event) => (event.topicIds || []).includes(id) && upcomingEventIsVisible(event));
   const relatedTopics = allTopics.filter((entry) => entry.id !== topic.id).slice(0, 4);
   const topicIntro = "Einordnung, Hintergruende und Praxisbezug zu zentralen Begriffen der digitalen Medienwirtschaft.";
   const topicText = topic.longDescription || topic.bodyText || topic.shortDescription || "";
@@ -1723,7 +1786,7 @@ export async function archivePage() {
     ? `<div class="archive-more"><a class="button button--secondary" href="#/archive?all=1">Alle ${totalCount} R&uuml;ckblicke anzeigen</a></div>`
     : "";
   return publicShell("archive", `${leanMobile ? "" : subhero("Rückblick", "Rückblick", "Nachbericht, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen.")}
-    <section class="section"><div class="container"><div class="section-head archive-list-head"><div><p class="eyebrow">Medienfrühstücke</p><h2>Rückblick</h2><p>Vergangene Veranstaltungen mit Nachbericht, Ort, Co-Gastgeber und Detailseite.</p></div></div><div class="archive-list archive-list--compact">${items || `<div class="alert">Rückblicke werden aktuell vorbereitet.</div>`}</div>${moreLink}</div></section>`);
+    <section class="section"><div class="container"><div class="archive-list archive-list--compact">${items || `<div class="alert">Rückblicke werden aktuell vorbereitet.</div>`}</div>${moreLink}</div></section>`);
 }
 
 export async function downloadsPage() {
@@ -1734,7 +1797,7 @@ export async function downloadsPage() {
 }
 
 export function webappQrPage() {
-  const webappUrl = "https://prodigitaltv-da47b.web.app/#/home";
+  const webappUrl = `https://prodigitaltv-da47b.web.app/?v=${Date.now()}#/home`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=720x720&margin=2&data=${encodeURIComponent(webappUrl)}`;
   return publicShell("webapp-qr", `${subhero("WebApp", "QR-Code zur mobilen WebApp.", "Direkt scannen und PROdigitalTV auf dem Smartphone öffnen.")}
     <section class="section"><div class="container webapp-qr-page">
@@ -1748,6 +1811,93 @@ export function webappQrPage() {
           <div class="actions"><a class="button button--primary" href="${escapeHtml(webappUrl)}" target="_blank" rel="noreferrer">WebApp öffnen</a><a class="button button--secondary" href="#/home">Zur Website</a></div>
         </div>
       </article>
+    </div></section>`);
+}
+
+export async function ticketLinkPage(token = "") {
+  if (!token) return publicShell("events", `${subhero("Ticket", "Ticket-Link unvollstaendig.", "Bitte oeffnen Sie den Link aus Ihrer Bestaetigungsmail erneut.")}`);
+  try {
+    const result = await linkTicketDevice(token);
+    return publicShell("events", `${subhero("Ticket", "Handy ist als Eintrittskarte aktiv.", `${result.eventTitle || "Ihre Anmeldung"} ist auf diesem Geraet gespeichert.`)}
+      <section class="section"><div class="container" style="max-width:760px">
+        <div class="form-card login-card">
+          <p class="eyebrow">Eintrittskarte</p>
+          <h2>${escapeHtml(result.firstName || "")} ${escapeHtml(result.lastName || "")}</h2>
+          <section class="mobile-ticket-card mobile-ticket-card--standalone" aria-label="Aktives Handy-Ticket">
+            <div class="mobile-ticket-card__icon" aria-hidden="true"></div>
+            <div class="mobile-ticket-card__body">
+              <p class="eyebrow">Handy-Ticket aktiv</p>
+              <h2>${escapeHtml(result.eventTitle || "PROdigitalTV Event")}</h2>
+              <p>${escapeHtml([result.firstName, result.lastName].filter(Boolean).join(" ") || "Dieses Geraet")}</p>
+              <span>Dieses Handy ist fuer den Einlass vorbereitet.</span>
+            </div>
+          </section>
+          <a class="button button--primary" href="#/events">Zu den Events</a>
+        </div>
+      </div></section>`);
+  } catch (error) {
+    return publicShell("events", `${subhero("Ticket", "Ticket konnte nicht aktiviert werden.", escapeHtml(error.message || String(error)))}<section class="section"><div class="container"><a class="button button--secondary" href="#/events">Zu den Events</a></div></section>`);
+  }
+}
+
+export async function eventCheckinPage(eventId = "") {
+  const event = eventId ? await getOne("events", eventId).catch(() => null) : null;
+  try {
+    const result = await checkInWithStoredTicket(eventId);
+    return publicShell("events", `${subhero("Check-in", `Willkommen, ${escapeHtml(result.firstName || "Gast")}.`, `${escapeHtml(result.eventTitle || event?.title || "Event")} ist bestaetigt.`)}
+      <section class="section"><div class="container" style="max-width:760px">
+        <div class="form-card login-card">
+          <p class="eyebrow">Einlass</p>
+          <h2>${escapeHtml(result.firstName || "")} ${escapeHtml(result.lastName || "")}</h2>
+          ${result.company ? `<p>${escapeHtml(result.company)}</p>` : ""}
+          <div class="alert alert--success">${result.alreadyCheckedIn ? "Sie waren bereits eingecheckt." : "Check-in erfolgreich."}</div>
+        </div>
+      </div></section>`);
+  } catch (error) {
+    const ticket = readStoredTicket(eventId);
+    return publicShell("events", `${subhero("Check-in", ticket ? "Ticket konnte nicht geprueft werden." : "Kein Ticket auf diesem Geraet.", ticket ? escapeHtml(error.message || String(error)) : "Bitte oeffnen Sie zuerst den Ticket-Link aus Ihrer Bestaetigungsmail auf diesem Handy.")}
+      <section class="section"><div class="container" style="max-width:760px"><div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div><a class="button button--secondary" href="#/events">Zu den Events</a></div></section>`);
+  }
+}
+
+export async function eventCheckinScreenPage(eventId = "") {
+  const event = eventId ? await getOne("events", eventId).catch(() => null) : null;
+  if (!event) return notFoundPage();
+  const url = `https://prodigitaltv-da47b.web.app/?v=${Date.now()}#/event-checkin/${encodeURIComponent(event.id)}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=900x900&margin=2&data=${encodeURIComponent(url)}`;
+  return publicShell("events", `${subhero("Event-QR", event.title || "Event", "Diesen QR-Code am Empfang anzeigen oder ausdrucken.")}
+    <section class="section"><div class="container webapp-qr-page event-checkin-screen" data-checkin-screen-event="${escapeHtml(event.id)}">
+      <article class="webapp-qr-card">
+        <figure class="webapp-qr-card__code"><img src="${escapeHtml(qrUrl)}" alt="Check-in QR-Code fuer ${escapeHtml(event.title || "Event")}"></figure>
+        <div class="webapp-qr-card__copy">
+          <p class="eyebrow">Check-in</p>
+          <h2>QR-Code fuer den Einlass</h2>
+          <p>Teilnehmer scannen diesen Code am Event. Das zuvor gespeicherte Handy-Ticket wird dann geprueft.</p>
+          <p class="webapp-qr-card__url">${escapeHtml(url)}</p>
+          <div class="actions"><button class="button button--primary" type="button" data-print-page>QR-Code drucken</button><a class="button button--secondary" href="#/cms/event/${escapeHtml(event.id)}?tab=registration">Zur Eventverwaltung</a></div>
+        </div>
+      </article>
+      <div class="event-checkin-screen__overlay" data-checkin-welcome hidden>
+        <div class="event-checkin-screen__welcome">
+          <p class="eyebrow">Check-in erfolgreich</p>
+          <h2 data-checkin-welcome-name>Herzlich willkommen</h2>
+          <p>Wir freuen uns, Sie heute begruessen zu duerfen und wuenschen Ihnen eine erfolgreiche Veranstaltung.</p>
+        </div>
+      </div>
+    </div></section>`);
+}
+
+export async function registrationCancelPage(token = "") {
+  return publicShell("events", `${subhero("Storno", "Anmeldung stornieren.", "Bitte bestaetigen Sie die Stornierung nur, wenn Sie nicht teilnehmen koennen.")}
+    <section class="section"><div class="container" style="max-width:760px">
+      <div class="form-card login-card">
+        <p class="eyebrow">Event-Anmeldung</p>
+        <h2>Stornierung bestaetigen</h2>
+        <p>Nach der Stornierung ist diese Anmeldung nicht mehr fuer den Einlass gueltig.</p>
+        <button class="button button--primary" type="button" data-cancel-registration-token="${escapeHtml(token || "")}">Anmeldung stornieren</button>
+        <a class="button button--secondary" href="#/events">Abbrechen</a>
+        <div id="registration-cancel-result"></div>
+      </div>
     </div></section>`);
 }
 
@@ -1821,7 +1971,7 @@ export async function portalPage() {
     return publicShell("login", `${subhero("Mitgliederbereich", "Zugriff noch nicht freigeschaltet.", "Ihr Login ist aktiv, aber die Rolle für Mitglieder- oder CMS-Inhalte ist noch nicht hinterlegt.")}<section class="section"><div class="container" style="max-width:760px"><div class="form-card"><p>Bitte pruefen Sie in Firebase/Firestore den Eintrag unter <code>users/${escapeHtml(user.uid || "")}</code>. Für CMS-Zugriff muss die Rolle <code>admin</code> oder <code>editor</code> sein, für den Mitgliederbereich <code>member</code>.</p><div class="alert" style="margin-top:18px">Wenn dies die erste Einrichtung ist, kann der aktuell eingeloggte Benutzer einmalig als erster Admin freigeschaltet werden. Das funktioniert nur, solange noch kein aktiver Admin existiert.</div><div class="actions" style="margin-top:22px"><button id="bootstrap-admin-button" class="button button--primary">Als ersten Admin freischalten</button><button id="logout-button" class="button button--secondary">Abmelden</button><a class="button button--secondary" href="#/home">Zur Website</a></div><div id="bootstrap-admin-result"></div></div></div></section>`);
   }
   const [allEvents, sponsors] = await Promise.all([listPublicEvents(true), listPublicContent("sponsors")]);
-  const events = allEvents.filter((event) => event.accessType === "members_only");
+  const events = allEvents.filter((event) => event.accessType === "members_only" && eventRegistrationIsOpen(event));
   return publicShell("login", `${subhero("Mitgliederbereich", `Willkommen, ${escapeHtml(user.displayName)}.`, "Exklusive Inhalte und Ihre Veranstaltungen auf einen Blick.")}
     <section class="section"><div class="container"><div class="section-head"><div><h2>Mitglieder-Events</h2><p class="muted">Angemeldet als ${escapeHtml(user.email || "")} · Rolle: ${escapeHtml(user.role || "guest")} · Token bis: ${escapeHtml(user.tokenExpiresAt || "nicht verfuegbar")}</p></div><button id="logout-button" class="button button--secondary">Abmelden</button></div><div class="card-grid card-grid--three">${events.map((event) => eventCard(event, false, sponsors)).join("")}</div></div></section>`);
 }
@@ -2029,7 +2179,7 @@ export async function memberPortalPage() {
       ${sortedMembers.map((member) => `<option value="${escapeHtml(member.id)}" ${member.id === adminSelectedId ? "selected" : ""}>${escapeHtml([member.name || member.id, member.city].filter(Boolean).join(" / "))}</option>`).join("")}
     </select></div>
   </form>` : "";
-  const events = allEvents.filter((event) => event.accessType === "members_only");
+  const events = allEvents.filter((event) => event.accessType === "members_only" && eventRegistrationIsOpen(event));
   const visibleDocuments = memberDocuments
     .filter((item) => item.status === "published" && (item.visibility || "members") === "members")
     .sort((a, b) => String(b.meetingDate || b.publishDate || b.year || b.updatedAt || "").localeCompare(String(a.meetingDate || a.publishDate || a.year || a.updatedAt || "")));
@@ -2064,7 +2214,8 @@ export async function memberPortalPage() {
     ["events", "Events"],
     ["upload", "Foto-Upload"]
   ];
-  const tabNav = `<nav class="member-portal-tabs" aria-label="Mitgliederbereich">${tabs.map(([key, label]) => `<a href="#/portal?tab=${key}" class="${activeTab === key ? "active" : ""}">${label}</a>`).join("")}</nav>`;
+  const selectedMemberQuery = adminMode && adminSelectedId ? `&memberId=${encodeURIComponent(adminSelectedId)}` : "";
+  const tabNav = `<nav class="member-portal-tabs" aria-label="Mitgliederbereich">${tabs.map(([key, label]) => `<a href="#/portal?tab=${key}${selectedMemberQuery}" class="${activeTab === key ? "active" : ""}">${label}</a>`).join("")}</nav>`;
   const documentsSection = `<section class="member-portal-section member-portal-section--documents"><div class="section-head"><div><h2>Mitglieder-Dokumente</h2><p class="muted">Freigegebene Unterlagen und Anlagen für Mitglieder.</p></div></div><div class="card-grid card-grid--three">${visibleDocuments.length ? visibleDocuments.map(documentCard).join("") : `<div class="alert">Noch keine freigegebenen Mitgliederdokumente.</div>`}</div></section>`;
   const memberInfosSection = `<section class="member-portal-section member-portal-section--infos"><div class="section-head"><h2>Member Infos</h2></div><div class="member-article-list">${visibleMemberArticles.length ? visibleMemberArticles.map((article) => memberArticleCard(article, galleries)).join("") : `<div class="alert">Noch keine Mitgliederbeitr&auml;ge sichtbar.</div>`}</div></section>`;
   const profileSection = `<section class="member-portal-section"><div class="section-head"><h2>${adminMode ? "Mitgliedsprofil bearbeiten" : "Mein Profil"}</h2></div>${adminDropdown}${memberProfileForm(editableMember, user, { adminMode })}</section>`;

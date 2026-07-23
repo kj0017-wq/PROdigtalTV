@@ -2,6 +2,7 @@ const { createHash, randomBytes } = require("node:crypto");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { getStorage } = require("firebase-admin/storage");
+const { getMessaging } = require("firebase-admin/messaging");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
@@ -19,6 +20,8 @@ const SMTP_PASS = defineSecret("SMTP_PASS");
 const MAIL_FROM = defineSecret("MAIL_FROM");
 const MAIL_TO = defineSecret("MAIL_TO");
 const smtpSecrets = [SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM, MAIL_TO];
+const PUBLIC_APP_BASE_URL = "https://prodigitaltv-da47b.web.app";
+const PUBLIC_CONFIRMATION_BASE_URL = `${PUBLIC_APP_BASE_URL}/confirm.html`;
 
 const openaiFunctions = require("./openaiFunctions");
 Object.assign(exports, openaiFunctions);
@@ -45,8 +48,352 @@ function clean(value = "") {
   return String(value || "").trim();
 }
 
+function clientIp(request) {
+  const headers = request.rawRequest?.headers || {};
+  const forwarded = String(headers["x-forwarded-for"] || "").split(",").map((item) => item.trim()).filter(Boolean);
+  return forwarded[0]
+    || String(headers["fastly-client-ip"] || headers["x-real-ip"] || request.rawRequest?.ip || "").trim();
+}
+
+function eventRegistrationIsOpen(event = {}) {
+  return Boolean(event.registrationEnabled)
+    || (event.accessType === "public" && event.allowPublicRegistration === true)
+    || (event.accessType === "members_only" && event.allowMemberRegistration === true)
+    || event.preStatus === "invitation_published"
+    || event.lifecyclePhase === "registration_open";
+}
+
+function registrationInput(data = {}) {
+  const input = data.input || data.registration || {};
+  return {
+    firstName: stripTags(input.firstName),
+    lastName: stripTags(input.lastName),
+    company: stripTags(input.company),
+    position: stripTags(input.position),
+    email: clean(input.email).toLowerCase(),
+    phone: stripTags(input.phone),
+    isMember: false,
+    invitationCode: stripTags(input.invitationCode),
+    message: stripTags(input.message),
+    privacyAccepted: Boolean(input.privacyAccepted),
+    photoVideoConsent: Boolean(input.photoVideoConsent),
+    newsletterConsent: Boolean(input.newsletterConsent),
+    notifyForThisEvent: Boolean(input.notifyForThisEvent),
+    notifyFutureEvents: Boolean(input.notifyFutureEvents)
+  };
+}
+
+function normalizedMemberEmails(member = {}) {
+  const values = [
+    member.email,
+    member.contactEmail,
+    member.contact_email,
+    member.profileEmail,
+    member.billingEmail,
+    member.invoiceEmail
+  ];
+  ["emails", "additionalEmails", "alternateEmails", "contactEmails", "notificationEmails"].forEach((key) => {
+    if (Array.isArray(member[key])) member[key].forEach((value) => values.push(value));
+  });
+  if (Array.isArray(member.eventContacts)) {
+    member.eventContacts.forEach((contact) => values.push(contact?.email));
+  }
+  if (Array.isArray(member.contacts)) {
+    member.contacts.forEach((contact) => values.push(contact?.email));
+  }
+  return values.map((value) => clean(value).toLowerCase()).filter(Boolean);
+}
+
+function memberCanMatchRegistration(member = {}) {
+  const status = clean(member.status || "active").toLowerCase();
+  return !["archived", "cancelled", "deleted", "inactive"].includes(status);
+}
+
+function memberIsNotificationTestGroup(member = {}) {
+  return Boolean(member.notificationTestGroup || member.isNotificationTestGroup || member.testGroup || member.notificationTester);
+}
+
+async function emailBelongsToMember(email = "") {
+  const normalizedEmail = clean(email).toLowerCase();
+  if (!normalizedEmail) return false;
+  const membersSnapshot = await db.collection("members").get();
+  return membersSnapshot.docs.some((document) => {
+    const member = document.data() || {};
+    return memberCanMatchRegistration(member) && normalizedMemberEmails(member).includes(normalizedEmail);
+  });
+}
+
+async function eventNotificationTargets(eventId = "", options = {}) {
+  const hasEvent = Boolean(clean(eventId));
+  const recipientGroup = clean(options.recipientGroup || "");
+  const [membersSnapshot, contactsSnapshot, registrationsSnapshot] = await Promise.all([
+    (options.includeMembers || recipientGroup === "test_group") ? db.collection("members").get() : Promise.resolve({ docs: [] }),
+    (options.includeContacts && recipientGroup !== "test_group") ? db.collection("contacts").get() : Promise.resolve({ docs: [] }),
+    hasEvent ? db.collection("registrations").where("eventId", "==", eventId).get() : Promise.resolve({ docs: [] })
+  ]);
+  const activeRegistrations = registrationsSnapshot.docs
+    .map((document) => ({ id: document.id, ...document.data() }))
+    .filter(registrationIsActive);
+  const registeredEmails = new Set(activeRegistrations.map((registration) => clean(registration.email).toLowerCase()).filter(Boolean));
+  const people = new Map();
+  const addPerson = (email, person = {}, source = "contact") => {
+    const normalizedEmail = clean(email).toLowerCase();
+    if (!normalizedEmail || !normalizedEmail.includes("@")) return;
+    if (hasEvent && options.registrationStatus === "registered" && !registeredEmails.has(normalizedEmail)) return;
+    if (hasEvent && options.registrationStatus === "unregistered" && registeredEmails.has(normalizedEmail)) return;
+    const existing = people.get(normalizedEmail) || {};
+    people.set(normalizedEmail, {
+      ...existing,
+      ...person,
+      email: normalizedEmail,
+      source: existing.source === "member" ? "member" : source,
+      audienceType: registeredEmails.has(normalizedEmail) ? "registered" : "unregistered"
+    });
+  };
+  membersSnapshot.docs.forEach((document) => {
+    const member = { id: document.id, ...document.data() };
+    if (!memberCanMatchRegistration(member)) return;
+    if (member.notificationOptOut === true || member.reminderConsent === false) return;
+    if (recipientGroup === "test_group" && !memberIsNotificationTestGroup(member)) return;
+    normalizedMemberEmails(member).forEach((email) => addPerson(email, {
+      firstName: member.firstName || "",
+      lastName: member.lastName || "",
+      company: member.name || member.company || member.title || "",
+      memberId: member.id
+    }, "member"));
+  });
+  contactsSnapshot.docs.forEach((document) => {
+    const contact = { id: document.id, ...document.data() };
+    if (["archived", "deleted", "inactive"].includes(clean(contact.status).toLowerCase())) return;
+    if (contact.notificationOptOut === true || contact.reminderConsent === false) return;
+    addPerson(contact.email, contact, "contact");
+  });
+  return [...people.values()];
+}
+
+async function queueEventNotificationDelivery(notification = {}, eventRecord = {}) {
+  const explicitRecipients = Array.isArray(notification.testRecipients) ? notification.testRecipients : [];
+  const targets = explicitRecipients.length
+    ? explicitRecipients.map((email) => ({ email, audienceType: "test", firstName: "", lastName: "", company: "" }))
+    : await eventNotificationTargets(eventRecord.id, notification);
+  let queued = 0;
+  let pushed = 0;
+  for (const target of targets) {
+    const link = notification.link || eventUrl(eventRecord.id);
+    const body = target.audienceType === "registered"
+      ? notification.registeredText || notification.shortText
+      : notification.invitationText || notification.shortText;
+    let pushDelivered = false;
+    try {
+      const tokens = await db.collection("notificationTokens")
+        .where("email", "==", target.email)
+        .where("status", "==", "active")
+        .limit(5)
+        .get();
+      for (const tokenDocument of tokens.docs) {
+        const token = clean(tokenDocument.data()?.token);
+        if (!token) continue;
+        await getMessaging().send({
+          token,
+          notification: { title: notification.title, body },
+          webpush: { fcmOptions: { link } },
+          data: { eventId: eventRecord.id, notificationId: notification.id, link }
+        });
+        pushDelivered = true;
+        pushed += 1;
+      }
+    } catch {
+      pushDelivered = false;
+    }
+    if (pushDelivered) continue;
+    await queueMail({
+      type: "event_notification",
+      template: "event_notification",
+      to: target.email,
+      eventId: eventRecord.id,
+      notificationId: notification.id,
+      title: notification.title,
+      shortText: body,
+      link,
+      audienceType: target.audienceType,
+      personName: clean(`${target.firstName || ""} ${target.lastName || ""}`) || target.company || ""
+    });
+    queued += 1;
+  }
+  await db.collection("eventNotifications").doc(notification.id).set({
+    status: "queued",
+    testOnly: explicitRecipients.length > 0,
+    targetCount: targets.length,
+    queuedMailCount: queued,
+    pushedCount: pushed,
+    processedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  return { targetCount: targets.length, queuedMailCount: queued, pushedCount: pushed };
+}
+
+function notificationConsentId(email = "") {
+  return `notification-consent-${createHash("sha256").update(clean(email).toLowerCase()).digest("hex").slice(0, 32)}`;
+}
+
+function notificationOptOutHash(email = "") {
+  return createHash("sha256").update(clean(email).toLowerCase()).digest("hex").slice(0, 40);
+}
+
+function notificationOptOutUrl(email = "") {
+  const hash = notificationOptOutHash(email);
+  return hash ? publicHashUrl(`notifications/unsubscribe/${encodeURIComponent(hash)}`) : "";
+}
+
+function contactId(email = "") {
+  return `contact-${createHash("sha256").update(clean(email).toLowerCase()).digest("hex").slice(0, 32)}`;
+}
+
+async function upsertContactFromRegistration(registration = {}, eventRecord = {}, now = FieldValue.serverTimestamp()) {
+  const email = clean(registration.email).toLowerCase();
+  if (!email) return;
+  const ref = db.collection("contacts").doc(contactId(email));
+  const existing = await ref.get();
+  await ref.set({
+    id: ref.id,
+    email,
+    firstName: clean(registration.firstName),
+    lastName: clean(registration.lastName),
+    company: clean(registration.company),
+    position: clean(registration.position),
+    phone: clean(registration.phone),
+    source: existing.exists ? existing.data()?.source || "event_registration" : "event_registration",
+    status: "active",
+    reminderConsent: Boolean(registration.notifyForThisEvent || registration.notifyFutureEvents || existing.data()?.reminderConsent),
+    notificationOptOutHash: notificationOptOutHash(email),
+    lastEventId: eventRecord.id || registration.eventId || "",
+    lastRegistrationId: registration.id || "",
+    createdAt: existing.exists ? existing.data()?.createdAt || now : now,
+    updatedAt: now
+  }, { merge: true });
+}
+
+function eventDateTimeMillis(eventRecord = {}) {
+  const date = clean(eventRecord.date);
+  if (!date) return 0;
+  const time = clean(eventRecord.startTime) || "09:00";
+  const value = Date.parse(`${date}T${time.length === 5 ? `${time}:00` : time}`);
+  return Number.isFinite(value) ? value : Date.parse(date) || 0;
+}
+
+function registrationIsActive(registration = {}) {
+  return Boolean(registration.email) && !["cancelled", "expired"].includes(clean(registration.status).toLowerCase());
+}
+
+function eventUrl(eventId = "") {
+  return publicHashUrl(`event/${encodeURIComponent(eventId)}`);
+}
+
+function adminRegistrationMailTo() {
+  return mailAddress(MAIL_TO.value());
+}
+
+function registrationConfirmationUrl(token) {
+  return `${PUBLIC_CONFIRMATION_BASE_URL}?v=${Date.now()}&token=${encodeURIComponent(token)}`;
+}
+
+function publicHashUrl(path) {
+  return `${PUBLIC_APP_BASE_URL}/?v=${Date.now()}#/${path}`;
+}
+
+function registrationTicketUrl(token) {
+  return publicHashUrl(`ticket/link/${encodeURIComponent(token)}`);
+}
+
+function registrationCancelUrl(token) {
+  return publicHashUrl(`registration/cancel/${encodeURIComponent(token)}`);
+}
+
+function eventCheckinUrl(eventId) {
+  return publicHashUrl(`event-checkin/${encodeURIComponent(eventId || "")}`);
+}
+
+function registrationLockId(eventId = "", email = "") {
+  return `${clean(eventId)}-${hashToken(clean(email).toLowerCase()).slice(0, 40)}`;
+}
+
 function stripTags(value = "") {
   return clean(value).replace(/[<>]/g, "");
+}
+
+function plainDate(value = "") {
+  if (!value) return "dem Veranstaltungstermin";
+  const date = value.toDate ? value.toDate() : new Date(value);
+  if (Number.isNaN(date.getTime())) return clean(value);
+  return date.toLocaleDateString("de-DE", { day: "2-digit", month: "long", year: "numeric" });
+}
+
+function defaultGlobalEventRegistrationMailText(variant = "confirmation") {
+  if (variant === "waitlist") {
+    return [
+      "Guten Tag {{firstName}} {{lastName}},",
+      "",
+      "vielen Dank fuer Ihr Interesse an \"{{eventTitle}}\".",
+      "",
+      "Aktuell fuehren wir Ihre Anmeldung auf der Warteliste. Sobald ein Platz frei wird, melden wir uns bei Ihnen.",
+      "",
+      "Termin: {{eventDate}}",
+      "Ort: {{eventLocation}}",
+      "",
+      "Viele Gruesse",
+      "PROdigitalTV"
+    ].join("\n");
+  }
+  return [
+    "Guten Tag {{firstName}} {{lastName}},",
+    "",
+    "vielen Dank fuer Ihre Anmeldung zu \"{{eventTitle}}\".",
+    "",
+    "Bitte bestaetigen Sie Ihre Anmeldung ueber den Button in dieser E-Mail. Erst danach ist Ihre Anmeldung verbindlich vorgemerkt.",
+    "",
+    "Termin: {{eventDate}}",
+    "Ort: {{eventLocation}}",
+    "",
+    "Viele Gruesse",
+    "PROdigitalTV"
+  ].join("\n");
+}
+
+function mailTemplateSettings(record = {}) {
+  const value = record?.value && typeof record.value === "object" ? record.value : {};
+  return {
+    registrationConfirmation: record?.registrationConfirmation || value.registrationConfirmation || defaultGlobalEventRegistrationMailText("confirmation"),
+    registrationWaitlist: record?.registrationWaitlist || value.registrationWaitlist || defaultGlobalEventRegistrationMailText("waitlist")
+  };
+}
+
+function renderTemplateText(template = "", { registration = {}, eventRecord = {} } = {}) {
+  const replacements = {
+    firstName: registration.firstName || "",
+    lastName: registration.lastName || "",
+    company: registration.company || "",
+    email: registration.email || "",
+    eventTitle: eventRecord.title || registration.eventTitle || "PROdigitalTV Event",
+    eventDate: plainDate(eventRecord.date || registration.eventDate),
+    eventLocation: [eventRecord.locationName, eventRecord.city].filter(Boolean).join(", ") || "dem Veranstaltungsort"
+  };
+  return String(template || "").replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_, key) => clean(replacements[key] ?? ""));
+}
+
+function textToHtml(text = "") {
+  return clean(text)
+    .split(/\n{2,}/)
+    .map((paragraph) => `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${paragraph.split(/\n/).map((line) => clean(line)).join("<br>")}</p>`)
+    .join("");
+}
+
+function mailHtmlShell(title = "", body = "") {
+  return `<!doctype html><html><body style="margin:0;background:#f3f6fb;font-family:Arial,sans-serif;color:#071b34"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f6fb;padding:28px 12px"><tr><td align="center"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:18px;border:1px solid #dbe4f1;overflow:hidden"><tr><td style="padding:28px 30px"><div style="font-size:30px;font-weight:800;color:#e30613;margin-bottom:6px">PRO<span style="color:#e30613;font-weight:400">digital</span>TV</div><p style="margin:0 0 22px;color:#5f6b7c">Interessengemeinschaft Digitale Medien e.V.</p><h1 style="font-size:26px;line-height:1.25;margin:0 0 18px;color:#071b34">${title}</h1>${body}</td></tr></table></td></tr></table></body></html>`;
+}
+
+function mailButton(label = "", url = "") {
+  if (!url) return "";
+  return `<p style="margin:26px 0"><a href="${url}" style="display:inline-block;background:#e30613;color:#ffffff;text-decoration:none;font-weight:800;border-radius:999px;padding:15px 24px">${label}</a></p>`;
 }
 
 function storagePathFromMediaUrl(value = "") {
@@ -88,15 +435,17 @@ function createTransporter() {
 }
 
 async function mailContext(mail) {
-  const [registration, membershipApplication, eventRecord] = await Promise.all([
+  const [registration, membershipApplication, eventRecord, mailTemplates] = await Promise.all([
     mail.registrationId ? db.collection("registrations").doc(mail.registrationId).get() : null,
     mail.membershipApplicationId ? db.collection("membershipApplications").doc(mail.membershipApplicationId).get() : null,
-    mail.eventId ? db.collection("events").doc(mail.eventId).get() : null
+    mail.eventId ? db.collection("events").doc(mail.eventId).get() : null,
+    db.collection("settings").doc("mailTemplates").get().catch(() => null)
   ]);
   return {
     registration: registration?.exists ? { id: registration.id, ...registration.data() } : null,
     membershipApplication: membershipApplication?.exists ? { id: membershipApplication.id, ...membershipApplication.data() } : null,
-    eventRecord: eventRecord?.exists ? { id: eventRecord.id, ...eventRecord.data() } : null
+    eventRecord: eventRecord?.exists ? { id: eventRecord.id, ...eventRecord.data() } : null,
+    mailTemplates: mailTemplates?.exists ? { id: mailTemplates.id, ...mailTemplates.data() } : null
   };
 }
 
@@ -104,6 +453,7 @@ function renderMail(mail, context = {}) {
   const registration = context.registration || {};
   const application = context.membershipApplication || {};
   const eventRecord = context.eventRecord || {};
+  const mailTemplates = mailTemplateSettings(context.mailTemplates || {});
 
   if (mail.template === "membership_application_admin") {
     const body = [
@@ -149,31 +499,51 @@ function renderMail(mail, context = {}) {
   }
 
   if (mail.template === "registration_confirmation") {
+    const baseTemplate = eventRecord.mailText || mailTemplates.registrationConfirmation || defaultGlobalEventRegistrationMailText("confirmation");
+    const bodyText = renderTemplateText(baseTemplate, { registration, eventRecord });
+    const text = [
+      bodyText,
+      "",
+      mail.confirmationUrl ? `Bestaetigungslink: ${mail.confirmationUrl}` : "",
+      "",
+      "Der Link ist 48 Stunden gueltig."
+    ].filter(Boolean).join("\n");
     return {
       subject: mail.subject || `Bitte bestaetigen Sie Ihre Anmeldung: ${eventRecord.title || registration.eventTitle || ""}`,
-      text: [
-        `Guten Tag ${clean(registration.firstName)} ${clean(registration.lastName)},`,
-        "",
-        `bitte bestaetigen Sie Ihre Anmeldung${eventRecord.title ? ` fuer "${eventRecord.title}"` : ""}.`,
-        "",
-        mail.confirmationUrl ? `Bestaetigungslink: ${mail.confirmationUrl}` : "",
-        "",
-        "Der Link ist 48 Stunden gueltig."
-      ].filter(Boolean).join("\n")
+      text,
+      html: mailHtmlShell("Anmeldung bestaetigen", [
+        textToHtml(bodyText),
+        mailButton("Anmeldung bestaetigen", mail.confirmationUrl),
+        `<p style="font-size:14px;line-height:1.5;color:#5f6b7c;margin:18px 0 0">Falls der Button nicht funktioniert, kopieren Sie diesen Link in den Browser:<br><a href="${mail.confirmationUrl}" style="color:#0b3a66">${mail.confirmationUrl}</a></p>`,
+        `<p style="font-size:14px;color:#5f6b7c;margin:18px 0 0">Der Link ist 48 Stunden gueltig.</p>`
+      ].filter(Boolean).join(""))
     };
   }
 
   if (mail.template === "registration_confirmed") {
+    const title = registration.eventTitle || eventRecord.title || "";
     return {
       subject: mail.subject || `Anmeldung bestaetigt: ${registration.eventTitle || eventRecord.title || ""}`,
       text: [
         `Guten Tag ${clean(registration.firstName)} ${clean(registration.lastName)},`,
         "",
-        `Ihre Anmeldung${registration.eventTitle ? ` fuer "${registration.eventTitle}"` : ""} wurde bestaetigt.`,
+        `Ihre Anmeldung${title ? ` fuer "${title}"` : ""} wurde bestaetigt.`,
+        "",
+        mail.ticketLink ? `Eintrittskarte auf dem Handy aktivieren: ${mail.ticketLink}` : "",
+        mail.cancelUrl ? `Anmeldung stornieren: ${mail.cancelUrl}` : "",
+        "",
+        "Wenn Sie die Anmeldung am Computer bestaetigt haben, oeffnen Sie den Ticket-Link bitte einmal auf dem Handy. Danach erkennt die Eventseite dieses Geraet.",
         "",
         "Viele Gruesse",
         "PROdigitalTV"
-      ].join("\n")
+      ].filter(Boolean).join("\n"),
+      html: mailHtmlShell("Anmeldung bestaetigt", [
+        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Guten Tag ${clean(registration.firstName)} ${clean(registration.lastName)},</p>`,
+        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Ihre Anmeldung${title ? ` fuer <strong>${title}</strong>` : ""} wurde bestaetigt.</p>`,
+        mailButton("Handy-Ticket aktivieren", mail.ticketLink),
+        mail.cancelUrl ? `<p style="font-size:14px;line-height:1.5;margin:18px 0 0"><a href="${mail.cancelUrl}" style="color:#0b3a66">Anmeldung stornieren</a></p>` : "",
+        `<p style="font-size:14px;color:#5f6b7c;margin:18px 0 0">Wenn Sie die Anmeldung am Computer bestaetigt haben, oeffnen Sie den Ticket-Link bitte einmal auf dem Handy.</p>`
+      ].filter(Boolean).join(""))
     };
   }
 
@@ -191,6 +561,42 @@ function renderMail(mail, context = {}) {
           ["Status", registration.status]
         ])
       ].join("\n")
+    };
+  }
+
+  if (mail.template === "event_notification") {
+    const title = clean(mail.title || eventRecord.title || "PROdigitalTV Veranstaltung");
+    const body = clean(mail.shortText || mail.text || "Neue Informationen zu einer PROdigitalTV-Veranstaltung.");
+    const link = clean(mail.link || eventUrl(mail.eventId || eventRecord.id || ""));
+    const optOutUrl = notificationOptOutUrl(mail.to);
+    const salutation = clean(mail.personName) ? `Guten Tag ${clean(mail.personName)},` : "Guten Tag,";
+    const intro = mail.audienceType === "registered"
+      ? "hier finden Sie Ihre Erinnerung mit den Veranstaltungsinformationen."
+      : "wir moechten Sie auf diese Veranstaltung hinweisen.";
+    const text = [
+      salutation,
+      "",
+      intro,
+      "",
+      title,
+      body,
+      "",
+      link ? `Zur Veranstaltung: ${link}` : "",
+      optOutUrl ? `Keine Erinnerungen mehr erhalten: ${optOutUrl}` : "",
+      "",
+      "Viele Gruesse",
+      "PROdigitalTV"
+    ].filter(Boolean).join("\n");
+    return {
+      subject: mail.subject || title,
+      text,
+      html: mailHtmlShell(title, [
+        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${salutation}</p>`,
+        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${intro}</p>`,
+        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${textToHtml(body)}</p>`,
+        mailButton("Zur Veranstaltung", link),
+        optOutUrl ? `<p style="font-size:12px;line-height:1.5;color:#7a8493;margin:24px 0 0;border-top:1px solid #dbe4f1;padding-top:14px">Sie erhalten diese Nachricht, weil Sie PROdigitalTV-Veranstaltungshinweise aktiviert haben. <a href="${optOutUrl}" style="color:#5f6b7c">Keine Erinnerungen mehr erhalten</a>.</p>` : ""
+      ].filter(Boolean).join(""))
     };
   }
 
@@ -213,7 +619,8 @@ async function sendQueuedMail(mail) {
     to,
     replyTo: replyTo ? mailAddress(replyTo) : undefined,
     subject: stripTags(rendered.subject),
-    text: rendered.text
+    text: rendered.text,
+    html: rendered.html
   });
 }
 
@@ -261,9 +668,405 @@ exports.bootstrapFirstAdmin = onCall({ region }, async (request) => {
   return { ok: true, role: "admin", message: "Erster Admin wurde freigeschaltet." };
 });
 
+exports.createEventRegistration = onCall({ region, invoker: "public" }, async (request) => {
+  const eventId = clean(request.data?.eventId);
+  if (!eventId) throw new HttpsError("invalid-argument", "Event fehlt.");
+  const eventSnapshot = await db.collection("events").doc(eventId).get();
+  if (!eventSnapshot.exists) throw new HttpsError("not-found", "Event wurde nicht gefunden.");
+  const eventRecord = { id: eventSnapshot.id, ...eventSnapshot.data() };
+  if (!eventRegistrationIsOpen(eventRecord)) throw new HttpsError("failed-precondition", "Fuer dieses Event ist keine Anmeldung moeglich.");
+  const input = registrationInput(request.data || {});
+  if (!input.privacyAccepted) throw new HttpsError("failed-precondition", "Bitte stimmen Sie den Datenschutzbestimmungen zu.");
+  if (!input.email || !input.email.includes("@")) throw new HttpsError("invalid-argument", "Bitte geben Sie eine gueltige E-Mail-Adresse an.");
+  const existingRegistration = await db.collection("registrations")
+    .where("eventId", "==", eventRecord.id)
+    .where("email", "==", input.email)
+    .limit(10)
+    .get();
+  const duplicate = existingRegistration.docs
+    .map((document) => ({ id: document.id, ...document.data() }))
+    .find((registration) => !["cancelled", "expired"].includes(String(registration.status || "")));
+  if (duplicate) {
+    throw new HttpsError("already-exists", "Diese E-Mail-Adresse ist fuer dieses Event bereits angemeldet.");
+  }
+  const now = FieldValue.serverTimestamp();
+  const registrationRef = db.collection("registrations").doc(`registration-${randomBytes(16).toString("hex")}`);
+  const lockRef = db.collection("registrationLocks").doc(registrationLockId(eventRecord.id, input.email));
+  const headers = request.rawRequest?.headers || {};
+  const isMemberByEmail = await emailBelongsToMember(input.email);
+  const confirmationToken = randomBytes(32).toString("hex");
+  const confirmationExpiresAt = Timestamp.fromMillis(Date.now() + 48 * 60 * 60 * 1000);
+  const registration = {
+    id: registrationRef.id,
+    eventId: eventRecord.id,
+    eventTitle: eventRecord.title || "",
+    eventDate: eventRecord.date || "",
+    eventAccessType: eventRecord.accessType || "",
+    ...input,
+    isMember: isMemberByEmail,
+    notificationConsentAccepted: Boolean(input.notifyForThisEvent || input.notifyFutureEvents),
+    notificationConsentSource: "event_registration_checkbox",
+    notificationConsentText: "Benachrichtigungen zu dieser Veranstaltung und optional zu zukuenftigen PROdigitalTV-Veranstaltungen.",
+    emailConfirmed: false,
+    status: "pending_email_confirmation",
+    mailStatus: "queued",
+    confirmationTokenHash: hashToken(confirmationToken),
+    confirmationExpiresAt,
+    confirmationMailQueuedAt: now,
+    createdIp: clientIp(request),
+    createdUserAgent: stripTags(headers["user-agent"] || ""),
+    createdAt: now,
+    updatedAt: now
+  };
+  await db.runTransaction(async (transaction) => {
+    const lockSnapshot = await transaction.get(lockRef);
+    const lock = lockSnapshot.exists ? lockSnapshot.data() : null;
+    if (lock?.registrationId) {
+      const lockedRegistration = await transaction.get(db.collection("registrations").doc(lock.registrationId));
+      const lockedStatus = lockedRegistration.exists ? String(lockedRegistration.data()?.status || "") : "";
+      if (lockedRegistration.exists && !["cancelled", "expired"].includes(lockedStatus)) {
+        throw new HttpsError("already-exists", "Diese E-Mail-Adresse ist fuer dieses Event bereits angemeldet.");
+      }
+    }
+    transaction.set(registrationRef, registration);
+    transaction.set(lockRef, {
+      id: lockRef.id,
+      eventId: eventRecord.id,
+      email: input.email,
+      registrationId: registrationRef.id,
+      status: registration.status,
+      updatedAt: now,
+      createdAt: lock?.createdAt || now
+    }, { merge: true });
+  });
+  if (input.notifyFutureEvents) {
+    await db.collection("notificationConsents").doc(notificationConsentId(input.email)).set({
+      id: notificationConsentId(input.email),
+      email: input.email,
+      status: "active",
+      source: "event_registration_checkbox",
+      scope: "future_events",
+      notifyFutureEvents: true,
+      lastEventId: eventRecord.id,
+      lastRegistrationId: registrationRef.id,
+      createdIp: registration.createdIp,
+      createdUserAgent: registration.createdUserAgent,
+      createdAt: now,
+      updatedAt: now
+    }, { merge: true });
+  }
+  await upsertContactFromRegistration(registration, eventRecord, now);
+  await queueMail({
+    type: "registration_confirmation",
+    to: registration.email,
+    subject: `Bitte bestaetigen Sie Ihre Anmeldung: ${eventRecord.title}`,
+    template: "registration_confirmation",
+    eventId: registration.eventId,
+    registrationId: registrationRef.id,
+    confirmationUrl: registrationConfirmationUrl(confirmationToken),
+    tokenExpiresAt: confirmationExpiresAt
+  });
+  await queueMail({
+    type: "admin_notification",
+    to: adminRegistrationMailTo(),
+    subject: `Neue Anmeldung: ${eventRecord.title}`,
+    template: "admin_notification",
+    eventId: registration.eventId,
+    registrationId: registrationRef.id
+  });
+  return {
+    ...registration,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+});
+
+exports.adminCreateEventRegistration = onCall({ region }, async (request) => {
+  const profile = await requireEditor(request);
+  const eventId = clean(request.data?.eventId);
+  if (!eventId) throw new HttpsError("invalid-argument", "Event fehlt.");
+  const eventSnapshot = await db.collection("events").doc(eventId).get();
+  if (!eventSnapshot.exists) throw new HttpsError("not-found", "Event wurde nicht gefunden.");
+  const eventRecord = { id: eventSnapshot.id, ...eventSnapshot.data() };
+  const input = registrationInput({ input: request.data?.input || {} });
+  if (!input.email || !input.email.includes("@")) throw new HttpsError("invalid-argument", "Bitte geben Sie eine gueltige E-Mail-Adresse an.");
+  const existingRegistration = await db.collection("registrations")
+    .where("eventId", "==", eventRecord.id)
+    .where("email", "==", input.email)
+    .limit(10)
+    .get();
+  const duplicate = existingRegistration.docs
+    .map((document) => ({ id: document.id, ...document.data() }))
+    .find((registration) => !["cancelled", "expired"].includes(String(registration.status || "")));
+  if (duplicate) {
+    throw new HttpsError("already-exists", "Diese E-Mail-Adresse ist fuer dieses Event bereits angemeldet.");
+  }
+  const now = FieldValue.serverTimestamp();
+  const registrationRef = db.collection("registrations").doc(`registration-${randomBytes(16).toString("hex")}`);
+  const lockRef = db.collection("registrationLocks").doc(registrationLockId(eventRecord.id, input.email));
+  const headers = request.rawRequest?.headers || {};
+  const isMemberByEmail = await emailBelongsToMember(input.email);
+  const registration = {
+    id: registrationRef.id,
+    eventId: eventRecord.id,
+    eventTitle: eventRecord.title || "",
+    eventDate: eventRecord.date || "",
+    eventAccessType: eventRecord.accessType || "",
+    ...input,
+    isMember: isMemberByEmail,
+    privacyAccepted: Boolean(input.privacyAccepted),
+    emailConfirmed: true,
+    status: "confirmed",
+    mailStatus: "manual_admin",
+    source: "cms_admin",
+    createdIp: clientIp(request),
+    createdUserAgent: stripTags(headers["user-agent"] || ""),
+    createdBy: profile.email || request.auth.uid,
+    confirmedAt: now,
+    createdAt: now,
+    updatedAt: now
+  };
+  await db.runTransaction(async (transaction) => {
+    const lockSnapshot = await transaction.get(lockRef);
+    const lock = lockSnapshot.exists ? lockSnapshot.data() : null;
+    if (lock?.registrationId) {
+      const lockedRegistration = await transaction.get(db.collection("registrations").doc(lock.registrationId));
+      const lockedStatus = lockedRegistration.exists ? String(lockedRegistration.data()?.status || "") : "";
+      if (lockedRegistration.exists && !["cancelled", "expired"].includes(lockedStatus)) {
+        throw new HttpsError("already-exists", "Diese E-Mail-Adresse ist fuer dieses Event bereits angemeldet.");
+      }
+    }
+    transaction.set(registrationRef, registration);
+    transaction.set(lockRef, {
+      id: lockRef.id,
+      eventId: eventRecord.id,
+      email: input.email,
+      registrationId: registrationRef.id,
+      status: registration.status,
+      updatedAt: now,
+      createdAt: lock?.createdAt || now
+    }, { merge: true });
+  });
+  await upsertContactFromRegistration(registration, eventRecord, now);
+  return {
+    ...registration,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+});
+
+exports.createEventNotification = onCall({ region }, async (request) => {
+  const profile = await requireEditor(request);
+  const input = request.data?.input || {};
+  const notificationKind = clean(input.notificationKind) === "member_message" ? "member_message" : "event";
+  const eventId = clean(input.eventId);
+  let eventRecord = {};
+  if (notificationKind === "event") {
+    if (!eventId) throw new HttpsError("invalid-argument", "Bitte Veranstaltung auswaehlen.");
+    const eventSnapshot = await db.collection("events").doc(eventId).get();
+    if (!eventSnapshot.exists) throw new HttpsError("not-found", "Event wurde nicht gefunden.");
+    eventRecord = { id: eventSnapshot.id, ...eventSnapshot.data() };
+    const statusValue = clean(eventRecord.status).toLowerCase();
+    if (["archived", "deleted", "inactive", "draft"].includes(statusValue)) throw new HttpsError("failed-precondition", "Nur aktive Veranstaltungen koennen benachrichtigt werden.");
+    const startMs = eventDateTimeMillis(eventRecord);
+    if (startMs && startMs < Date.now()) throw new HttpsError("failed-precondition", "Nur bevorstehende Veranstaltungen koennen benachrichtigt werden.");
+  }
+  const sendMode = ["now", "scheduled", "auto_before_event"].includes(clean(input.sendMode)) ? clean(input.sendMode) : "now";
+  const notificationRef = db.collection("eventNotifications").doc(`event-notification-${randomBytes(16).toString("hex")}`);
+  const title = stripTags(input.title) || eventRecord.title || "PROdigitalTV Veranstaltung";
+  const shortText = stripTags(input.shortText) || `Informationen zu ${eventRecord.title || "dieser Veranstaltung"}.`;
+  const testRecipients = clean(input.testRecipients)
+    .split(/[\s,;]+/)
+    .map((email) => mailAddress(email))
+    .filter(Boolean)
+    .filter((email, index, all) => all.indexOf(email) === index);
+  const testOnly = Boolean(input.testOnly);
+  if (testOnly && !testRecipients.length) throw new HttpsError("invalid-argument", "Bitte mindestens eine Testperson eintragen.");
+  const offsetMinutes = Number(input.offsetMinutes || 0);
+  let scheduledAt = null;
+  if (sendMode === "scheduled" && clean(input.scheduledAt)) {
+    const parsed = Date.parse(clean(input.scheduledAt));
+    if (Number.isFinite(parsed)) scheduledAt = Timestamp.fromMillis(parsed);
+  }
+  if (sendMode === "auto_before_event" && notificationKind !== "event") throw new HttpsError("invalid-argument", "Automatische Erinnerung ist nur fuer Veranstaltungen moeglich.");
+  if (sendMode === "auto_before_event" && offsetMinutes > 0) {
+    const startMs = eventDateTimeMillis(eventRecord);
+    if (startMs) scheduledAt = Timestamp.fromMillis(Math.max(Date.now(), startMs - offsetMinutes * 60 * 1000));
+  }
+  const notification = {
+    id: notificationRef.id,
+    eventId: notificationKind === "event" ? eventId : "",
+    notificationKind,
+    title,
+    shortText,
+    link: notificationKind === "event" ? eventUrl(eventId) : publicHashUrl("members"),
+    testOnly,
+    testRecipients: testOnly ? testRecipients : [],
+    recipientGroup: clean(input.recipientGroup || ""),
+    includeMembers: input.includeMembers !== false && clean(input.includeMembers) !== "false",
+    includeContacts: input.includeContacts !== false && clean(input.includeContacts) !== "false",
+    registrationStatus: ["all", "registered", "unregistered"].includes(clean(input.registrationStatus)) ? clean(input.registrationStatus) : "all",
+    sendMode,
+    offsetMinutes: Number.isFinite(offsetMinutes) ? offsetMinutes : 0,
+    scheduledAt,
+    status: sendMode === "now" ? "processing" : "scheduled",
+    createdBy: profile.email || request.auth.uid,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
+  };
+  await notificationRef.set(notification);
+  if (sendMode === "now") {
+    const result = await queueEventNotificationDelivery({ ...notification, id: notificationRef.id }, eventRecord);
+    return { id: notificationRef.id, ...result };
+  }
+  return { id: notificationRef.id, scheduled: true };
+});
+
+exports.registerNotificationToken = onCall({ region }, async (request) => {
+  const data = request.data || {};
+  const token = clean(data.token);
+  const email = mailAddress(data.email);
+  if (!token) throw new HttpsError("invalid-argument", "Push-Token fehlt.");
+  if (!email) throw new HttpsError("invalid-argument", "E-Mail-Adresse fehlt.");
+  const tokenId = `notification-token-${createHash("sha256").update(token).digest("hex").slice(0, 40)}`;
+  await db.collection("notificationTokens").doc(tokenId).set({
+    id: tokenId,
+    token,
+    email,
+    eventId: clean(data.eventId),
+    status: "active",
+    permission: clean(data.permission || "granted"),
+    source: clean(data.source || "browser"),
+    userAgent: stripTags(data.userAgent),
+    platform: stripTags(data.platform),
+    lastSeenAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  return { status: "active", id: tokenId };
+});
+
+exports.unsubscribeEventNotifications = onCall({ region, invoker: "public" }, async (request) => {
+  const hash = clean(request.data?.hash);
+  if (!hash || !/^[a-f0-9]{24,64}$/i.test(hash)) throw new HttpsError("invalid-argument", "Abmeldelink ist ungueltig.");
+  const now = FieldValue.serverTimestamp();
+  let updated = 0;
+
+  const contacts = await db.collection("contacts").where("notificationOptOutHash", "==", hash).get();
+  if (!contacts.empty) {
+    const contactBatch = db.batch();
+    contacts.docs.forEach((document) => {
+      contactBatch.set(document.ref, {
+        reminderConsent: false,
+        notificationOptOut: true,
+        notificationOptOutAt: now,
+        updatedAt: now
+      }, { merge: true });
+      updated += 1;
+    });
+    await contactBatch.commit();
+  }
+
+  const scannedContacts = await db.collection("contacts").get();
+  const scannedContactBatch = db.batch();
+  let scannedContactUpdates = 0;
+  scannedContacts.docs.forEach((document) => {
+    if (contacts.docs.some((contact) => contact.id === document.id)) return;
+    const contact = document.data() || {};
+    if (notificationOptOutHash(contact.email) !== hash) return;
+    scannedContactBatch.set(document.ref, {
+      reminderConsent: false,
+      notificationOptOut: true,
+      notificationOptOutHash: hash,
+      notificationOptOutAt: now,
+      updatedAt: now
+    }, { merge: true });
+    scannedContactUpdates += 1;
+    updated += 1;
+  });
+  if (scannedContactUpdates) await scannedContactBatch.commit();
+
+  const members = await db.collection("members").get();
+  const memberBatch = db.batch();
+  let memberUpdates = 0;
+  members.docs.forEach((document) => {
+    const member = document.data() || {};
+    const match = normalizedMemberEmails(member).some((email) => notificationOptOutHash(email) === hash);
+    if (!match) return;
+    memberBatch.set(document.ref, {
+      reminderConsent: false,
+      notificationOptOut: true,
+      notificationOptOutAt: now,
+      updatedAt: now
+    }, { merge: true });
+    memberUpdates += 1;
+    updated += 1;
+  });
+  if (memberUpdates) await memberBatch.commit();
+  if (!updated) throw new HttpsError("not-found", "Abmeldeeintrag wurde nicht gefunden.");
+  return { unsubscribed: true, updated };
+});
+
+exports.processEventNotifications = onSchedule({ region, schedule: "every 15 minutes" }, async () => {
+  const now = Timestamp.now();
+  const due = await db.collection("eventNotifications")
+    .where("status", "==", "scheduled")
+    .where("scheduledAt", "<=", now)
+    .limit(20)
+    .get();
+  for (const document of due.docs) {
+    const notification = { id: document.id, ...document.data() };
+    const eventSnapshot = await db.collection("events").doc(notification.eventId).get();
+    if (!eventSnapshot.exists) {
+      await document.ref.set({ status: "failed", error: "Event wurde nicht gefunden.", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      continue;
+    }
+    await document.ref.set({ status: "processing", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    await queueEventNotificationDelivery(notification, { id: eventSnapshot.id, ...eventSnapshot.data() });
+  }
+  const eventSnapshot = await db.collection("events").get();
+  const reminders = [
+    ["reminder7d", 10080, "7 Tage"],
+    ["reminder1d", 1440, "1 Tag"],
+    ["reminder2h", 120, "2 Stunden"]
+  ];
+  for (const eventDocument of eventSnapshot.docs) {
+    const eventRecord = { id: eventDocument.id, ...eventDocument.data() };
+    if (["archived", "deleted"].includes(clean(eventRecord.status).toLowerCase())) continue;
+    const startMs = eventDateTimeMillis(eventRecord);
+    if (!startMs || startMs < Date.now()) continue;
+    for (const [field, minutes, label] of reminders) {
+      if (!eventRecord[field]) continue;
+      const dueMs = startMs - minutes * 60 * 1000;
+      if (dueMs > Date.now() || dueMs < Date.now() - 45 * 60 * 1000) continue;
+      const notificationId = `event-reminder-${eventRecord.id}-${field}`;
+      const ref = db.collection("eventNotifications").doc(notificationId);
+      if ((await ref.get()).exists) continue;
+      const notification = {
+        id: notificationId,
+        eventId: eventRecord.id,
+        title: `${label} vorher: ${eventRecord.title || "PROdigitalTV Veranstaltung"}`,
+        shortText: `Erinnerung an ${eventRecord.title || "die PROdigitalTV Veranstaltung"} am ${eventRecord.date || ""}.`,
+        includeMembers: false,
+        includeContacts: true,
+        registrationStatus: "registered",
+        sendMode: "auto_before_event",
+        offsetMinutes: minutes,
+        status: "processing",
+        createdBy: "system",
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      };
+      await ref.set(notification);
+      await queueEventNotificationDelivery(notification, eventRecord);
+    }
+  }
+});
+
 exports.onRegistrationCreated = onDocumentCreated({ document: "registrations/{registrationId}", region }, async (event) => {
   const registration = event.data.data();
   if (registration.status !== "pending_email_confirmation") return;
+  if (registration.confirmationMailQueuedAt && registration.confirmationTokenHash) return;
   const eventRecord = (await db.collection("events").doc(registration.eventId).get()).data();
   if (!eventRecord) {
     await event.data.ref.update({ status: "cancelled", internalNote: "Referenziertes Event nicht gefunden.", updatedAt: FieldValue.serverTimestamp() });
@@ -280,12 +1083,12 @@ exports.onRegistrationCreated = onDocumentCreated({ document: "registrations/{re
     template: "registration_confirmation",
     eventId: registration.eventId,
     registrationId: event.params.registrationId,
-    confirmationUrl: `https://www.prodigitaltv.de/confirm.html?token=${token}`,
+    confirmationUrl: registrationConfirmationUrl(token),
     tokenExpiresAt: expiresAt
   });
   await queueMail({
     type: "admin_notification",
-    to: "events@prodigitaltv.de",
+    to: adminRegistrationMailTo(),
     subject: `Neue Anmeldung: ${eventRecord.title}`,
     template: "admin_notification",
     eventId: registration.eventId,
@@ -372,7 +1175,7 @@ exports.sendRegistrationConfirmationMail = onCall({ region }, async (request) =>
   return { queued: true, registrationId };
 });
 
-exports.confirmRegistrationByToken = onCall({ region }, async (request) => {
+exports.confirmRegistrationByToken = onCall({ region, invoker: "public" }, async (request) => {
   const token = request.data?.token;
   if (!token) throw new HttpsError("invalid-argument", "Token fehlt.");
   const result = await db.collection("registrations").where("confirmationTokenHash", "==", hashToken(token)).limit(1).get();
@@ -383,16 +1186,180 @@ exports.confirmRegistrationByToken = onCall({ region }, async (request) => {
     await document.ref.update({ status: "expired", updatedAt: FieldValue.serverTimestamp() });
     throw new HttpsError("deadline-exceeded", "Bestaetigungslink ist abgelaufen.");
   }
+  const ticketToken = randomBytes(32).toString("hex");
+  const cancelToken = randomBytes(32).toString("hex");
+  const ticketLink = registrationTicketUrl(ticketToken);
+  const cancelUrl = registrationCancelUrl(cancelToken);
   await document.ref.update({
     status: "confirmed", emailConfirmed: true, confirmedAt: FieldValue.serverTimestamp(),
-    confirmationTokenHash: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp()
+    confirmationTokenHash: FieldValue.delete(),
+    ticketTokenHash: hashToken(ticketToken),
+    cancelTokenHash: hashToken(cancelToken),
+    ticketIssuedAt: FieldValue.serverTimestamp(),
+    cancelTokenIssuedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
   });
   await queueMail({
     type: "registration_confirmed", to: registration.email,
     subject: `Anmeldung bestaetigt: ${registration.eventTitle}`, template: "registration_confirmed",
-    eventId: registration.eventId, registrationId: document.id
+    eventId: registration.eventId, registrationId: document.id,
+    ticketLink, cancelUrl, eventCheckinUrl: eventCheckinUrl(registration.eventId)
   });
-  return { confirmed: true, message: "Ihre Anmeldung wurde erfolgreich bestaetigt." };
+  return {
+    confirmed: true,
+    message: "Ihre Anmeldung wurde erfolgreich bestaetigt.",
+    registrationId: document.id,
+    eventId: registration.eventId || "",
+    eventTitle: registration.eventTitle || "",
+    firstName: registration.firstName || "",
+    lastName: registration.lastName || "",
+    ticketToken,
+    ticketLink,
+    cancelUrl
+  };
+});
+
+exports.linkTicketDeviceByToken = onCall({ region, invoker: "public" }, async (request) => {
+  const token = request.data?.token;
+  if (!token) throw new HttpsError("invalid-argument", "Ticket-Token fehlt.");
+  const result = await db.collection("registrations").where("ticketTokenHash", "==", hashToken(token)).limit(1).get();
+  if (result.empty) throw new HttpsError("not-found", "Ticket wurde nicht gefunden.");
+  const document = result.docs[0];
+  const registration = document.data();
+  if (!["confirmed", "checked_in"].includes(String(registration.status || ""))) {
+    throw new HttpsError("failed-precondition", "Diese Anmeldung ist noch nicht bestaetigt.");
+  }
+  await document.ref.update({
+    ticketDeviceLinked: true,
+    deviceLinkedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
+  });
+  return {
+    linked: true,
+    registrationId: document.id,
+    eventId: registration.eventId || "",
+    eventTitle: registration.eventTitle || "",
+    firstName: registration.firstName || "",
+    lastName: registration.lastName || "",
+    ticketToken: token
+  };
+});
+
+exports.checkInRegistrationByDevice = onCall({ region, invoker: "public" }, async (request) => {
+  const { eventId, ticketToken } = request.data || {};
+  if (!eventId || !ticketToken) throw new HttpsError("invalid-argument", "Event oder Ticket fehlt.");
+  const result = await db.collection("registrations").where("ticketTokenHash", "==", hashToken(ticketToken)).limit(1).get();
+  if (result.empty) throw new HttpsError("not-found", "Ticket wurde nicht gefunden.");
+  const document = result.docs[0];
+  const registration = document.data();
+  if (registration.eventId !== eventId) throw new HttpsError("permission-denied", "Dieses Ticket gehoert nicht zu diesem Event.");
+  if (!["confirmed", "checked_in"].includes(String(registration.status || ""))) {
+    throw new HttpsError("failed-precondition", "Diese Anmeldung ist nicht bestaetigt.");
+  }
+  if (registration.status !== "checked_in") {
+    await document.ref.update({
+      status: "checked_in",
+      checkedInAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    });
+  }
+  await db.collection("checkinScreenEvents").doc(eventId).set({
+    eventId,
+    registrationId: document.id,
+    firstName: registration.firstName || "",
+    lastName: registration.lastName || "",
+    company: registration.company || "",
+    checkedInAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  return {
+    checkedIn: true,
+    alreadyCheckedIn: registration.status === "checked_in",
+    registrationId: document.id,
+    eventId,
+    eventTitle: registration.eventTitle || "",
+    firstName: registration.firstName || "",
+    lastName: registration.lastName || "",
+    company: registration.company || ""
+  };
+});
+
+exports.validateRegistrationTicket = onCall({ region, invoker: "public" }, async (request) => {
+  const { eventId, ticketToken } = request.data || {};
+  if (!eventId || !ticketToken) throw new HttpsError("invalid-argument", "Event oder Ticket fehlt.");
+  const result = await db.collection("registrations").where("ticketTokenHash", "==", hashToken(ticketToken)).limit(1).get();
+  if (result.empty) return { valid: false, reason: "not_found", eventId };
+  const document = result.docs[0];
+  const registration = document.data();
+  if (registration.eventId !== eventId) return { valid: false, reason: "wrong_event", eventId };
+  const status = String(registration.status || "");
+  const valid = ["confirmed", "checked_in"].includes(status);
+  return {
+    valid,
+    reason: valid ? "" : status || "invalid_status",
+    registrationId: document.id,
+    eventId,
+    eventTitle: registration.eventTitle || "",
+    firstName: registration.firstName || "",
+    lastName: registration.lastName || "",
+    company: registration.company || "",
+    status
+  };
+});
+
+exports.getEventCheckinScreenStatus = onCall({ region }, async (request) => {
+  await requireEditor(request);
+  const { eventId, after = "" } = request.data || {};
+  if (!eventId) throw new HttpsError("invalid-argument", "Event fehlt.");
+  const snapshot = await db.collection("checkinScreenEvents").doc(eventId).get();
+  if (!snapshot.exists) return { eventId, recent: false };
+  const data = snapshot.data() || {};
+  const checkedInAt = data.checkedInAt || data.updatedAt || null;
+  const millis = checkedInAt?.toMillis?.() || 0;
+  const checkedInAtIso = millis ? new Date(millis).toISOString() : "";
+  const recent = Boolean(millis && Date.now() - millis < 60000 && checkedInAtIso !== after);
+  return {
+    eventId,
+    recent,
+    checkedInAt: checkedInAtIso,
+    registrationId: recent ? data.registrationId || "" : "",
+    firstName: recent ? data.firstName || "" : "",
+    lastName: recent ? data.lastName || "" : "",
+    company: recent ? data.company || "" : ""
+  };
+});
+
+exports.cancelRegistrationByToken = onCall({ region, invoker: "public" }, async (request) => {
+  const token = request.data?.token;
+  if (!token) throw new HttpsError("invalid-argument", "Storno-Token fehlt.");
+  const result = await db.collection("registrations").where("cancelTokenHash", "==", hashToken(token)).limit(1).get();
+  if (result.empty) throw new HttpsError("not-found", "Storno-Link wurde nicht gefunden.");
+  const document = result.docs[0];
+  const registration = document.data();
+  if (registration.status === "cancelled") {
+    return { cancelled: true, alreadyCancelled: true, eventId: registration.eventId || "", eventTitle: registration.eventTitle || "" };
+  }
+  await document.ref.update({
+    status: "cancelled",
+    cancelledAt: FieldValue.serverTimestamp(),
+    cancelTokenHash: FieldValue.delete(),
+    updatedAt: FieldValue.serverTimestamp()
+  });
+  if (registration.eventId && registration.email) {
+    await db.collection("registrationLocks").doc(registrationLockId(registration.eventId, registration.email)).set({
+      status: "cancelled",
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
+  await queueMail({
+    type: "registration_cancelled",
+    to: adminRegistrationMailTo(),
+    subject: `Anmeldung storniert: ${registration.eventTitle || ""}`,
+    text: `Eine Anmeldung wurde storniert.\n\nEvent: ${registration.eventTitle || ""}\nTeilnehmer: ${clean(registration.firstName)} ${clean(registration.lastName)}\nE-Mail: ${registration.email || ""}`,
+    registrationId: document.id,
+    eventId: registration.eventId || ""
+  });
+  return { cancelled: true, eventId: registration.eventId || "", eventTitle: registration.eventTitle || "" };
 });
 
 exports.resendConfirmationMail = onCall({ region }, async (request) => {
@@ -407,7 +1374,7 @@ exports.resendConfirmationMail = onCall({ region }, async (request) => {
     type: "registration_confirmation", to: snapshot.data().email,
     subject: `Bitte bestaetigen Sie Ihre Anmeldung: ${snapshot.data().eventTitle}`,
     template: "registration_confirmation", registrationId: snapshot.id, eventId: snapshot.data().eventId,
-    confirmationUrl: `https://www.prodigitaltv.de/confirm.html?token=${token}`, tokenExpiresAt: expiresAt
+    confirmationUrl: registrationConfirmationUrl(token), tokenExpiresAt: expiresAt
   });
   return { queued: true };
 });
@@ -415,7 +1382,7 @@ exports.resendConfirmationMail = onCall({ region }, async (request) => {
 exports.notifyAdminAboutRegistration = onCall({ region }, async (request) => {
   await requireEditor(request);
   const registration = (await db.collection("registrations").doc(request.data.registrationId).get()).data();
-  await queueMail({ type: "admin_notification", to: "events@prodigitaltv.de", subject: `Anmeldung: ${registration.eventTitle}`, template: "admin_notification", registrationId: request.data.registrationId, eventId: registration.eventId });
+  await queueMail({ type: "admin_notification", to: adminRegistrationMailTo(), subject: `Anmeldung: ${registration.eventTitle}`, template: "admin_notification", registrationId: request.data.registrationId, eventId: registration.eventId });
   return { queued: true };
 });
 

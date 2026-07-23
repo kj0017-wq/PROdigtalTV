@@ -7,7 +7,8 @@ const columns = [
   ["invitationCode", "Einladungscode"], ["message", "Nachricht"], ["privacyAccepted", "Datenschutz akzeptiert"],
   ["photoVideoConsent", "Foto-/Videoeinwilligung"], ["newsletterConsent", "Newsletter-Einwilligung"],
   ["status", "Anmeldestatus"], ["emailConfirmed", "E-Mail bestaetigt ja/nein"], ["confirmedAt", "Bestaetigungsdatum"],
-  ["mailStatus", "Mailstatus"], ["createdAt", "Anmeldedatum"], ["updatedAt", "Letzte Aenderung"], ["internalNote", "Interne Notiz"]
+  ["mailStatus", "Mailstatus"], ["createdIp", "IP-Adresse"], ["createdUserAgent", "Browser/Geraet"],
+  ["createdAt", "Anmeldedatum"], ["updatedAt", "Letzte Aenderung"], ["internalNote", "Interne Notiz"]
 ];
 
 function printable(key, value) {

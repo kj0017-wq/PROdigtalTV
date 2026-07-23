@@ -4,7 +4,7 @@ import { getOne, list, upsert } from "./dataService.js";
 
 const requiredCollections = [
   "events", "topics", "speakers", "sponsors", "members", "boardMembers", "memberDocuments", "memberDirectories", "registrations", "membershipApplications", "downloads",
-  "users", "media", "eventMedia", "editorialContent", "mailQueue", "settings", "system", "auditLog"
+  "users", "media", "eventMedia", "editorialContent", "mailQueue", "contacts", "eventNotifications", "notificationTokens", "settings", "system", "auditLog"
 ];
 
 export async function checkFirebaseConnection() {

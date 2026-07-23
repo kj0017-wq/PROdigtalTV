@@ -101,9 +101,22 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/events/$(request.resource.data.eventId)).data;
     }
     function allowedRegistrationTarget() {
-      return registrationEvent().registrationEnabled == true
+      return (
+          registrationEvent().registrationEnabled == true
+          || registrationEvent().preStatus == "invitation_published"
+          || registrationEvent().lifecyclePhase == "registration_open"
+        )
         && (
-          (registrationEvent().accessType == "public" && registrationEvent().allowPublicRegistration == true)
+          (
+            registrationEvent().accessType == "public"
+            && (
+              registrationEvent().registrationEnabled == true
+              || registrationEvent().preStatus == "invitation_published"
+              || registrationEvent().lifecyclePhase == "registration_open"
+              || registrationEvent().allowPublicRegistration == true
+              || !registrationEvent().keys().hasAny(["allowPublicRegistration"])
+            )
+          )
           || (member() && registrationEvent().accessType == "members_only" && registrationEvent().allowMemberRegistration == true)
         );
     }
@@ -233,6 +246,11 @@ service cloud.firestore {
       allow update, delete: if editor();
     }
 
+    match /checkinScreenEvents/{id} {
+      allow read: if editor();
+      allow write: if false;
+    }
+
     match /membershipApplications/{id} {
       allow create: if request.resource.data.status == "new"
         && request.resource.data.source == "website"
@@ -328,8 +346,8 @@ service cloud.firestore {
     }
 
     match /settings/{id} {
-      allow read: if editor();
-      allow write: if admin() || (editor() && id == "eventTypes");
+      allow read: if editor() || id == "browserPush";
+      allow write: if admin() || (editor() && (id == "eventTypes" || id == "browserPush"));
     }
 
     match /system/{id} {

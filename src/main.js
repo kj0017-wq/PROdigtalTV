@@ -1,6 +1,6 @@
 import { route, onRouteChange, go } from "./utils/router.js";
 import { currentUser, canUseCms, isAdmin, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=471";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=511";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=517";
 import { escapeHtml, formatDate } from "./utils/format.js";
 
 const root = document.querySelector("#app");
@@ -9,11 +9,12 @@ const mediaProxyFunctionUrl = "https://europe-west3-prodigitaltv-da47b.cloudfunc
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=654");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=597");
-const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=491");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=679");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=643");
+const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=493");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=103");
-const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js");
+const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=13");
+const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=5");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=13");
 const firebaseClientService = () => lazy.firebaseClientService ||= import("./firebase/firebaseClient.js?v=1");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
@@ -24,6 +25,12 @@ const audioService = () => lazy.audioService ||= import("./ai/audioService.js");
 const aiSourceCatalogService = () => lazy.aiSourceCatalog ||= import("./data/aiSourceCatalog.js");
 
 const createRegistration = async (...args) => (await registrationService()).createRegistration(...args);
+const createAdminRegistration = async (...args) => (await registrationService()).createAdminRegistration(...args);
+const createEventNotification = async (...args) => (await notificationService()).createEventNotification(...args);
+const enableBrowserNotifications = async (...args) => (await notificationService()).enableBrowserNotifications(...args);
+const unsubscribeEventNotifications = async (...args) => (await notificationService()).unsubscribeEventNotifications(...args);
+const cancelRegistration = async (...args) => (await registrationService()).cancelRegistration(...args);
+const getEventCheckinScreenStatus = async (...args) => (await registrationService()).getEventCheckinScreenStatus(...args);
 const deleteStoredAsset = async (...args) => (await storageService()).deleteStoredAsset(...args);
 const uploadEntityImage = async (...args) => (await storageService()).uploadEntityImage(...args);
 const uploadEventMedia = async (...args) => (await storageService()).uploadEventMedia(...args);
@@ -84,6 +91,54 @@ function mobileCmsPlaceholder() {
   </div></section>`;
 }
 
+let checkinScreenTimer = null;
+let checkinScreenHideTimer = null;
+
+function stopCheckinScreenWatcher() {
+  if (checkinScreenTimer) window.clearInterval(checkinScreenTimer);
+  if (checkinScreenHideTimer) window.clearTimeout(checkinScreenHideTimer);
+  checkinScreenTimer = null;
+  checkinScreenHideTimer = null;
+}
+
+function initCheckinScreenWatcher() {
+  stopCheckinScreenWatcher();
+  const screen = document.querySelector("[data-checkin-screen-event]");
+  if (!screen) return;
+  const eventId = screen.dataset.checkinScreenEvent || "";
+  const overlay = screen.querySelector("[data-checkin-welcome]");
+  const nameTarget = screen.querySelector("[data-checkin-welcome-name]");
+  if (!eventId || !overlay || !nameTarget) return;
+  let lastSeen = "";
+  let busy = false;
+  const showWelcome = (result = {}) => {
+    const fullName = [result.firstName, result.lastName].filter(Boolean).join(" ").trim();
+    nameTarget.textContent = fullName ? `Herzlich willkommen, ${fullName}` : "Herzlich willkommen";
+    overlay.hidden = false;
+    overlay.classList.add("is-visible");
+    if (checkinScreenHideTimer) window.clearTimeout(checkinScreenHideTimer);
+    checkinScreenHideTimer = window.setTimeout(() => {
+      overlay.classList.remove("is-visible");
+      overlay.hidden = true;
+    }, 5000);
+  };
+  const poll = async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      const result = await getEventCheckinScreenStatus(eventId, lastSeen);
+      if (result?.checkedInAt) lastSeen = result.checkedInAt;
+      if (result?.recent) showWelcome(result);
+    } catch (error) {
+      stopCheckinScreenWatcher();
+    } finally {
+      busy = false;
+    }
+  };
+  poll();
+  checkinScreenTimer = window.setInterval(poll, 2000);
+}
+
 async function mobileQualityPage() {
   const user = currentUser();
   if (!canUseCms(user)) {
@@ -106,7 +161,7 @@ async function mobileQualityPage() {
   const issues = [];
   const push = (area, type, title, fault, description, severity = "warning", href = "") => issues.push({ area, type, title: title || "Ohne Titel", fault, description, severity, href });
   loaded.filter(([, , error]) => error).forEach(([name, , error]) => push("System", "Collection", name, "Nicht eindeutig pruefbar", `Collection konnte mobil nicht gelesen werden: ${error}`, "warning"));
-  const visiblePublic = (item = {}) => ["published", "active", "aktiv", "approved"].includes(String(item.status || "").toLowerCase()) && ["public", "oeffentlich", "", "Ã¶ffentlich"].includes(String(item.visibility || item.sichtbarkeit || "").toLowerCase());
+  const visiblePublic = (item = {}) => ["published", "active", "aktiv", "approved"].includes(String(item.status || "").toLowerCase()) && ["public", "oeffentlich", "", "öffentlich"].includes(String(item.visibility || item.sichtbarkeit || "").toLowerCase());
   const liveMember = (item = {}) => item.visible !== false && item.isLive !== false && !["inactive", "cancelled", "archived", "deleted"].includes(String(item.status || "").toLowerCase());
   const image = (item = {}) => item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || item.logoUrl || item.logoDisplayUrl || item.photoUrl || item.file_path_web_url || item.file_path_thumb_url || "";
   (data.events || []).forEach((item) => {
@@ -141,7 +196,7 @@ async function mobileQualityPage() {
     if ((item.youtubeVideoId || item.youtubeUrl || item.url) && !(item.posterImageUrl || item.thumbnailUrl || item.youtubeThumbnailUrl)) push("Medien", "Video", item.title, "Videostartbild fehlt", "Videoeintrag hat kein gespeichertes Startbild.", "warning");
   });
   const rows = issues.sort((a, b) => a.severity === b.severity ? String(a.area).localeCompare(String(b.area), "de") : a.severity === "error" ? -1 : 1).map((issue) => `<tr><td>${escapeHtml(issue.area)}</td><td>${escapeHtml(issue.type)}</td><td>${escapeHtml(issue.title)}</td><td>${escapeHtml(issue.fault)}</td><td>${escapeHtml(issue.description)}</td><td>${escapeHtml(issue.href || "-")}</td><td>${issue.severity === "error" ? "Fehler" : "Warnung"}</td></tr>`).join("");
-  return `<main class="cms-app"><section class="cms-main"><div class="cms-title"><div><p class="eyebrow">Mobile Nur-Lese-Ansicht</p><h1>Qualitaetspruefung</h1><p>Schnelle mobile Auswertung ohne externe Netzwerkpruefung und ohne Bearbeitung.</p></div></div><section class="panel"><div class="setup-steps"><div class="setup-step"><span>Fehler</span><strong>${issues.filter((issue) => issue.severity === "error").length}</strong></div><div class="setup-step"><span>Warnungen</span><strong>${issues.filter((issue) => issue.severity !== "error").length}</strong></div><div class="setup-step"><span>Collections</span><strong>${names.length}</strong></div></div></section><section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Bereich</th><th>Typ</th><th>Titel</th><th>Fehler</th><th>Beschreibung</th><th>Pfad</th><th>Einstufung</th></tr></thead><tbody>${rows || `<tr><td colspan="7">Keine Fehler oder Warnungen gefunden.</td></tr>`}</tbody></table></div></section></section></main>`;
+  return `<main class="cms-app"><section class="cms-main"><div class="cms-title"><div><p class="eyebrow">Mobile Schnellansicht</p><h1>Qualitaetspruefung</h1><p>Schnelle mobile Auswertung ohne externe Netzwerkpruefung.</p></div></div><section class="panel"><div class="setup-steps"><div class="setup-step"><span>Fehler</span><strong>${issues.filter((issue) => issue.severity === "error").length}</strong></div><div class="setup-step"><span>Warnungen</span><strong>${issues.filter((issue) => issue.severity !== "error").length}</strong></div><div class="setup-step"><span>Collections</span><strong>${names.length}</strong></div><div class="setup-step"><span>Alt-Texte</span><strong><button class="link-button" type="button" data-quality-fill-alt-texts>fehlende ergaenzen</button></strong><small id="quality-alt-text-result"></small></div></div></section><section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Bereich</th><th>Typ</th><th>Titel</th><th>Fehler</th><th>Beschreibung</th><th>Pfad</th><th>Einstufung</th></tr></thead><tbody>${rows || `<tr><td colspan="7">Keine Fehler oder Warnungen gefunden.</td></tr>`}</tbody></table></div></section></section></main>`;
 }
 async function viewForRoute(current) {
   window.__pdtCmsStage = `route:${current.path}/${current.id || ""}`;
@@ -159,7 +214,7 @@ async function viewForRoute(current) {
     window.__pdtCmsStage = "import:cmsPages";
     const {
       dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage,
-      moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, aiAccessPage, mailAdminPage, audioAdminPage, memberAreaAdminPage, qualityPage
+      moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, aiAccessPage, mailAdminPage, audioAdminPage, memberAreaAdminPage, qualityPage, eventNotificationsPage
     } = await cmsPages();
     window.__pdtCmsStage = `cms:${current.id || "dashboard"}`;
     if (!current.id) return dashboardPage();
@@ -191,6 +246,7 @@ async function viewForRoute(current) {
     if (current.id === "board") return moduleListPage("boardMembers");
     if (current.id === "editorial") return moduleListPage("editorialContent", current.section || "press");
     if (current.id === "mail") return moduleListPage("mailQueue");
+    if (current.id === "event-notifications") return eventNotificationsPage();
     if (current.id === "audio") return audioAdminPage();
     if (current.id === "mail-admin") return mailAdminPage();
     if (current.id === "chatgpt") return chatGptPage();
@@ -203,12 +259,18 @@ async function viewForRoute(current) {
     homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
     newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage,
     downloadsPage, joinPage, loginPage, memberPortalPage, memberArticleDetailPage, legalPage,
-    notFoundPage, webappQrPage
+    notFoundPage, webappQrPage, ticketLinkPage, eventCheckinPage, eventCheckinScreenPage, registrationCancelPage,
+    notificationUnsubscribePage
   } = await publicPages();
   if (current.path === "home") return homePage();
   if (current.path === "events") return eventsPage();
   if (current.path === "event") return eventDetailPage(current.id);
-  if (current.path === "register") return registrationPage(current.id);
+  if (["register", "registration", "anmeldung", "anmelden"].includes(current.path) && current.id !== "cancel") return current.id ? registrationPage(current.id) : eventsPage();
+  if (current.path === "ticket" && current.id === "link") return ticketLinkPage(current.section);
+  if (current.path === "registration" && current.id === "cancel") return registrationCancelPage(current.section);
+  if (current.path === "notifications" && current.id === "unsubscribe") return notificationUnsubscribePage(current.section);
+  if (current.path === "event-checkin") return eventCheckinPage(current.id);
+  if (current.path === "event-checkin-screen") return eventCheckinScreenPage(current.id);
   if (current.path === "topics") return topicsPage();
   if (current.path === "topic") return topicDetailPage(current.id);
   if (current.path === "news" && current.id) return newsDetailPage(current.id);
@@ -255,6 +317,7 @@ async function render() {
     const viewPromise = viewForRoute(currentRoute);
     root.innerHTML = await viewPromise;
     wireActions();
+    initCheckinScreenWatcher();
     updateMobileQrCode();
     window.scrollTo({ top: 0 });
     schedulePublicGermanTextNormalization();
@@ -813,6 +876,9 @@ document.addEventListener("visibilitychange", () => {
 
 function formObject(form) {
   const data = Object.fromEntries(new FormData(form).entries());
+  form.querySelectorAll("select[multiple]").forEach((item) => {
+    data[item.name] = Array.from(item.selectedOptions || []).map((option) => option.value);
+  });
   form.querySelectorAll('input[type="checkbox"]').forEach((item) => {
     data[item.name] = item.checked;
   });
@@ -885,7 +951,7 @@ function normalizeFourKeywords(values = "", fallbackText = "") {
   ];
   const seen = new Set();
   return raw
-    .map((word) => word.replace(/[^A-Za-z0-9Ã„Ã–ÃœÃ¤Ã¶Ã¼ÃŸ-]/g, "").replace(/^-+|-+$/g, "").trim())
+    .map((word) => word.replace(/[^A-Za-z0-9ÄÖÜäöüß-]/g, "").replace(/^-+|-+$/g, "").trim())
     .filter((word) => word.length >= 4 && word.length <= 22)
     .filter((word) => !stop.has(word.toLowerCase()))
     .filter((word) => !/^(gepr|pruef|redakt|quelle|quellen|status)$/i.test(word))
@@ -913,14 +979,14 @@ function cleanNewsSentence(value = "") {
   return String(value || "")
     .replace(/\s+/g, " ")
     .replace(/^(und|oder|aber|denn|weil|dass)\s+/i, "")
-    .replace(/[â€žâ€œ"']+/g, "")
+    .replace(/[„“"']+/g, "")
     .trim();
 }
 
 function keyNewsFacts(sourceText = "", limit = 5) {
   const sentences = newsSourceSentences(sourceText);
   const scored = sentences.map((sentence, index) => {
-    const score = (/\b\d{4}|\b\d{1,2}\.\s*[A-ZÃ„Ã–Ãœa-zÃ¤Ã¶Ã¼]+|\b[A-ZÃ„Ã–Ãœ]{2,}\b|Landgericht|GEMA|Suno|EU|AI|KI|Urteil|Klage|Pflicht|Recht|Lizenz|Verguetung|Streaming|TV|Medien|Plattform|Musik|Urheber/i.test(sentence) ? 30 : 0)
+    const score = (/\b\d{4}|\b\d{1,2}\.\s*[A-ZÄÖÜa-zäöü]+|\b[A-ZÄÖÜ]{2,}\b|Landgericht|GEMA|Suno|EU|AI|KI|Urteil|Klage|Pflicht|Recht|Lizenz|Verguetung|Streaming|TV|Medien|Plattform|Musik|Urheber/i.test(sentence) ? 30 : 0)
       + Math.max(0, 12 - index)
       + Math.min(18, Math.round(sentence.length / 18));
     return { sentence: cleanNewsSentence(sentence), score };
@@ -968,16 +1034,16 @@ function rewriteNewsBodyClient({ sourceText = "", headline = "", subline = "", t
   const secondTag = tags[1] || "digitale Medien";
   const fact = (index, fallback) => cleanNewsSentence(facts[index] || sentences[index] || fallback);
   let body = [
-    `Die Entwicklung rund um ${subject} rÃ¼ckt eine konkrete Frage fÃ¼r die digitale Medienwirtschaft in den Mittelpunkt. ${fact(0, subline || `${mainTag} gewinnt fÃ¼r Anbieter, Plattformen und Partner der Medienbranche an Bedeutung.`)} Damit geht es nicht um eine abstrakte Trendmeldung, sondern um eine Entwicklung mit praktischen Folgen fÃ¼r Produktion, Verbreitung, Rechte, Refinanzierung und strategische Positionierung.`,
-    `Der Kern der Meldung bleibt dabei klar: ${fact(1, `die Verbindung von ${mainTag} und ${secondTag} verÃ¤ndert die Rahmenbedingungen fÃ¼r Medienanbieter.`)} FÃ¼r Sender, Produzenten, Streaminganbieter, Vermarkter und regionale Medien ist wichtig, welche Akteure betroffen sind, welche Regeln oder Marktbewegungen dahinterstehen und welche Entscheidungen daraus entstehen kÃ¶nnen.`,
-    `Besonders relevant ist auch dieser Punkt: ${fact(2, `Medienunternehmen mÃ¼ssen neue Entwicklungen frÃ¼h einordnen, ohne die konkreten Aussagen des Ausgangsmaterials zu verwischen.`)} Daraus ergibt sich ein Branchenbezug, weil digitale Medienangebote heute stark von Plattformlogik, Daten, Regulierung, Lizenzmodellen und neuen Nutzungsformen geprÃ¤gt werden.`,
-    `Die Einordnung darf den Inhalt nicht verallgemeinern. ${fact(3, `Entscheidend bleibt, welche unmittelbaren Folgen sich aus dem beschriebenen Vorgang ergeben.`)} Genau deshalb sollte die weitere Bewertung an den belegten Aussagen ansetzen: Was wurde beschlossen, verhandelt, angekÃ¼ndigt oder kritisiert? Welche Fristen, Verfahren, Unternehmen oder Rechte sind genannt? Und welche Bedeutung hat das fÃ¼r die praktische Arbeit der Medienbranche?`,
-    `FÃ¼r PROdigitalTV liegt die Relevanz des Themas darin, diese konkreten Punkte fÃ¼r die Branche nutzbar zu machen. ${fact(4, `Die Entwicklung zeigt, dass technische Innovation, rechtliche Sicherheit und wirtschaftliche TragfÃ¤higkeit zusammen betrachtet werden mÃ¼ssen.`)} So entsteht ein Beitrag, der den Kern der Ausgangsinformation bewahrt und zugleich erklÃ¤rt, warum er fÃ¼r digitale Medienanbieter wichtig ist.`
+    `Die Entwicklung rund um ${subject} rückt eine konkrete Frage für die digitale Medienwirtschaft in den Mittelpunkt. ${fact(0, subline || `${mainTag} gewinnt für Anbieter, Plattformen und Partner der Medienbranche an Bedeutung.`)} Damit geht es nicht um eine abstrakte Trendmeldung, sondern um eine Entwicklung mit praktischen Folgen für Produktion, Verbreitung, Rechte, Refinanzierung und strategische Positionierung.`,
+    `Der Kern der Meldung bleibt dabei klar: ${fact(1, `die Verbindung von ${mainTag} und ${secondTag} verändert die Rahmenbedingungen für Medienanbieter.`)} Für Sender, Produzenten, Streaminganbieter, Vermarkter und regionale Medien ist wichtig, welche Akteure betroffen sind, welche Regeln oder Marktbewegungen dahinterstehen und welche Entscheidungen daraus entstehen können.`,
+    `Besonders relevant ist auch dieser Punkt: ${fact(2, `Medienunternehmen müssen neue Entwicklungen früh einordnen, ohne die konkreten Aussagen des Ausgangsmaterials zu verwischen.`)} Daraus ergibt sich ein Branchenbezug, weil digitale Medienangebote heute stark von Plattformlogik, Daten, Regulierung, Lizenzmodellen und neuen Nutzungsformen geprägt werden.`,
+    `Die Einordnung darf den Inhalt nicht verallgemeinern. ${fact(3, `Entscheidend bleibt, welche unmittelbaren Folgen sich aus dem beschriebenen Vorgang ergeben.`)} Genau deshalb sollte die weitere Bewertung an den belegten Aussagen ansetzen: Was wurde beschlossen, verhandelt, angekündigt oder kritisiert? Welche Fristen, Verfahren, Unternehmen oder Rechte sind genannt? Und welche Bedeutung hat das für die praktische Arbeit der Medienbranche?`,
+    `Für PROdigitalTV liegt die Relevanz des Themas darin, diese konkreten Punkte für die Branche nutzbar zu machen. ${fact(4, `Die Entwicklung zeigt, dass technische Innovation, rechtliche Sicherheit und wirtschaftliche Tragfähigkeit zusammen betrachtet werden müssen.`)} So entsteht ein Beitrag, der den Kern der Ausgangsinformation bewahrt und zugleich erklärt, warum er für digitale Medienanbieter wichtig ist.`
   ].join("\n\n");
   let index = 4;
   while (countWords(body) < goal) {
-    const extra = fact(index, `Zugleich bleibt ${secondTag} ein Feld, in dem technische MÃ¶glichkeiten, wirtschaftliche Interessen und publizistische Verantwortung zusammen gedacht werden mÃ¼ssen.`);
-    body += `\n\n${extra} FÃ¼r die Branche ist deshalb entscheidend, nicht nur auf einzelne Schlagworte zu reagieren, sondern den konkreten Nutzen, die rechtlichen Rahmenbedingungen und die Auswirkungen auf Nutzerinnen und Nutzer mitzudenken.`;
+    const extra = fact(index, `Zugleich bleibt ${secondTag} ein Feld, in dem technische Möglichkeiten, wirtschaftliche Interessen und publizistische Verantwortung zusammen gedacht werden müssen.`);
+    body += `\n\n${extra} Für die Branche ist deshalb entscheidend, nicht nur auf einzelne Schlagworte zu reagieren, sondern den konkreten Nutzen, die rechtlichen Rahmenbedingungen und die Auswirkungen auf Nutzerinnen und Nutzer mitzudenken.`;
     index += 1;
     if (index > 12 && countWords(body) > goal) break;
   }
@@ -986,22 +1052,22 @@ function rewriteNewsBodyClient({ sourceText = "", headline = "", subline = "", t
 
 const AI_EDITORIAL_BANNED_PHRASES = [
   /\bFuer PROdigitalTV liegt die Relevanz des Themas darin[^.?!]*[.?!]\s*/gi,
-  /\bFÃ¼r PROdigitalTV liegt die Relevanz des Themas darin[^.?!]*[.?!]\s*/gi,
+  /\bFür PROdigitalTV liegt die Relevanz des Themas darin[^.?!]*[.?!]\s*/gi,
   /\bDie Meldung ist fuer PROdigitalTV relevant[^.?!]*[.?!]\s*/gi,
-  /\bDie Meldung ist fÃ¼r PROdigitalTV relevant[^.?!]*[.?!]\s*/gi,
+  /\bDie Meldung ist für PROdigitalTV relevant[^.?!]*[.?!]\s*/gi,
   /\bFuer die Branche ist deshalb entscheidend[^.?!]*[.?!]\s*/gi,
-  /\bFÃ¼r die Branche ist deshalb entscheidend[^.?!]*[.?!]\s*/gi,
+  /\bFür die Branche ist deshalb entscheidend[^.?!]*[.?!]\s*/gi,
   /\bDamit geht es nicht um eine abstrakte Trendmeldung[^.?!]*[.?!]\s*/gi,
   /\bDaraus ergibt sich ein Branchenbezug[^.?!]*[.?!]\s*/gi,
   /\bDie Einordnung darf den Inhalt nicht verallgemeinern[^.?!]*[.?!]\s*/gi,
   /\bGenau deshalb sollte die weitere Bewertung[^.?!]*[.?!]\s*/gi,
   /\bSo entsteht ein Beitrag[^.?!]*[.?!]\s*/gi,
   /\bVor einer Veroeffentlichung[^.?!]*[.?!]\s*/gi,
-  /\bVor einer VerÃ¶ffentlichung[^.?!]*[.?!]\s*/gi,
+  /\bVor einer Veröffentlichung[^.?!]*[.?!]\s*/gi,
   /\bredaktionell pruefen\b/gi,
-  /\bredaktionell prÃ¼fen\b/gi,
+  /\bredaktionell prüfen\b/gi,
   /\bPruefpflichtig\b/gi,
-  /\bPrÃ¼fpflichtig\b/gi,
+  /\bPrüfpflichtig\b/gi,
   /\bArbeitsentwurf\b/gi,
   /\bMorgenbriefing-Meldung\b/gi,
   /\bThemenkandidat\b/gi,
@@ -1015,13 +1081,13 @@ function stripEditorialProcessPhrases(value = "") {
   });
   return text
     .replace(/\bKI-Redaktion\b/g, "Redaktion")
-    .replace(/\bVeroeffentlichung\b/g, "VerÃ¶ffentlichung")
-    .replace(/\bFuer\b/g, "FÃ¼r")
-    .replace(/\bfuer\b/g, "fÃ¼r")
-    .replace(/\bkoennen\b/g, "kÃ¶nnen")
-    .replace(/\bmuessen\b/g, "mÃ¼ssen")
-    .replace(/\bwaere\b/g, "wÃ¤re")
-    .replace(/\bhaette\b/g, "hÃ¤tte")
+    .replace(/\bVeroeffentlichung\b/g, "Veröffentlichung")
+    .replace(/\bFuer\b/g, "Für")
+    .replace(/\bfuer\b/g, "für")
+    .replace(/\bkoennen\b/g, "können")
+    .replace(/\bmuessen\b/g, "müssen")
+    .replace(/\bwaere\b/g, "wäre")
+    .replace(/\bhaette\b/g, "hätte")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -1031,7 +1097,7 @@ function neutralEditorialRewrite({ sourceText = "", headline = "", subline = "",
   const cleaned = stripEditorialProcessPhrases(sourceText);
   const sentences = cleaned
     .replace(/\n+/g, " ")
-    .split(/(?<=[.!?])\s+(?=[A-ZÃ„Ã–Ãœ0-9])/)
+    .split(/(?<=[.!?])\s+(?=[A-ZÄÖÜ0-9])/)
     .map((sentence) => cleanNewsSentence(sentence))
     .filter((sentence) => sentence.length > 18)
     .filter((sentence) => !/^(Quelle|Status|Kategorie|Relevanz|Keywords?)\s*:/i.test(sentence))
@@ -1039,7 +1105,7 @@ function neutralEditorialRewrite({ sourceText = "", headline = "", subline = "",
   const unique = [];
   const seen = new Set();
   sentences.forEach((sentence) => {
-    const key = sentence.toLowerCase().replace(/[^a-z0-9Ã¤Ã¶Ã¼ÃŸ]+/gi, " ").slice(0, 90);
+    const key = sentence.toLowerCase().replace(/[^a-z0-9äöüß]+/gi, " ").slice(0, 90);
     if (seen.has(key)) return;
     seen.add(key);
     unique.push(sentence);
@@ -1100,7 +1166,7 @@ async function generateAiArticleBodyWithNewsPrompt({ article = {}, formValues = 
     originalText: sourceText || currentText,
     context: {
       prompt_type: "Beitragstext",
-      workflow: "KI-News erstellen",
+      workflow: "News erstellen",
       title: headline,
       headline,
       subtitle: subline,
@@ -1140,19 +1206,19 @@ function showAiArticleRewriteDialog({ article = {}, formValues = {}, sources = [
   wrapper.innerHTML = `<div class="ai-dialog ai-dialog--news-review" role="dialog" aria-modal="true">
     <div class="actions" style="justify-content:space-between"><div><p class="eyebrow">KI-Redaktion</p><h2>Vorschlag und Neufassung vergleichen</h2></div><button type="button" class="link-button" data-ai-close>Schliessen</button></div>
     <div class="ai-dialog-grid ai-dialog-grid--review">
-      <div class="field"><label>Ãœbernommener Vorschlag <span>${countWords(sourceText || currentText)} WÃ¶rter</span></label><textarea readonly>${escapeHtml(sourceText || currentText || "Noch kein Vorschlag gespeichert.")}</textarea></div>
-      <div class="field"><label>Neu formuliert <span data-ai-rewrite-count>${countWords(revised)} WÃ¶rter</span></label><textarea data-ai-article-rewrite>${escapeHtml(revised)}</textarea></div>
+      <div class="field"><label>Übernommener Vorschlag <span>${countWords(sourceText || currentText)} Wörter</span></label><textarea readonly>${escapeHtml(sourceText || currentText || "Noch kein Vorschlag gespeichert.")}</textarea></div>
+      <div class="field"><label>Neu formuliert <span data-ai-rewrite-count>${countWords(revised)} Wörter</span></label><textarea data-ai-article-rewrite>${escapeHtml(revised)}</textarea></div>
     </div>
     <div class="alert"><strong>Leitlinie:</strong> keine Eigenphrasen, keine Bewertungen ohne Quelle, keine beitragsfremden Formulierungen.${sourceNames ? ` Quellenhinweise: ${escapeHtml(sourceNames)}.` : ""}</div>
     <div class="actions"><button type="button" class="button button--primary" data-ai-rewrite-accept>Neufassung uebernehmen</button><button type="button" class="button button--secondary" data-ai-rewrite-regenerate>Nochmals neutral formulieren</button><button type="button" class="button button--secondary" data-ai-close>Verwerfen</button></div>
-    <p class="muted">Erst â€žNeufassung Ã¼bernehmenâ€œ schreibt den Text in den Beitragseditor. Danach bitte speichern.</p>
+    <p class="muted">Erst „Neufassung übernehmen“ schreibt den Text in den Beitragseditor. Danach bitte speichern.</p>
   </div>`;
   document.body.append(wrapper);
   wrapper.querySelectorAll("[data-ai-close]").forEach((item) => item.addEventListener("click", () => wrapper.remove()));
   const outputField = wrapper.querySelector("[data-ai-article-rewrite]");
   const countNode = wrapper.querySelector("[data-ai-rewrite-count]");
   const updateCount = () => {
-    if (countNode) countNode.textContent = `${countWords(outputField?.value || "")} WÃ¶rter`;
+    if (countNode) countNode.textContent = `${countWords(outputField?.value || "")} Wörter`;
   };
   outputField?.addEventListener("input", updateCount);
   wrapper.querySelector("[data-ai-rewrite-regenerate]")?.addEventListener("click", async (event) => {
@@ -1516,7 +1582,7 @@ function collectMemberEventContacts(form, membershipType = "") {
     const phone = String(form.querySelector(`[name="eventContactPhone${index}"]`)?.value || "").trim();
     if (!firstName && !lastName && !legacyName && !role && !email && !phone) continue;
     if (!firstName || !lastName || !email || !phone) {
-      throw new Error(`Eventkontakt ${index + 1} bitte mit Name, E-Mail und Telefon vollstÃ¤ndig ausfÃ¼llen.`);
+      throw new Error(`Eventkontakt ${index + 1} bitte mit Name, E-Mail und Telefon vollständig ausfüllen.`);
     }
     contacts.push({ firstName, lastName, name, role, email, phone });
   }
@@ -1797,7 +1863,7 @@ function eventContext(button) {
   const formValues = form ? formObject(form) : {};
   const linkedEventOption = form?.elements.linkedEventId?.selectedOptions?.[0]?.textContent || "";
   const sponsorOption = form?.elements.sponsorId?.selectedOptions?.[0]?.textContent || "";
-  const hiddenContext = document.getElementById(button.dataset.aiTarget)?.textContent;
+  const hiddenContext = document.getElementById(button.dataset.aiContext || button.dataset.aiTarget)?.textContent;
   let parsedContext = {};
   if (hiddenContext) {
     try { parsedContext = JSON.parse(hiddenContext); } catch { parsedContext = { notes: hiddenContext }; }
@@ -1904,14 +1970,14 @@ function promptTemplateChat(template = "") {
       "Wenn nur Titel, URL oder Quellenname vorhanden sind, soll sie keinen fertigen Artikel vortaeuschen, sondern Recherchebedarf ausgeben."
     ].join("\n"),
     source_check: [
-      "Redaktion: Erstelle einen Prompt fuer die Quellenpruefung.",
-      "Der Prompt soll Domain, Herausgeber, Trust-Score, Quellentyp und belegte Aussage pruefen.",
-      "Gesperrte oder ungepruefte Quellen duerfen keine automatische Veroeffentlichung erlauben."
+      "Redaktion: Erstelle einen Prompt fuer Quellenhinweise.",
+      "Der Prompt soll Domain, Herausgeber, Quellentyp und belegte Aussage sachlich erfassen.",
+      "Die KI darf keine redaktionelle Bewertung und keine Freigabeempfehlung abgeben."
     ].join("\n"),
     final_check: [
-      "Redaktion: Erstelle einen Prompt fuer die Endpruefung.",
-      "Der Prompt muss Halluzinationen, Quellenpflicht, Belegstellen, Rechtsrisiken und Pflichtfelder pruefen.",
-      "Ausgabe bitte als JSON mit Status, Warnungen, Sperrgruenden und Freigabeempfehlung."
+      "Redaktion: Erstelle einen Prompt fuer sachliche Hinweise.",
+      "Der Prompt soll fehlende Quellen, fehlende Belegstellen und fehlende Pflichtfelder benennen.",
+      "Ausgabe bitte als JSON mit Status und Hinweisen, ohne Bewertung und ohne Freigabeempfehlung."
     ].join("\n"),
     thumbnail: [
       "Redaktion: Erstelle einen Prompt fuer eine Thumbnail-Idee.",
@@ -1927,8 +1993,8 @@ function promptTemplateChat(template = "") {
     ].join("\n"),
     keywords: [
       "Redaktion: Erstelle einen Prompt fuer Keywords und Tags.",
-      "Die KI soll Hauptkeyword, Nebenkeywords, Keyword-Typen und Relevanz-Scores erzeugen.",
-      "Keywords unter Relevanz 50 sollen nicht automatisch gespeichert werden."
+      "Die KI soll fachliche Keywords und Keyword-Typen erzeugen.",
+      "Keine Relevanz-Scores und keine Ranking-Aussagen ausgeben."
     ].join("\n"),
     seo: [
       "Redaktion: Erstelle einen Prompt fuer SEO-Daten.",
@@ -1941,7 +2007,7 @@ function promptTemplateChat(template = "") {
 
 function inferPromptTypeFromText(text = "") {
   const clean = String(text || "").toLowerCase();
-  if (clean.includes("quelle")) return "Quellenpruefung";
+  if (clean.includes("quelle")) return "Quellenhinweise";
   if (clean.includes("headline")) return "Headline";
   if (clean.includes("subline") || clean.includes("thubline")) return "Subline / Thubline";
   if (clean.includes("thumbnail") && (clean.includes("erstell") || clean.includes("generier") || clean.includes("bild-ki") || clean.includes("bild ki"))) return "Thumbnail-Erstellung";
@@ -1949,8 +2015,8 @@ function inferPromptTypeFromText(text = "") {
   if (clean.includes("keyword") || clean.includes("tag")) return "Keywords";
   if (clean.includes("seo")) return "SEO / Meta";
   if (clean.includes("sprachstil") || clean.includes("stil")) return "Sprachstil";
-  if (clean.includes("endpruefung") || clean.includes("freigabe") || clean.includes("halluzination")) return "Endpruefung";
-  if (clean.includes("themenbewertung") || clean.includes("bewertung")) return "Themenbewertung";
+  if (clean.includes("endpruefung") || clean.includes("freigabe") || clean.includes("halluzination")) return "Quellenhinweise";
+  if (clean.includes("themenbewertung") || clean.includes("bewertung")) return "Themenrecherche";
   if (clean.includes("thema")) return "Themenrecherche";
   return "Beitragstext";
 }
@@ -2056,7 +2122,7 @@ function loginReturnTarget() {
 
 function cleanEditorialSentence(value = "") {
   return String(value || "")
-    .replace(/\b(redaktioneller Themenkandidat|Themenkandidat|Vorschlag|Quellenfund|redaktionell pruefen|redaktionell prÃ¼fen)\b/gi, "")
+    .replace(/\b(redaktioneller Themenkandidat|Themenkandidat|Vorschlag|Quellenfund|redaktionell pruefen|redaktionell prüfen)\b/gi, "")
     .replace(/\s+/g, " ")
     .replace(/\s+([.,;:!?])/g, "$1")
     .trim();
@@ -2211,10 +2277,10 @@ function generateLocalEditorialThumbnail(article = {}) {
 function slugify(value = "") {
   return String(value || "")
     .toLowerCase()
-    .replace(/Ã¤/g, "ae")
-    .replace(/Ã¶/g, "oe")
-    .replace(/Ã¼/g, "ue")
-    .replace(/ÃŸ/g, "ss")
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
@@ -2285,16 +2351,99 @@ function eventRetrospectiveBody(event = {}) {
     [event.locationName, event.city].filter(Boolean).length ? `Veranstaltungsort war ${[event.locationName, event.city].filter(Boolean).join(", ")}.` : "",
     event.subtitle ? `Im Mittelpunkt stand: ${event.subtitle}` : ""
   ].filter(Boolean).join(" ");
-  const closing = "Der RÃ¼ckblick dokumentiert die wichtigsten Impulse, EindrÃ¼cke und AnknÃ¼pfungspunkte fÃ¼r die digitale Medienwirtschaft.";
+  const closing = "Der Rückblick dokumentiert die wichtigsten Impulse, Eindrücke und Anknüpfungspunkte für die digitale Medienwirtschaft.";
   return [summary, facts, closing].filter(Boolean).join("\n\n");
 }
 
 function eventRetrospectiveIntro(event = {}) {
-  return event.postEventSummary || event.postEventummary || event.description || event.subtitle || "Redaktioneller RÃ¼ckblick auf ein PROdigitalTV-Event.";
+  return event.postEventSummary || event.postEventummary || event.description || event.subtitle || "Redaktioneller Rückblick auf ein PROdigitalTV-Event.";
 }
 
 function eventRetrospectiveImageUrl(event = {}) {
   return event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "";
+}
+
+async function syncEventRetrospectiveArticleGallery(sourceEvent = {}, form = null, galleryId = "") {
+  if (!sourceEvent?.id) return "";
+  const now = new Date().toISOString();
+  const values = form ? formObject(form) : {};
+  const articleId = form?.querySelector("[data-retrospective-article-id]")?.value
+    || sourceEvent.retrospectiveArticleId
+    || eventRetrospectiveArticleId(sourceEvent.id);
+  const existingArticle = articleId ? await getOne("editorialContent", articleId).catch(() => null) : null;
+  const title = values.retrospectiveTitle
+    || sourceEvent.retrospectiveTitle
+    || existingArticle?.title
+    || `Rueckblick: ${sourceEvent.title || "PROdigitalTV Event"}`;
+  const introText = values.postEventSummary
+    || sourceEvent.postEventSummary
+    || sourceEvent.postEventummary
+    || existingArticle?.introText
+    || existingArticle?.subtitle
+    || eventRetrospectiveIntro(sourceEvent);
+  const bodyText = values.longDescription
+    || sourceEvent.longDescription
+    || sourceEvent.bodyText
+    || sourceEvent.articleText
+    || sourceEvent.archiveText
+    || existingArticle?.longDescription
+    || existingArticle?.bodyText
+    || existingArticle?.articleText
+    || existingArticle?.archiveText
+    || eventRetrospectiveBody(sourceEvent);
+  const eventImage = eventRetrospectiveImageUrl(sourceEvent);
+  const articleImage = existingArticle?.imageUrl || eventImage;
+  const articleAssetId = existingArticle?.thumbnail_media_asset_id
+    || existingArticle?.mediaAssetId
+    || sourceEvent.thumbnail_media_asset_id
+    || sourceEvent.mediaAssetId
+    || "";
+  const article = {
+    ...(existingArticle || { id: articleId, createdAt: now }),
+    id: articleId,
+    page: "press",
+    section: "pressRelease",
+    key: existingArticle?.key || `press.${articleId}`,
+    category: "Rueckblicke",
+    title,
+    headline: title,
+    subtitle: existingArticle?.subtitle || sourceEvent.subtitle || "",
+    introText,
+    longDescription: bodyText,
+    bodyText,
+    articleText: bodyText,
+    archiveText: bodyText,
+    body: bodyText,
+    status: "published",
+    visible: existingArticle?.visible !== false,
+    visibility: "public",
+    publishDate: existingArticle?.publishDate || sourceEvent.date || new Date().toISOString().slice(0, 10),
+    validFrom: existingArticle?.validFrom || sourceEvent.date || new Date().toISOString().slice(0, 10),
+    linkedEventId: sourceEvent.id,
+    galleryEventId: sourceEvent.id,
+    galleryId: galleryId || "",
+    sponsorId: existingArticle?.sponsorId || sourceEvent.hostId || "",
+    imageUrl: articleImage,
+    thumbnail_url: existingArticle?.thumbnail_url || existingArticle?.thumbnailUrl || articleImage,
+    thumbnailUrl: existingArticle?.thumbnailUrl || existingArticle?.thumbnail_url || articleImage,
+    assetUrl: existingArticle?.assetUrl || articleImage,
+    thumbnail_media_asset_id: articleAssetId,
+    mediaAssetId: articleAssetId,
+    thumbnail_alt: existingArticle?.thumbnail_alt || sourceEvent.thumbnail_alt || sourceEvent.thumbnailAlt || `Eventbild ${sourceEvent.title || ""}`.trim(),
+    videoAttachments: existingArticle?.videoAttachments || [],
+    isRetrospective: true,
+    showGallery: existingArticle?.showGallery ?? true,
+    updatedAt: now
+  };
+  await upsert("editorialContent", withContentVersionMetadata("editorialContent", existingArticle || {}, article));
+  await upsert("events", {
+    ...sourceEvent,
+    galleryId: galleryId || "",
+    retrospectiveTitle: title,
+    retrospectiveArticleId: articleId,
+    updatedAt: now
+  });
+  return articleId;
 }
 
 function normalizeMediaSlug(value = "") {
@@ -2520,7 +2669,7 @@ function mediaAiStyleCatalog() {
       freedom: "May feel filmic, urban or psychologically charged rather than corporate."
     },
     surreal_concept: {
-      direction: "Surreal concept art with a serious editorial mind-set, not fantasy clichÃ©; strong metaphor over literal scene building.",
+      direction: "Surreal concept art with a serious editorial mind-set, not fantasy cliché; strong metaphor over literal scene building.",
       composition: "Unexpected spatial logic, impossible scale, symbolic juxtapositions and striking concept image-making.",
       palette: "Palette may be poetic, uncanny or sharply symbolic if it supports the concept.",
       freedom: "Break realism decisively; do not fall back to default business visuals."
@@ -2622,7 +2771,7 @@ function creativeThumbPrompt(context = {}, userPrompt = "", variantNumber = 1) {
     baseIdea,
     antiGeneric,
     brandConstraint,
-    "Der thematische Bezug zu digitaler Medienwirtschaft, Streaming, TV, Plattformen, Redaktion, Technologie oder Netzwerk soll spuÌˆrbar sein, darf aber metaphorisch, abstrakt oder unerwartet geloest werden.",
+    "Der thematische Bezug zu digitaler Medienwirtschaft, Streaming, TV, Plattformen, Redaktion, Technologie oder Netzwerk soll spürbar sein, darf aber metaphorisch, abstrakt oder unerwartet geloest werden.",
     "Einschraenkungen: keine echten Logos, keine identifizierbaren realen Personen, keine Textfehler im Bild, keine Comic-Optik, keine irrefuehrenden Fakten.",
     "Format: 16:9, geeignet als Website-Thumbnail und Artikelkopf."
   ].filter(Boolean).join("\n");
@@ -2634,7 +2783,7 @@ function generatedThumbTitle(context = {}, variantNumber = 1) {
 
 function mediaPresetSummary(type = "upload") {
   const preset = mediaUsagePreset(type);
-  return `${preset.aspect} Â· ${preset.width} x ${preset.height}px Â· ${preset.portal} Â· ${preset.mobile}`;
+  return `${preset.aspect} · ${preset.width} x ${preset.height}px · ${preset.portal} · ${preset.mobile}`;
 }
 
 function mediaShortCode() {
@@ -4113,7 +4262,7 @@ function localArticleKeywords(article = {}, fallbackKeywords = []) {
     ...(Array.isArray(article.tags) ? article.tags : []),
     article.primary_keyword || article.primaryKeyword || "",
     category,
-    ...(`${title} ${subline}`).match(/[A-Za-zÃ„Ã–ÃœÃ¤Ã¶Ã¼ÃŸ][A-Za-zÃ„Ã–ÃœÃ¤Ã¶Ã¼ÃŸ-]{3,}/g) || []
+    ...(`${title} ${subline}`).match(/[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß-]{3,}/g) || []
   ];
   const stopWords = new Set([
     "eine", "einer", "eines", "einem", "einen", "auch", "oder", "und", "fuer", "mit", "auf", "aus", "das", "der", "die",
@@ -4128,7 +4277,7 @@ function localArticleKeywords(article = {}, fallbackKeywords = []) {
     if (stopWords.has(normalized)) return;
     frequency.set(keyword, (frequency.get(keyword) || 0) + 1);
   });
-  String(body).match(/[A-ZÃ„Ã–Ãœ][A-Za-zÃ„Ã–ÃœÃ¤Ã¶Ã¼ÃŸ-]{4,}(?:\s+[A-ZÃ„Ã–Ãœ][A-Za-zÃ„Ã–ÃœÃ¤Ã¶Ã¼ÃŸ-]{3,})?/g)?.slice(0, 18).forEach((keyword) => {
+  String(body).match(/[A-ZÄÖÜ][A-Za-zÄÖÜäöüß-]{4,}(?:\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöüß-]{3,})?/g)?.slice(0, 18).forEach((keyword) => {
     const clean = keyword.trim();
     if (!stopWords.has(clean.toLowerCase())) frequency.set(clean, (frequency.get(clean) || 0) + 1);
   });
@@ -4650,6 +4799,120 @@ function normalizeAiSuggestion(value, button, sourceField) {
   return maxLength ? limitText(value, maxLength) : String(value || "").trim();
 }
 
+function parseStructuredEventTextRobust(value = "", structured = null) {
+  const fromObject = structured && typeof structured === "object" && !Array.isArray(structured)
+    ? {
+        title: structured.headline || structured.title || structured.Headline || structured.Titel || "",
+        subtitle: structured.subline || structured.subtitle || structured.Subline || structured.Untertitel || "",
+        description: structured.bodyText || structured.articleText || structured.body || structured.text || structured.Beitragstext || structured.Beschreibung || ""
+      }
+    : {};
+  const text = String(value || "").replace(/\r/g, "").trim();
+  if (!text) return {
+    title: String(fromObject.title || "").trim(),
+    subtitle: String(fromObject.subtitle || "").trim(),
+    description: String(fromObject.description || "").trim()
+  };
+  const labels = [
+    ["title", /^(headline|titel|ueberschrift|überschrift)\s*:/i],
+    ["subtitle", /^(subline|untertitel|teaser)\s*:/i],
+    ["description", /^(beitragstext|text|beschreibung|body)\s*:/i],
+    ["keywords", /^(keywords|schlagworte|stichworte)\s*:/i]
+  ];
+  const parts = {};
+  let currentKey = "";
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trimEnd();
+    const match = labels.find(([, pattern]) => pattern.test(line.trim()));
+    if (match) {
+      currentKey = match[0];
+      const content = line.replace(match[1], "").trim();
+      if (content) parts[currentKey] = [content];
+      else parts[currentKey] = parts[currentKey] || [];
+      continue;
+    }
+    if (currentKey) {
+      parts[currentKey] = parts[currentKey] || [];
+      parts[currentKey].push(line);
+    }
+  }
+  const clean = (key) => (parts[key] || []).join("\n").trim();
+  return {
+    title: clean("title") || String(fromObject.title || "").trim(),
+    subtitle: clean("subtitle") || String(fromObject.subtitle || "").trim(),
+    description: clean("description") || String(fromObject.description || "").trim()
+  };
+}
+
+function parseStructuredEventText(value = "", structured = null) {
+  const fromObject = structured && typeof structured === "object" && !Array.isArray(structured)
+    ? {
+        title: structured.headline || structured.title || structured.Headline || structured.Titel || "",
+        subtitle: structured.subline || structured.subtitle || structured.Subline || structured.Untertitel || "",
+        description: structured.bodyText || structured.articleText || structured.body || structured.text || structured.Beitragstext || structured.Beschreibung || ""
+      }
+    : {};
+  const text = String(value || "").replace(/\r/g, "").trim();
+  if (!text) return {
+    title: String(fromObject.title || "").trim(),
+    subtitle: String(fromObject.subtitle || "").trim(),
+    description: String(fromObject.description || "").trim()
+  };
+  const normalizeLabelLine = (line = "") => line
+    .trim()
+    .replace(/^[-*#>\s]+/, "")
+    .replace(/^\*\*(.+?)\*\*\s*:?\s*$/, "$1:")
+    .replace(/^__(.+?)__\s*:?\s*$/, "$1:")
+    .replace(/^\*([^*]+)\*\s*:?\s*$/, "$1:")
+    .replace(/^_([^_]+)_\s*:?\s*$/, "$1:");
+  const labels = [
+    ["title", /^(headline|titel|title|ueberschrift|überschrift|Ã¼berschrift)\s*:/i],
+    ["subtitle", /^(subline|untertitel|subtitle|teaser)\s*:/i],
+    ["description", /^(beitragstext|beitrag|artikeltext|langtext|text|beschreibung|body)\s*:/i],
+    ["keywords", /^(keywords|keyword|schlagworte|stichworte)\s*:/i]
+  ];
+  const parts = {};
+  let currentKey = "";
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trimEnd();
+    const labelLine = normalizeLabelLine(line);
+    const match = labels.find(([, pattern]) => pattern.test(labelLine));
+    if (match) {
+      currentKey = match[0];
+      const content = labelLine.replace(match[1], "").trim() || line.replace(match[1], "").trim();
+      if (content) parts[currentKey] = [content];
+      else parts[currentKey] = parts[currentKey] || [];
+      continue;
+    }
+    if (currentKey) {
+      parts[currentKey] = parts[currentKey] || [];
+      parts[currentKey].push(line);
+    }
+  }
+  const clean = (key) => (parts[key] || []).join("\n").trim();
+  return {
+    title: clean("title") || String(fromObject.title || "").trim(),
+    subtitle: clean("subtitle") || String(fromObject.subtitle || "").trim(),
+    description: clean("description") || String(fromObject.description || "").trim() || (!clean("title") && !clean("subtitle") ? text : "")
+  };
+}
+
+function applyStructuredEventText(button, sourceField, rawValue = "", structured = null) {
+  const form = sourceField?.closest?.(".event-base-form");
+  if (!form || button?.dataset?.aiEntityType !== "event") return false;
+  const parsed = parseStructuredEventTextRobust(rawValue, structured);
+  const hasStructuredValue = Boolean(parsed.title || parsed.subtitle || parsed.description);
+  if (!hasStructuredValue) return false;
+  if (parsed.title && form.elements.title) form.elements.title.value = parsed.title;
+  if (parsed.subtitle && form.elements.subtitle) form.elements.subtitle.value = parsed.subtitle;
+  if (parsed.description && form.elements.description) form.elements.description.value = parsed.description;
+  [form.elements.title, form.elements.subtitle, form.elements.description].filter(Boolean).forEach((field) => {
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  return true;
+}
+
 function progressMarkup(label, width = 45) {
   return `<span class="cms-progress"><span>${escapeHtml(label)}</span><span class="progress progress--indeterminate"><i style="width:${width}%"></i></span></span>`;
 }
@@ -5013,7 +5276,7 @@ function pressImportStatusMarkup({ startedAt = Date.now(), run = null, stepIndex
     ${progressMarkup(headline, percent)}
     <div class="ai-research-status__meta"><strong>Status:</strong> ${escapeHtml(PRESS_IMPORT_STEPS[boundedStep])}<span>${elapsedSeconds}s</span></div>
     ${currentScan ? `<div class="ai-research-current-source"><span>Aktuelles Portal ${scanned || recentScans.length} von ${planned || "?"}</span><strong>${escapeHtml(currentScan.source_name || currentScan.source_domain || "Portal")}</strong><small>${escapeHtml(currentScan.reason || currentScan.status || "")}</small></div>` : ""}
-    ${recentScans.length ? `<div class="ai-research-source-strip">${recentScans.map((scan) => `<span>${escapeHtml(scan.source_name || scan.source_domain || "Portal")} Â· ${Number(scan.count || 0)}</span>`).join("")}</div>` : ""}
+    ${recentScans.length ? `<div class="ai-research-source-strip">${recentScans.map((scan) => `<span>${escapeHtml(scan.source_name || scan.source_domain || "Portal")} · ${Number(scan.count || 0)}</span>`).join("")}</div>` : ""}
     <ol class="ai-research-steps">${PRESS_IMPORT_STEPS.map((step, index) => `<li class="${done || index < boundedStep ? "is-done" : index === boundedStep ? "is-active" : ""}"><span>${index + 1}</span>${escapeHtml(step)}</li>`).join("")}</ol>
     <div class="ai-press-progress__stats"><span>Importiert: ${Number(run?.imported || 0)}</span><span>Dubletten: ${Number(run?.duplicates || 0)}</span><span>Ausgespart: ${Number(run?.skipped_sources || 0)}</span></div>
     <p class="muted">Hinweis: Importierte Pressemitteilungen werden nicht automatisch geloescht oder als Beitrag angelegt.</p>
@@ -5061,20 +5324,26 @@ function showAiDialog({ button, originalText, result, sourceField }) {
   wrapper.querySelector("[data-ai-accept]").addEventListener("click", async (event) => {
     const acceptButton = event.currentTarget;
     const value = normalizeAiSuggestion(wrapper.querySelector("[data-ai-suggestion]").value, button, sourceField);
-    if (sourceField && "value" in sourceField) sourceField.value = value;
-    sourceField?.dispatchEvent(new Event("input", { bubbles: true }));
-    sourceField?.dispatchEvent(new Event("change", { bubbles: true }));
+    const appliedStructured = applyStructuredEventText(button, sourceField, value, result.structured);
+    if (!appliedStructured) {
+      if (sourceField && "value" in sourceField) sourceField.value = value;
+      sourceField?.dispatchEvent(new Event("input", { bubbles: true }));
+      sourceField?.dispatchEvent(new Event("change", { bubbles: true }));
+    }
     if (button.dataset.aiAction === "rewritePressRetrospective") {
       markPressRetrospectiveForm(button);
     }
-    const postEventForm = sourceField?.closest?.('#event-edit-form[data-event-form-section="post"]');
-    if (postEventForm) {
+    const autoSaveEventForm = sourceField?.closest?.('#event-edit-form[data-event-form-section="post"], #event-edit-form[data-event-form-section="registration"]');
+    if (autoSaveEventForm) {
       const note = wrapper.querySelector(".muted");
       acceptButton.disabled = true;
       acceptButton.textContent = "Speichert ...";
-      if (note) note.textContent = "KI-Vorschlag wird Ã¼bernommen und der RÃ¼ckblicktext gespeichert.";
+      if (note) note.textContent = "KI-Vorschlag wird übernommen und der Rückblicktext gespeichert.";
       try {
-        await submitFormAndWait(postEventForm);
+        if (note) note.textContent = autoSaveEventForm.dataset.eventFormSection === "registration"
+          ? "KI-Vorschlag wird uebernommen und der Mailtext gespeichert."
+          : "KI-Vorschlag wird uebernommen und der Rueckblicktext gespeichert.";
+        await submitFormAndWait(autoSaveEventForm);
       } catch (error) {
         acceptButton.disabled = false;
         acceptButton.textContent = "Uebernehmen";
@@ -5116,9 +5385,9 @@ function confirmAiNewsImportDraft({ sourceText = "", draft = {}, regenerateDraft
     const initialTargetWords = Math.max(120, Math.min(900, Number(draft.targetWords || bodyWords || 300)));
     wrapper.className = "ai-dialog-backdrop";
     wrapper.innerHTML = `<div class="ai-dialog ai-dialog--news-review" role="dialog" aria-modal="true">
-      <div class="actions" style="justify-content:space-between"><div><p class="eyebrow">News-Import</p><h2>Textvorschlag abstimmen</h2></div><button type="button" class="link-button" data-ai-news-cancel>SchlieÃŸen</button></div>
+      <div class="actions" style="justify-content:space-between"><div><p class="eyebrow">News-Import</p><h2>Textvorschlag abstimmen</h2></div><button type="button" class="link-button" data-ai-news-cancel>Schließen</button></div>
       <div class="ai-dialog-grid ai-dialog-grid--review">
-        <div class="field"><label>Ausgangstext / Quelle <span data-word-count-source>${sourceWords} WÃ¶rter</span></label><textarea readonly>${escapeHtml(sourceText || "Keine Textquelle eingefÃ¼gt.")}</textarea></div>
+        <div class="field"><label>Ausgangstext / Quelle <span data-word-count-source>${sourceWords} Wörter</span></label><textarea readonly>${escapeHtml(sourceText || "Keine Textquelle eingefügt.")}</textarea></div>
         <form class="ai-news-review-fields">
           <div class="field"><label>Headline</label><input name="headline" value="${escapeHtml(headline)}"></div>
           <div class="field"><label>Subline</label><textarea name="subline" rows="3">${escapeHtml(subline)}</textarea></div>
@@ -5126,14 +5395,14 @@ function confirmAiNewsImportDraft({ sourceText = "", draft = {}, regenerateDraft
             <div class="field"><label>Wortmenge neuer Text</label><input name="targetWords" type="number" min="120" max="900" step="25" value="${initialTargetWords}"></div>
             <button type="button" class="button button--secondary" data-ai-news-rewrite>Neu formulieren</button>
           </div>
-          <div class="field"><label>Beitragstext <span data-word-count-body>${bodyWords} WÃ¶rter${bodyWords < 300 ? " - mindestens 300" : ""}</span></label><textarea name="body" rows="12">${escapeHtml(body)}</textarea></div>
+          <div class="field"><label>Beitragstext <span data-word-count-body>${bodyWords} Wörter${bodyWords < 300 ? " - mindestens 300" : ""}</span></label><textarea name="body" rows="12">${escapeHtml(body)}</textarea></div>
           <div class="form-grid form-grid--compact">
             <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(category)}"></div>
             <div class="field"><label>Keywords</label><input name="tags" value="${escapeHtml(tags)}"></div>
           </div>
         </form>
       </div>
-      <div class="actions"><button type="button" class="button button--primary" data-ai-news-accept>Ãœbernehmen und speichern</button><button type="button" class="button button--secondary" data-ai-news-cancel>Verwerfen</button></div>
+      <div class="actions"><button type="button" class="button button--primary" data-ai-news-accept>Übernehmen und speichern</button><button type="button" class="button button--secondary" data-ai-news-cancel>Verwerfen</button></div>
       <p class="muted">Neu formulieren nutzt immer die linke Datenbasis. Gespeichert wird erst nach deiner Auswahl.</p>
     </div>`;
     const close = (value) => {
@@ -5148,7 +5417,7 @@ function confirmAiNewsImportDraft({ sourceText = "", draft = {}, regenerateDraft
     const updateBodyCount = () => {
       const words = countWords(bodyField?.value || "");
       const target = readTargetWords();
-      bodyCount.textContent = `${words} WÃ¶rter - Ziel ${target}${words > target + 25 ? " - zu lang" : words < target - 25 ? " - zu kurz" : ""}`;
+      bodyCount.textContent = `${words} Wörter - Ziel ${target}${words > target + 25 ? " - zu lang" : words < target - 25 ? " - zu kurz" : ""}`;
     };
     bodyField?.addEventListener("input", () => {
       updateBodyCount();
@@ -5269,7 +5538,7 @@ async function importUrlIntoNewsImportForm(form, sourceUrl = "") {
   const urlField = form?.querySelector('input[name="sourceUrl"]');
   const cleanUrl = normalizedImportUrl(sourceUrl || urlField?.value || "");
   if (!form || !cleanUrl) return null;
-  if (output) output.innerHTML = `<div class="alert">${progressMarkup("URL wird geoeffnet und in den KI-News-Import geladen ...", 35)}</div>`;
+  if (output) output.innerHTML = `<div class="alert">${progressMarkup("URL wird geoeffnet und in den News-Import geladen ...", 35)}</div>`;
   const imported = await importNewsUrlText(cleanUrl);
   if (textarea) {
     textarea.value = cleanRawImportText(imported?.text || "");
@@ -5277,7 +5546,7 @@ async function importUrlIntoNewsImportForm(form, sourceUrl = "") {
     textarea.dispatchEvent(new Event("change", { bubbles: true }));
   }
   if (urlField) urlField.value = cleanUrl;
-  if (output) output.innerHTML = `<div class="alert alert--success">${Number(imported?.chars || imported?.text?.length || 0).toLocaleString("de-DE")} Zeichen aus der URL in den KI-News-Import geladen. Bitte pruefen und dann mit "KI-News erstellen" weiterarbeiten.</div>`;
+  if (output) output.innerHTML = `<div class="alert alert--success">${Number(imported?.chars || imported?.text?.length || 0).toLocaleString("de-DE")} Zeichen aus der URL in den News-Import geladen. Bitte pruefen und dann mit "News erstellen" weiterarbeiten.</div>`;
   return imported;
 }
 
@@ -5496,7 +5765,7 @@ function wireImageDropzones() {
         if (form?.elements?.thumbnail_alt && !String(form.elements.thumbnail_alt.value || "").trim()) {
           form.elements.thumbnail_alt.value = asset.thumbnail_alt || asset.alt_text || "";
         }
-        status.innerHTML = `<span>KI-Thumb Variante ${variantNumber} wurde gespeichert, dem Beitrag zugeordnet und ist in der Mediathek auswÃ¤hlbar.</span>`;
+        status.innerHTML = `<span>KI-Thumb Variante ${variantNumber} wurde gespeichert, dem Beitrag zugeordnet und ist in der Mediathek auswählbar.</span>`;
       } catch (error) {
         status.textContent = `KI-Bild konnte nicht erzeugt werden: ${error.message || String(error)}`;
       } finally {
@@ -5517,7 +5786,7 @@ function wireImageDropzones() {
       preview.innerHTML = `<span>${emptyText}</span>`;
       preview.classList.remove("has-image");
       if (removeButton) removeButton.hidden = true;
-      status.textContent = "Bild zum LÃ¶schen markiert. Bitte speichern.";
+      status.textContent = "Bild zum Löschen markiert. Bitte speichern.";
     });
     updateResolution();
   });
@@ -5616,12 +5885,12 @@ function openGalleryPlayer(gallery) {
   const renderSlide = () => {
     const image = images[index];
     overlay.innerHTML = `<div class="gallery-player__panel">
-      <div class="gallery-player__top"><strong>${escapeHtml(gallery.title || "Bildergalerie")}</strong><button class="gallery-player__close" type="button" data-gallery-close aria-label="SchlieÃŸen">Ã—</button></div>
+      <div class="gallery-player__top"><strong>${escapeHtml(gallery.title || "Bildergalerie")}</strong><button class="gallery-player__close" type="button" data-gallery-close aria-label="Schließen">×</button></div>
       <figure class="gallery-player__stage"><img src="${escapeHtml(image.url)}" alt="${escapeHtml(image.altText || image.caption || "Galeriebild")}">${image.caption ? `<figcaption>${escapeHtml(image.caption)}</figcaption>` : ""}</figure>
       <div class="gallery-player__controls">
-        <button type="button" data-gallery-prev aria-label="Vorheriges Bild">â€¹</button>
+        <button type="button" data-gallery-prev aria-label="Vorheriges Bild">‹</button>
         <span>${index + 1} / ${images.length}</span>
-        <button type="button" data-gallery-next aria-label="NÃ¤chstes Bild">â€º</button>
+        <button type="button" data-gallery-next aria-label="Nächstes Bild">›</button>
         <button type="button" data-gallery-toggle data-gallery-state="${timer ? "pause" : "play"}"><span aria-hidden="true"></span></button>
       </div>
     </div>`;
@@ -5676,7 +5945,7 @@ function openPdfOverlay(url = "", title = "PDF") {
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
   overlay.innerHTML = `<div class="pdf-player__panel">
-    <div class="pdf-player__top"><strong>${escapeHtml(title || "PDF")}</strong><div><a class="button button--secondary button--small" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" download>PDF speichern</a><button class="gallery-player__close" type="button" data-pdf-close aria-label="SchlieÃŸen">Ã—</button></div></div>
+    <div class="pdf-player__top"><strong>${escapeHtml(title || "PDF")}</strong><div><a class="button button--secondary button--small" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" download>PDF speichern</a><button class="gallery-player__close" type="button" data-pdf-close aria-label="Schließen">×</button></div></div>
     <iframe class="pdf-player__frame" src="${escapeHtml(url)}" title="${escapeHtml(title || "PDF")}" loading="eager"></iframe>
   </div>`;
   const close = () => {
@@ -5729,7 +5998,7 @@ function videoAttachmentRowTemplate(index = 0) {
       <div class="field"><label>Status</label><select name="videoStatus${index}"><option value="ready" selected>ready</option><option value="draft">draft</option><option value="published">published</option><option value="hidden">hidden</option><option value="error">error</option></select></div>
       <div class="field field--wide"><label>Beschreibung</label><textarea name="videoDescription${index}"></textarea></div>
     </div>
-    <button class="icon-button icon-button--danger" type="button" data-remove-video-attachment title="Video entfernen" aria-label="Video entfernen">Ã—</button>
+    <button class="icon-button icon-button--danger" type="button" data-remove-video-attachment title="Video entfernen" aria-label="Video entfernen">×</button>
   </fieldset>`;
 }
 
@@ -5768,7 +6037,7 @@ function videoAssignmentRowTemplate(video = {}, index = 0) {
     <input type="hidden" name="videoDescription${index}" value="${escapeHtml(item.description)}">
     ${item.posterImageUrl ? `<img src="${escapeHtml(item.posterImageUrl)}" alt="">` : `<span class="video-assignment-row__empty">Video</span>`}
     <div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.youtubeUrl || item.youtubeVideoId || "")}</small></div>
-    <button class="icon-button icon-button--danger" type="button" data-remove-video-attachment title="Video entfernen" aria-label="Video entfernen">Ã—</button>
+    <button class="icon-button icon-button--danger" type="button" data-remove-video-attachment title="Video entfernen" aria-label="Video entfernen">×</button>
   </div>`;
 }
 
@@ -5930,11 +6199,84 @@ function renderEditorGalleryPreview(select) {
   }
 }
 
+function gallerySelectPayload(gallery = {}) {
+  const images = Array.isArray(gallery.images)
+    ? gallery.images
+        .filter((image) => image.url || image.imageUrl || image.assetUrl || image.thumbnailUrl)
+        .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+    : [];
+  return JSON.stringify({
+    title: gallery.title || "Bildergalerie",
+    images: images.map((image) => ({
+      url: image.url || image.imageUrl || image.assetUrl || image.thumbnailUrl || "",
+      caption: image.caption || image.title || "",
+      altText: image.altText || image.caption || gallery.title || "Galeriebild"
+    }))
+  });
+}
+
+function renderEditorGalleryChoices(select) {
+  const container = select?.closest(".editor-tool-section--gallery")?.querySelector("[data-editor-gallery-choices]");
+  if (!select || !container) return;
+  const options = Array.from(select.options).filter((option) => option.value);
+  if (!options.length) {
+    container.classList.add("editor-gallery-choice-list--empty");
+    container.innerHTML = `<p class="muted">Keine Galerien gefunden.</p>`;
+    return;
+  }
+  container.classList.remove("editor-gallery-choice-list--empty");
+  container.innerHTML = options.map((option) => `
+    <button class="editor-gallery-choice ${option.value === select.value ? "is-active" : ""}" type="button" data-gallery-choice="${escapeHtml(option.value)}">
+      <strong>${escapeHtml(option.textContent.replace(/\s*\(\d+\s+Bilder\)\s*$/, ""))}</strong>
+      <span>${escapeHtml((option.textContent.match(/\(([^)]+)\)/) || [])[1] || "")}</span>
+    </button>
+  `).join("");
+}
+
+async function hydrateEditorGallerySelect(select) {
+  if (!select || select.dataset.galleryHydrating === "1") return;
+  select.dataset.galleryHydrating = "1";
+  const previousValue = select.value || "";
+  try {
+    const galleries = (await list("galleries").catch(() => []))
+      .filter((gallery) => !["archived", "deleted"].includes(String(gallery.status || "").toLowerCase()))
+      .sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "de"));
+    const existingValues = new Set(Array.from(select.options).map((option) => option.value));
+    galleries.forEach((gallery) => {
+      if (!gallery?.id || existingValues.has(gallery.id)) return;
+      const option = document.createElement("option");
+      option.value = gallery.id;
+      option.textContent = `${gallery.title || gallery.id} (${Array.isArray(gallery.images) ? gallery.images.length : 0} Bilder)`;
+      option.dataset.galleryPayload = gallerySelectPayload(gallery);
+      select.appendChild(option);
+      existingValues.add(gallery.id);
+    });
+    if (previousValue && existingValues.has(previousValue)) select.value = previousValue;
+    renderEditorGalleryPreview(select);
+    renderEditorGalleryChoices(select);
+  } finally {
+    select.dataset.galleryHydrating = "0";
+  }
+}
+
 function wireEditorGallerySelects() {
   document.querySelectorAll('select[name="galleryId"]').forEach((select) => {
     if (select.dataset.editorGalleryWired === "1") return;
     select.dataset.editorGalleryWired = "1";
-    select.addEventListener("change", () => renderEditorGalleryPreview(select));
+    select.addEventListener("change", () => {
+      renderEditorGalleryPreview(select);
+      renderEditorGalleryChoices(select);
+    });
+    select.addEventListener("focus", () => hydrateEditorGallerySelect(select));
+    select.addEventListener("pointerdown", () => hydrateEditorGallerySelect(select));
+    select.closest(".editor-tool-section--gallery")?.addEventListener("click", (event) => {
+      const choice = event.target.closest("[data-gallery-choice]");
+      if (!choice) return;
+      select.value = choice.dataset.galleryChoice || "";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    renderEditorGalleryChoices(select);
+    hydrateEditorGallerySelect(select);
   });
 }
 
@@ -5947,18 +6289,25 @@ function wireGalleryLinkSaves() {
       const select = form?.querySelector('select[name="galleryId"]');
       const result = form?.querySelector("[data-gallery-link-result]");
       if (!form || !select) return;
-      const module = form.dataset.module || (form.id === "topic-editor-form" ? "topics" : "editorialContent");
-      const id = form.dataset.id || form.dataset.topicId;
+      const module = form.dataset.module || (form.dataset.eventId ? "events" : (form.id === "topic-editor-form" ? "topics" : "editorialContent"));
+      const id = form.dataset.id || form.dataset.topicId || form.dataset.eventId;
+      if (!id) return;
       button.disabled = true;
       if (result) result.innerHTML = `<div class="alert">Galerie-Verknuepfung wird gespeichert...</div>`;
       try {
-        const existing = (await getOne(module, id)) || { id, createdAt: new Date().toISOString() };
-        await upsert(module, {
+        const now = new Date().toISOString();
+        const existing = (await getOne(module, id)) || { id, createdAt: now };
+        const saved = await upsert(module, {
           ...existing,
           galleryId: select.value || "",
-          updatedAt: new Date().toISOString()
+          updatedAt: now
         });
-        if (result) result.innerHTML = `<div class="alert alert--success">Galerie-Verknuepfung gespeichert.</div>`;
+        if (module === "events" && form.dataset.eventFormSection === "post") {
+          await syncEventRetrospectiveArticleGallery(saved, form, select.value || "");
+        }
+        if (result) result.innerHTML = module === "events" && form.dataset.eventFormSection === "post"
+          ? `<div class="alert alert--success">Galerie wurde mit Event und Rueckblick verknuepft.</div>`
+          : `<div class="alert alert--success">Galerie-Verknuepfung gespeichert.</div>`;
       } catch (error) {
         if (result) result.innerHTML = `<div class="alert alert--error">Galerie konnte nicht verknuepft werden: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
       } finally {
@@ -5968,6 +6317,59 @@ function wireGalleryLinkSaves() {
   });
 }
 
+function wireEventGalleryCreateButtons() {
+  document.querySelectorAll("[data-create-event-gallery]").forEach((button) => {
+    if (button.dataset.createEventGalleryWired === "1") return;
+    button.dataset.createEventGalleryWired = "1";
+    button.addEventListener("click", async () => {
+      const form = button.closest("form");
+      const select = form?.querySelector('select[name="galleryId"]');
+      const result = form?.querySelector("[data-gallery-link-result]");
+      const eventId = form?.dataset.eventId || "";
+      if (!form || !select || !eventId) return;
+      button.disabled = true;
+      if (result) result.innerHTML = `<div class="alert">Event-Galerie wird angelegt...</div>`;
+      try {
+        const now = new Date().toISOString();
+        const event = (await getOne("events", eventId)) || { id: eventId, createdAt: now };
+        const galleryId = event.galleryId || `gallery-${slugify(eventId) || crypto.randomUUID()}`;
+        const existingGallery = await getOne("galleries", galleryId).catch(() => null);
+        const gallery = {
+          ...(existingGallery || { id: galleryId, createdAt: now, images: [] }),
+          id: galleryId,
+          title: existingGallery?.title || `Galerie ${event.title || eventId}`.trim(),
+          description: existingGallery?.description || `Bildergalerie zu ${event.title || eventId}`.trim(),
+          eventId,
+          linkedEventId: eventId,
+          linkedRecordId: eventId,
+          targetCollection: "events",
+          targetId: eventId,
+          status: existingGallery?.status || "published",
+          visibility: existingGallery?.visibility || "public",
+          images: Array.isArray(existingGallery?.images) ? existingGallery.images : [],
+          updatedAt: now
+        };
+        await upsert("galleries", gallery);
+        const savedEvent = await upsert("events", { ...event, galleryId, updatedAt: now });
+        await syncEventRetrospectiveArticleGallery(savedEvent, form, galleryId);
+        if (!Array.from(select.options).some((option) => option.value === galleryId)) {
+          const option = document.createElement("option");
+          option.value = galleryId;
+          option.textContent = `${gallery.title || galleryId} (${gallery.images.length} Bilder)`;
+          option.dataset.galleryPayload = JSON.stringify({ title: gallery.title || "Bildergalerie", images: [] });
+          select.appendChild(option);
+        }
+        select.value = galleryId;
+        renderEditorGalleryPreview(select);
+        if (result) result.innerHTML = `<div class="alert alert--success">Event-Galerie angelegt und verknuepft. <a href="#/cms/edit?module=galleries&id=${encodeURIComponent(galleryId)}&section=all">Galerie bearbeiten</a></div>`;
+      } catch (error) {
+        if (result) result.innerHTML = `<div class="alert alert--error">Event-Galerie konnte nicht angelegt werden: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+}
 function wireLinkedMediaClears() {
   document.querySelectorAll("[data-clear-linked-media]").forEach((button) => {
     if (button.dataset.clearLinkedMediaWired === "1") return;
@@ -5975,8 +6377,9 @@ function wireLinkedMediaClears() {
     button.addEventListener("click", async () => {
       const form = button.closest("form");
       if (!form) return;
-      const module = form.dataset.module || (form.id === "topic-editor-form" ? "topics" : "editorialContent");
-      const id = form.dataset.id || form.dataset.topicId;
+      const module = form.dataset.module || (form.dataset.eventId ? "events" : (form.id === "topic-editor-form" ? "topics" : "editorialContent"));
+      const id = form.dataset.id || form.dataset.topicId || form.dataset.eventId;
+      if (!id) return;
       const kind = button.dataset.clearLinkedMedia;
       const result = kind === "audio"
         ? form.querySelector("[data-speech-result]")
@@ -6004,7 +6407,21 @@ function wireLinkedMediaClears() {
               audioNaturalTextTruncated: false
             }
           : { galleryId: "" };
-        await upsert(module, { ...existing, ...update, updatedAt: new Date().toISOString() });
+        const now = new Date().toISOString();
+        await upsert(module, { ...existing, ...update, updatedAt: now });
+        if (module === "events" && form.dataset.eventFormSection === "post" && kind === "gallery") {
+          const articleId = form.querySelector("[data-retrospective-article-id]")?.value || existing.retrospectiveArticleId || eventRetrospectiveArticleId(id);
+          const existingArticle = articleId ? await getOne("editorialContent", articleId).catch(() => null) : null;
+          if (existingArticle) {
+            await upsert("editorialContent", {
+              ...existingArticle,
+              galleryId: "",
+              galleryEventId: id,
+              linkedEventId: id,
+              updatedAt: now
+            });
+          }
+        }
         if (kind === "gallery") {
           const select = form.querySelector('select[name="galleryId"]');
           if (select) {
@@ -6097,7 +6514,7 @@ async function saveEventTopicSpeakerForm(form) {
   form.dataset.speakerId = speakerId;
   form.querySelector("#event-topic-speaker-result").innerHTML = `<div class="alert alert--success">Referent wurde gespeichert.</div>`;
   const imageStatus = form.querySelector("[data-image-status]");
-  if (imageStatus) imageStatus.textContent = imageUpdate.photoUrl ? "Bild wurde gespeichert." : imageUpdate.photoUrl === "" ? "Bild wurde gelÃ¶scht." : imageStatus.textContent;
+  if (imageStatus) imageStatus.textContent = imageUpdate.photoUrl ? "Bild wurde gespeichert." : imageUpdate.photoUrl === "" ? "Bild wurde gelöscht." : imageStatus.textContent;
   form.classList.add("is-saved");
   if (!new URLSearchParams(location.hash.split("?")[1] || "").get("speaker")) {
     history.replaceState(null, "", `#/cms/event/${form.dataset.eventId}?tab=topics&mode=referent&topic=${form.dataset.topicId}&speaker=${speakerId}`);
@@ -6565,7 +6982,7 @@ async function importExistingThumbsToMediaLibrary(result) {
   let created = 0;
   let linked = 0;
   for (const [index, candidate] of candidates.entries()) {
-    if (result) result.innerHTML = `<div class="alert">${progressMarkup(`Thumb ${index + 1} von ${candidates.length} wird in die Mediathek Ã¼bernommen ...`, 25 + Math.round(((index + 1) / Math.max(1, candidates.length)) * 65))}</div>`;
+    if (result) result.innerHTML = `<div class="alert">${progressMarkup(`Thumb ${index + 1} von ${candidates.length} wird in die Mediathek übernommen ...`, 25 + Math.round(((index + 1) / Math.max(1, candidates.length)) * 65))}</div>`;
     const dimensions = await imageDimensionsFromUrl(candidate.url);
     const aspect = detectMediaAspectRatio(dimensions);
     const mediaCode = mediaShortCode();
@@ -6632,7 +7049,7 @@ async function importExistingThumbsToMediaLibrary(result) {
     }
   }
   if (result) {
-    result.innerHTML = `<div class="alert alert--success">${created} Thumb${created === 1 ? "" : "s"} in die Mediathek Ã¼bernommen, ${linked} VerknÃ¼pfung${linked === 1 ? "" : "en"} aktualisiert.</div>`;
+    result.innerHTML = `<div class="alert alert--success">${created} Thumb${created === 1 ? "" : "s"} in die Mediathek übernommen, ${linked} Verknüpfung${linked === 1 ? "" : "en"} aktualisiert.</div>`;
   }
   return { created, linked, skipped: collectExistingThumbCandidates(recordsByCollection).length - created };
 }
@@ -6644,10 +7061,16 @@ async function markMediaAssetLinkedToTarget(asset = {}, context = {}, target = {
     target_collection: context.targetCollection,
     target_id: context.targetId,
     target_field: context.targetField || "imageUrl",
+    targetCollection: context.targetCollection,
+    targetId: context.targetId,
+    targetField: context.targetField || "imageUrl",
     target_title: target.title || target.titel || target.name || target.headline || context.targetId,
     linked_collection: context.targetCollection,
     linked_record_id: context.targetId,
     linked_field: context.targetField || "imageUrl",
+    linkedCollection: context.targetCollection,
+    linkedRecordId: context.targetId,
+    linkedField: context.targetField || "imageUrl",
     linked_title: target.title || target.titel || target.name || target.headline || context.targetId,
     updated_at: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -6678,8 +7101,14 @@ async function attachMediaAssetToTarget(asset = {}, context = {}) {
     update.assetUrl = url;
   }
   if (isLogoMediaTarget(context)) {
+    update.logoUrl = url;
+    update.logo_url = url;
+    update.logoDisplayUrl = url;
     update.logo_media_asset_id = asset.id;
     update.logoMediaAssetId = asset.id;
+    update.logoAssetId = asset.id;
+    update.thumbnailMediaAssetId = asset.id;
+    update.media_asset_id = asset.id;
   }
   const variantIds = Array.isArray(target.thumbnail_variant_asset_ids) ? target.thumbnail_variant_asset_ids : [];
   update.thumbnail_variant_asset_ids = Array.from(new Set([asset.id, ...variantIds].filter(Boolean))).slice(0, 24);
@@ -6900,7 +7329,7 @@ function wireMediaAiDraft() {
     try {
       const dataUrl = await readFileAsDataUrl(file);
       const mode = aiForm.elements.reference_mode?.value || "style";
-      preview.innerHTML = `<img src="${escapeHtml(dataUrl)}" alt="Referenzfoto"><span>${escapeHtml(file.name)} <small>${mode === "area" ? "fuer diesen Bereich merken" : "nur fuer diese Grafik"} Â· ${escapeHtml(mediaSizeLabel(file.size || 0))}</small></span>`;
+      preview.innerHTML = `<img src="${escapeHtml(dataUrl)}" alt="Referenzfoto"><span>${escapeHtml(file.name)} <small>${mode === "area" ? "fuer diesen Bereich merken" : "nur fuer diese Grafik"} · ${escapeHtml(mediaSizeLabel(file.size || 0))}</small></span>`;
       if (mode === "area") await storeAreaReferenceFile(file);
     } catch (error) {
       preview.innerHTML = `<span>Referenzbild konnte nicht gelesen werden.</span>`;
@@ -8324,7 +8753,7 @@ function openEditorialPreviewLayer(form) {
 }
 
 function internalPreviewLabel(record = {}) {
-  if (record.bereich === "ueber_uns" || record.page === "about") return "Ãœber uns";
+  if (record.bereich === "ueber_uns" || record.page === "about") return "Über uns";
   if (record.bereich === "mitglied_werden" || record.page === "join") return "Mitglied werden";
   if (record.section === "footer") return "Footer";
   if (record.section === "legal" || ["imprint", "privacy", "legal"].includes(record.page)) return "Rechtliches";
@@ -8446,7 +8875,150 @@ function wireStickyBoxWheel() {
   });
 }
 
+const qualityAltTextCollections = [
+  "events",
+  "editorialContent",
+  "topics",
+  "members",
+  "boardMembers",
+  "speakers",
+  "sponsors",
+  "galleries",
+  "eventMedia",
+  "media_assets",
+  "videos"
+];
+
+function nonEmpty(value = "") {
+  return String(value || "").trim();
+}
+
+function recordHasImage(record = {}) {
+  return Boolean(nonEmpty(
+    record.imageUrl
+    || record.thumbnail_url
+    || record.thumbnailUrl
+    || record.assetUrl
+    || record.logoUrl
+    || record.logoDisplayUrl
+    || record.photoUrl
+    || record.file_path_web_url
+    || record.file_path_thumb_url
+    || record.file_path_original_url
+    || record.posterImageUrl
+    || record.youtubeThumbnailUrl
+    || record.thumbUrl
+    || record.downloadUrl
+    || record.url
+  ));
+}
+
+function explicitAltText(record = {}) {
+  return nonEmpty(
+    record.thumbnail_alt
+    || record.thumbnailAlt
+    || record.imageAlt
+    || record.altText
+    || record.alt_text
+    || record.logoAlt
+    || record.posterImageAlt
+  );
+}
+
+function imageTitle(record = {}, fallback = "PROdigitalTV") {
+  return nonEmpty(record.title || record.headline || record.name || record.company || record.caption || record.fileName || record.id || fallback);
+}
+
+function generatedAltText(collectionName = "", record = {}, context = {}) {
+  const title = imageTitle(record, context.title || "PROdigitalTV");
+  if (collectionName === "members") return `Logo von ${title}`;
+  if (collectionName === "sponsors") return `Logo von ${title}`;
+  if (collectionName === "boardMembers") return `Profilbild von ${title}`;
+  if (collectionName === "speakers") return `Profilbild von ${title}`;
+  if (collectionName === "events") return `Eventbild zu ${title}`;
+  if (collectionName === "topics") return `Themenbild zu ${title}`;
+  if (collectionName === "videos") return `Startbild zum Video ${title}`;
+  if (collectionName === "media_assets") return `Mediathekbild ${title}`;
+  if (collectionName === "eventMedia") return `Uploadbild ${title}`;
+  if (collectionName === "galleries") return `Galeriebild ${title}`;
+  return `Bild zu ${title}`;
+}
+
+function qualityAltTextPatch(collectionName = "", record = {}) {
+  const now = new Date().toISOString();
+  if (collectionName === "galleries") {
+    let changed = false;
+    const images = (Array.isArray(record.images) ? record.images : []).map((image, index) => {
+      const src = image?.url || image?.imageUrl || image?.assetUrl || image?.downloadUrl || image?.thumbnailUrl || "";
+      if (!src || explicitAltText(image)) return image;
+      changed = true;
+      return {
+        ...image,
+        altText: image.caption || image.title || `${generatedAltText("galleries", record)} ${index + 1}`
+      };
+    });
+    const patch = changed ? { images, updatedAt: now } : {};
+    if (recordHasImage(record) && !explicitAltText(record)) {
+      patch.thumbnail_alt = generatedAltText("galleries", record);
+      patch.updatedAt = now;
+    }
+    return Object.keys(patch).length ? patch : null;
+  }
+
+  if (!recordHasImage(record) || explicitAltText(record)) return null;
+  const alt = generatedAltText(collectionName, record);
+  if (["events", "editorialContent", "topics"].includes(collectionName)) {
+    return { thumbnail_alt: alt, thumbnailAlt: alt, updatedAt: now };
+  }
+  if (collectionName === "media_assets") {
+    return { alt_text: alt, updatedAt: now };
+  }
+  if (collectionName === "videos") {
+    return { posterImageAlt: alt, updatedAt: now };
+  }
+  return { altText: alt, updatedAt: now };
+}
+
+async function fillMissingQualityAltTexts(button) {
+  const output = document.querySelector("#quality-alt-text-result");
+  const confirmed = button?.dataset.qualityFillConfirmed === "1";
+  if (!confirmed && !window.confirm("Fehlende Alt-Texte automatisch aus Titel, Caption oder Dateiname ergaenzen? Vorhandene Alt-Texte bleiben erhalten.")) return;
+  if (button) delete button.dataset.qualityFillConfirmed;
+  button.disabled = true;
+  if (output) output.textContent = "Alt-Texte werden geprueft ...";
+  try {
+    let checked = 0;
+    let updated = 0;
+    const details = [];
+    for (const collectionName of qualityAltTextCollections) {
+      const records = await list(collectionName).catch(() => []);
+      let collectionUpdates = 0;
+      for (const record of records) {
+        checked += 1;
+        const patch = qualityAltTextPatch(collectionName, record);
+        if (!patch) continue;
+        await upsert(collectionName, { id: record.id, ...patch });
+        updated += 1;
+        collectionUpdates += 1;
+      }
+      if (collectionUpdates) details.push(`${collectionName}: ${collectionUpdates}`);
+    }
+    if (output) output.innerHTML = `<span class="status status--success">${updated} Datensaetze aktualisiert</span> <small>${escapeHtml(details.join(", ") || `${checked} geprueft`)}</small>`;
+  } catch (error) {
+    if (output) output.innerHTML = `<span class="status status--error">Alt-Texte konnten nicht ergaenzt werden: ${escapeHtml(error.message || String(error))}</span>`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function wireQualityInspection() {
+  const fillAltButton = document.querySelector("[data-quality-fill-alt-texts]");
+  if (fillAltButton && fillAltButton.dataset.altTextFillWired !== "1") {
+    fillAltButton.dataset.altTextFillWired = "1";
+    fillAltButton.addEventListener("click", (event) => {
+      fillMissingQualityAltTexts(event.currentTarget);
+    });
+  }
   const table = document.querySelector("[data-quality-table]");
   if (!table) return;
   const rows = Array.from(table.querySelectorAll("[data-quality-row]"));
@@ -8555,6 +9127,7 @@ function wireActions() {
   wireArticleVideos();
   wireEditorGallerySelects();
   wireGalleryLinkSaves();
+  wireEventGalleryCreateButtons();
   wireLinkedMediaClears();
   wireQualityInspection();
   if (document.querySelector("#mail-admin-base-url")) {
@@ -8602,6 +9175,59 @@ function wireActions() {
       await loadMailAdminData();
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--error">Speichern fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+  document.querySelector("#mail-default-templates-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = form.querySelector("#mail-default-templates-result");
+    const submitButton = form.querySelector('button[type="submit"], button');
+    if (submitButton) submitButton.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Standardtexte werden gespeichert ...</div>`;
+    try {
+      const values = formObject(form);
+      await upsert("settings", {
+        id: "mailTemplates",
+        key: "mailTemplates",
+        group: "communication",
+        value: {
+          registrationConfirmation: values.registrationConfirmation || "",
+          registrationWaitlist: values.registrationWaitlist || ""
+        },
+        registrationConfirmation: values.registrationConfirmation || "",
+        registrationWaitlist: values.registrationWaitlist || "",
+        updatedAt: new Date().toISOString()
+      });
+      if (result) result.innerHTML = `<div class="alert alert--success">Standardtexte wurden gespeichert.</div>`;
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Standardtexte konnten nicht gespeichert werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+  document.querySelector("#browser-push-settings-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = form.querySelector("#browser-push-settings-result");
+    const submitButton = form.querySelector('button[type="submit"], button');
+    if (submitButton) submitButton.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Browser-Push wird gespeichert ...</div>`;
+    try {
+      const values = formObject(form);
+      const vapidPublicKey = String(values.vapidPublicKey || "").trim();
+      await upsert("settings", {
+        id: "browserPush",
+        key: "browserPush",
+        group: "communication",
+        value: { vapidPublicKey },
+        vapidPublicKey,
+        updatedAt: new Date().toISOString()
+      });
+      if (result) result.innerHTML = `<div class="alert alert--success">Browser-Push-Schluessel wurde gespeichert.</div>`;
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Browser-Push konnte nicht gespeichert werden: ${escapeHtml(error.message || String(error))}</div>`;
     } finally {
       if (submitButton) submitButton.disabled = false;
     }
@@ -8736,10 +9362,66 @@ function wireActions() {
       else button.textContent = originalLabel;
     }
   }));
-  document.querySelectorAll("form.is-save-aware input, form.is-save-aware textarea, form.is-save-aware select").forEach((field) => {
-    field.addEventListener("input", () => field.form?.classList.remove("is-saved"));
-    field.addEventListener("change", () => field.form?.classList.remove("is-saved"));
+  const markSaveAwareFormClean = (form) => {
+    if (!form) return;
+    form.classList.remove("is-dirty");
+    form.classList.add("is-saved");
+  };
+  const markSaveAwareFormDirty = (form) => {
+    if (!form || form.dataset.suspendDirtyTracking === "1") return;
+    form.classList.add("is-dirty");
+    form.classList.remove("is-saved");
+  };
+  const saveDirtyAwareForm = async (form) => {
+    if (!form) return false;
+    if (form.id === "event-edit-form") return Boolean(await saveEventEditForm(form));
+    try {
+      await submitFormAndWait(form);
+      return true;
+    } catch (error) {
+      alert(`Speichern fehlgeschlagen: ${error.message || String(error)}`);
+      return false;
+    }
+  };
+  document.querySelectorAll("form.is-save-aware").forEach((form) => {
+    if (form.dataset.saveAwareWired === "1") return;
+    form.dataset.saveAwareWired = "1";
+    form.addEventListener("input", (event) => {
+      if (event.target?.matches?.("input, textarea, select")) markSaveAwareFormDirty(form);
+    });
+    form.addEventListener("change", (event) => {
+      if (event.target?.matches?.("input, textarea, select")) markSaveAwareFormDirty(form);
+    });
+    form.addEventListener("cms-form-saved", () => markSaveAwareFormClean(form));
   });
+  if (!window.__pdtSaveAwareLeaveGuard) {
+    window.__pdtSaveAwareLeaveGuard = true;
+    window.addEventListener("beforeunload", (event) => {
+      if (!document.querySelector("form.is-save-aware.is-dirty")) return;
+      event.preventDefault();
+      event.returnValue = "";
+    });
+    document.addEventListener("click", async (event) => {
+      const link = event.target?.closest?.("a[href]");
+      if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const href = link.getAttribute("href") || "";
+      if (!href || link.target || href.startsWith("mailto:") || href.startsWith("tel:")) return;
+      const dirtyForm = document.querySelector("form.is-save-aware.is-dirty");
+      if (!dirtyForm) return;
+      event.preventDefault();
+      const shouldSave = window.confirm("Es gibt ungespeicherte Aenderungen. Vor dem Verlassen speichern?");
+      if (shouldSave) {
+        const saved = await saveDirtyAwareForm(dirtyForm);
+        if (!saved) return;
+        window.location.href = href;
+        return;
+      }
+      if (window.confirm("Ohne Speichern verlassen?")) {
+        markSaveAwareFormClean(dirtyForm);
+        window.location.href = href;
+      }
+    }, true);
+  }
   document.querySelectorAll(".ai-action").forEach((button) => button.addEventListener("click", async () => {
     const originalLabel = button.textContent;
     const { text, field } = findAiSource(button);
@@ -9051,7 +9733,7 @@ function wireActions() {
         section: "news",
         key: `news.${articleId}`,
         slug: slugify(cleanHeadline),
-        category: "KI-News-Import",
+        category: "News-Import",
         tags,
         primary_keyword: tags[0] || "",
         keyword_json: tags.map((tag, index) => ({ keyword: tag, relevance_score: index === 0 ? 90 : 70 })),
@@ -9070,7 +9752,7 @@ function wireActions() {
         galleryId,
         gallery_suggestions: [],
         editorial_note: [
-          "KI-News-Import: Inhalt wurde als Quellenbasis uebernommen. Keine automatische Veroeffentlichung.",
+          "News-Import: Inhalt wurde als Quellenbasis uebernommen. Keine automatische Veroeffentlichung.",
           unsupportedTextFiles.length ? `PDF/DOCX-Text bitte pruefen oder separat einfuegen: ${unsupportedTextFiles.join(", ")}` : ""
         ].filter(Boolean).join("\n\n"),
         relevance_score: 0,
@@ -9079,7 +9761,7 @@ function wireActions() {
         status: "draft",
         visibility: "internal",
         author_type: "ki_news_import",
-        author_name: "KI-News-Import",
+        author_name: "News-Import",
         generation_origin: "ki_news_import",
         ai_log_json: {
           import_flow: "ki_news_import",
@@ -9125,10 +9807,10 @@ function wireActions() {
         created_at: now,
         updated_at: now
       })));
-      if (output) output.innerHTML = `<div class="alert alert--success">KI-News-Import wurde als Entwurf gespeichert. Redaktion > News bearbeiten wird geoeffnet.</div>`;
+      if (output) output.innerHTML = `<div class="alert alert--success">News-Import wurde als Entwurf gespeichert. Redaktion > News bearbeiten wird geoeffnet.</div>`;
       window.location.hash = `#/cms/edit?module=editorialContent&id=${encodeURIComponent(articleId)}&section=news`;
     } catch (error) {
-      if (output) output.innerHTML = `<div class="alert alert--error">KI-News-Import fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
+      if (output) output.innerHTML = `<div class="alert alert--error">News-Import fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
     } finally {
       if (submitButton) submitButton.disabled = false;
     }
@@ -9148,7 +9830,7 @@ function wireActions() {
             await importUrlIntoNewsImportForm(newsImportForm, sourceUrl);
           } catch (error) {
             const output = newsImportForm.querySelector("#ai-news-import-result");
-            if (output) output.innerHTML = `<div class="alert alert--error">URL konnte nicht in den KI-News-Import geladen werden: ${escapeHtml(error.message || String(error))}</div>`;
+            if (output) output.innerHTML = `<div class="alert alert--error">URL konnte nicht in den News-Import geladen werden: ${escapeHtml(error.message || String(error))}</div>`;
           }
         }
       }, 120);
@@ -9542,6 +10224,80 @@ function wireActions() {
     }
   }));
 
+  document.querySelectorAll("[data-ai-editorial-reset]").forEach((button) => button.addEventListener("click", async () => {
+    const output = document.querySelector("#ai-editorial-reset-result") || document.querySelector("#ai-editorial-settings-result") || document.querySelector("#ai-editorial-run-result");
+    const confirmText = "KI-REDAKTION LEEREN";
+    if (!window.confirm("KI-Redaktion leeren? Geloescht werden Arbeitslisten, Rawdaten, Presseimporte, Logs, Tests und erzeugte KI-/Morgenbriefing-Beitraege. Prompts, Quellen und Einstellungen bleiben erhalten.")) return;
+    const typed = window.prompt(`Bitte zur Bestaetigung genau "${confirmText}" eingeben.`);
+    if (typed !== confirmText) {
+      if (output) output.innerHTML = '<div class="alert">Reset abgebrochen. Es wurde nichts geloescht.</div>';
+      return;
+    }
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Leere ...";
+    try {
+      const aiWorkCollections = [
+        "ai_topic_suggestions",
+        "ai_topic_queue",
+        "ai_topic_raw_data",
+        "ai_press_releases",
+        "ai_press_source_status",
+        "ai_press_import_runs",
+        "ai_editorial_logs",
+        "ai_prompt_tests"
+      ];
+      const shouldRemoveAiArticle = (article = {}) => {
+        const log = article.ai_log_json || article.aiLogJson || {};
+        const values = [
+          article.author_type,
+          article.authorType,
+          article.generation_origin,
+          article.generationOrigin,
+          article.content_type,
+          article.contentType,
+          article.editorialType,
+          log.import_flow,
+          log.workflow,
+          log.origin
+        ].map((value) => String(value || "").toLowerCase());
+        return article.aiGenerated === true
+          || Boolean(article.imported_press_release_id || article.importedPressReleaseId)
+          || Boolean(article.morning_briefing_item_id || article.morningBriefingItemId)
+          || values.some((value) => value.includes("ki_news_import") || value.includes("morning_briefing") || value === "ai");
+      };
+      const removeRows = async (collection, rows) => {
+        const validRows = rows.filter((row) => row?.id);
+        await Promise.all(validRows.map((row) => remove(collection, row.id)));
+        return validRows.length;
+      };
+      let removed = 0;
+      const details = [];
+      for (const collection of aiWorkCollections) {
+        const rows = await list(collection).catch(() => []);
+        const count = await removeRows(collection, rows);
+        removed += count;
+        details.push(`${collection}: ${count}`);
+      }
+      const articles = await list("editorialContent").catch(() => []);
+      const aiArticles = articles.filter(shouldRemoveAiArticle);
+      const aiArticleIds = new Set(aiArticles.map((article) => article.id).filter(Boolean));
+      const [sources, keywords] = await Promise.all([list("article_sources").catch(() => []), list("article_keywords").catch(() => [])]);
+      const sourceCount = await removeRows("article_sources", sources.filter((source) => aiArticleIds.has(source.article_id || source.articleId)));
+      const keywordCount = await removeRows("article_keywords", keywords.filter((keyword) => aiArticleIds.has(keyword.article_id || keyword.articleId)));
+      const articleCount = await removeRows("editorialContent", aiArticles);
+      removed += sourceCount + keywordCount + articleCount;
+      details.push(`editorialContent: ${articleCount}`, `article_sources: ${sourceCount}`, `article_keywords: ${keywordCount}`);
+      if (output) output.innerHTML = `<div class="alert alert--success">KI-Redaktion wurde geleert. ${removed} Datensaetze entfernt.<br><small>${escapeHtml(details.join(" ? "))}</small></div>`;
+      window.setTimeout(render, 700);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">KI-Redaktion konnte nicht geleert werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
+
   document.querySelectorAll("[data-ai-topic-create-article]").forEach((button) => button.addEventListener("click", () => {
     const form = button.closest("form");
     if (!form) return;
@@ -9808,11 +10564,11 @@ function wireActions() {
       });
       form.querySelector("[data-prompt-meta-name]").textContent = prompt.name || "Neuer Prompt";
       form.querySelector("[data-prompt-meta-type]").textContent = prompt.prompt_type || "Prompt";
-      form.querySelector("[data-prompt-meta-system]").textContent = `${prompt.model || "gpt-4.1-mini"} Â· Temp. ${prompt.temperature ?? 0.2} Â· ${prompt.max_tokens ?? 1200} Tokens`;
+      form.querySelector("[data-prompt-meta-system]").textContent = `${prompt.model || "gpt-4.1-mini"} ? Temp. ${prompt.temperature ?? 0.2} ? ${prompt.max_tokens ?? 1200} Tokens`;
       if (form.elements.is_active) form.elements.is_active.checked = Boolean(prompt.is_active);
       form.querySelector(".ai-advanced-prompt-fields")?.setAttribute("open", "");
       form.scrollIntoView({ behavior: "smooth", block: "start" });
-      if (output) output.innerHTML = `<div class="alert">Prompt geladen. Aendern und mit â€žPrompt speichernâ€œ als neue Version sichern.</div>`;
+      if (output) output.innerHTML = `<div class="alert">Prompt geladen. Aendern und mit „Prompt speichern“ als neue Version sichern.</div>`;
     } catch (error) {
       if (output) output.innerHTML = `<div class="alert alert--error">${escapeHtml(error.message || String(error))}</div>`;
     }
@@ -9861,7 +10617,7 @@ function wireActions() {
       const metaSystem = form.querySelector("[data-prompt-meta-system]");
       if (metaName) metaName.textContent = prompt.name || "Neuer Prompt";
       if (metaType) metaType.textContent = prompt.prompt_type || "Prompt";
-      if (metaSystem) metaSystem.textContent = `${prompt.model || "gpt-4.1-mini"} - Temp. ${prompt.temperature ?? 0.2} - ${prompt.max_tokens ?? 1200} Tokens`;
+      if (metaSystem) metaSystem.textContent = `${prompt.model || "gpt-4.1-mini"} ? Temp. ${prompt.temperature ?? 0.2} ? ${prompt.max_tokens ?? 1200} Tokens`;
       if (form.elements.is_active) form.elements.is_active.checked = Boolean(prompt.is_active);
       if (output) output.innerHTML = `<div class="alert">Prompt gewechselt. Die Ansicht wurde aktualisiert.</div>`;
     } catch (error) {
@@ -9903,10 +10659,10 @@ function wireActions() {
     });
     form.querySelector("[data-prompt-meta-name]").textContent = name;
     form.querySelector("[data-prompt-meta-type]").textContent = type;
-    form.querySelector("[data-prompt-meta-system]").textContent = `${values.model || "gpt-4.1-mini"} Â· Temp. ${values.temperature ?? 0.2} Â· ${values.max_tokens ?? 1200} Tokens`;
+    form.querySelector("[data-prompt-meta-system]").textContent = `${values.model || "gpt-4.1-mini"} ? Temp. ${values.temperature ?? 0.2} ? ${values.max_tokens ?? 1200} Tokens`;
     form.querySelector(".ai-advanced-prompt-fields")?.setAttribute("open", "");
     form.scrollIntoView({ behavior: "smooth", block: "start" });
-    if (output) output.innerHTML = `<div class="alert">System-Prompt â€ž${escapeHtml(name)}â€œ vorbereitet. Bitte testen und speichern.</div>`;
+    if (output) output.innerHTML = `<div class="alert">System-Prompt „${escapeHtml(name)}“ vorbereitet. Bitte testen und speichern.</div>`;
   }));
 
   document.querySelectorAll("[data-ai-prompt-delete]").forEach((button) => button.addEventListener("click", async () => {
@@ -10132,7 +10888,7 @@ function wireActions() {
       }
       const sources = (await list("article_sources")).filter((source) => source.article_id === articleId || source.articleId === articleId);
       const keywords = (await list("article_keywords")).filter((keyword) => keyword.article_id === articleId || keyword.articleId === articleId);
-      const hasEnoughSources = sources.filter((source) => source.check_status === "geprueft" && Number(source.trust_score || 0) >= 70).length >= 2;
+      const hasEnoughSources = sources.filter((source) => source.check_status === "geprueft").length >= 1;
       const duplicateBlocked = String(article.duplicate_status || "").toLowerCase().includes("dublette");
       let update = { updatedAt: new Date().toISOString() };
       let message = "";
@@ -10152,9 +10908,9 @@ function wireActions() {
         const formValues = editForm?.dataset.articleId === articleId ? formObject(editForm) : {};
         const mergedArticle = { ...article, ...formValues };
         const unresolvedDraft = /sicherer Themenvorschlag|lokale KI-Redaktion|Noch keine finale zentrale Aussage|Arbeitsentwurf|Belegstellen fehlen/i.test(String(mergedArticle.bodyText || ""));
-        const checkedSources = sources.filter((source) => source.check_status === "geprueft" && Number(source.trust_score || 0) >= 70);
+        const checkedSources = sources.filter((source) => source.check_status === "geprueft");
         const blockers = [
-          checkedSources.length >= 2 ? "" : "Mindestens zwei gepruefte Quellen mit Trust-Score ab 70 fehlen.",
+          checkedSources.length >= 1 ? "" : "Mindestens eine gepruefte Quelle fehlt.",
           duplicateBlocked ? "Dublettenstatus blockiert die Freigabe." : "",
           mergedArticle.headline || mergedArticle.title ? "" : "Headline fehlt.",
           mergedArticle.subline || mergedArticle.subtitle ? "" : "Subline fehlt.",
@@ -10170,10 +10926,10 @@ function wireActions() {
         wrapper.innerHTML = `<div class="ai-dialog ai-release-dialog" role="dialog" aria-modal="true">
           <div class="actions" style="justify-content:space-between"><div><p class="eyebrow">Freigabepruefung</p><h2>${escapeHtml(mergedArticle.headline || mergedArticle.title || "KI-Beitrag")}</h2></div><button type="button" class="link-button" data-ai-close>Schliessen</button></div>
           <div class="ai-release-grid">
-            <section class="ai-release-card"><h3>Pflichtstatus</h3><div class="ai-status-stack"><span class="ai-status ${checkedSources.length >= 2 ? "ai-status--success" : "ai-status--danger"}">Quellen ${checkedSources.length}/2</span><span class="ai-status ${duplicateBlocked ? "ai-status--danger" : "ai-status--success"}">${duplicateBlocked ? "Dublette" : "Keine Dublette"}</span><span class="ai-status ${blockers.length ? "ai-status--warning" : "ai-status--success"}">${blockers.length ? "Pruefpflichtig" : "Freigabefaehig"}</span></div></section>
+            <section class="ai-release-card"><h3>Pflichtstatus</h3><div class="ai-status-stack"><span class="ai-status ${checkedSources.length >= 1 ? "ai-status--success" : "ai-status--danger"}">Quelle ${checkedSources.length}/1</span><span class="ai-status ${duplicateBlocked ? "ai-status--danger" : "ai-status--success"}">${duplicateBlocked ? "Dublette" : "Keine Dublette"}</span><span class="ai-status ${blockers.length ? "ai-status--warning" : "ai-status--success"}">${blockers.length ? "Hinweise offen" : "redaktionell bereit"}</span></div></section>
             <section class="ai-release-card"><h3>Veroeffentlichungsziel</h3><p>${escapeHtml(targetLabel)}</p><small>Veroeffentlicht wird danach im Meta-Bereich oder ueber die redaktionelle News-/Themenverwaltung.</small></section>
-            <section class="ai-release-card"><h3>Quellen</h3>${sources.length ? sources.map((source) => `<p><strong>${escapeHtml(source.publisher || source.title || "Quelle")}</strong><br><small>${escapeHtml(source.domain || source.url || "")} Â· Trust ${Number(source.trust_score || 0)} Â· ${escapeHtml(source.check_status || "ungeprueft")}</small></p>`).join("") : `<p class="muted">Keine Quellen gespeichert.</p>`}</section>
-            <section class="ai-release-card"><h3>Keywords</h3>${keywords.length ? `<div class="ai-keyword-cloud">${keywords.slice(0, 8).map((keyword) => `<span>${escapeHtml(keyword.keyword)} <strong>${Number(keyword.relevance_score || 0)}</strong></span>`).join("")}</div>` : `<p class="muted">Keine Keywords gespeichert.</p>`}</section>
+            <section class="ai-release-card"><h3>Quellen</h3>${sources.length ? sources.map((source) => `<p><strong>${escapeHtml(source.publisher || source.title || "Quelle")}</strong><br><small>${escapeHtml(source.domain || source.url || "")} - ${escapeHtml(source.check_status || "ungeprueft")}</small></p>`).join("") : `<p class="muted">Keine Quellen gespeichert.</p>`}</section>
+            <section class="ai-release-card"><h3>Keywords</h3>${keywords.length ? `<div class="ai-keyword-cloud">${keywords.slice(0, 8).map((keyword) => `<span>${escapeHtml(keyword.keyword)}</span>`).join("")}</div>` : `<p class="muted">Keine Keywords gespeichert.</p>`}</section>
           </div>
           ${blockers.length ? `<div class="alert alert--warning"><strong>Freigabe noch blockiert:</strong><ul>${blockers.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : `<div class="alert alert--success">Alle zentralen Freigaberegeln sind erfuellt. Der Beitrag kann redaktionell freigegeben werden.</div>`}
           <div class="actions"><button type="button" class="button button--primary" data-ai-release-confirm ${blockers.length ? "disabled" : ""}>Freigabe setzen</button><button type="button" class="button button--secondary" data-ai-close>Zurueck zum Editor</button></div>
@@ -10796,18 +11552,501 @@ function wireActions() {
     if (voiceName) voiceName.value = option?.dataset.voiceName || "";
   });
 
+  document.querySelectorAll("[data-compact-select]").forEach((picker) => {
+    if (picker.dataset.compactSelectWired === "1") return;
+    picker.dataset.compactSelectWired = "1";
+    const input = picker.querySelector("input[type='hidden']");
+    const trigger = picker.querySelector("[data-compact-select-trigger]");
+    const menu = picker.querySelector("[data-compact-select-menu]");
+    const close = () => {
+      if (!menu || !trigger) return;
+      menu.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+    };
+    trigger?.addEventListener("click", () => {
+      if (!menu) return;
+      const willOpen = menu.hidden;
+      document.querySelectorAll("[data-compact-select-menu]").forEach((otherMenu) => {
+        if (otherMenu !== menu) otherMenu.hidden = true;
+      });
+      document.querySelectorAll("[data-compact-select-trigger]").forEach((otherTrigger) => {
+        if (otherTrigger !== trigger) otherTrigger.setAttribute("aria-expanded", "false");
+      });
+      menu.hidden = !willOpen;
+      trigger.setAttribute("aria-expanded", String(willOpen));
+    });
+    menu?.addEventListener("click", (event) => {
+      const option = event.target.closest("[data-compact-select-value]");
+      if (!option || !input || !trigger) return;
+      input.value = option.dataset.compactSelectValue || "";
+      trigger.textContent = option.dataset.compactSelectLabel || option.textContent.trim();
+      menu.querySelectorAll(".is-active").forEach((item) => item.classList.remove("is-active"));
+      option.classList.add("is-active");
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      close();
+    });
+    document.addEventListener("click", (event) => {
+      if (!picker.contains(event.target)) close();
+    });
+  });
+
+  document.querySelectorAll(".event-base-form input[type='date'], .event-base-form input[type='time'], .event-base-form input[type='datetime-local']").forEach((input) => {
+    if (input.dataset.nativePickerWired === "1") return;
+    input.dataset.nativePickerWired = "1";
+    const openNativePicker = () => {
+      if (typeof input.showPicker !== "function") return;
+      try {
+        input.showPicker();
+      } catch {}
+    };
+    input.addEventListener("click", openNativePicker);
+    input.closest(".field")?.addEventListener("click", (event) => {
+      if (event.target === input) return;
+      input.focus();
+      openNativePicker();
+    });
+  });
+
+  document.querySelectorAll("[data-event-type-select]").forEach((select) => {
+    const form = select.closest("form");
+    const field = form?.querySelector("[data-new-event-type-field]");
+    const input = field?.querySelector("input[name='newEventType']");
+    const syncNewEventTypeField = () => {
+      const isNew = select.value === "__new__";
+      if (field) field.hidden = !isNew;
+      if (input) {
+        input.required = isNew;
+        if (!isNew) input.value = "";
+        if (isNew) window.setTimeout(() => input.focus(), 50);
+      }
+    };
+    select.addEventListener("change", syncNewEventTypeField);
+    syncNewEventTypeField();
+  });
+
+  document.querySelectorAll(".event-base-form [data-host-create-layer]").forEach((layer) => {
+    if (layer.dataset.hostCreateWired === "1") return;
+    layer.dataset.hostCreateWired = "1";
+    const form = layer.closest("form");
+    const title = layer.querySelector("[data-host-create-title]");
+    const targetInput = layer.querySelector("[data-host-create-target]");
+    const nameInput = layer.querySelector("[data-host-create-name]");
+    const result = layer.querySelector("[data-host-create-result]");
+    let activeFieldName = "";
+    let fallbackValue = "";
+
+    const compactOptionLabel = (fieldName, value) => {
+      const input = form?.querySelector(`input[type="hidden"][name="${fieldName}"]`);
+      const option = input?.closest("[data-compact-select]")?.querySelector(`[data-compact-select-value="${CSS.escape(value)}"]`);
+      return option?.dataset.compactSelectLabel || option?.textContent?.trim() || "";
+    };
+
+    const setCompactValue = (fieldName, value, label) => {
+      const input = form?.querySelector(`input[type="hidden"][name="${fieldName}"]`);
+      const picker = input?.closest("[data-compact-select]");
+      const trigger = picker?.querySelector("[data-compact-select-trigger]");
+      const menu = picker?.querySelector("[data-compact-select-menu]");
+      if (!input || !trigger) return;
+      input.value = value;
+      trigger.textContent = label || compactOptionLabel(fieldName, value) || value;
+      menu?.querySelectorAll(".is-active").forEach((item) => item.classList.remove("is-active"));
+      menu?.querySelector(`[data-compact-select-value="${CSS.escape(value)}"]`)?.classList.add("is-active");
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+
+    const resetLayer = () => {
+      layer.hidden = true;
+      if (targetInput) targetInput.value = "";
+      if (result) result.innerHTML = "";
+      layer.querySelectorAll("input[name='newHostName'], input[name='newHostWebsite'], textarea[name='newHostDescription']").forEach((field) => {
+        field.value = "";
+      });
+    };
+
+    const closeLayer = () => {
+      if (activeFieldName) {
+        const fallbackLabel = activeFieldName === "primaryHostId"
+          ? compactOptionLabel(activeFieldName, fallbackValue) || "PROdigitalTV"
+          : compactOptionLabel(activeFieldName, fallbackValue) || "Kein Co-Gastgeber";
+        setCompactValue(activeFieldName, fallbackValue, fallbackLabel);
+      }
+      activeFieldName = "";
+      fallbackValue = "";
+      resetLayer();
+    };
+
+    const openLayer = (fieldName) => {
+      activeFieldName = fieldName;
+      fallbackValue = fieldName === "primaryHostId" ? "prodigitaltv" : "";
+      if (targetInput) targetInput.value = fieldName;
+      if (title) title.textContent = fieldName === "primaryHostId" ? "Neuen Gastgeber anlegen" : "Neuen Co-Gastgeber anlegen";
+      layer.hidden = false;
+      window.setTimeout(() => nameInput?.focus(), 50);
+    };
+
+    form?.querySelectorAll("input[type='hidden'][name='primaryHostId'], input[type='hidden'][name='hostId']").forEach((input) => {
+      input.addEventListener("change", () => {
+        if (input.value === "__new_primary_host__") openLayer("primaryHostId");
+        if (input.value === "__new_co_host__") openLayer("hostId");
+      });
+    });
+
+    layer.querySelector("[data-host-create-cancel]")?.addEventListener("click", closeLayer);
+    layer.addEventListener("click", (event) => {
+      if (event.target === layer) closeLayer();
+    });
+    layer.querySelector("[data-host-create-save]")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      const fieldName = targetInput?.value || activeFieldName;
+      const name = nameInput?.value?.trim() || "";
+      if (!fieldName) return;
+      if (!name) {
+        if (result) result.innerHTML = `<div class="alert alert--error">Bitte einen Namen eingeben.</div>`;
+        return;
+      }
+      const originalLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = "Lege an ...";
+      try {
+        const id = `sponsors-${crypto.randomUUID()}`;
+        const role = fieldName === "primaryHostId" ? "Gastgeber" : "Co-Gastgeber";
+        await upsert("sponsors", {
+          id,
+          name,
+          role,
+          website: form?.elements.newHostWebsite?.value || "",
+          description: form?.elements.newHostDescription?.value || "",
+          status: "published",
+          visibility: "public",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        const input = form?.querySelector(`input[type="hidden"][name="${fieldName}"]`);
+        const menu = input?.closest("[data-compact-select]")?.querySelector("[data-compact-select-menu]");
+        if (menu && !menu.querySelector(`[data-compact-select-value="${CSS.escape(id)}"]`)) {
+          const option = document.createElement("button");
+          option.type = "button";
+          option.className = "cms-compact-select__option";
+          option.dataset.compactSelectValue = id;
+          option.dataset.compactSelectLabel = name;
+          option.textContent = name;
+          menu.appendChild(option);
+        }
+        setCompactValue(fieldName, id, name);
+        activeFieldName = "";
+        fallbackValue = "";
+        resetLayer();
+      } catch (error) {
+        if (result) result.innerHTML = `<div class="alert alert--error">Datensatz konnte nicht angelegt werden: ${escapeHtml(error.message || String(error))}</div>`;
+      } finally {
+        button.disabled = false;
+        button.textContent = originalLabel;
+      }
+    });
+  });
+
+  document.querySelectorAll(".event-base-form .field").forEach((field) => {
+    const selectField = () => {
+      const form = field.closest(".event-base-form");
+      form?.querySelectorAll(".field.is-selected-field").forEach((item) => item.classList.remove("is-selected-field"));
+      field.classList.add("is-selected-field");
+    };
+    const toggleField = () => {
+      const form = field.closest(".event-base-form");
+      const wasSelected = field.classList.contains("is-selected-field");
+      form?.querySelectorAll(".field.is-selected-field").forEach((item) => item.classList.remove("is-selected-field"));
+      if (!wasSelected) field.classList.add("is-selected-field");
+    };
+    field.addEventListener("click", (event) => {
+      if (event.target.closest("input, textarea, select, button, a")) return;
+      toggleField();
+    });
+    field.addEventListener("focusin", (event) => {
+      if (event.target.closest("select")) {
+        selectField();
+        return;
+      }
+      selectField();
+    });
+  });
+
+  document.querySelectorAll("#event-partners-form select[name='hostId']").forEach((select) => {
+    const form = select.closest("form");
+    const layer = form?.querySelector("[data-new-sponsor-layer]");
+    const nameInput = form?.querySelector("input[name='newSponsorName']");
+    const openLayer = () => {
+      if (!layer) return;
+      layer.hidden = false;
+      window.setTimeout(() => nameInput?.focus(), 50);
+    };
+    const closeLayer = () => {
+      if (layer) layer.hidden = true;
+      if (select.value === "__new__") select.value = "";
+      form?.querySelectorAll("input[name='newSponsorName'], input[name='newSponsorWebsite'], textarea[name='newSponsorDescription']").forEach((field) => {
+        field.value = "";
+      });
+    };
+    select.addEventListener("change", () => {
+      if (select.value === "__new__") openLayer();
+    });
+    form?.querySelectorAll("[data-close-new-sponsor]").forEach((button) => button.addEventListener("click", closeLayer));
+    layer?.addEventListener("click", (event) => {
+      if (event.target === layer) closeLayer();
+    });
+  });
+
+  document.querySelectorAll("[data-mailing-type-select]").forEach((select) => {
+    const form = select.closest("form");
+    const syncMailingTypePanels = () => {
+      form?.querySelectorAll("[data-mailing-text-panel]").forEach((panel) => {
+        panel.hidden = panel.dataset.mailingTextPanel !== select.value;
+      });
+    };
+    select.addEventListener("change", syncMailingTypePanels);
+    syncMailingTypePanels();
+  });
+
   const registrationForm = document.querySelector("#registration-form");
+  const notificationDeviceStatus = registrationForm?.querySelector("[data-notification-device-status]");
+  const setNotificationDeviceStatus = (text, state = "neutral") => {
+    if (!notificationDeviceStatus) return;
+    notificationDeviceStatus.textContent = text;
+    notificationDeviceStatus.dataset.state = state;
+  };
+  if (registrationForm && notificationDeviceStatus) {
+    if (!("Notification" in window) || !("serviceWorker" in navigator)) {
+      setNotificationDeviceStatus("Push nicht verfuegbar. Erinnerung per E-Mail.", "fallback");
+    } else if (Notification.permission === "granted") {
+      setNotificationDeviceStatus("Push erlaubt. Beim Absenden wird dieses Geraet verknuepft.", "ready");
+    } else if (Notification.permission === "denied") {
+      setNotificationDeviceStatus("Push blockiert. Erinnerung per E-Mail.", "fallback");
+    }
+  }
   registrationForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const result = registrationForm.querySelector("#form-result");
+    const submitButton = registrationForm.querySelector("button[type=submit]");
+    const originalLabel = submitButton?.textContent || "";
     try {
-      await createRegistration(registrationForm.dataset.eventId, formObject(registrationForm));
-      result.innerHTML = `<div class="alert alert--success">Vielen Dank. Bitte pruefen Sie Ihre E-Mail und bestaetigen Sie die Anmeldung ueber den zugesandten Link.</div>`;
-      registrationForm.querySelector("button[type=submit]").disabled = true;
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.classList.add("button--success");
+        submitButton.textContent = "Anmeldung wird gesendet ...";
+      }
+      const values = formObject(registrationForm);
+      values.notifyForThisEvent = Boolean(values.notifyForThisEvent);
+      values.notifyFutureEvents = values.notifyForThisEvent;
+      values.newsletterConsent = false;
+      if (values.privacyMediaConsent) {
+        values.privacyAccepted = true;
+        values.photoVideoConsent = true;
+      }
+      await createRegistration(registrationForm.dataset.eventId, values);
+      let pushHint = "";
+      if (values.notifyForThisEvent) {
+        try {
+          setNotificationDeviceStatus("Push-Aktivierung wird geprueft ...", "pending");
+          const pushResult = await enableBrowserNotifications({ email: values.email, eventId: registrationForm.dataset.eventId });
+          if (pushResult?.status === "active") {
+            pushHint = " Browser-Benachrichtigungen sind auf diesem Geraet aktiviert.";
+            setNotificationDeviceStatus("Push aktiv auf diesem Geraet.", "active");
+          } else if (pushResult?.status === "missing-vapid-key") {
+            pushHint = " Browser-Benachrichtigungen sind noch nicht konfiguriert; die Erinnerung erfolgt per E-Mail.";
+            setNotificationDeviceStatus("Push-Schluessel fehlt. Erinnerung per E-Mail.", "fallback");
+          } else if (["denied", "default"].includes(pushResult?.status)) {
+            pushHint = " Browser-Benachrichtigungen wurden nicht aktiviert; die Erinnerung erfolgt per E-Mail.";
+            setNotificationDeviceStatus("Push nicht erlaubt. Erinnerung per E-Mail.", "fallback");
+          } else {
+            setNotificationDeviceStatus("Push nicht aktiv. Erinnerung per E-Mail.", "fallback");
+          }
+        } catch {
+          pushHint = " Browser-Benachrichtigungen konnten nicht aktiviert werden; die Erinnerung erfolgt per E-Mail.";
+          setNotificationDeviceStatus("Push konnte nicht aktiviert werden. Erinnerung per E-Mail.", "fallback");
+        }
+      } else {
+        setNotificationDeviceStatus("Erinnerung nicht gewuenscht.", "neutral");
+      }
+      result.innerHTML = `<div class="alert alert--success">Vielen Dank. Bitte pruefen Sie Ihre E-Mail und bestaetigen Sie die Anmeldung ueber den zugesandten Link.${escapeHtml(pushHint)}</div>`;
+      if (submitButton) submitButton.textContent = "Anmeldung gesendet";
     } catch (error) {
       result.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message)}</div>`;
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.classList.remove("button--success");
+        submitButton.textContent = originalLabel;
+      }
     }
   });
+
+  const eventNotificationForm = document.querySelector("#event-notification-form");
+  if (eventNotificationForm) {
+    const sendMode = eventNotificationForm.querySelector("[data-notification-send-mode]");
+    const scheduledField = eventNotificationForm.querySelector("[data-notification-scheduled-field]");
+    const offsetField = eventNotificationForm.querySelector("[data-notification-offset-field]");
+    const preview = eventNotificationForm.querySelector("[data-notification-preview]");
+    const kindSelect = eventNotificationForm.querySelector("[data-notification-kind]");
+    const eventField = eventNotificationForm.querySelector("[data-notification-event-field]");
+    const eventSelect = eventNotificationForm.querySelector("[data-notification-event-select]");
+    const titleInput = eventNotificationForm.querySelector("[data-notification-title]");
+    const textInput = eventNotificationForm.querySelector("[data-notification-shorttext]");
+    const linkInput = eventNotificationForm.querySelector("[data-notification-link]");
+    const testToggle = eventNotificationForm.querySelector("[data-notification-test-toggle]");
+    const testField = eventNotificationForm.querySelector("[data-notification-test-field]");
+    const recipientGroup = eventNotificationForm.querySelector("[data-notification-recipient-group]");
+    const includeMembers = eventNotificationForm.querySelector("[data-notification-include-members]");
+    const includeContacts = eventNotificationForm.querySelector("[data-notification-include-contacts]");
+    const syncNotificationMode = () => {
+      const isMemberMessage = kindSelect?.value === "member_message";
+      if (eventField) eventField.hidden = isMemberMessage;
+      if (eventSelect) eventSelect.required = !isMemberMessage;
+      if (scheduledField) scheduledField.hidden = sendMode?.value !== "scheduled";
+      if (offsetField) offsetField.hidden = isMemberMessage || sendMode?.value !== "auto_before_event";
+      if (sendMode?.value === "auto_before_event" && isMemberMessage) sendMode.value = "now";
+      if (testField) testField.hidden = !testToggle?.checked;
+      if (includeMembers) includeMembers.value = String(recipientGroup?.value !== "contacts");
+      if (includeContacts) includeContacts.value = String(!["members", "test_group"].includes(recipientGroup?.value || ""));
+    };
+    const syncNotificationPreview = () => {
+      const selected = eventSelect?.selectedOptions?.[0];
+      if (kindSelect?.value === "member_message") {
+        linkInput.value = "#/members";
+      } else if (selected) {
+        linkInput.value = selected.dataset.eventLink || "";
+      }
+      if (!preview) return;
+      preview.innerHTML = `<p class="eyebrow">Live-Vorschau</p><h3>${escapeHtml(titleInput.value || "Event-Benachrichtigung")}</h3><p>${escapeHtml(textInput.value || "")}</p>${linkInput.value ? `<a href="${escapeHtml(linkInput.value)}">Zur Veranstaltung</a>` : ""}`;
+    };
+    eventSelect?.addEventListener("change", () => {
+      const selected = eventSelect.selectedOptions?.[0];
+      const eventTitle = selected?.dataset.eventTitle || "Veranstaltung";
+      titleInput.value = `Einladung: ${eventTitle}`;
+      textInput.value = `Aktuelle Informationen zur Veranstaltung ${eventTitle}.`;
+      linkInput.value = selected?.dataset.eventLink || "";
+      syncNotificationPreview();
+    });
+    kindSelect?.addEventListener("change", () => {
+      if (kindSelect.value === "member_message") {
+        titleInput.value = titleInput.value || "Nachricht von PROdigitalTV";
+        textInput.value = textInput.value || "Aktuelle Information fuer PROdigitalTV-Mitglieder.";
+      }
+      syncNotificationMode();
+      syncNotificationPreview();
+    });
+    sendMode?.addEventListener("change", syncNotificationMode);
+    testToggle?.addEventListener("change", syncNotificationMode);
+    recipientGroup?.addEventListener("change", syncNotificationMode);
+    eventNotificationForm.querySelectorAll("input, textarea, select").forEach((field) => field.addEventListener("input", syncNotificationPreview));
+    syncNotificationMode();
+    syncNotificationPreview();
+    eventNotificationForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const result = eventNotificationForm.querySelector("#event-notification-result");
+      const button = eventNotificationForm.querySelector("button[type='submit']");
+      const originalLabel = button?.textContent || "";
+      try {
+        if (button) {
+          button.disabled = true;
+          button.textContent = "Erstelle ...";
+        }
+        const response = await createEventNotification(formObject(eventNotificationForm));
+        if (result) result.innerHTML = response.scheduled
+          ? `<div class="alert alert--success">Benachrichtigung wurde geplant.</div>`
+          : `<div class="alert alert--success">Benachrichtigung wurde fuer ${Number(response.targetCount || 0)} Empfaenger vorbereitet. E-Mail: ${Number(response.queuedMailCount || 0)}, Push: ${Number(response.pushedCount || 0)}.</div>`;
+      } catch (error) {
+        if (result) result.innerHTML = `<div class="alert alert--error">${escapeHtml(error.message || String(error))}</div>`;
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.textContent = originalLabel;
+        }
+      }
+    });
+  }
+
+  const notificationTestGroupForm = document.querySelector("#notification-test-group-form");
+  notificationTestGroupForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const result = notificationTestGroupForm.querySelector("#notification-test-group-result");
+    const button = notificationTestGroupForm.querySelector("button[type='submit'], button:not([type])");
+    const checkboxes = Array.from(notificationTestGroupForm.querySelectorAll("input[name='memberIds']"));
+    const selectedIds = new Set(checkboxes.filter((input) => input.checked).map((input) => input.value));
+    const originalLabel = button?.textContent || "";
+    try {
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Speichere ...";
+      }
+      const now = new Date().toISOString();
+      await Promise.all(checkboxes.map((input) => upsert("members", {
+        id: input.value,
+        notificationTestGroup: selectedIds.has(input.value),
+        updatedAt: now
+      })));
+      if (result) result.innerHTML = `<div class="alert alert--success">${selectedIds.size} Mitglied${selectedIds.size === 1 ? "" : "er"} in der Testgruppe gespeichert.</div>`;
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalLabel;
+      }
+    }
+  });
+
+  document.querySelector("[data-cancel-registration-token]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const result = document.querySelector("#registration-cancel-result");
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Storniere ...";
+    if (result) result.innerHTML = `<div class="alert">Stornierung wird verarbeitet ...</div>`;
+    try {
+      const response = await cancelRegistration(button.dataset.cancelRegistrationToken);
+      if (result) result.innerHTML = `<div class="alert alert--success">Die Anmeldung${response.eventTitle ? ` fuer ${escapeHtml(response.eventTitle)}` : ""} wurde storniert.</div>`;
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div>`;
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  });
+
+  document.querySelector("[data-notification-unsubscribe]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const result = document.querySelector("#notification-unsubscribe-result");
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Melde ab ...";
+    if (result) result.innerHTML = `<div class="alert">Abmeldung wird gespeichert ...</div>`;
+    try {
+      await unsubscribeEventNotifications(button.dataset.notificationUnsubscribe || "");
+      if (result) result.innerHTML = `<div class="alert alert--success">Sie erhalten keine PROdigitalTV-Veranstaltungserinnerungen mehr.</div>`;
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div>`;
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  });
+
+  document.querySelectorAll("[data-print-page]").forEach((button) => button.addEventListener("click", async () => {
+    document.body.classList.add("is-printing-checkin");
+    const cleanup = () => document.body.classList.remove("is-printing-checkin");
+    window.addEventListener("afterprint", cleanup, { once: true });
+    const printableImages = Array.from(document.querySelectorAll(".webapp-qr-card img"));
+    await Promise.all(printableImages.map((image) => {
+      if (image.complete && image.naturalWidth) return Promise.resolve();
+      if (image.decode) return image.decode().catch(() => {});
+      return new Promise((resolve) => {
+        image.addEventListener("load", resolve, { once: true });
+        image.addEventListener("error", resolve, { once: true });
+        window.setTimeout(resolve, 1200);
+      });
+    }));
+    await document.fonts?.ready?.catch?.(() => {});
+    window.requestAnimationFrame(() => {
+      window.print();
+      window.setTimeout(cleanup, 1500);
+    });
+  }));
 
   document.querySelector("#login-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -10900,7 +12139,7 @@ function wireActions() {
       || sourceEvent.retrospectiveArticleId
       || eventRetrospectiveArticleId(sourceEvent.id);
     const existingArticle = await getOne("editorialContent", articleId).catch(() => null);
-    const title = sourceEvent.retrospectiveTitle || existingArticle?.title || `RÃ¼ckblick: ${sourceEvent.title || "PROdigitalTV Event"}`;
+    const title = sourceEvent.retrospectiveTitle || existingArticle?.title || `Rückblick: ${sourceEvent.title || "PROdigitalTV Event"}`;
     const eventBodyText = sourceEvent.longDescription || sourceEvent.bodyText || sourceEvent.articleText || sourceEvent.archiveText || "";
     const bodyText = eventBodyText || existingArticle?.longDescription || existingArticle?.articleText || existingArticle?.bodyText || eventRetrospectiveBody(sourceEvent);
     const eventImage = eventRetrospectiveImageUrl(sourceEvent);
@@ -10913,7 +12152,7 @@ function wireActions() {
       page: "press",
       section: "pressRelease",
       key: existingArticle?.key || `press.${articleId}`,
-      category: "RÃ¼ckblicke",
+      category: "Rückblicke",
       title,
       headline: title,
       subtitle: existingArticle?.subtitle || sourceEvent.subtitle || "",
@@ -10961,13 +12200,13 @@ function wireActions() {
     const originalLabel = button.textContent;
     button.disabled = true;
     button.textContent = "Erstelle ...";
-    if (result) result.innerHTML = `<div class="alert">Redaktioneller RÃ¼ckblick wird vorbereitet ...</div>`;
+    if (result) result.innerHTML = `<div class="alert">Redaktioneller Rückblick wird vorbereitet ...</div>`;
     try {
       const sourceEvent = await getOne("events", eventId);
       if (!sourceEvent) throw new Error("Event wurde nicht gefunden.");
       const articleId = document.querySelector("[data-retrospective-article-id]")?.value || eventRetrospectiveArticleId(eventId);
       const existingArticle = await getOne("editorialContent", articleId).catch(() => null);
-      const title = existingArticle?.title || `RÃ¼ckblick: ${sourceEvent.title || "PROdigitalTV Event"}`;
+      const title = existingArticle?.title || `Rückblick: ${sourceEvent.title || "PROdigitalTV Event"}`;
       const eventBodyText = sourceEvent.longDescription || sourceEvent.bodyText || sourceEvent.articleText || sourceEvent.archiveText || "";
       const bodyText = eventBodyText || existingArticle?.longDescription || existingArticle?.articleText || existingArticle?.bodyText || eventRetrospectiveBody(sourceEvent);
       const eventImage = eventRetrospectiveImageUrl(sourceEvent);
@@ -10980,7 +12219,7 @@ function wireActions() {
         page: "press",
         section: "pressRelease",
         key: existingArticle?.key || `press.${articleId}`,
-        category: "RÃ¼ckblicke",
+        category: "Rückblicke",
         title,
         headline: title,
         subtitle: existingArticle?.subtitle || sourceEvent.subtitle || "",
@@ -11016,9 +12255,9 @@ function wireActions() {
         retrospectiveArticleId: articleId,
         updatedAt: now
       });
-      if (result) result.innerHTML = `<div class="alert alert--success">RÃ¼ckblick-Beitrag wurde gespeichert. <a class="link" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(articleId)}&section=press">Beitrag Ã¶ffnen</a></div>`;
+      if (result) result.innerHTML = `<div class="alert alert--success">Rückblick-Beitrag wurde gespeichert. <a class="link" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(articleId)}&section=press">Beitrag öffnen</a></div>`;
     } catch (error) {
-      if (result) result.innerHTML = `<div class="alert alert--error">RÃ¼ckblick konnte nicht erstellt werden: ${escapeHtml(error.message || String(error))}</div>`;
+      if (result) result.innerHTML = `<div class="alert alert--error">Rückblick konnte nicht erstellt werden: ${escapeHtml(error.message || String(error))}</div>`;
     } finally {
       button.disabled = false;
       button.textContent = originalLabel;
@@ -11040,22 +12279,27 @@ function wireActions() {
         ? collectVideoAttachments(form, values)
         : null;
       if (form.dataset.eventFormSection === "pre") {
-        const preStatus = values.preStatus || "save_the_date";
         await upsert("events", {
           ...existing,
-          preStatus,
-          registrationEnabled: preStatus === "invitation_published",
+          mailingType: values.mailingType || "save_the_date",
           saveTheDateText: values.saveTheDateText || "",
           invitationText: values.invitationText || "",
+          invitationUpdateText: values.invitationUpdateText || "",
           updatedAt: new Date().toISOString()
         });
-        if (result && !silent) result.innerHTML = `<div class="alert alert--success">Vorlauf wurde gespeichert.</div>`;
+        if (result && !silent) result.innerHTML = `<div class="alert alert--success">Einladung wurde gespeichert.</div>`;
         form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: { id: form.dataset.eventId, section: "pre" } }));
         return true;
       }
       const image = imageFileFromDropzone(form, "eventImage", form.dataset.eventId);
       const removeEventImageRequested = values.removeEventImage === "1";
       const newEventType = values.newEventType?.trim();
+      if (values.eventType === "__new__" && !newEventType) {
+        throw new Error("Bitte geben Sie den neuen Eventtyp ein.");
+      }
+      if (values.primaryHostId === "__new_primary_host__" || values.hostId === "__new_co_host__") {
+        throw new Error("Bitte legen Sie den neuen Gastgeber zuerst im Eingabelayer an.");
+      }
       if (image) {
         const asset = await uploadEntityImage("events", form.dataset.eventId, image);
         values.imageUrl = asset.url;
@@ -11104,6 +12348,17 @@ function wireActions() {
       delete values.eventImageDataUrl;
       delete values.eventImageFileName;
       delete values.newEventType;
+      delete values.newHostTarget;
+      delete values.newHostName;
+      delete values.newHostWebsite;
+      delete values.newHostDescription;
+      if (Object.prototype.hasOwnProperty.call(values, "hostId")) {
+        values.sponsorIds = values.hostId ? [values.hostId] : [];
+      }
+      if (Object.prototype.hasOwnProperty.call(values, "primaryHostId")) {
+        values.primaryHostId = values.primaryHostId || "prodigitaltv";
+        values.primaryHostName = values.primaryHostId === "prodigitaltv" ? "PROdigitalTV" : values.primaryHostName || "";
+      }
       if (Object.prototype.hasOwnProperty.call(values, "longDescription")) {
         values.bodyText = values.longDescription;
         values.articleText = values.longDescription;
@@ -11117,7 +12372,7 @@ function wireActions() {
       }
       if (image || removeEventImageRequested) updateDropzoneSavedImage(form, savedEvent.imageUrl || "");
       if (result && !silent) result.innerHTML = retrospectiveArticleId
-        ? `<div class="alert alert--success">RÃ¼ckblicktext und Ã¶ffentlicher RÃ¼ckblick wurden gespeichert. <a class="link" href="#/retrospective/${encodeURIComponent(retrospectiveArticleId)}">RÃ¼ckblick ansehen</a></div>`
+        ? `<div class="alert alert--success">Rückblicktext und öffentlicher Rückblick wurden gespeichert. <a class="link" href="#/retrospective/${encodeURIComponent(retrospectiveArticleId)}">Rückblick ansehen</a></div>`
         : `<div class="alert alert--success">Event wurde gespeichert.</div>`;
       form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: { id: savedEvent.id || form.dataset.eventId, section: form.dataset.eventFormSection || "base", retrospectiveArticleId } }));
       return true;
@@ -11244,7 +12499,7 @@ function wireActions() {
     await upsert("events", { ...existingEvent, topicIds, updatedAt: new Date().toISOString() });
     form.querySelector("#event-topic-editor-result").innerHTML = `<div class="alert alert--success">Vortrag wurde gespeichert.</div>`;
     const imageStatus = form.querySelector("[data-image-status]");
-    if (imageStatus) imageStatus.textContent = imageUpdate.imageUrl ? "Bild wurde gespeichert." : imageUpdate.imageUrl === "" ? "Bild wurde gelÃ¶scht." : imageStatus.textContent;
+    if (imageStatus) imageStatus.textContent = imageUpdate.imageUrl ? "Bild wurde gespeichert." : imageUpdate.imageUrl === "" ? "Bild wurde gelöscht." : imageStatus.textContent;
     if (Object.prototype.hasOwnProperty.call(imageUpdate, "imageUrl")) {
       updateDropzoneSavedImage(form, imageUpdate.imageUrl);
       updateTopicThumbInList(topicId, imageUpdate.imageUrl);
@@ -11346,6 +12601,10 @@ function wireActions() {
     const form = event.currentTarget;
     const existing = await getOne("events", form.dataset.eventId);
     let hostId = form.elements.hostId?.value || "";
+    if (hostId === "__new__" && !form.elements.newSponsorName?.value?.trim()) {
+      form.querySelector("#event-partners-result").innerHTML = `<div class="alert alert--error">Bitte geben Sie den Namen des neuen Co-Gastgebers ein.</div>`;
+      return;
+    }
     const sponsors = await list("sponsors");
     for (const sponsor of sponsors) {
       if (!form.elements[`edit-sponsor-${sponsor.id}-name`]) continue;
@@ -11924,25 +13183,49 @@ function wireActions() {
         await upsert("members", {
           ...member,
           logoUrl: "",
+          logo_url: "",
+          logoDisplayUrl: "",
           imageUrl: "",
+          image_url: "",
           thumbnail_url: "",
           thumbnailUrl: "",
           thumbnail_media_asset_id: "",
+          thumbnailMediaAssetId: "",
           mediaAssetId: "",
+          media_asset_id: "",
+          logo_media_asset_id: "",
+          logoMediaAssetId: "",
+          logoAssetId: "",
           assetUrl: "",
           updatedAt: new Date().toISOString()
         });
         const assets = await list("media_assets").catch(() => []);
         await Promise.all(assets
-          .filter((asset) => (asset.linked_collection === "members" && asset.linked_record_id === memberId) || (asset.target_collection === "members" && asset.target_id === memberId))
+          .filter((asset) => {
+            const linkedCollection = asset.linked_collection || asset.linkedCollection;
+            const linkedId = asset.linked_record_id || asset.linkedRecordId || asset.linked_id || asset.linkedId;
+            const targetCollection = asset.target_collection || asset.targetCollection;
+            const targetId = asset.target_id || asset.targetId;
+            const field = asset.linked_field || asset.linkedField || asset.target_field || asset.targetField || "logoUrl";
+            return field === "logoUrl" && (
+              linkedCollection === "members" && linkedId === memberId
+              || targetCollection === "members" && targetId === memberId
+            );
+          })
           .map((asset) => upsert("media_assets", {
             ...asset,
             linked_collection: "",
             linked_record_id: "",
             linked_field: "",
+            linkedCollection: "",
+            linkedRecordId: "",
+            linkedField: "",
             target_collection: "",
             target_id: "",
             target_field: "",
+            targetCollection: "",
+            targetId: "",
+            targetField: "",
             updated_at: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           })));
@@ -12030,7 +13313,7 @@ function wireActions() {
       };
       await upsert("editorialContent", published);
       if (result) {
-        result.innerHTML = `<div class="alert alert--success">Beitrag ist veroeffentlicht und im Redaktionsbereich unter News sichtbar. <a href="#/cms/editorial/news">Zur News-Liste</a> Â· <a href="/?real=1#/news/${escapeHtml(articleId)}" target="_blank" rel="noopener">Artikel anzeigen</a></div>`;
+        result.innerHTML = `<div class="alert alert--success">Beitrag ist veroeffentlicht und im Redaktionsbereich unter News sichtbar. <a href="#/cms/editorial/news">Zur News-Liste</a> · <a href="/?real=1#/news/${escapeHtml(articleId)}" target="_blank" rel="noopener">Artikel anzeigen</a></div>`;
         result.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
       window.setTimeout(render, 700);
@@ -12044,7 +13327,7 @@ function wireActions() {
   document.querySelector("[data-admin-member-select]")?.addEventListener("change", (event) => {
     const memberId = event.currentTarget.value || "";
     if (!memberId) return;
-    window.location.hash = `#/portal?memberId=${encodeURIComponent(memberId)}`;
+    window.location.hash = `#/portal?tab=profile&memberId=${encodeURIComponent(memberId)}`;
   });
 
   document.querySelector("#member-profile-form")?.addEventListener("submit", async (event) => {
@@ -12559,10 +13842,129 @@ function wireActions() {
     }
   });
 
+  document.querySelectorAll("[data-event-registration-toggle]").forEach((button) => button.addEventListener("change", async (event) => {
+    const target = event.currentTarget;
+    const eventId = target.dataset.eventRegistrationToggle;
+    const shouldOpen = target.matches("input[type='checkbox']") ? target.checked : target.dataset.registrationState === "open";
+    const result = document.querySelector("#event-registration-toggle-result");
+    const originalLabel = target.textContent;
+    const originalChecked = target.checked;
+    if (!eventId) return;
+    target.disabled = true;
+    if (!target.matches("input[type='checkbox']")) target.textContent = shouldOpen ? "Oeffne ..." : "Schliesse ...";
+    if (result) result.innerHTML = `<div class="alert">Anmeldung wird ${shouldOpen ?"geoeffnet" : "geschlossen"} ...</div>`;
+    try {
+      const existing = await getOne("events", eventId);
+      if (!existing) throw new Error("Event wurde nicht gefunden.");
+      await upsert("events", {
+        ...existing,
+        registrationEnabled: shouldOpen,
+        allowPublicRegistration: existing.accessType === "public" ? shouldOpen : false,
+        allowMemberRegistration: existing.accessType === "members_only" ? shouldOpen : false,
+        preStatus: shouldOpen ? "invitation_published" : "save_the_date",
+        lifecyclePhase: shouldOpen ? "registration_open" : "registration_closed",
+        updatedAt: new Date().toISOString()
+      });
+      if (result) result.innerHTML = `<div class="alert alert--success">Anmeldung wurde ${shouldOpen ?"geoeffnet" : "geschlossen"}.</div>`;
+      await render();
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Anmeldestatus konnte nicht geaendert werden: ${escapeHtml(error.message || String(error))}</div>`;
+      target.disabled = false;
+      if (target.matches("input[type='checkbox']")) target.checked = !originalChecked;
+      else target.textContent = originalLabel;
+    }
+  }));
+
   document.querySelectorAll("[data-export-event]").forEach((button) => button.addEventListener("click", async () => {
     const event = await getOne("events", button.dataset.exportEvent);
     const registrations = (await list("registrations")).filter((item) => item.eventId === event.id);
     await downloadRegistrationsCsv(event, registrations);
+  }));
+
+  document.querySelector("#admin-registration-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = form.querySelector("#admin-registration-result");
+    const submitButton = form.querySelector('button[type="submit"]');
+    submitButton.disabled = true;
+    if (result) result.innerHTML = `<span class="muted">Speichert ...</span>`;
+    try {
+      const values = formObject(form);
+      delete values.isMember;
+      values.privacyAccepted = Boolean(values.privacyAccepted);
+      await createAdminRegistration(form.dataset.eventId, values);
+      if (result) result.innerHTML = `<div class="alert alert--success">Person wurde hinzugefuegt.</div>`;
+      window.setTimeout(render, 450);
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Person konnte nicht hinzugefuegt werden: ${escapeHtml(error.message || String(error))}</div>`;
+      submitButton.disabled = false;
+    }
+  });
+
+  const updateRegistrationBulkState = () => {
+    const checks = Array.from(document.querySelectorAll("[data-registration-select]"));
+    const selected = checks.filter((check) => check.checked);
+    const deleteButtons = Array.from(document.querySelectorAll("[data-delete-selected-registrations]"));
+    const selectAll = document.querySelector("[data-registration-select-all]");
+    deleteButtons.forEach((deleteButton) => {
+      deleteButton.disabled = selected.length === 0;
+      deleteButton.textContent = selected.length ? `${selected.length} ausgewaehlte loeschen` : "Ausgewaehlte loeschen";
+    });
+    if (selectAll) {
+      selectAll.checked = checks.length > 0 && selected.length === checks.length;
+      selectAll.indeterminate = selected.length > 0 && selected.length < checks.length;
+    }
+  };
+
+  document.querySelector("[data-registration-select-all]")?.addEventListener("change", (event) => {
+    document.querySelectorAll("[data-registration-select]").forEach((check) => {
+      check.checked = event.currentTarget.checked;
+    });
+    updateRegistrationBulkState();
+  });
+
+  document.querySelectorAll("[data-registration-select]").forEach((check) => check.addEventListener("change", updateRegistrationBulkState));
+  updateRegistrationBulkState();
+
+  document.querySelectorAll("[data-delete-registration]").forEach((button) => button.addEventListener("click", async () => {
+    const registrationId = button.dataset.deleteRegistration;
+    const row = button.closest("[data-registration-row]");
+    if (!registrationId || !window.confirm("Diese Buchung wirklich loeschen?")) return;
+    button.disabled = true;
+    try {
+      await remove("registrations", registrationId);
+      row?.remove();
+      const result = document.querySelector("#registration-bulk-result");
+      if (result) result.innerHTML = `<div class="alert alert--success">Buchung wurde geloescht.</div>`;
+      updateRegistrationBulkState();
+      window.setTimeout(render, 350);
+    } catch (error) {
+      const result = document.querySelector("#registration-bulk-result");
+      if (result) result.innerHTML = `<div class="alert alert--error">Buchung konnte nicht geloescht werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+    }
+  }));
+
+  document.querySelectorAll("[data-delete-selected-registrations]").forEach((bulkDeleteButton) => bulkDeleteButton.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const ids = Array.from(document.querySelectorAll("[data-registration-select]:checked")).map((check) => check.value).filter(Boolean);
+    const result = document.querySelector("#registration-bulk-result");
+    if (!ids.length) return;
+    if (!window.confirm(`${ids.length} Buchung(en) wirklich loeschen?`)) return;
+    button.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Buchungen werden geloescht ...</div>`;
+    try {
+      await Promise.all(ids.map((id) => remove("registrations", id)));
+      ids.forEach((id) => document.querySelector(`[data-registration-row="${CSS.escape(id)}"]`)?.remove());
+      if (result) result.innerHTML = `<div class="alert alert--success">${ids.length} Buchung(en) geloescht.</div>`;
+      updateRegistrationBulkState();
+      window.setTimeout(render, 350);
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Buchungen konnten nicht geloescht werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+    }
   }));
 
   const memberSearch = document.querySelector("[data-member-search]");
@@ -12617,7 +14019,7 @@ async function resetInstalledAppCachesIfRequested() {
   if (!params.has("resetApp")) return false;
   await clearPreviewCaches();
   params.delete("resetApp");
-  params.set("v", "917");
+  params.set("v", "929");
   const nextSearch = params.toString();
   location.replace(`${location.origin}${location.pathname}${nextSearch ? `?${nextSearch}` : ""}${location.hash || "#/home"}`);
   return true;
@@ -12625,7 +14027,7 @@ async function resetInstalledAppCachesIfRequested() {
 
 async function refreshInstalledAppShellIfNeeded() {
   if (["localhost", "127.0.0.1"].includes(location.hostname) || location.protocol === "file:") return false;
-  const version = "917";
+  const version = "965";
   const key = "prodigitaltv-live-shell-version";
   try {
     if (localStorage.getItem(key) === version) return false;

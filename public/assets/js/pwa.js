@@ -5,7 +5,7 @@
 
   const isIos = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent);
   const isAndroid = () => /android/i.test(window.navigator.userAgent);
-  const currentCache = "prodigitaltv-pwa-v7";
+  const currentCache = "prodigitaltv-pwa-v918";
   let deferredPrompt = null;
 
   function clearOldCaches() {

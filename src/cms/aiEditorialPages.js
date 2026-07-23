@@ -14,7 +14,7 @@ const sections = [
   ["prompts", "Prompts"],
   ["keywords", "Keywords"],
   ["automation", "Automatisierung"],
-  ["logs", "Logs / Pruefberichte"],
+  ["logs", "Logs"],
   ["settings", "Einstellungen"]
 ];
 
@@ -26,12 +26,9 @@ const publicationModes = {
 
 const promptTypes = [
   "Themenrecherche",
-  "Themenbewertung",
-  "Quellenpruefung",
+  "Quellenhinweise",
   "Headline",
   "Subline / Thubline",
-  "Dublettenpruefung",
-  "Relevanzbewertung",
   "Morgenbriefing",
   "Beitragstext",
   "Sprachstil",
@@ -39,16 +36,12 @@ const promptTypes = [
   "Thumbnail-Prompt",
   "Thumbnail-Erstellung",
   "Keywords",
-  "SEO / Meta",
-  "Endpruefung"
+  "SEO / Meta"
 ];
 
 const systemPromptCatalog = [
   ["Themenrecherche", "Themenrecherche"],
-  ["Themenbewertung", "Themenbewertung"],
-  ["Quellenpruefung", "Quellenpruefung"],
-  ["Dublettenpruefung", "Dublettenpruefung"],
-  ["Relevanzbewertung", "Relevanzbewertung"],
+  ["Quellenhinweise", "Quellenhinweise"],
   ["Morgenbriefing", "Morgenbriefing"],
   ["Headline", "Headline-Erstellung"],
   ["Subline / Thubline", "Subline-/Thubline-Erstellung"],
@@ -58,8 +51,7 @@ const systemPromptCatalog = [
   ["Thumbnail-Prompt", "Thumbnail-Prompt"],
   ["Thumbnail-Erstellung", "Thumbnail-Erstellung"],
   ["Keywords", "Keyword-Erstellung"],
-  ["SEO / Meta", "SEO-/Meta-Erstellung"],
-  ["Endpruefung", "Endpruefung"]
+  ["SEO / Meta", "SEO-/Meta-Erstellung"]
 ];
 
 const topicResearchCategories = [
@@ -87,17 +79,16 @@ function defaultSystemPrompt(type, label) {
       "Aufgabe: Erzeuge fuer die PROdigitalTV KI-Redaktion nur belastbare redaktionelle Nachrichtenthemen fuer die Themenliste.",
       "Strategie: Dies ist Stufe 1. Es entstehen keine fertigen Artikel. Die Ausgabe ist eine redaktionelle Auswahl echter aktueller Nachrichtenfunde. Der vollstaendige Beitrag wird erst in Stufe 2 nach manueller Auswahl im Editor erzeugt.",
       "Wenn aus den Quellen nur wenige ausreichend belegbare aktuelle Nachrichtenthemen ableitbar sind, liefere wenige. Keine Luecken mit schwachen, generischen oder technischen Crawler-Funden auffuellen.",
-      "Jeder Eintrag braucht eine journalistische Headline, eine kurze Subline, einen Themenabsatz mit 4 bis 6 Saetzen und einen eigenen PDTv-Ansatz mit 2 bis 4 Saetzen.",
+      "Jeder Eintrag braucht eine journalistische Headline, eine kurze Subline und einen Themenabsatz mit 4 bis 6 Saetzen.",
       "Der Themenabsatz erklaert: worum es geht, warum es aktuell ist, welche Akteure oder Bereiche betroffen sind und welche Bedeutung das Thema fuer die Medienbranche hat.",
-      "Der PDTv-Ansatz ordnet sachlich ein, warum das Thema fuer TV, Streaming, Produktion, Plattformen, Mediatheken, Distribution, Vermarktung, Technologie oder Regulierung relevant ist.",
+      "Keine redaktionelle Bewertung durch KI: keine Punktwerte, keine Rangliste, keine Freigabeempfehlung und keine Relevanzurteile.",
       "Keine Meta-Sprache in sichtbaren Feldern: nicht Themenkandidat, nicht Vorschlag, nicht redaktionell prüfen, nicht Quellenfund, nicht erklaeren wie der Fund entstanden ist.",
       "Jeder Vorschlag muss ein konkretes Thema aus TV, Streaming, Digitalmedien, Medienrecht, Produktion, KI, Distribution, Vermarktung, HbbTV, OTT, FAST-Channels, Barrierefreiheit oder Plattformregulierung sein.",
       "Keine Boulevardmeldungen, keine reinen Personenmeldungen, keine Programmhinweise, keine Navigationstexte, keine Sitemaps, keine Presseportal-Startseiten, keine generischen Quellenbeschreibungen.",
-      "Bewerte Aktualitaet, Branchenrelevanz und Gesamt-Relevanz jeweils 0-100.",
       "Gib zusaetzlich Kategorie, 5-8 Keywords, Quellenhinweis, Quellenstatus, Quellenkandidaten und Veroeffentlichungsdatum der Quelle falls bekannt aus.",
       "Nur Themen, die ein Redakteur auswaehlt, duerfen in die Themen-Queue uebernommen und danach als Beitrag erzeugt werden.",
       "Keine Quellen, Zahlen, Studien, URLs oder Fakten erfinden. Wenn Live-Quellen fehlen, Quellenstatus als Recherche erforderlich kennzeichnen.",
-      "Ausgabeformat: JSON-Array mit maximal 10 Objekten, aber nur wenn sie Qualitaet haben: title, headline, subline, themenabsatz, pdtv_ansatz, keywords, quellenhinweis, quellenstatus, category, priority, thumbnail_idea, actuality_score, industry_score, relevance_score, source_status, reason, source_candidates, source_publication_date."
+      "Ausgabeformat: JSON-Array mit maximal 10 Objekten: title, headline, subline, themenabsatz, keywords, quellenhinweis, quellenstatus, category, priority, thumbnail_idea, source_status, source_candidates, source_publication_date."
     ].join("\n")
     : type === "Beitragstext"
       ? [
@@ -128,7 +119,7 @@ function defaultSystemPrompt(type, label) {
       "Arbeite nur mit den gelieferten Platzhaltern und CMS-Daten.",
       "Nutze {{THEMA}}, {{KATEGORIE}}, {{QUELLEN}}, {{BESTEHENDE_BEITRAEGE}}, {{SPRACHSTIL}}, {{TEXTLAENGE}}, {{HEUTIGES_DATUM}}, {{VERIFIZIERTE_QUELLEN}}, {{BEITRAGSTEXT}}, {{HEADLINE}}, {{SUBLINE}} und {{KEYWORDS}}, sofern vorhanden.",
       "Keine Fakten, Zahlen, Quellen, URLs, Personen oder Organisationen erfinden.",
-      "Wenn die Quellenlage nicht reicht, gib eine Sperre oder Warnung aus statt fertiger Veroeffentlichung."
+      "Wenn die Quellenlage nicht reicht, gib nur einen sachlichen Hinweis auf fehlende Belege aus."
     ].join("\n");
   return {
     id,
@@ -136,11 +127,11 @@ function defaultSystemPrompt(type, label) {
     prompt_type: type,
     description: `Standardprompt fuer ${label}. Kann redaktionell angepasst werden.`,
     prompt_text: promptText,
-    system_instructions: "Feste Schutzregeln: keine Halluzinationen, keine erfundenen Quellen, keine Veroeffentlichung ohne geprüfte Quellen. Fuer die Themenliste reicht eine valide Quelle; Dubletten blockieren dort nicht.",
-    output_format: ["Themenrecherche", "Quellenpruefung", "Keywords", "SEO / Meta", "Endpruefung"].includes(type) ? "json" : "text",
+    system_instructions: "Feste Schutzregeln: keine Halluzinationen, keine erfundenen Quellen, keine KI-Bewertung, keine Score-Vergabe. Fuer die Themenliste reicht eine valide Quelle.",
+    output_format: ["Themenrecherche", "Quellenhinweise", "Keywords", "SEO / Meta"].includes(type) ? "json" : "text",
     model: "gpt-4.1-mini",
     temperature: ["Headline", "Subline / Thubline", "Thumbnail-Idee", "Thumbnail-Prompt", "Thumbnail-Erstellung"].includes(type) ? 0.3 : 0.2,
-    max_tokens: ["Beitragstext", "Endpruefung"].includes(type) ? 1400 : 900,
+    max_tokens: type === "Beitragstext" ? 1400 : 900,
     is_active: true,
     status: "aktiv",
     version: 1,
@@ -327,7 +318,6 @@ function sourceRows(sources, options = {}) {
     <td><strong>${escapeHtml(source.name || source.title || "-")}</strong><small>${escapeHtml(source.domain || "")}</small></td>
     <td>${escapeHtml(source.source_type || source.sourceType || "-")}</td>
     <td>${badge(source.source_status || source.check_status || source.review_status || "neu")}</td>
-    <td>${Number(source.trust_score ?? source.suggested_trust_score ?? 0)}</td>
     <td><a class="link" href="${escapeHtml(source.url || "#")}" target="_blank" rel="noreferrer">oeffnen</a></td>
     ${options.manageable ? `<td><button class="button button--danger button--small" type="button" data-ai-source-delete="${escapeHtml(source.id)}">Loeschen</button></td>` : ""}
   </tr>`).join("");
@@ -347,16 +337,16 @@ function sourcesForCategory(category = "", sources = []) {
   const categoryKey = normalizeText(category);
   const matching = sources
     .filter((source) => sourceMatchesTopic(source, { category, title: category, keywords: [category] }))
-    .sort((a, b) => Number(b.trust_score || 0) - Number(a.trust_score || 0));
+    .sort((a, b) => String(a.name || a.title || a.domain || "").localeCompare(String(b.name || b.title || b.domain || ""), "de"));
   const fallback = sources
     .filter((source) => !matching.some((match) => match.id === source.id))
-    .filter((source) => !normalizeText(source.source_status || "").includes("gesperrt") && Number(source.trust_score || 0) >= 70)
+    .filter((source) => !normalizeText(source.source_status || "").includes("gesperrt"))
     .sort((a, b) => {
       const aCategoryHit = sourceCategories(a).some((item) => item.includes(categoryKey) || categoryKey.includes(item));
       const bCategoryHit = sourceCategories(b).some((item) => item.includes(categoryKey) || categoryKey.includes(item));
       return Number(bCategoryHit) - Number(aCategoryHit)
         || Number(a.priority || 99) - Number(b.priority || 99)
-        || Number(b.trust_score || 0) - Number(a.trust_score || 0);
+        || String(a.name || a.title || a.domain || "").localeCompare(String(b.name || b.title || b.domain || ""), "de");
     });
   return uniqueSources([...matching, ...fallback]).slice(0, 20);
 }
@@ -371,7 +361,7 @@ function sourceCategoryBlocks(sources = []) {
         <div class="source-category-grid">${categorySources.map((source) => `<a class="source-category-card" href="${escapeHtml(source.url || "#")}" target="_blank" rel="noreferrer">
           <strong>${escapeHtml(source.name || source.title || source.domain || "Quelle")}</strong>
           <span>${escapeHtml(source.domain || "")}</span>
-          <small>${escapeHtml(source.source_type || "-")} · Trust ${Number(source.trust_score || 0)}</small>
+          <small>${escapeHtml(source.source_type || "-")}</small>
         </a>`).join("")}</div>
       </details>`;
     }).join("");
@@ -384,7 +374,7 @@ function verifiedSourceForm() {
       <div class="field"><label>URL</label><input name="url" type="url" required placeholder="https://..."></div>
       <div class="field"><label>Typ</label><input name="source_type" placeholder="Behoerde, Standard, Verband, Fachmedium"></div>
       <div class="field"><label>Kategorie</label><select name="category">${topicResearchCategories.filter((category) => category !== "Alle Themenbereiche").map((category) => `<option>${escapeHtml(category)}</option>`).join("")}</select></div>
-      <div class="field"><label>Trust-Score</label><input name="trust_score" type="number" min="0" max="100" value="75"></div>
+      <input name="trust_score" type="hidden" value="70">
       <div class="field"><label>Status</label><select name="source_status"><option>erlaubt</option><option>bevorzugt</option><option>pruefpflichtig</option><option>gesperrt</option></select></div>
     </div>
     <div class="field"><label>Notiz</label><textarea name="notes" placeholder="Warum ist diese Quelle fuer die Redaktion relevant?"></textarea></div>
@@ -399,10 +389,10 @@ function sourceCards(sources) {
       <h3>${escapeHtml(source.publisher || source.name || source.title || "Quelle")}</h3>
       <p>${escapeHtml(source.title || source.relevance_note || "")}</p>
     </div>
-    <div class="ai-status-stack">${badge(source.check_status || source.source_status || "neu")}<span class="ai-status ai-status--neutral">Trust ${Number(source.trust_score || 0)}</span></div>
+    <div class="ai-status-stack">${badge(source.check_status || source.source_status || "neu")}</div>
     <dl>
       <div><dt>Belegte Aussage</dt><dd>${escapeHtml(source.claim_reference || "Noch nicht zugeordnet")}</dd></div>
-      <div><dt>Relevanz</dt><dd>${escapeHtml(source.relevance_note || "Keine Relevanznotiz")}</dd></div>
+      <div><dt>Notiz</dt><dd>${escapeHtml(source.relevance_note || "Keine Notiz")}</dd></div>
       <div><dt>Domain</dt><dd>${escapeHtml(source.domain || "-")}</dd></div>
       <div><dt>Abruf</dt><dd>${escapeHtml(formatShortDate(source.accessed_at || source.accessedAt || "")) || "-"}</dd></div>
     </dl>
@@ -584,7 +574,7 @@ function morningBriefingRows(items = [], articles = []) {
     return `<tr>
       <td><strong>${sourceUrl ? `<a class="link editorial-title-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noreferrer">${headline}</a>` : headline}</strong><small>${escapeHtml(item.summary || item.teaser || item.subline || "")}</small>${topicKeywordChips(item)}</td>
       <td>${sourceUrl ? `<a class="link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(item.source || item.source_name || item.sourceName || item.publisher || "Quelle")}</a>` : escapeHtml(item.source || item.source_name || item.sourceName || "-")}<small>${escapeHtml(item.source_type || item.sourceType || "")}</small></td>
-      <td>${escapeHtml(item.category || item.relevance || "-")}<small>Score ${Number(item.score || item.relevance_score || item.relevanceScore || 0)}</small></td>
+      <td>${escapeHtml(item.category || item.relevance || "-")}</td>
       <td>${badge(status)}${item.duplicate_of || item.duplicateOf ? `<small>Dublette: ${escapeHtml(item.duplicate_of || item.duplicateOf)}</small>` : ""}</td>
       <td><div class="actions ai-morning-row-actions">
         ${article
@@ -633,7 +623,7 @@ function morningBriefingPanel({ items = [], articles = [], sources = [], logs = 
     </section>
     <section class="panel">
       <h2>Pipe-Import fuer Meldungen</h2>
-      <p class="muted">Format: headline|summary|relevance|source|original_url|first_seen|meta. Neue Eintraege werden als Morgenbriefing-Meldungen gespeichert und koennen direkt als KI-News-Entwurf geoeffnet werden.</p>
+      <p class="muted">Format: headline|summary|thema|source|original_url|first_seen|meta. Neue Eintraege werden als Morgenbriefing-Meldungen gespeichert und koennen direkt als News-Entwurf geoeffnet werden.</p>
       <form id="ai-morning-briefing-import-form" class="form-grid">
         <div class="field editorial-text-field editorial-text-field--body"><label>Meldungen einfuegen</label><textarea name="pipeText" rows="6" placeholder="${escapeHtml(morningBriefingPipeExample())}"></textarea></div>
         <div class="actions"><button class="button button--primary">Meldungen importieren</button></div>
@@ -641,7 +631,7 @@ function morningBriefingPanel({ items = [], articles = [], sources = [], logs = 
     </section>
     <section class="panel">
       <div class="editorial-field-head"><h2>NewsFeed / Morgenbriefing</h2><span class="tag">${usableItems.length} Meldungen</span></div>
-      <div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Meldung</th><th>Quelle</th><th>Kategorie / Score</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${usableItems.length ? morningBriefingRows(usableItems.slice(0, 120), articles) : `<tr><td colspan="5">Noch keine Morgenbriefing-Meldungen vorhanden.</td></tr>`}</tbody></table></div>
+      <div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Meldung</th><th>Quelle</th><th>Kategorie</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${usableItems.length ? morningBriefingRows(usableItems.slice(0, 120), articles) : `<tr><td colspan="5">Noch keine Morgenbriefing-Meldungen vorhanden.</td></tr>`}</tbody></table></div>
     </section>
     <section class="panel">
       <h2>Vorhandene Morgenbriefings</h2>
@@ -753,7 +743,6 @@ function sourceCategories(source = {}) {
 function sourceMatchesTopic(source = {}, topic = {}) {
   const sourceStatus = normalizeText(source.source_status || source.sourceStatus || "");
   if (sourceStatus.includes("gesperrt")) return false;
-  if (Number(source.trust_score || source.suggested_trust_score || 0) < 70) return false;
   const topicCategory = normalizeText(topic.category || "");
   const topicWords = [
     topic.title,
@@ -791,12 +780,12 @@ function sourceLooksGerman(source = {}) {
 function verifiedSourceLinks(topic = {}, verifiedSources = []) {
   const sources = verifiedSources
     .filter((source) => sourceMatchesTopic(source, topic))
-    .sort((a, b) => Number(b.trust_score || 0) - Number(a.trust_score || 0))
+    .sort((a, b) => String(a.name || a.title || a.domain || "").localeCompare(String(b.name || b.title || b.domain || ""), "de"))
     .slice(0, 3);
   if (sources.length) return sources;
   return verifiedSources
-    .filter((source) => !normalizeText(source.source_status || "").includes("gesperrt") && Number(source.trust_score || 0) >= 70)
-    .sort((a, b) => Number(a.priority || 99) - Number(b.priority || 99) || Number(b.trust_score || 0) - Number(a.trust_score || 0))
+    .filter((source) => !normalizeText(source.source_status || "").includes("gesperrt"))
+    .sort((a, b) => Number(a.priority || 99) - Number(b.priority || 99) || String(a.name || a.title || a.domain || "").localeCompare(String(b.name || b.title || b.domain || ""), "de"))
     .slice(0, 3);
 }
 
@@ -828,14 +817,20 @@ function topicSourceSummary(topic = {}, verifiedSources = []) {
   if (verified.length) {
     return `<div class="topic-source-list topic-source-list--verified">${verified.map((source) => {
       const label = escapeHtml(source.name || source.title || source.domain || "Quelle");
-      const trust = source.trust_score ? `<small>Trust ${Number(source.trust_score || 0)}</small>` : "";
       return source.url
-        ? `<a href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${label}${trust}</a>`
-        : `<span>${label}${trust}</span>`;
+        ? `<a href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${label}</a>`
+        : `<span>${label}</span>`;
     }).join("")}</div>${topicSourceDate(topic)}${sourceHints.length ? `<small>Hinweis: ${escapeHtml(sourceHints.slice(0, 3).join(", "))}</small>` : ""}<small>${escapeHtml(status)}</small>`;
   }
   if (!sourceHints.length) return `<span class="topic-source-status">${escapeHtml(status)}</span>`;
   return `<div class="topic-source-list">${sourceHints.slice(0, 4).map((source) => `<span>${escapeHtml(source)}</span>`).join("")}</div>${topicSourceDate(topic)}<small>${escapeHtml(status)}</small>`;
+}
+
+function topicHasSource(topic = {}, verifiedSources = []) {
+  return Boolean(topicPrimarySourceUrl(topic))
+    || topicSourceCandidates(topic).length > 0
+    || verifiedSourceLinks(topic, verifiedSources).length > 0
+    || toList(topic.possible_sources || topic.possibleSources || topic.sources || topic.sources_json).length > 0;
 }
 
 function topicKeywordChips(topic = {}) {
@@ -862,7 +857,7 @@ function sourceBasedNewsTeaser(topic = {}) {
   const title = String(topic.title || topic.headline || "").trim();
   const sources = topicSourceCandidates(topic).map((source) => source.name).filter(Boolean);
   const source = sources[0] || "";
-  if (source) return `${source} meldet eine Entwicklung mit Relevanz fuer die Medienbranche.`;
+  if (source) return `${source} meldet eine Entwicklung mit Bezug zur Medienbranche.`;
   return title ? (title.endsWith(".") ? title : `${title}.`) : "";
 }
 
@@ -878,11 +873,9 @@ function topicDecision(topic = {}) {
   if (stored.includes("nicht") || stored.includes("abgelehnt")) return "not_recommended";
   if (stored.includes("pruef") || stored.includes("prüf") || stored.includes("ergaenz") || stored.includes("ergänz")) return "review";
   if (stored.includes("ok") || stored.includes("freigegeben")) return "ok";
-  const actuality = Number(topic.actuality_score || 0);
-  const relevance = Number(topic.relevance_score || topic.industry_score || 0);
   const sourceStatus = String(topic.source_status || "").toLowerCase();
-  if (sourceStatus.includes("gesperrt") || sourceStatus.includes("unzureichend") || actuality < 45 || relevance < 45) return "not_recommended";
-  if (sourceStatus.includes("ungeprüft") || sourceStatus.includes("ungeprüft") || sourceStatus.includes("pruefpflichtig") || sourceStatus.includes("prüfpflichtig") || actuality < 70 || relevance < 70) return "review";
+  if (sourceStatus.includes("gesperrt") || sourceStatus.includes("unzureichend")) return "not_recommended";
+  if (sourceStatus.includes("ungeprüft") || sourceStatus.includes("ungeprüft") || sourceStatus.includes("pruefpflichtig") || sourceStatus.includes("prüfpflichtig")) return "review";
   return "ok";
 }
 
@@ -896,6 +889,7 @@ function topicSuggestionRows(suggestions = [], verifiedSources = [], options = {
       publicationState.hasArticle ? "topic-suggestion-row--article" : ""
     ].filter(Boolean).join(" ");
     const sourceUrl = topicPrimarySourceUrl(topic);
+    const hasSource = topicHasSource(topic, verifiedSources);
     const importHref = sourceUrl ? `#/cms/ai-editorial/news-import?sourceUrl=${encodeURIComponent(sourceUrl)}&topicId=${encodeURIComponent(topic.id)}&autoImport=1` : "";
     const actionCell = options.readonly
       ? `<span class="muted">${publicationState.hasArticle ? "Beitrag vorhanden" : "Nicht in Arbeitsliste"}</span>`
@@ -908,11 +902,10 @@ function topicSuggestionRows(suggestions = [], verifiedSources = [], options = {
     <td>
       ${options.readonly ? `${topicHeadlineLink(topic)}<small>${escapeHtml(topic.subline || topic.headline || "")}</small>` : `<label class="checkbox topic-checkbox"><input type="checkbox" name="topicSuggestionIds" value="${escapeHtml(topic.id)}"><span>${topicHeadlineLink(topic)}<small>${escapeHtml(topic.subline || topic.headline || "")}</small></span></label>`}
       <p class="topic-suggestion-reason">${escapeHtml(topicTeaserText(topic))}</p>
-      ${topic.pdtv_ansatz || topic.pdtvAnsatz ? `<p class="topic-suggestion-reason"><strong>PDTv-Ansatz:</strong> ${escapeHtml(topic.pdtv_ansatz || topic.pdtvAnsatz)}</p>` : ""}
       ${topicKeywordChips(topic)}
     </td>
     <td><strong>${escapeHtml(topic.category || "-")}</strong>${topicSourceSummary(topic, verifiedSources)}</td>
-    <td><strong>${Number(topic.actuality_score || 0)}</strong><small>Relevanz ${Number(topic.relevance_score || 0)}</small><small>Branche ${Number(topic.industry_score || 0)}</small></td>
+    <td>${hasSource ? badge("Quelle vorhanden") : badge("Quelle fehlt")}</td>
     <td>${badge(publicationState.label)}${badge(topic.queue_status || topic.review_status || topic.status || (options.readonly ? "gespeichert" : "vorgeschlagen"))}</td>
     <td>${actionCell}</td>
   </tr>`;
@@ -932,7 +925,7 @@ function topicQueueRows(queue = []) {
   return queue.map((topic) => `<tr>
     <td><strong>${escapeHtml(topic.title || "-")}</strong><small>${escapeHtml(topic.subline || topic.reason || "")}</small></td>
     <td>${escapeHtml(topic.category || "-")}</td>
-    <td>${Number(topic.actuality_score || 0)}</td>
+    <td>${topicHasSource(topic) ? "Quelle vorhanden" : "-"}</td>
     <td>${badge(topic.status || "in Queue")}</td>
     <td>${escapeHtml(formatShortDate(topic.created_at || topic.createdAt || ""))}</td>
   </tr>`).join("");
@@ -980,25 +973,25 @@ function topicKeywordStats(topics = []) {
         keyword: label,
         key,
         count: 0,
-        maxRelevance: 0,
+        latestDate: "",
         categories: new Set(),
         topics: []
       };
       existing.count += 1;
-      existing.maxRelevance = Math.max(existing.maxRelevance, Number(topic.relevance_score || topic.actuality_score || topic.industry_score || 0));
+      existing.latestDate = [existing.latestDate, topic.updated_at, topic.updatedAt, topic.created_at, topic.createdAt].filter(Boolean).sort().pop() || existing.latestDate;
       if (topic.category) existing.categories.add(topic.category);
       if (topic.title || topic.headline) existing.topics.push(topic.title || topic.headline);
       stats.set(key, existing);
     });
   });
-  return [...stats.values()].sort((a, b) => b.count - a.count || b.maxRelevance - a.maxRelevance || a.keyword.localeCompare(b.keyword));
+  return [...stats.values()].sort((a, b) => b.count - a.count || String(b.latestDate || "").localeCompare(String(a.latestDate || "")) || a.keyword.localeCompare(b.keyword));
 }
 
 function topicKeywordRows(items = []) {
   return items.map((item) => `<tr>
     <td><a class="editorial-title-link" href="#/cms/ai-editorial/keywords?keyword=${encodeURIComponent(item.key || normalizeText(item.keyword))}"><strong>${escapeHtml(item.keyword)}</strong></a><small>${escapeHtml([...item.categories].slice(0, 4).join(", ") || "ohne Kategorie")}</small></td>
     <td>${item.count}</td>
-    <td>${Math.round(item.maxRelevance)}</td>
+    <td>${escapeHtml(formatShortDate(item.latestDate || "") || "-")}</td>
     <td>${item.topics.slice(0, 3).map((topic) => `<span class="ai-status ai-status--neutral">${escapeHtml(topic)}</span>`).join(" ")}</td>
   </tr>`).join("");
 }
@@ -1055,7 +1048,7 @@ function keywordTopicRows(topics = [], articles = []) {
     return `<tr>
       <td><strong>${escapeHtml(topic.title || topic.headline || "-")}</strong><small>${escapeHtml(topic.subline || topic.reason || "")}</small></td>
       <td>${escapeHtml(topic.category || "-")}</td>
-      <td>${Math.round(Number(topic.relevance_score || topic.actuality_score || 0))}</td>
+      <td>${topicHasSource(topic) ? "Quelle vorhanden" : "-"}</td>
       <td>${badge(state.label)}</td>
     </tr>`;
   }).join("");
@@ -1254,17 +1247,17 @@ function editor(article, sources, keywords, logs) {
             <div class="field"><label>Herausgeber</label><input name="publisher" required placeholder="z. B. EU-Kommission"></div>
             <div class="field"><label>URL</label><input name="url" type="url" required placeholder="https://..."></div>
             <div class="field"><label>Quellentyp</label><select name="source_type"><option>Primaerquelle</option><option>Behoerde</option><option>Verband</option><option>Fachmedium</option><option>Unternehmensmeldung</option><option>Standard / Spezifikation</option><option>Studie</option></select></div>
-            <div class="field"><label>Trust-Score</label><input name="trust_score" type="number" min="0" max="100" value="70"></div>
+            <input name="trust_score" type="hidden" value="70">
             <div class="field"><label>Pruefstatus</label><select name="check_status"><option value="geprüft">geprüft</option><option value="teilweise geprüft">teilweise geprüft</option><option value="ungeprüft">ungeprüft</option></select></div>
           </div>
           <div class="field"><label>Belegte Aussage</label><textarea name="claim_reference" placeholder="Welche zentrale Aussage im Artikel wird durch diese Quelle belegt?"></textarea></div>
-          <div class="field"><label>Relevanznotiz</label><textarea name="relevance_note" placeholder="Warum ist diese Quelle belastbar und relevant?"></textarea></div>
+          <div class="field"><label>Quellennotiz</label><textarea name="relevance_note" placeholder="Welche Information wird durch diese Quelle belegt?"></textarea></div>
           <div class="actions"><button class="button button--primary">Quelle speichern</button></div>
           <div id="ai-source-save-result"></div>
         </form>
-        <div class="table-wrap"><table class="table"><thead><tr><th>Quelle</th><th>Typ</th><th>Status</th><th>Trust</th><th>Link</th></tr></thead><tbody>${articleSources.length ? sourceRows(articleSources) : `<tr><td colspan="5">Noch keine Quellen gespeichert.</td></tr>`}</tbody></table></div>
+        <div class="table-wrap"><table class="table"><thead><tr><th>Quelle</th><th>Typ</th><th>Status</th><th>Link</th></tr></thead><tbody>${articleSources.length ? sourceRows(articleSources) : `<tr><td colspan="4">Noch keine Quellen gespeichert.</td></tr>`}</tbody></table></div>
       </section>
-      <section class="panel" id="ai-editor-section-keywords" data-ai-editor-section="keywords"><h2>Keywords</h2><div class="ai-picto-row">${pictogram("+", "Keywords erzeugen", `data-ai-article-action="keywords" data-article-id="${escapeHtml(article.id)}"`)}${pictogram("SEO", "SEO erzeugen", `data-ai-article-action="seo" data-article-id="${escapeHtml(article.id)}"`)}</div><div class="ai-keyword-cloud">${articleKeywords.length ? articleKeywords.map((keyword) => `<span>${escapeHtml(keyword.keyword)} <strong>${Number(keyword.relevance_score || 0)}</strong></span>`).join("") : `<p class="muted">Noch keine Keywords gespeichert.</p>`}</div></section>
+      <section class="panel" id="ai-editor-section-keywords" data-ai-editor-section="keywords"><h2>Keywords</h2><div class="ai-picto-row">${pictogram("+", "Keywords erzeugen", `data-ai-article-action="keywords" data-article-id="${escapeHtml(article.id)}"`)}${pictogram("SEO", "SEO erzeugen", `data-ai-article-action="seo" data-article-id="${escapeHtml(article.id)}"`)}</div><div class="ai-keyword-cloud">${articleKeywords.length ? articleKeywords.map((keyword) => `<span>${escapeHtml(keyword.keyword)}</span>`).join("") : `<p class="muted">Noch keine Keywords gespeichert.</p>`}</div></section>
       <section class="panel" id="ai-editor-section-status" data-ai-editor-section="status"><h2>Status</h2><div class="ai-status-stack">${badge(article.source_status || "-")}${badge(article.ai_check_status || "-")}${badge(article.publication_status || article.status || "Entwurf")}</div></section>
       <section class="panel" id="ai-editor-section-history" data-ai-editor-section="history"><h2>Verlauf</h2><div class="table-wrap"><table class="table"><thead><tr><th>Zeit</th><th>Aufgabe</th><th>Status</th><th>Meldung</th></tr></thead><tbody>${articleLogs.length ? logRows(articleLogs) : `<tr><td colspan="4">Noch kein Verlauf.</td></tr>`}</tbody></table></div></section>
     </div>
@@ -1278,13 +1271,23 @@ function settingsForm(settings) {
       <div class="field"><label>Ausfuehrung</label><input name="scheduleLabel" value="${escapeHtml(settings.scheduleLabel || "Taeglich 06:00 Uhr")}"></div>
       <div class="field"><label>Publikationsmodus</label><select name="publicationMode">${Object.entries(publicationModes).map(([value, label]) => `<option value="${value}" ${settings.publicationMode === value ? "selected" : ""}>${label}</option>`).join("")}</select></div>
       <div class="field"><label>Mindestanzahl Quellen</label><input name="minimumSources" type="number" min="1" value="${Number(settings.minimumSources || 1)}"></div>
-      <div class="field"><label>Mindest-Trust-Score</label><input name="minimumTrustScore" type="number" min="0" max="100" value="${Number(settings.minimumTrustScore || 70)}"></div>
+      <input name="minimumTrustScore" type="hidden" value="${Number(settings.minimumTrustScore || 70)}">
     </div>
-    <label class="checkbox"><input type="checkbox" name="allowAutoPublish" ${settings.allowAutoPublish ? "checked" : ""}> Automatisch veroeffentlichen nur bei vollstaendig bestandener Prüfung erlauben</label>
-    <div class="alert alert--warning">Schutzregeln sind fest verdrahtet: keine Halluzinationen und keine erfundenen Quellen. Fuer die Themenliste reicht eine valide Quelle; Dubletten blockieren dort nicht.</div>
+    <label class="checkbox"><input type="checkbox" name="allowAutoPublish" disabled> Automatische Veroeffentlichung bleibt deaktiviert</label>
+    <div class="alert alert--warning">Schutzregeln sind fest verdrahtet: keine Halluzinationen, keine erfundenen Quellen, keine KI-Bewertung und keine Score-Vergabe. Fuer die Themenliste reicht eine valide Quelle.</div>
     <div class="actions"><button class="button button--primary">Einstellungen speichern</button></div>
     <div id="ai-editorial-settings-result"></div>
-  </form>`;
+  </form>
+  <section class="panel ai-reset-panel">
+    <div class="editorial-field-head">
+      <div>
+        <h2>KI-Redaktion leeren</h2>
+        <p class="muted">Leert Themenliste, Queue, Rawdaten, Presseimporte, Logs, Tests und erzeugte KI-/Morgenbriefing-Beitraege. Prompts, Quellen und Einstellungen bleiben erhalten.</p>
+      </div>
+      <button class="button button--danger" type="button" data-ai-editorial-reset>Inhalte leeren</button>
+    </div>
+    <div id="ai-editorial-reset-result"></div>
+  </section>`;
 }
 
 function promptForm(currentPrompt = null) {
@@ -1336,9 +1339,9 @@ function newsImportPageContent(active) {
         <div>
           <p class="eyebrow">Quellenimport</p>
           <h2>News importieren</h2>
-          <p>Fuegen Sie Text ein, tragen Sie eine einzelne URL ein oder laden Sie Bild- und Textdateien hoch. Der Import holt das Material zuerst in diesen KI-News-Importbereich. Erst danach wird daraus ein KI-News-Entwurf erstellt.</p>
+          <p>Fuegen Sie Text ein, tragen Sie eine einzelne URL ein oder laden Sie Bild- und Textdateien hoch. Der Import holt das Material zuerst in diesen News-Importbereich. Erst danach wird daraus ein KI-News-Entwurf erstellt.</p>
         </div>
-        <div class="ai-news-import-badge">KI-News-Import</div>
+        <div class="ai-news-import-badge">News-Import</div>
       </div>
       <form id="ai-news-import-form" class="form-grid">
         <div class="field editorial-text-field editorial-text-field--body">
@@ -1360,7 +1363,7 @@ function newsImportPageContent(active) {
         </div>
         <div class="actions">
           <button class="button button--secondary" type="button" data-ai-news-add-source>+ Quelle hinzufuegen</button>
-          <button class="button button--primary" type="submit">KI-News erstellen</button>
+          <button class="button button--primary" type="submit">News erstellen</button>
         </div>
         <div id="ai-news-import-result"></div>
       </form>
@@ -1448,9 +1451,9 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
       const label = [source.name || source.title || source.domain || "Quelle", source.domain].filter(Boolean).join(" - ");
       return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
     }).join("");
-  const secondaryTopicSection = secondaryTopicSuggestions.length ? `<details class="press-hidden-details topic-secondary-details"><summary><strong>Gespeicherte Themen ausserhalb der Arbeitsliste</strong><span>${secondaryTopicSuggestions.length} uebernommen oder zurueckgestellt</span></summary><p class="muted">Diese Themen bleiben gespeichert, werden aber nicht fuer die direkte Beitragserstellung angeboten.</p><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema / Einordnung</th><th>Kategorie / Quellenhinweis</th><th>Einschaetzung</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${topicSuggestionRows(secondaryTopicSuggestions.slice(0, 120), sources, { readonly: true, articles: aiArticles })}</tbody></table></div></details>` : "";
+  const secondaryTopicSection = secondaryTopicSuggestions.length ? `<details class="press-hidden-details topic-secondary-details"><summary><strong>Gespeicherte Themen ausserhalb der Arbeitsliste</strong><span>${secondaryTopicSuggestions.length} uebernommen oder zurueckgestellt</span></summary><p class="muted">Diese Themen bleiben gespeichert, werden aber nicht fuer die direkte Beitragserstellung angeboten.</p><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema / Quelle</th><th>Kategorie / Quellenhinweis</th><th>Beleg</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${topicSuggestionRows(secondaryTopicSuggestions.slice(0, 120), sources, { readonly: true, articles: aiArticles })}</tbody></table></div></details>` : "";
   const filteredTopicSection = filteredTopicSuggestions.length ? `<details class="press-hidden-details topic-secondary-details"><summary><strong>Aus Keywords/Quellen vorhandene, aber ausgefilterte Themen</strong><span>${filteredTopicSuggestions.length} gespeichert</span></summary><p class="muted">Diese Eintraege sind nicht weg. Sie liegen in den gespeicherten Themenvorschlaegen, werden aber wegen Filterregeln nicht in der Arbeitsliste angezeigt, zum Beispiel Presse-, Event-, Termin-, Navigations- oder unpassende Treffer.</p><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema / Keywords</th><th>Kategorie</th><th>Filtergrund</th><th>Datum</th></tr></thead><tbody>${filteredTopicRows(filteredTopicSuggestions.slice(0, 160))}</tbody></table></div></details>` : "";
-  const topicResearchPanel = `<section class="panel ai-topic-research-panel"><div class="ai-topic-research-hero"><div class="ai-topic-research-copy"><p class="eyebrow">KI-Redaktion</p><h2>Themenrecherche</h2><p>Erstellt Themenvorschlaege aus den hinterlegten Quellen. Die KI bereitet vor; die Redaktion entscheidet ueber Bearbeitung und Veroeffentlichung.</p><div class="ai-topic-research-facts"><span>Quellenhinweis</span><span>Aktualitaet</span><span>Branchenrelevanz</span></div></div><div class="ai-topic-research-card"><div class="ai-topic-research-controls ai-topic-research-controls--compact"><div class="field"><label>Themenbereich</label><select id="ai-topic-research-category">${topicResearchCategories.map((category) => `<option value="${category === "Alle Themenbereiche" ? "" : escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}</select></div><div class="field"><label>Quelle</label><select id="ai-topic-research-source"><option value="">Alle passenden Quellen</option>${sourceOptions}</select></div><div class="field"><label>Stichworte</label><input id="ai-topic-research-keywords" placeholder="z. B. FAST, GEMA, Voice-Cloning"></div><div class="ai-picto-row ai-topic-research-actions">${pictogram(">", "Recherche starten", "data-ai-topic-research")}</div></div></div></div><div id="ai-topic-research-result"></div><div class="ai-topic-subtools">${rawTopicDataTable}</div>${openSuggestions.length ? `<form id="ai-topic-suggestions-form"><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema / Einordnung</th><th>Kategorie / Quellenhinweis</th><th>Einschaetzung</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${topicSuggestionRows(openSuggestions.slice(0, 120), sources, { articles: aiArticles })}</tbody></table></div><div class="actions"><button class="button button--primary">KI-News erstellen</button></div></form>` : `<div class="alert">Noch keine offenen Themenvorschlaege. Starte eine Themenrecherche.</div>`}${secondaryTopicSection}${filteredTopicSection}</section><section class="panel"><h2>Themen-Queue</h2><div class="table-wrap"><table class="table"><thead><tr><th>Thema</th><th>Kategorie</th><th>Aktualitaet</th><th>Status</th><th>Datum</th></tr></thead><tbody>${queuedTopics.length ? topicQueueRows(queuedTopics) : `<tr><td colspan="5">Noch keine Themen in der Queue.</td></tr>`}</tbody></table></div></section>`;
+  const topicResearchPanel = `<section class="panel ai-topic-research-panel"><div class="ai-topic-research-hero"><div class="ai-topic-research-copy"><p class="eyebrow">KI-Redaktion</p><h2>Themenrecherche</h2><p>Erstellt Themenvorschlaege aus den hinterlegten Quellen. Die KI bereitet vor; die Redaktion entscheidet ueber Bearbeitung und Veroeffentlichung.</p><div class="ai-topic-research-facts"><span>Quellenhinweis</span><span>Themenfeld</span><span>Redaktion entscheidet</span></div></div><div class="ai-topic-research-card"><div class="ai-topic-research-controls ai-topic-research-controls--compact"><div class="field"><label>Themenbereich</label><select id="ai-topic-research-category">${topicResearchCategories.map((category) => `<option value="${category === "Alle Themenbereiche" ? "" : escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}</select></div><div class="field"><label>Quelle</label><select id="ai-topic-research-source"><option value="">Alle passenden Quellen</option>${sourceOptions}</select></div><div class="field"><label>Stichworte</label><input id="ai-topic-research-keywords" placeholder="z. B. FAST, GEMA, Voice-Cloning"></div><div class="ai-picto-row ai-topic-research-actions">${pictogram(">", "Recherche starten", "data-ai-topic-research")}</div></div></div></div><div id="ai-topic-research-result"></div><div class="ai-topic-subtools">${rawTopicDataTable}</div>${openSuggestions.length ? `<form id="ai-topic-suggestions-form"><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema / Quelle</th><th>Kategorie / Quellenhinweis</th><th>Beleg</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${topicSuggestionRows(openSuggestions.slice(0, 120), sources, { articles: aiArticles })}</tbody></table></div><div class="actions"><button class="button button--primary">News erstellen</button></div></form>` : `<div class="alert">Noch keine offenen Themenvorschlaege. Starte eine Themenrecherche.</div>`}${secondaryTopicSection}${filteredTopicSection}</section><section class="panel"><h2>Themen-Queue</h2><div class="table-wrap"><table class="table"><thead><tr><th>Thema</th><th>Kategorie</th><th>Beleg</th><th>Status</th><th>Datum</th></tr></thead><tbody>${queuedTopics.length ? topicQueueRows(queuedTopics) : `<tr><td colspan="5">Noch keine Themen in der Queue.</td></tr>`}</tbody></table></div></section>`;
   const pressListNotice = sortedPressReleases.length
     ? duplicatePressReleases.length ? `<p class="muted">${duplicatePressReleases.length} Dubletten sind gespeichert, werden aber nicht in der verwertbaren Presseliste angezeigt.</p>` : ""
     : duplicatePressReleases.length ? `<p class="muted">Keine verwertbaren Pressemitteilungen in der Liste. ${duplicatePressReleases.length} gespeicherte Dubletten werden nicht angezeigt.</p>` : "";
@@ -1470,12 +1473,12 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
     "morning-briefing": morningBriefingPanel({ items: morningBriefingItems, articles, sources, logs, settings }),
     articles: `${cmsTitle("KI-Redaktion", "Beitraege")}${nav(active)}<section class="panel"><p class="muted">Neueste Beitraege zuerst.</p><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Beitrag / Short Text</th><th>Quelle</th><th>Kategorie</th><th>Datum</th><th>Aktion</th></tr></thead><tbody>${aiArticles.length ? articleRows(aiArticles, { compactArticles: true }) : `<tr><td colspan="5">Noch keine KI-Beitraege.</td></tr>`}</tbody></table></div></section><div id="ai-editorial-run-result"></div>`,
     press: pressPanel,
-    sources: `${cmsTitle("KI-Redaktion", "Quellen")}${nav(active)}<section class="panel"><details class="source-management-details"><summary><strong>Quellen verwalten</strong><span>manuell hinzufuegen, automatisch erweitern, loeschen</span></summary><p class="muted">Quellen koennen manuell ergaenzt oder aus dem Systemkatalog automatisch in die verifizierte Quellenliste uebernommen werden.</p>${verifiedSourceForm()}</details></section><section class="panel"><h2>Quellen nach Themenbereich</h2><p class="muted">Orientierungsliste fuer die Themenrecherche. Die Quellen sind noch keine Belege fuer einen Artikel; die konkrete Belegpruefung erfolgt im Editor.</p>${sourceCategoryBlocks(sources)}</section><section class="panel"><h2>Alle verifizierten Quellen</h2><div class="table-wrap"><table class="table"><thead><tr><th>Nr.</th><th>Quelle</th><th>Typ</th><th>Status</th><th>Trust</th><th>Link</th><th>Aktion</th></tr></thead><tbody>${sources.length ? sourceRows(sources, { numbered: true, manageable: true }) : `<tr><td colspan="7">Noch keine Quellen erfasst.</td></tr>`}</tbody></table></div></section>`,
-    suggestions: `${cmsTitle("KI-Redaktion", "Quellenvorschlaege")}${nav(active)}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Quelle</th><th>Typ</th><th>Status</th><th>Trust</th><th>Aktion</th></tr></thead><tbody>${sourceSuggestions.length ? sourceSuggestions.map((source) => `<tr><td><strong>${escapeHtml(source.name || source.title || "-")}</strong><small>${escapeHtml(source.suggestion_reason || source.domain || "")}</small></td><td>${escapeHtml(source.source_type || "-")}</td><td>${badge(source.review_status || "vorgeschlagen")}</td><td>${Number(source.suggested_trust_score || source.trust_score || 0)}</td><td><button class="button button--secondary button--small" data-ai-source-review="${escapeHtml(source.id)}" data-review-status="in Prüfung">in Prüfung</button></td></tr>`).join("") : `<tr><td colspan="5">Keine neuen Quellenvorschlaege.</td></tr>`}</tbody></table></div></section><div id="ai-source-review-result"></div>`,
+    sources: `${cmsTitle("KI-Redaktion", "Quellen")}${nav(active)}<section class="panel"><details class="source-management-details"><summary><strong>Quellen verwalten</strong><span>manuell hinzufuegen, automatisch erweitern, loeschen</span></summary><p class="muted">Quellen koennen manuell ergaenzt oder aus dem Systemkatalog automatisch in die verifizierte Quellenliste uebernommen werden.</p>${verifiedSourceForm()}</details></section><section class="panel"><h2>Quellen nach Themenbereich</h2><p class="muted">Orientierungsliste fuer die Themenrecherche. Die Quellen sind noch keine Belege fuer einen Artikel; die konkrete Belegpruefung erfolgt im Editor.</p>${sourceCategoryBlocks(sources)}</section><section class="panel"><h2>Alle verifizierten Quellen</h2><div class="table-wrap"><table class="table"><thead><tr><th>Nr.</th><th>Quelle</th><th>Typ</th><th>Status</th><th>Link</th><th>Aktion</th></tr></thead><tbody>${sources.length ? sourceRows(sources, { numbered: true, manageable: true }) : `<tr><td colspan="6">Noch keine Quellen erfasst.</td></tr>`}</tbody></table></div></section>`,
+    suggestions: `${cmsTitle("KI-Redaktion", "Quellenvorschlaege")}${nav(active)}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Quelle</th><th>Typ</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${sourceSuggestions.length ? sourceSuggestions.map((source) => `<tr><td><strong>${escapeHtml(source.name || source.title || "-")}</strong><small>${escapeHtml(source.suggestion_reason || source.domain || "")}</small></td><td>${escapeHtml(source.source_type || "-")}</td><td>${badge(source.review_status || "vorgeschlagen")}</td><td><button class="button button--secondary button--small" data-ai-source-review="${escapeHtml(source.id)}" data-review-status="in Prüfung">in Prüfung</button></td></tr>`).join("") : `<tr><td colspan="4">Keine neuen Quellenvorschlaege.</td></tr>`}</tbody></table></div></section><div id="ai-source-review-result"></div>`,
     prompts: `${cmsTitle("KI-Redaktion", "Prompt-Verwaltung")}${nav(active)}<section class="panel prompt-navigation-panel"><h2>Prompt-Navigation</h2>${promptNameNavigation(prompts)}</section><section class="panel prompt-edit-panel"><h2>Prompt anlegen / bearbeiten</h2>${promptForm(prompts.find((prompt) => !isArchivedPrompt(prompt)) || null)}</section><section class="panel"><h2>System-Prompts</h2><div class="table-wrap"><table class="table table--prompts"><thead><tr><th>Name</th><th>Typ</th><th>Aktueller Prompt</th><th>Status</th><th>Aktiv</th><th>Version</th><th>Geaendert</th><th>Aktion</th></tr></thead><tbody>${promptCatalogRows(prompts)}</tbody></table></div></section><section class="panel"><h2>Letzte Prompt-Tests</h2><div class="table-wrap"><table class="table"><thead><tr><th>Zeit</th><th>Prompt</th><th>Status</th><th>Warnungen</th></tr></thead><tbody>${promptTests.length ? promptTestRows([...promptTests].reverse().slice(0, 8)) : `<tr><td colspan="4">Noch keine Prompt-Tests.</td></tr>`}</tbody></table></div></section>`,
-    keywords: `${cmsTitle("KI-Redaktion", "Keywords")}${nav(active)}<section class="panel"><h2>Themen-Keywords</h2><p class="muted">Keywords aus allen gespeicherten Themenvorschlaegen und der Themen-Queue. Einige Treffer koennen im Dashboard ausgefiltert sein; dort stehen sie jetzt im Block "Aus Keywords/Quellen vorhandene, aber ausgefilterte Themen".</p><div class="ai-keyword-cloud ai-keyword-cloud--clickable">${topicKeywords.length ? topicKeywords.slice(0, 60).map((keyword) => `<a class="${keyword.key === selectedKeyword ? "is-active" : ""}" href="#/cms/ai-editorial/keywords?keyword=${encodeURIComponent(keyword.key)}">${escapeHtml(keyword.keyword)} <strong>${keyword.count}</strong></a>`).join("") : `<p class="muted">Noch keine Themen-Keywords vorhanden. Starte eine Themenrecherche.</p>`}</div>${selectedKeyword ? `<section class="keyword-topic-detail"><div class="editorial-field-head"><h3>Themen zu "${escapeHtml(selectedKeywordLabel)}"</h3><a class="button button--secondary button--small" href="#/cms/ai-editorial/keywords">Filter loeschen</a></div><div class="table-wrap"><table class="table table--keyword-topics"><thead><tr><th>Thema</th><th>Kategorie</th><th>Relevanz</th><th>Status</th></tr></thead><tbody>${selectedKeywordTopics.length ? keywordTopicRows(selectedKeywordTopics, aiArticles) : `<tr><td colspan="4">Keine Themen fuer dieses Keyword gefunden.</td></tr>`}</tbody></table></div></section>` : `<div class="alert">Waehle ein Keyword aus, um die zugehoerigen Themen zu sehen.</div>`}<div class="table-wrap"><table class="table table--topic-keywords"><thead><tr><th>Keyword</th><th>Treffer</th><th>Max. Relevanz</th><th>Themen</th></tr></thead><tbody>${topicKeywords.length ? topicKeywordRows(topicKeywords.slice(0, 80)) : `<tr><td colspan="4">Noch keine Themen-Keywords vorhanden.</td></tr>`}</tbody></table></div></section><section class="panel"><h2>Artikel-Keywords</h2><div class="ai-keyword-cloud">${keywords.length ? keywords.map((keyword) => `<span>${escapeHtml(keyword.keyword)} <strong>${Number(keyword.relevance_score || 0)}</strong></span>`).join("") : `<p class="muted">Noch keine KI-Artikel-Keywords gespeichert.</p>`}</div></section>`,
+    keywords: `${cmsTitle("KI-Redaktion", "Keywords")}${nav(active)}<section class="panel"><h2>Themen-Keywords</h2><p class="muted">Keywords aus allen gespeicherten Themenvorschlaegen und der Themen-Queue. Einige Treffer koennen im Dashboard ausgefiltert sein; dort stehen sie jetzt im Block "Aus Keywords/Quellen vorhandene, aber ausgefilterte Themen".</p><div class="ai-keyword-cloud ai-keyword-cloud--clickable">${topicKeywords.length ? topicKeywords.slice(0, 60).map((keyword) => `<a class="${keyword.key === selectedKeyword ? "is-active" : ""}" href="#/cms/ai-editorial/keywords?keyword=${encodeURIComponent(keyword.key)}">${escapeHtml(keyword.keyword)} <strong>${keyword.count}</strong></a>`).join("") : `<p class="muted">Noch keine Themen-Keywords vorhanden. Starte eine Themenrecherche.</p>`}</div>${selectedKeyword ? `<section class="keyword-topic-detail"><div class="editorial-field-head"><h3>Themen zu "${escapeHtml(selectedKeywordLabel)}"</h3><a class="button button--secondary button--small" href="#/cms/ai-editorial/keywords">Filter loeschen</a></div><div class="table-wrap"><table class="table table--keyword-topics"><thead><tr><th>Thema</th><th>Kategorie</th><th>Beleg</th><th>Status</th></tr></thead><tbody>${selectedKeywordTopics.length ? keywordTopicRows(selectedKeywordTopics, aiArticles) : `<tr><td colspan="4">Keine Themen fuer dieses Keyword gefunden.</td></tr>`}</tbody></table></div></section>` : `<div class="alert">Waehle ein Keyword aus, um die zugehoerigen Themen zu sehen.</div>`}<div class="table-wrap"><table class="table table--topic-keywords"><thead><tr><th>Keyword</th><th>Treffer</th><th>Letzte Aktivitaet</th><th>Themen</th></tr></thead><tbody>${topicKeywords.length ? topicKeywordRows(topicKeywords.slice(0, 80)) : `<tr><td colspan="4">Noch keine Themen-Keywords vorhanden.</td></tr>`}</tbody></table></div></section><section class="panel"><h2>Artikel-Keywords</h2><div class="ai-keyword-cloud">${keywords.length ? keywords.map((keyword) => `<span>${escapeHtml(keyword.keyword)}</span>`).join("") : `<p class="muted">Noch keine KI-Artikel-Keywords gespeichert.</p>`}</div></section>`,
     automation: `${cmsTitle("KI-Redaktion", "Automatisierung")}${nav(active)}<div class="cms-columns"><section class="panel"><h2>Status</h2><div class="setup-steps"><div class="setup-step"><span>Automatisierung</span>${badge(settings.automationEnabled ? "Automatik aktiv" : "inaktiv")}</div><div class="setup-step"><span>Letzter Lauf</span><strong>${escapeHtml(formatDateTime(latestLog?.created_at || latestLog?.createdAt || "")) || "-"}</strong></div><div class="setup-step"><span>Letzte Warnung</span><strong>${escapeHtml(logs.find((log) => String(log.status || "").toLowerCase().includes("warn"))?.message || "-")}</strong></div></div><div class="ai-picto-row">${pictogram(">", "Automatik aktivieren", 'data-ai-editorial-automation="start"')}${pictogram("||", "Automatik pausieren", 'data-ai-editorial-automation="pause"')}</div><div id="ai-editorial-run-result"></div></section><section class="panel"><h2>Einstellungen</h2>${settingsForm(settings)}</section></div>`,
-    logs: `${cmsTitle("KI-Redaktion", "Logs / Pruefberichte")}${nav(active)}<section class="panel"><h2>Pruefberichte</h2><div class="table-wrap"><table class="table"><thead><tr><th>Zeit</th><th>Aufgabe</th><th>Status</th><th>Meldung</th></tr></thead><tbody>${logs.length ? logRows([...logs].reverse()) : `<tr><td colspan="4">Noch keine KI-Redaktionslogs.</td></tr>`}</tbody></table></div></section><section class="panel"><div class="editorial-field-head"><div><h2>Rawdaten Themenfunde</h2><p class="muted">Alle gespeicherten Quellenfunde der Themenrecherche. Diese Rohdaten sind noch keine freigegebenen Artikel, sondern die Grundlage fuer Themenvorschlaege und spaetere Quellenzuordnung.</p></div>${topicRawData.length ? `<button class="button button--danger button--small" type="button" data-ai-topic-raw-clear>Rawdaten loeschen</button>` : ""}</div><div class="table-wrap"><table class="table table--topic-raw-data"><thead><tr><th>Quelle</th><th>Fund / Thema</th><th>Datum</th><th>Link</th><th>Zuordnung</th></tr></thead><tbody>${topicRawDataForTopics.length ? rawTopicRows([...topicRawDataForTopics].sort((a, b) => String(b.created_at || b.createdAt || "").localeCompare(String(a.created_at || a.createdAt || ""))).slice(0, 120)) : `<tr><td colspan="5">Noch keine Rawdaten gespeichert. Starte eine Themenrecherche.</td></tr>`}</tbody></table></div></section>`,
+    logs: `${cmsTitle("KI-Redaktion", "Logs")}${nav(active)}<section class="panel"><h2>Ausfuehrungslogs</h2><div class="table-wrap"><table class="table"><thead><tr><th>Zeit</th><th>Aufgabe</th><th>Status</th><th>Meldung</th></tr></thead><tbody>${logs.length ? logRows([...logs].reverse()) : `<tr><td colspan="4">Noch keine KI-Redaktionslogs.</td></tr>`}</tbody></table></div></section><section class="panel"><div class="editorial-field-head"><div><h2>Rawdaten Themenfunde</h2><p class="muted">Alle gespeicherten Quellenfunde der Themenrecherche. Diese Rohdaten sind noch keine freigegebenen Artikel, sondern die Grundlage fuer Themenvorschlaege und spaetere Quellenzuordnung.</p></div>${topicRawData.length ? `<button class="button button--danger button--small" type="button" data-ai-topic-raw-clear>Rawdaten loeschen</button>` : ""}</div><div class="table-wrap"><table class="table table--topic-raw-data"><thead><tr><th>Quelle</th><th>Fund / Thema</th><th>Datum</th><th>Link</th><th>Zuordnung</th></tr></thead><tbody>${topicRawDataForTopics.length ? rawTopicRows([...topicRawDataForTopics].sort((a, b) => String(b.created_at || b.createdAt || "").localeCompare(String(a.created_at || a.createdAt || ""))).slice(0, 120)) : `<tr><td colspan="5">Noch keine Rawdaten gespeichert. Starte eine Themenrecherche.</td></tr>`}</tbody></table></div></section>`,
     settings: `${cmsTitle("KI-Redaktion", "Einstellungen")}${nav(active)}<section class="panel">${settingsForm(settings)}</section>`
   }[active] || "";
   return protect(cmsShell(`cms/ai-editorial/${active}`, content));

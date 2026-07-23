@@ -2,7 +2,7 @@
 
 const PUBLIC_LIST_CACHE_MS = 45000;
 const PUBLIC_SESSION_CACHE_MS = 180000;
-const PUBLIC_READ_TIMEOUT_MS = 4500;
+const PUBLIC_READ_TIMEOUT_MS = 9000;
 const publicListCache = new Map();
 
 function cmsDataMode() {
@@ -315,14 +315,36 @@ export async function listPublicMediaAssets() {
 }
 
 export async function listPublicEvents(includeMemberEvents = false) {
-  const [publishedEvents, activeEvents, visibleEvents, allEvents] = await Promise.all([
+  const [
+    publishedEvents,
+    activeEvents,
+    visibleEvents,
+    registrationOpenEvents,
+    registrationStatusOpenEvents,
+    germanRegistrationOpenEvents,
+    registrationEnabledEvents,
+    allEvents
+  ] = await Promise.all([
     cachedConstrainedList("events", [["status", "==", "published"], ["visibility", "==", "public"]]).catch(() => []),
     cachedConstrainedList("events", [["status", "==", "active"], ["visibility", "==", "public"]]).catch(() => []),
     cachedConstrainedList("events", [["visible", "==", true]]).catch(() => []),
+    cachedConstrainedList("events", [["registrationStatus", "==", "open"]]).catch(() => []),
+    cachedConstrainedList("events", [["registration_state", "==", "open"]]).catch(() => []),
+    cachedConstrainedList("events", [["registrationStatus", "==", "offen"]]).catch(() => []),
+    cachedConstrainedList("events", [["registrationEnabled", "==", true]]).catch(() => []),
     list("events").catch(() => [])
   ]);
   const mergedEvents = new Map();
-  [...publishedEvents, ...activeEvents, ...visibleEvents, ...allEvents].forEach((event) => {
+  [
+    ...publishedEvents,
+    ...activeEvents,
+    ...visibleEvents,
+    ...registrationOpenEvents,
+    ...registrationStatusOpenEvents,
+    ...germanRegistrationOpenEvents,
+    ...registrationEnabledEvents,
+    ...allEvents
+  ].forEach((event) => {
     if (!event?.id) return;
     mergedEvents.set(event.id, mergeLiveRecord(mergedEvents.get(event.id), normalizePublicEvent(event)));
   });
@@ -339,11 +361,16 @@ function isEventVisible(event) {
   const status = liveStatus(event, "active");
   const visibility = liveVisibility(event, "public");
   const lifecycle = normalizePublicState(event.lifecyclePhase || event.lifecycle || "");
+  const registrationStatus = normalizePublicState(event.registrationStatus || event.registration_state || event.registrationState || event.registration || "");
+  const registrationOpen = event.registrationEnabled === true
+    || event.allowPublicRegistration === true
+    || ["open", "offen", "active", "aktiv", "geoeffnet", "registration_open"].includes(registrationStatus);
   if (["inactive", "cancelled", "deleted", "hidden", "private"].includes(status)) return false;
   if (["internal", "private", "hidden"].includes(visibility)) return false;
   if (status === "draft" && event.visible !== true) return false;
   if (["archive_published", "post_processing", "archived"].includes(lifecycle)) return true;
-  return ["", "active", "published", "approved", "aktiv", "veroeffentlicht", "online"].includes(status) || event.visible === true;
+  if (registrationOpen) return true;
+  return ["", "active", "published", "approved", "aktiv", "veroeffentlicht", "veröffentlicht", "online", "open", "offen", "geoeffnet", "geöffnet", "registration_open"].includes(status) || event.visible === true;
 }
 
 function isPublicLiveMember(member) {

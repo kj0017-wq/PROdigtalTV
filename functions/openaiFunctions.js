@@ -16,7 +16,7 @@ const ACTIONS = {
   extendText: { label: "Text verlaengern", mode: "text", instruction: "Erweitere den Text sachlich mit den vorhandenen Informationen." },
   generateSeoMeta: { label: "SEO-Daten erzeugen", mode: "json", instruction: "Erzeuge SEO-Daten als JSON mit seoTitle, seoDescription, keywords und summary." },
   generateEventDescription: { label: "Eventbeschreibung erzeugen", mode: "text", instruction: "Erzeuge eine Eventbeschreibung aus den vorhandenen Eventdaten." },
-  generateEventInvitation: { label: "Einladungstext erzeugen", mode: "text", instruction: "Erzeuge einen professionellen Einladungstext fuer das Event." },
+  generateEventInvitation: { label: "Einladungstext erzeugen", mode: "text", instruction: "Erzeuge je nach mailingType einen professionellen Mailvorschlag fuer Save the date, Einladung oder Einladungsupdate. Nutze vorhandene Eventdaten, Platzhalter und den bisherigen Feldinhalt. Keine erfundenen Fakten." },
   generateEventAgenda: { label: "Agenda strukturieren", mode: "text", instruction: "Strukturiere eine Agenda aus Stichpunkten. Markiere fehlende Angaben." },
   generateEventFaq: { label: "FAQ erzeugen", mode: "text", instruction: "Erzeuge eine kurze FAQ zum Event." },
   generateTopicDescription: { label: "Themenbeschreibung erzeugen", mode: "text", instruction: "Erzeuge eine globale Themenbeschreibung." },
@@ -123,6 +123,9 @@ function buildPrompt(action, payload) {
       : "Feldregel: Erzeuge nur eine einzelne Subline, maximal 150 Zeichen, keine Ueberschrift, keinen Fliesstext.",
     shortDescription: "Feldregel: Erzeuge nur einen kurzen Teasertext, maximal 180 Zeichen, keine Artikelstruktur.",
     introText: "Feldregel: Erzeuge nur einen kurzen Intro-/Teasertext, maximal 220 Zeichen, keine Artikelstruktur.",
+    saveTheDateText: "Feldregel: Schreibe einen kurzen Save-the-date-Mailtext. Der Text kuendigt Termin und Anlass an, ohne umfangreiche Agenda und ohne verbindliche Details zu erfinden. Verwende passende Platzhalter wie {{firstName}}, {{eventTitle}}, {{eventDate}} und {{eventLocation}}.",
+    invitationText: "Feldregel: Schreibe einen vollstaendigen Einladungstext mit freundlicher Begruessung, Anlass, Termin, Ort und klarem Bestaetigungsbutton-Hinweis. Verwende {{confirmationLink}} fuer den Bestaetigungslink.",
+    invitationUpdateText: "Feldregel: Schreibe ein Einladungsupdate. Nenne knapp, dass es neue oder aktualisierte Informationen zur Veranstaltung gibt. Keine neue Einladung vortaeuschen, wenn es nur ein Update ist. Verwende passende Platzhalter.",
     bodyText: isRetrospective
       ? "Feldregel: Formuliere als nachtraeglichen Rueckblick auf ein vergangenes Event im Fliesstext. Verwende Praeteritum oder Perfekt. Ersetze Einladungs-, Anmelde-, Ankuendigungs- und Zukunftsformulierungen durch Vergangenheit. Keine Bulletpoints."
       : "",

@@ -1,4 +1,4 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=470";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=471";
 import { list, getOne } from "../firebase/dataService.js?v=504";
 import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=471";
 import { accessLabels, lifecycleLabels } from "../data/platformConstants.js";
@@ -12,7 +12,7 @@ function protect(content, adminOnly = false) {
   if (localCmsAccessBypass()) return content;
   const user = currentUser();
   if (!canUseCms(user) || (adminOnly && !isAdmin(user))) {
-    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Zugriff geschuetzt</p><h1>CMS-Login erforderlich</h1><p style="margin:14px 0 24px">Dieser Bereich steht Administratoren und Redakteuren zur Verfuegung.</p><div class="actions"><a class="button button--primary" href="#/login">Anmelden</a>${user ? `<button id="logout-button" class="button button--secondary" type="button">Abmelden</button>` : ""}</div></div></section>`;
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Zugriff geschuetzt</p><h1>CMS-Login erforderlich</h1><p style="margin:14px 0 24px">Dieser Bereich steht Administratoren und Redakteuren zur Verfuegung.</p><div class="actions"><a class="button button--primary" href="#/login">Anmelden</a>${user ?`<button id="logout-button" class="button button--secondary" type="button">Abmelden</button>` : ""}</div></div></section>`;
   }
   return content;
 }
@@ -28,9 +28,22 @@ function denied(adminOnly = false) {
 }
 
 function status(value) {
-  const style = ["failed", "expired", "inactive", "cancelled", "archived"].includes(value) ? "status--error" : ["draft", "pending_email_confirmation", "queued", "in_review", "uploaded"].includes(value) ? "status--draft" : "";
-  const label = { active: "Aktiv", inactive: "Inaktiv", cancelled: "Gekündigt", internal: "Intern", published: "Veröffentlicht", draft: "Entwurf", archived: "Archiviert", approved: "Freigegeben", new: "Neu", queued: "Wartet", sent: "Gesendet", failed: "Fehler", in_review: "In Prüfung" }[value] || value;
+  const style = ["failed", "expired", "inactive", "cancelled", "archived"].includes(value) ?"status--error" : ["draft", "pending_email_confirmation", "queued", "in_review", "uploaded"].includes(value) ?"status--draft" : "";
+  const label = { active: "Aktiv", inactive: "Inaktiv", offen: "Offen", geschlossen: "Geschlossen", cancelled: "Gekündigt", internal: "Intern", published: "Veröffentlicht", draft: "Entwurf", archived: "Archiviert", approved: "Freigegeben", new: "Neu", queued: "Wartet", sent: "Gesendet", failed: "Fehler", in_review: "In Prüfung" }[value] || value;
   return `<span class="status ${style}">${escapeHtml(label)}</span>`;
+}
+
+function galleryChoiceList(galleries = [], selectedId = "") {
+  if (!galleries.length) {
+    return `<div class="editor-gallery-choice-list editor-gallery-choice-list--empty" data-editor-gallery-choices><p class="muted">Keine Galerien gefunden.</p></div>`;
+  }
+  return `<div class="editor-gallery-choice-list" data-editor-gallery-choices>${galleries.map((gallery) => {
+    const active = gallery.id === selectedId;
+    return `<button class="editor-gallery-choice ${active ?"is-active" : ""}" type="button" data-gallery-choice="${escapeHtml(gallery.id)}">
+      <strong>${escapeHtml(gallery.title || gallery.id)}</strong>
+      <span>${(gallery.images || []).length} Bilder</span>
+    </button>`;
+  }).join("")}</div>`;
 }
 
 function iconImage(name) {
@@ -40,34 +53,34 @@ function iconImage(name) {
     eyeOff: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAACtUlEQVR4AdyUu4tTQRTG5yZEJQSjrCnUPISgKRQbRdTCQrGxc0Es/A8EqxVUcFFUUFC30n9hi+21UmHXwsIVRGGLLUyyeYCFi6/AQl7+viEz3JvVWGy22XC+ex5zzvlmzp2bmNnk3xYiKBQKa/l8/u64J2ZHlM1mj9J4exAEd4ZJIJ4EP0B/CN/JvUTdSLEE9Xr9E1mngfkLyUPiO8GwpMmdG5C+Hl50viWQU61W3/X7/fOyKfQnIV6KxWIH0EEY5Jwi/73ywVkRMYmD2BHxBIpStE1awPYk5XK5yjgW1GSA1W63u8LvhEjJbwATj8eXc7ncGdkOngD2/QRfAMkDPcIkNFPhF8XBbk7VoNkRbANJFv0MGOLzmUwmJVvwBLDXFQAzFExz/MPYkXdCvAiCdrud1xrNPksLxK9R80h2Mpn8JS1YAo49LQeskTiFNux4CT0JIiTym81mDf0YGGovSAvU3ILkt2zit6UtAcY9YBKJxC5pB5JLzg6PSzH8WWlydMVlWqRSqQlrGHNf2hFcl8PRv0o70ETX17mRk1QqlY8sLEPwCu2l1WqVB85TaUvAWKxDIM3RnqOtEH9pjdADUn+7WC/VarVFt0ytRr1PPmt205ZAgU6ns0caXCXxCdoKOzxujdAjTOLCXOMb2HbU1BSxrXiCRqPxrdfr6SpqYYqCFRm8uA803Iv9E3gh5k+iIP5FaZpfpsZdZ+MJtMhx3/Ie7BWkIMdJ9P+zyEd1iCOngf2a3UbI8SSsnaR5keZz6uUQIVBQV5DkAPsNkBzjvs8PyETYx1/QghAmobnfudaEdQQKCpCcAyK6gh8ZD75klYf9ZsIkxCLyTwKXBcks8OPBtmNCT4AZxrLui3e10v8lUNIoMJalUSQbJhD5EMlNxRzGQqBmjoSx7ZDvMDYCNRSJdBh/AAAA///ZsAk1AAAABklEQVQDABUiTEDAfB/UAAAAAElFTkSuQmCC",
     trash: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAlElEQVR4AeyUXQqAIBCE2y7iWbp5R1lP0s/DQLQTjpFEZCCj267fOoLj0Pj7CSCltCQyFHeDRTUbKbkBoHRVkxMAOWfDBvtcGcd8zKEBgB9PqQSA14Ce14gzlQCsUI11QNGpbtFHLMJzgXbPa8SZvnvJeBJKyjpHjJ7AzCYkqGoXNRTg7jN8VtW3GtYMBbDEu7HmgBUAAP//nstLKAAAAAZJREFUAwAtM3oxRhnWAgAAAABJRU5ErkJggg=="
   };
-  return icons[name] ? `<img src="${icons[name]}" alt="" loading="lazy">` : "";
+  return icons[name] ?`<img src="${icons[name]}" alt="" loading="lazy">` : "";
 }
 
 function eyeSvgIcon(isVisible = false) {
-  return `<svg class="member-eye-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.7"></circle>${isVisible ? "" : `<path class="member-eye-svg__slash" d="M4.5 4.5 19.5 19.5"></path>`}</svg>`;
+  return `<svg class="member-eye-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.7"></circle>${isVisible ?"" : `<path class="member-eye-svg__slash" d="M4.5 4.5 19.5 19.5"></path>`}</svg>`;
 }
 
 function editorialActionButtons(item, section, module, activeStatus, inactiveStatus) {
   const isActive = ["published", "active", "approved"].includes(item.status);
-  const toggleStatus = isActive ? inactiveStatus : activeStatus;
-  const toggleClass = isActive ? "icon-button--visible" : "icon-button--hidden";
-  const toggleLabel = isActive ? "Aktiv: auf inaktiv setzen" : "Inaktiv: auf aktiv setzen";
-  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-record-status="${module}" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ? "eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="${module}" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
+  const toggleStatus = isActive ?inactiveStatus : activeStatus;
+  const toggleClass = isActive ?"icon-button--visible" : "icon-button--hidden";
+  const toggleLabel = isActive ?"Aktiv: auf inaktiv setzen" : "Inaktiv: auf aktiv setzen";
+  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-record-status="${module}" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ?"eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="${module}" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
 }
 
 function cmsListActionButtons(item, section, module, activeStatus, inactiveStatus, { editable = true, manageable = true } = {}) {
   const isActive = ["published", "active", "approved"].includes(item.status);
-  const toggleStatus = isActive ? inactiveStatus : activeStatus;
-  const toggleClass = isActive ? "icon-button--visible" : "icon-button--hidden";
-  const toggleLabel = isActive ? "Aktiv: auf inaktiv setzen" : "Inaktiv: auf aktiv setzen";
-  return `<div class="table-actions table-actions--icons">${editable ? `<a class="icon-button icon-button--edit" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a>` : ""}${manageable ? `<button class="icon-button ${toggleClass}" type="button" data-record-status="${module}" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ? "eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="${module}" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button>` : ""}</div>`;
+  const toggleStatus = isActive ?inactiveStatus : activeStatus;
+  const toggleClass = isActive ?"icon-button--visible" : "icon-button--hidden";
+  const toggleLabel = isActive ?"Aktiv: auf inaktiv setzen" : "Inaktiv: auf aktiv setzen";
+  return `<div class="table-actions table-actions--icons">${editable ?`<a class="icon-button icon-button--edit" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a>` : ""}${manageable ?`<button class="icon-button ${toggleClass}" type="button" data-record-status="${module}" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ?"eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="${module}" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button>` : ""}</div>`;
 }
 
 function editorialVisibilityActionButtons(item, section) {
   const isVisible = item.visible === true;
-  const toggleClass = isVisible ? "icon-button--visible" : "icon-button--hidden";
-  const toggleLabel = isVisible ? "Sichtbar: ausblenden" : "Unsichtbar: sichtbar machen";
-  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=editorialContent&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-news-visible-toggle="${escapeHtml(item.id)}" data-visible="${isVisible ? "false" : "true"}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isVisible ? "eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="editorialContent" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
+  const toggleClass = isVisible ?"icon-button--visible" : "icon-button--hidden";
+  const toggleLabel = isVisible ?"Sichtbar: ausblenden" : "Unsichtbar: sichtbar machen";
+  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=editorialContent&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-news-visible-toggle="${escapeHtml(item.id)}" data-visible="${isVisible ?"false" : "true"}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isVisible ?"eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="editorialContent" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
 }
 
 function lockedEditorialActionButtons(item, section, module) {
@@ -76,15 +89,15 @@ function lockedEditorialActionButtons(item, section, module) {
 
 function internalEditorialActionButtons(item, section, module) {
   const isActive = ["aktiv", "published", "active"].includes(String(item.status || "").toLowerCase());
-  const toggleStatus = isActive ? "inaktiv" : "aktiv";
-  const toggleClass = isActive ? "icon-button--visible" : "icon-button--hidden";
-  const toggleLabel = isActive ? "Sichtbar: ausblenden" : "Unsichtbar: sichtbar machen";
+  const toggleStatus = isActive ?"inaktiv" : "aktiv";
+  const toggleClass = isActive ?"icon-button--visible" : "icon-button--hidden";
+  const toggleLabel = isActive ?"Sichtbar: ausblenden" : "Unsichtbar: sichtbar machen";
   const usageKey = internalUsageKey(item);
   const visibilityButton = usageKey === "legacy"
-    ? ""
-    : `<button class="icon-button ${toggleClass}" type="button" data-record-status="${module}" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ? "eye" : "eyeOff")}</button>`;
+    ?""
+    : `<button class="icon-button ${toggleClass}" type="button" data-record-status="${module}" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ?"eye" : "eyeOff")}</button>`;
   const deleteButton = usageKey === "legacy"
-    ? `<button class="icon-button icon-button--danger" type="button" data-delete-record="${module}" data-record-id="${item.id}" title="Altbestand loeschen" aria-label="Altbestand loeschen">${iconImage("trash")}</button>`
+    ?`<button class="icon-button icon-button--danger" type="button" data-delete-record="${module}" data-record-id="${item.id}" title="Altbestand loeschen" aria-label="Altbestand loeschen">${iconImage("trash")}</button>`
     : "";
   return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a>${visibilityButton}${deleteButton}</div>`;
 }
@@ -101,24 +114,24 @@ function editorialMediaFlags(item = {}) {
   const videoCount = articleVideoAttachments(item).filter((video) => video.youtubeVideoId || video.youtubeUrl || video.title).length;
   if (!hasGallery && !videoCount) return `<span class="editorial-media-flags editorial-media-flags--empty" aria-label="Keine Galerie oder Videos">-</span>`;
   return `<div class="editorial-media-flags">
-    ${hasGallery ? `<span class="editorial-media-flag editorial-media-flag--gallery" title="Galerie vorhanden" aria-label="Galerie vorhanden">${mediaPicto("gallery")}</span>` : ""}
-    ${videoCount ? `<span class="editorial-media-flag editorial-media-flag--video" title="${videoCount} Video${videoCount === 1 ? "" : "s"} vorhanden" aria-label="${videoCount} Video${videoCount === 1 ? "" : "s"} vorhanden">${mediaPicto("video")}</span>` : ""}
+    ${hasGallery ?`<span class="editorial-media-flag editorial-media-flag--gallery" title="Galerie vorhanden" aria-label="Galerie vorhanden">${mediaPicto("gallery")}</span>` : ""}
+    ${videoCount ?`<span class="editorial-media-flag editorial-media-flag--video" title="${videoCount} Video${videoCount === 1 ?"" : "s"} vorhanden" aria-label="${videoCount} Video${videoCount === 1 ?"" : "s"} vorhanden">${mediaPicto("video")}</span>` : ""}
   </div>`;
 }
 
 function editorialListStatus(item) {
-  return status(["published", "active", "approved"].includes(item.status) ? "active" : "inactive");
+  return status(["published", "active", "approved"].includes(item.status) ?"active" : "inactive");
 }
 
 function editorialVisibilityListStatus(item) {
   const isPublished = !["draft", "archived"].includes(item.status);
-  return status(isPublished && item.visible === true ? "active" : "inactive");
+  return status(isPublished && item.visible === true ?"active" : "inactive");
 }
 
 function cmsBulkToolbar(records = [], { collection = "editorialContent", label = "Eintraege" } = {}) {
   return `<div class="cms-bulk-toolbar" data-cms-bulk-toolbar data-cms-bulk-collection="${escapeHtml(collection)}" data-cms-bulk-label="${escapeHtml(label)}">
     <div class="cms-bulk-toolbar__select">
-      <label class="cms-bulk-checkbox"><input type="checkbox" data-cms-bulk-select-all ${records.length ? "" : "disabled"}> <span>Alle</span></label>
+      <label class="cms-bulk-checkbox"><input type="checkbox" data-cms-bulk-select-all ${records.length ?"" : "disabled"}> <span>Alle</span></label>
       <button class="button button--secondary button--small" type="button" data-cms-bulk-clear>Auswahl aufheben</button>
       <span class="muted" data-cms-bulk-count>0 ausgewaehlt</span>
     </div>
@@ -163,14 +176,14 @@ function timestampInputDate(value) {
   if (value.seconds) return new Date(value.seconds * 1000).toISOString().slice(0, 10);
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? String(value).slice(0, 10) : parsed.toISOString().slice(0, 10);
+  return Number.isNaN(parsed.getTime()) ?String(value).slice(0, 10) : parsed.toISOString().slice(0, 10);
 }
 
 function memberAccessBlocked(item = {}, now = new Date()) {
   if (!["inactive", "cancelled"].includes(item.membershipAccessStatus)) return false;
   const effective = item.membershipAccessEffectiveAt;
   if (!effective) return true;
-  const effectiveDate = effective.seconds ? new Date(effective.seconds * 1000) : new Date(effective);
+  const effectiveDate = effective.seconds ?new Date(effective.seconds * 1000) : new Date(effective);
   return !Number.isNaN(effectiveDate.getTime()) && effectiveDate <= now;
 }
 
@@ -178,9 +191,9 @@ function memberAccessStatusCell(item = {}) {
   const accessStatus = item.membershipAccessStatus || "active";
   const effective = timestampInputDate(item.membershipAccessEffectiveAt);
   const blocked = memberAccessBlocked(item);
-  if (accessStatus === "active") return status(memberIsLive(item) ? "active" : "inactive");
-  const suffix = effective ? ` ab ${escapeHtml(formatDate(effective))}` : " sofort";
-  return `${status(blocked ? accessStatus : "pending_email_confirmation")}<small>${escapeHtml(accessStatus === "cancelled" ? "Gekuendigt" : "Inaktiv")}${suffix}</small>`;
+  if (accessStatus === "active") return status(memberIsLive(item) ?"active" : "inactive");
+  const suffix = effective ?` ab ${escapeHtml(formatDate(effective))}` : " sofort";
+  return `${status(blocked ?accessStatus : "pending_email_confirmation")}<small>${escapeHtml(accessStatus === "cancelled" ?"Gekuendigt" : "Inaktiv")}${suffix}</small>`;
 }
 
 function memberListStatus(item) {
@@ -191,30 +204,30 @@ function memberStatusDot(item = {}) {
   const blocked = memberAccessBlocked(item);
   const isLive = memberIsLive(item);
   const accessStatus = item.membershipAccessStatus || "active";
-  const state = blocked || accessStatus !== "active" ? "blocked" : isLive ? "visible" : "hidden";
+  const state = blocked || accessStatus !== "active" ?"blocked" : isLive ?"visible" : "hidden";
   const label = blocked
-    ? accessStatus === "cancelled" ? "Gekuendigt" : "Inaktiv"
+    ?accessStatus === "cancelled" ?"Gekuendigt" : "Inaktiv"
     : isLive
-      ? "Aktiv sichtbar"
+      ?"Aktiv sichtbar"
       : "Aktiv, nicht sichtbar";
   return `<span class="member-status-dot member-status-dot--${state}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"></span>`;
 }
 
 function memberVisibilityCell(item) {
   const isLive = memberIsLive(item);
-  const toggleStatus = isLive ? "inactive" : "active";
-  const toggleLabel = isLive ? "Sichtbar: ausblenden" : "Nicht sichtbar: sichtbar machen";
-  const label = isLive ? "Sichtbar" : "Nicht sichtbar";
+  const toggleStatus = isLive ?"inactive" : "active";
+  const toggleLabel = isLive ?"Sichtbar: ausblenden" : "Nicht sichtbar: sichtbar machen";
+  const label = isLive ?"Sichtbar" : "Nicht sichtbar";
   const reason = isLive
-    ? "Website"
+    ?"Website"
     : memberAccessBlocked(item)
-      ? "Zugang gesperrt"
+      ?"Zugang gesperrt"
       : item.isLive === false
-        ? "Live aus"
+        ?"Live aus"
         : (item.visibility || "public") !== "public"
-          ? "Intern"
+          ?"Intern"
           : "Nicht aktiv";
-  return `<div class="member-visibility-cell ${isLive ? "is-visible" : "is-hidden"}"><button class="icon-button member-eye-toggle ${isLive ? "icon-button--visible" : "icon-button--hidden"}" type="button" data-record-status="members" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${eyeSvgIcon(isLive)}</button><span>${escapeHtml(label)}</span><small>${escapeHtml(reason)}</small></div>`;
+  return `<div class="member-visibility-cell ${isLive ?"is-visible" : "is-hidden"}"><button class="icon-button member-eye-toggle ${isLive ?"icon-button--visible" : "icon-button--hidden"}" type="button" data-record-status="members" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${eyeSvgIcon(isLive)}</button><span>${escapeHtml(label)}</span><small>${escapeHtml(reason)}</small></div>`;
 }
 
 function memberVisibleToggleCell(item = {}) {
@@ -260,18 +273,18 @@ function memberContactCell(item = {}) {
   const split = splitPhoneAndMobile(item.contactPhone || item.phone || "", item.contactMobile || item.mobile || "");
   const phone = split.phone;
   const mobile = split.mobile;
-  const phoneLine = phone ? `Tel. ${escapeHtml(phone)}` : "Tel. fehlt";
-  const mobileLine = mobile ? `Mobil ${escapeHtml(mobile)}` : "Mobil fehlt";
-  return `<div class="member-contact-cell"><span>${email ? escapeHtml(email) : "Mail fehlt"}</span><small>${phoneLine}</small><small>${mobileLine}</small></div>`;
+  const phoneLine = phone ?`Tel. ${escapeHtml(phone)}` : "Tel. fehlt";
+  const mobileLine = mobile ?`Mobil ${escapeHtml(mobile)}` : "Mobil fehlt";
+  return `<div class="member-contact-cell"><span>${email ?escapeHtml(email) : "Mail fehlt"}</span><small>${phoneLine}</small><small>${mobileLine}</small></div>`;
 }
 
 function memberProfileMissingCell(item = {}) {
   const missing = Array.isArray(item.needsProfileContentReview)
-    ? item.needsProfileContentReview
+    ?item.needsProfileContentReview
     : [
-        item.logoUrl ? "" : "Logo",
-        (item.website || item.url) ? "" : "Website",
-        memberDescriptionValue(item) ? "" : "Beschreibung"
+        item.logoUrl ?"" : "Logo",
+        (item.website || item.url) ?"" : "Website",
+        memberDescriptionValue(item) ?"" : "Beschreibung"
       ].filter(Boolean);
   if (!missing.length) return `<small class="member-profile-complete">Profil komplett</small>`;
   return `<small class="member-profile-missing">Fehlt: ${missing.map(escapeHtml).join(", ")}</small>`;
@@ -280,7 +293,7 @@ function memberProfileMissingCell(item = {}) {
 function memberDescriptionValue(item = {}) {
   const current = String(item.description || "").trim();
   const generic = /^Internes Mitgliedsprofil aus der Mitgliederliste 2026\.?$/i.test(current);
-  return generic ? "" : current;
+  return generic ?"" : current;
 }
 
 function mediaAssetUrl(asset = {}) {
@@ -292,7 +305,7 @@ function blockedMemberLogoUrl(item = {}, url = "") {
 }
 
 function safeMemberLogoUrl(item = {}, url = "") {
-  return blockedMemberLogoUrl(item, url) ? "" : url;
+  return blockedMemberLogoUrl(item, url) ?"" : url;
 }
 
 function memberLogoAsset(item = {}, mediaAssets = []) {
@@ -300,20 +313,24 @@ function memberLogoAsset(item = {}, mediaAssets = []) {
     .filter((asset) => {
       const logoUrl = item.logoUrl || "";
       const urls = [asset.file_path_web_url, asset.file_path_thumb_url, asset.file_path_original_url, asset.imageUrl, asset.assetUrl].filter(Boolean);
-      const directIds = [item.logo_media_asset_id, item.logoMediaAssetId, item.thumbnail_media_asset_id, item.mediaAssetId, item.media_asset_id].filter(Boolean);
+      const directIds = [item.logo_media_asset_id, item.logoMediaAssetId, item.logoAssetId, item.thumbnail_media_asset_id, item.thumbnailMediaAssetId, item.mediaAssetId, item.media_asset_id].filter(Boolean);
+      const linkedCollection = asset.linked_collection || asset.linkedCollection;
+      const linkedId = asset.linked_record_id || asset.linkedRecordId || asset.linked_id || asset.linkedId;
+      const targetCollection = asset.target_collection || asset.targetCollection;
+      const targetId = asset.target_id || asset.targetId;
       return directIds.includes(asset.id)
-        || asset.linked_collection === "members" && asset.linked_record_id === item.id
-        || asset.target_collection === "members" && asset.target_id === item.id
+        || linkedCollection === "members" && linkedId === item.id
+        || targetCollection === "members" && targetId === item.id
         || (logoUrl && urls.includes(logoUrl));
     })
     .filter((asset) => safeMemberLogoUrl(item, mediaAssetUrl(asset)))
     .sort((a, b) => {
       const score = (asset = {}) => [
-        [item.logo_media_asset_id, item.logoMediaAssetId, item.thumbnail_media_asset_id, item.mediaAssetId, item.media_asset_id].filter(Boolean).includes(asset.id) ? "5" : "0",
-        asset.target_collection === "members" && asset.target_id === item.id && (asset.target_field || "logoUrl") === "logoUrl" ? "4" : "0",
-        asset.linked_collection === "members" && asset.linked_record_id === item.id && (asset.linked_field || "logoUrl") === "logoUrl" ? "3" : "0",
-        asset.source_type === "edited" ? "2" : "0",
-        asset.status === "active" ? "2" : "1",
+        [item.logo_media_asset_id, item.logoMediaAssetId, item.logoAssetId, item.thumbnail_media_asset_id, item.thumbnailMediaAssetId, item.mediaAssetId, item.media_asset_id].filter(Boolean).includes(asset.id) ?"5" : "0",
+        (asset.target_collection || asset.targetCollection) === "members" && (asset.target_id || asset.targetId) === item.id && (asset.target_field || asset.targetField || "logoUrl") === "logoUrl" ?"4" : "0",
+        (asset.linked_collection || asset.linkedCollection) === "members" && (asset.linked_record_id || asset.linkedRecordId || asset.linked_id || asset.linkedId) === item.id && (asset.linked_field || asset.linkedField || "logoUrl") === "logoUrl" ?"3" : "0",
+        asset.source_type === "edited" ?"2" : "0",
+        asset.status === "active" ?"2" : "1",
         asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
         asset.id || ""
       ].join("|");
@@ -325,7 +342,7 @@ function recordMediaAsset(item = {}, mediaAssets = [], collection = "", field = 
   const recordUrl = String(item[field] || item.logo_url || item.image_url || editorialThumbUrl(item) || "").trim();
   const directIds = [item.thumbnail_media_asset_id, item.thumbnailMediaAssetId, item.mediaAssetId, item.media_asset_id, item.assetId, item.logo_media_asset_id, item.logoMediaAssetId, item.logoAssetId].filter(Boolean);
   const collectionAliases = collection === "sponsors"
-    ? ["sponsors", "sponsor", "partners", "partner", "hosts", "host", "co_hosts", "coHosts"]
+    ?["sponsors", "sponsor", "partners", "partner", "hosts", "host", "co_hosts", "coHosts"]
     : [collection];
   const collectionMatches = (value = "") => collectionAliases.includes(String(value || ""));
   const fieldMatches = (value = "") => {
@@ -356,11 +373,11 @@ function recordMediaAsset(item = {}, mediaAssets = [], collection = "", field = 
       const targetScore = (asset = {}) => collectionMatches(asset.target_collection || asset.targetCollection) && (asset.target_id || asset.targetId) === item.id && fieldMatches(asset.target_field || asset.targetField);
       const linkedScore = (asset = {}) => collectionMatches(asset.linked_collection || asset.linkedCollection) && (asset.linked_record_id || asset.linkedRecordId || asset.linked_id || asset.linkedId) === item.id && fieldMatches(asset.linked_field || asset.linkedField);
       const score = (asset = {}) => [
-        directIds.includes(asset.id) ? "5" : "0",
-        targetScore(asset) ? "4" : "0",
-        linkedScore(asset) ? "3" : "0",
-        asset.source_type === "edited" ? "2" : "0",
-        asset.status === "active" ? "2" : "1",
+        directIds.includes(asset.id) ?"5" : "0",
+        targetScore(asset) ?"4" : "0",
+        linkedScore(asset) ?"3" : "0",
+        asset.source_type === "edited" ?"2" : "0",
+        asset.status === "active" ?"2" : "1",
         asset.updated_at || asset.updatedAt || asset.created_at || asset.createdAt || "",
         asset.id || ""
       ].join("|");
@@ -370,7 +387,7 @@ function recordMediaAsset(item = {}, mediaAssets = [], collection = "", field = 
 
 function memberLogoUrl(item = {}, mediaAssets = []) {
   const asset = memberLogoAsset(item, mediaAssets);
-  return safeMemberLogoUrl(item, asset ? mediaAssetUrl(asset) || item.logoUrl || "" : item.logoUrl || "");
+  return safeMemberLogoUrl(item, asset ?mediaAssetUrl(asset) || item.logoUrl || "" : item.logoUrl || "");
 }
 
 function memberLogoInitials(item = {}) {
@@ -380,7 +397,7 @@ function memberLogoInitials(item = {}) {
     .map((word) => word.trim())
     .filter((word) => word.length > 1);
   const initials = words.length >= 2
-    ? `${words[0][0]}${words[1][0]}`
+    ?`${words[0][0]}${words[1][0]}`
     : (words[0] || item.id || "PD").slice(0, 2);
   return initials.toUpperCase();
 }
@@ -412,7 +429,7 @@ function memberActionButtons(item, section) {
 
 function galleryPlayerButton(gallery, label = "Galerie abspielen") {
   const images = Array.isArray(gallery.images)
-    ? gallery.images.filter((image) => image.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+    ?gallery.images.filter((image) => image.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
     : [];
   if (!images.length) return "";
   const payload = escapeHtml(JSON.stringify({
@@ -428,16 +445,16 @@ function galleryPlayerButton(gallery, label = "Galerie abspielen") {
 
 function galleryActionButtons(item, section) {
   const isVisible = item.status === "published" && (item.visibility || "public") === "public";
-  const nextVisibility = isVisible ? "internal" : "public";
-  const nextStatus = isVisible ? item.status : "published";
-  const toggleClass = isVisible ? "icon-button--visible" : "icon-button--hidden";
-  const toggleLabel = isVisible ? "Sichtbar: ausblenden" : "Unsichtbar: sichtbar machen";
-  return `<div class="table-actions table-actions--icons">${galleryPlayerButton(item)}<a class="icon-button icon-button--edit" href="#/cms/edit?module=galleries&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-record-visibility="galleries" data-record-id="${item.id}" data-visibility="${nextVisibility}" data-status="${nextStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isVisible ? "eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="galleries" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
+  const nextVisibility = isVisible ?"internal" : "public";
+  const nextStatus = isVisible ?item.status : "published";
+  const toggleClass = isVisible ?"icon-button--visible" : "icon-button--hidden";
+  const toggleLabel = isVisible ?"Sichtbar: ausblenden" : "Unsichtbar: sichtbar machen";
+  return `<div class="table-actions table-actions--icons">${galleryPlayerButton(item)}<a class="icon-button icon-button--edit" href="#/cms/edit?module=galleries&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-record-visibility="galleries" data-record-id="${item.id}" data-visibility="${nextVisibility}" data-status="${nextStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isVisible ?"eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="galleries" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
 }
 
 function galleryPayloadAttribute(gallery) {
   const images = Array.isArray(gallery.images)
-    ? gallery.images.filter((image) => image.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
+    ?gallery.images.filter((image) => image.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
     : [];
   return escapeHtml(JSON.stringify({
     title: gallery.title || "Bildergalerie",
@@ -451,12 +468,12 @@ function galleryPayloadAttribute(gallery) {
 
 function galleryListStatus(item) {
   const isVisible = item.status === "published" && (item.visibility || "public") === "public";
-  return status(isVisible ? "active" : "inactive");
+  return status(isVisible ?"active" : "inactive");
 }
 
 function listDate(item) {
   const value = item.publishDate || item.validFrom || item.date || item.submittedAt || item.updatedAt || item.createdAt || "";
-  return value ? formatShortDate(value) : "-";
+  return value ?formatShortDate(value) : "-";
 }
 
 function listDateSortValue(item = {}) {
@@ -464,19 +481,19 @@ function listDateSortValue(item = {}) {
   if (!value) return 0;
   if (typeof value.toDate === "function") {
     const date = value.toDate();
-    return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+    return Number.isNaN(date.getTime()) ?0 : date.getTime();
   }
   if (typeof value === "object" && typeof value.seconds === "number") return value.seconds * 1000;
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? 0 : value.getTime();
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ?0 : value.getTime();
   const raw = String(value || "").trim();
   const german = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:,\s*(\d{1,2}):(\d{2}))?/);
   if (german) return new Date(Number(german[3]), Number(german[2]) - 1, Number(german[1]), Number(german[4] || 0), Number(german[5] || 0)).getTime();
   const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+  return Number.isNaN(parsed.getTime()) ?0 : parsed.getTime();
 }
 
 function mailQueueDate(value) {
-  return value ? formatDateTime(value) : "-";
+  return value ?formatDateTime(value) : "-";
 }
 
 function mailReference(item) {
@@ -487,8 +504,9 @@ function mailReference(item) {
 }
 
 function aiButton(action, target, label = "Mit ChatGPT bearbeiten", extra = {}) {
-  const promptField = extra.promptField ? ` data-ai-prompt-field="${escapeHtml(extra.promptField)}"` : "";
-  return `<button type="button" class="button button--secondary button--small ai-action" data-ai-action="${action}" data-ai-target="${target}" data-ai-entity-type="${extra.entityType || "event"}" data-ai-entity-id="${extra.entityId || ""}" data-ai-field="${extra.fieldName || target}"${promptField}>${label}</button>`;
+  const promptField = extra.promptField ?` data-ai-prompt-field="${escapeHtml(extra.promptField)}"` : "";
+  const contextTarget = extra.contextTarget ?` data-ai-context="${escapeHtml(extra.contextTarget)}"` : "";
+  return `<button type="button" class="button button--secondary button--small ai-action" data-ai-action="${action}" data-ai-target="${target}" data-ai-entity-type="${extra.entityType || "event"}" data-ai-entity-id="${extra.entityId || ""}" data-ai-field="${extra.fieldName || target}"${promptField}${contextTarget}>${label}</button>`;
 }
 
 function aiFieldActions(actions) {
@@ -512,7 +530,7 @@ function primaryAudioBody(item = {}, fields = []) {
 function audioSourceText(collection, item = {}) {
   const subtitle = cleanAudioTextPart(item.subtitle);
   const body = collection === "topics"
-    ? primaryAudioBody(item, ["longDescription", "bodyText", "shortDescription"])
+    ?primaryAudioBody(item, ["longDescription", "bodyText", "shortDescription"])
     : primaryAudioBody(item, ["bodyText", "articleText", "longDescription", "archiveText", "introText", "shortText", "teaserText", "postEventSummary"]);
   return [subtitle, body].filter(Boolean).join("\n\n");
 }
@@ -528,9 +546,9 @@ function audioTextSignature(collection, item = {}) {
 
 function audioVariantState(collection, item = {}, variant = "natural") {
   const currentSignature = audioTextSignature(collection, item);
-  const prefix = variant === "natural" ? "audioNatural" : "audioAccessible";
-  const url = item[`${prefix}Url`] || (variant === "accessible" ? item.audioUrl : "");
-  const savedSignature = item[`${prefix}TextSignature`] || (variant === "accessible" ? item.audioTextSignature : "");
+  const prefix = variant === "natural" ?"audioNatural" : "audioAccessible";
+  const url = item[`${prefix}Url`] || (variant === "accessible" ?item.audioUrl : "");
+  const savedSignature = item[`${prefix}TextSignature`] || (variant === "accessible" ?item.audioTextSignature : "");
   if (item[`${prefix}Status`] === "in_erstellung") return "in Erstellung";
   if (item[`${prefix}Status`] === "fehler") return "Fehler";
   if (!url) return "fehlt";
@@ -539,7 +557,7 @@ function audioVariantState(collection, item = {}, variant = "natural") {
 }
 
 function audioStatusBadge(state) {
-  const className = state === "aktuell" ? "" : state === "veraltet" || state === "fehlt" ? "status--draft" : "status--error";
+  const className = state === "aktuell" ?"" : state === "veraltet" || state === "fehlt" ?"status--draft" : "status--error";
   return `<span class="status ${className}">${escapeHtml(state)}</span>`;
 }
 
@@ -558,9 +576,9 @@ function audioServiceStatusBadge(state = "missing") {
     in_erstellung: "In Erstellung"
   }[normalized] || state;
   const className = ["ready", "aktuell"].includes(normalized)
-    ? ""
+    ?""
     : ["missing", "fehlt", "outdated", "veraltet", "generating", "in_erstellung"].includes(normalized)
-      ? "status--draft"
+      ?"status--draft"
       : "status--error";
   return `<span class="status ${className}">${escapeHtml(label)}</span>`;
 }
@@ -575,7 +593,7 @@ const audioAreaOrder = ["News", "Rückblicke", "Presse", "Themen", "Interna"];
 
 function audioAreaRank(area = "") {
   const index = audioAreaOrder.indexOf(area);
-  return index === -1 ? 999 : index;
+  return index === -1 ?999 : index;
 }
 
 function audioAreaLabel(item = {}) {
@@ -673,17 +691,17 @@ function activeAudioInfo(collection, item = {}) {
   const accessibleUrl = item.audioAccessibleUrl || item.audioUrl || "";
   const naturalUrl = item.audioNaturalUrl || "";
   const activeUrl = serviceUrl || accessibleUrl || naturalUrl;
-  const provider = serviceAudio.provider || item.audioProvider || (activeUrl ? "gemini" : "");
+  const provider = serviceAudio.provider || item.audioProvider || (activeUrl ?"gemini" : "");
   const serviceStatus = serviceAudio.status || item.audioStatus || "";
-  const legacyState = audioVariantState(collection, item, accessibleUrl ? "accessible" : "natural");
+  const legacyState = audioVariantState(collection, item, accessibleUrl ?"accessible" : "natural");
   const state = serviceUrl
-    ? serviceStatus || "ready"
+    ?serviceStatus || "ready"
     : activeUrl
-      ? legacyState
+      ?legacyState
       : "missing";
   const version = serviceAudio.version || item.audioVersion || item.contentVersion || item.audioContentVersion || 1;
-  const voiceName = serviceAudio.voiceName || item.audioAccessibleVoice || item.audioNaturalVoice || (provider && provider !== "elevenlabs" ? "Gemini TTS" : "");
-  const modelId = serviceAudio.modelId || (provider === "elevenlabs" ? "eleven_multilingual_v2" : provider ? "gemini-2.5-flash-preview-tts" : "");
+  const voiceName = serviceAudio.voiceName || item.audioAccessibleVoice || item.audioNaturalVoice || (provider && provider !== "elevenlabs" ?"Gemini TTS" : "");
+  const modelId = serviceAudio.modelId || (provider === "elevenlabs" ?"eleven_multilingual_v2" : provider ?"gemini-2.5-flash-preview-tts" : "");
   const generatedAt = serviceAudio.generatedAt || item.audioGeneratedAt || item.audioAccessibleGeneratedAt || item.audioNaturalGeneratedAt || "";
   const timingUrl = serviceAudio.timingUrl || item.timingUrl || "";
   return {
@@ -696,7 +714,7 @@ function activeAudioInfo(collection, item = {}) {
     generatedAt,
     timingUrl,
     textHash: serviceAudio.textHash || item.audioTextHash || item.audioTextSignature || item.audioAccessibleTextSignature || audioTextSignature(collection, item),
-    serviceVersion: serviceAudio.serviceVersion || (provider ? (provider === "elevenlabs" ? "audio-service-v1" : "legacy-gemini") : ""),
+    serviceVersion: serviceAudio.serviceVersion || (provider ?(provider === "elevenlabs" ?"audio-service-v1" : "legacy-gemini") : ""),
     karaokeEnabled: item.karaoke?.enabled === true || Boolean(timingUrl)
   };
 }
@@ -715,22 +733,22 @@ function audioTooltipText(info = {}, buttonLabel = "Audio") {
     buttonLabel,
     `Status: ${info.state || "bereit"}`,
     `Anbieter: ${info.provider || "nicht angegeben"}`,
-    info.voiceName ? `Stimme: ${info.voiceName}` : "",
-    info.modelId ? `Modell: ${info.modelId}` : "",
-    info.version ? `Version: ${info.version}` : "",
-    info.generatedAt ? `Erzeugt: ${timestampText(info.generatedAt)}` : "",
-    info.karaokeEnabled ? "Timing/Karaoke: vorhanden" : "Timing/Karaoke: nicht vorhanden"
+    info.voiceName ?`Stimme: ${info.voiceName}` : "",
+    info.modelId ?`Modell: ${info.modelId}` : "",
+    info.version ?`Version: ${info.version}` : "",
+    info.generatedAt ?`Erzeugt: ${timestampText(info.generatedAt)}` : "",
+    info.karaokeEnabled ?"Timing/Karaoke: vorhanden" : "Timing/Karaoke: nicht vorhanden"
   ].filter(Boolean);
   return lines.join("\n");
 }
 
 function audioMetaLine(collection, item, variant) {
-  const prefix = variant === "natural" ? "audioNatural" : "audioAccessible";
+  const prefix = variant === "natural" ?"audioNatural" : "audioAccessible";
   const generatedAt = item[`${prefix}GeneratedAt`] || item.audioGeneratedAt || "";
-  const voice = item[`${prefix}Voice`] || (variant === "natural" ? "Puck" : "Kore");
-  const mime = item[`${prefix}MimeType`] || (variant === "natural" ? "audio/mpeg" : item.audioMimeType || "audio/wav");
+  const voice = item[`${prefix}Voice`] || (variant === "natural" ?"Puck" : "Kore");
+  const mime = item[`${prefix}MimeType`] || (variant === "natural" ?"audio/mpeg" : item.audioMimeType || "audio/wav");
   const textLength = item[`${prefix}TextLength`] || item.audioTextLength || 0;
-  return `<small>Version ${Number(item.contentVersion || item.audioContentVersion || 1)} · ${escapeHtml(voice)} · ${escapeHtml(mime)}${textLength ? ` · ${Number(textLength).toLocaleString("de-DE")} Zeichen` : ""}${generatedAt ? ` · ${formatDateTime(generatedAt)}` : ""}</small>`;
+  return `<small>Version ${Number(item.contentVersion || item.audioContentVersion || 1)} · ${escapeHtml(voice)} · ${escapeHtml(mime)}${textLength ?` · ${Number(textLength).toLocaleString("de-DE")} Zeichen` : ""}${generatedAt ?` · ${formatDateTime(generatedAt)}` : ""}</small>`;
 }
 
 function audioGenerationPanel(collection, item, options = {}) {
@@ -739,31 +757,31 @@ function audioGenerationPanel(collection, item, options = {}) {
   const hasAudio = accessibleUrl || naturalUrl;
   const info = activeAudioInfo(collection, item);
   const providerConfig = options.providerConfig || {};
-  const defaultProviderLabel = providerConfig.elevenlabs?.enabled ? "ElevenLabs" : "Gemini";
+  const defaultProviderLabel = providerConfig.elevenlabs?.enabled ?"ElevenLabs" : "Gemini";
   const defaultModelLabel = providerConfig.elevenlabs?.enabled
-    ? (providerConfig.elevenlabs.modelId || "eleven_multilingual_v2")
+    ?(providerConfig.elevenlabs.modelId || "eleven_multilingual_v2")
     : "gemini-2.5-flash-preview-tts";
   const defaultVoiceLabel = providerConfig.elevenlabs?.enabled
-    ? (providerConfig.elevenlabs.voiceName || providerConfig.elevenlabs.voiceId || "Standardstimme")
+    ?(providerConfig.elevenlabs.voiceName || providerConfig.elevenlabs.voiceId || "Standardstimme")
     : "Gemini TTS";
   const requestedVariant = options.variant || "all";
   const buttonLabel = requestedVariant === "accessible"
-    ? (accessibleUrl ? "Barrierefrei neu erzeugen" : "Barrierefrei erzeugen") + " mit " + defaultProviderLabel
-    : (hasAudio ? "Audio neu erzeugen" : "Audio erzeugen") + " mit " + defaultProviderLabel;
+    ?(accessibleUrl ?"Barrierefrei neu erzeugen" : "Barrierefrei erzeugen") + " mit " + defaultProviderLabel
+    : (hasAudio ?"Audio neu erzeugen" : "Audio erzeugen") + " mit " + defaultProviderLabel;
   const generatedAt = timestampText(info.generatedAt);
   const previewUrl = naturalUrl || accessibleUrl || "";
   return '<div class="audio-generation-panel audio-generation-panel--compact">'
     + '<div class="audio-generation-panel__compact">'
     + '<div class="audio-generation-panel__compact-main">'
     + '<label>Vorlesen</label>'
-    + '<div class="audio-generation-panel__statusline">' + audioListCell(collection, item, { meta: "state" }) + '<span>' + (hasAudio ? 'Vorhanden' + (generatedAt ? ' / ' + escapeHtml(generatedAt) : '') : 'Noch kein Audio') + '</span></div>'
+    + '<div class="audio-generation-panel__statusline">' + audioListCell(collection, item, { meta: "state" }) + '<span>' + (hasAudio ?'Vorhanden' + (generatedAt ?' / ' + escapeHtml(generatedAt) : '') : 'Noch kein Audio') + '</span></div>'
     + '<small>' + escapeHtml(defaultProviderLabel) + ' / ' + escapeHtml(defaultVoiceLabel) + '</small>'
     + '</div>'
-    + (previewUrl ? '<audio controls preload="none" src="' + escapeHtml(previewUrl) + '"></audio>' : '')
+    + (previewUrl ?'<audio controls preload="none" src="' + escapeHtml(previewUrl) + '"></audio>' : '')
     + '</div>'
     + '<div class="tool-button-row">'
     + '<button type="button" class="button button--secondary button--small" data-generate-article-speech data-collection="' + collection + '" data-record-id="' + item.id + '" data-tts-variant="' + escapeHtml(requestedVariant) + '" title="' + escapeHtml('Aktuelle Default-Konfiguration: ' + defaultModelLabel + ' / ' + defaultVoiceLabel) + '">' + escapeHtml(buttonLabel) + '</button>'
-    + (hasAudio ? '<button type="button" class="icon-button icon-button--danger" data-clear-linked-media="audio" title="Audio-Verknuepfung loesen" aria-label="Audio-Verknuepfung loesen">' + iconImage("trash") + '</button>' : '')
+    + (hasAudio ?'<button type="button" class="icon-button icon-button--danger" data-clear-linked-media="audio" title="Audio-Verknuepfung loesen" aria-label="Audio-Verknuepfung loesen">' + iconImage("trash") + '</button>' : '')
     + '</div>'
     + '<div class="audio-generation-panel__result" data-speech-result></div>'
     + '</div>';
@@ -774,36 +792,36 @@ function audioListCell(collection, item, options = {}) {
   const buttonState = audioPlayButtonState(info.state, hasAudio);
   const stateLabel = buttonState.label.replace(/^Audio /, "");
   const meta = options.meta === "state"
-    ? stateLabel
+    ?stateLabel
     : hasAudio
-      ? (info.provider || "Audio")
+      ?(info.provider || "Audio")
       : "Audio fehlt";
   const showMeta = options.showMeta !== false;
   const tooltip = audioTooltipText(info, buttonState.label);
   return `<div class="audio-list-cell">
     <button type="button" class="audio-play-button ${buttonState.className}" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}" data-tts-variant="all" data-audio-url="${escapeHtml(info.activeUrl)}" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(buttonState.label)}"><span></span></button>
-    ${showMeta ? `<small>${escapeHtml(meta)}</small>` : ""}
+    ${showMeta ?`<small>${escapeHtml(meta)}</small>` : ""}
     <div class="audio-list-cell__result" data-speech-result></div>
   </div>`;
 }
 
 function maskedSecretLabel(name = "") {
-  return name ? `************${String(name).slice(-4)}` : "Firebase Secret";
+  return name ?`************${String(name).slice(-4)}` : "Firebase Secret";
 }
 
 function aiProviderCard(provider = {}) {
   const lastTest = provider.lastTestAt?.seconds
-    ? new Date(provider.lastTestAt.seconds * 1000).toISOString()
+    ?new Date(provider.lastTestAt.seconds * 1000).toISOString()
     : provider.lastTestAt || "";
   const lastSuccess = provider.lastSuccessAt?.seconds
-    ? new Date(provider.lastSuccessAt.seconds * 1000).toISOString()
+    ?new Date(provider.lastSuccessAt.seconds * 1000).toISOString()
     : provider.lastSuccessAt || "";
-  const state = provider.enabled === false ? "inactive" : "active";
+  const state = provider.enabled === false ?"inactive" : "active";
   return `<article class="setup-step ai-provider-card">
     <span>${escapeHtml(provider.name || provider.provider || "KI-Anbieter")}</span>
     <strong>${status(state)}</strong>
-    <small>Modell: ${escapeHtml(provider.modelId || "-")}<br>API-Key: ${escapeHtml(maskedSecretLabel(provider.secretName || provider.apiKey || ""))}${provider.voiceName ? `<br>Stimme: ${escapeHtml(provider.voiceName)} (${escapeHtml(provider.voiceId || "")})` : ""}${lastTest ? `<br>Letzter Test: ${escapeHtml(formatDateTime(lastTest))}` : ""}${lastSuccess ? `<br>Letzter Erfolg: ${escapeHtml(formatDateTime(lastSuccess))}` : ""}${provider.lastError ? `<br>Fehler: ${escapeHtml(provider.lastError)}` : ""}</small>
-    ${provider.provider === "elevenlabs" ? `<button type="button" class="button button--secondary button--small" data-audio-provider-test="elevenlabs">Testen & aktivieren</button>` : ""}
+    <small>Modell: ${escapeHtml(provider.modelId || "-")}<br>API-Key: ${escapeHtml(maskedSecretLabel(provider.secretName || provider.apiKey || ""))}${provider.voiceName ?`<br>Stimme: ${escapeHtml(provider.voiceName)} (${escapeHtml(provider.voiceId || "")})` : ""}${lastTest ?`<br>Letzter Test: ${escapeHtml(formatDateTime(lastTest))}` : ""}${lastSuccess ?`<br>Letzter Erfolg: ${escapeHtml(formatDateTime(lastSuccess))}` : ""}${provider.lastError ?`<br>Fehler: ${escapeHtml(provider.lastError)}` : ""}</small>
+    ${provider.provider === "elevenlabs" ?`<button type="button" class="button button--secondary button--small" data-audio-provider-test="elevenlabs">Testen & aktivieren</button>` : ""}
   </article>`;
 }
 
@@ -814,7 +832,7 @@ export async function aiAccessPage() {
     getOne("settings", "audioProviders").catch(() => null)
   ]);
   const elevenlabs = audioProviders?.elevenlabs || {};
-  const voices = Array.isArray(elevenlabs.voices) ? elevenlabs.voices : [];
+  const voices = Array.isArray(elevenlabs.voices) ?elevenlabs.voices : [];
   const providerCards = [
     {
       provider: "openai",
@@ -855,7 +873,7 @@ export async function aiAccessPage() {
     <section class="panel">
       <h2>ElevenLabs Audio-Service v1</h2>
       <form id="audio-provider-config-form" class="form-grid">
-        <label class="checkbox"><input type="checkbox" name="enabled" ${elevenlabs.enabled ? "checked" : ""}> ElevenLabs aktivieren</label>
+        <label class="checkbox"><input type="checkbox" name="enabled" ${elevenlabs.enabled ?"checked" : ""}> ElevenLabs aktivieren</label>
         <div class="form-grid--two">
           <div class="field"><label>Standardmodell</label><input name="modelId" value="${escapeHtml(elevenlabs.modelId || "eleven_multilingual_v2")}"></div>
           <div class="field"><label>Voice ID</label><input name="voiceId" value="${escapeHtml(elevenlabs.voiceId || "")}" data-elevenlabs-voice-id></div>
@@ -866,7 +884,7 @@ export async function aiAccessPage() {
           <label>Geladene Stimmen</label>
           <select data-elevenlabs-voice-select>
             <option value="">Stimme aus Cache waehlen</option>
-            ${voices.map((voice) => `<option value="${escapeHtml(voice.voiceId)}" data-voice-name="${escapeHtml(voice.voiceName)}" ${voice.voiceId === elevenlabs.voiceId ? "selected" : ""}>${escapeHtml(voice.voiceName)} (${escapeHtml(voice.voiceId)})</option>`).join("")}
+            ${voices.map((voice) => `<option value="${escapeHtml(voice.voiceId)}" data-voice-name="${escapeHtml(voice.voiceName)}" ${voice.voiceId === elevenlabs.voiceId ?"selected" : ""}>${escapeHtml(voice.voiceName)} (${escapeHtml(voice.voiceId)})</option>`).join("")}
           </select>
         </div>
         <div class="field">
@@ -893,13 +911,13 @@ function chatGptHints(events, media, downloads = []) {
   const missingAlt = media.filter((item) => item.status === "approved" && !item.altText).length;
   const downloadsWithoutDescription = downloads.filter((item) => !item.description).length;
   const hints = [
-    shortDescriptions ? `${shortDescriptions} Events haben sehr kurze Beschreibungen.` : "",
-    memberEventsWithoutTeaser ? `${memberEventsWithoutTeaser} Mitglieder-Events haben keinen oeffentlichen Teaser.` : "",
-    postWithoutReport ? `${postWithoutReport} Events im Rückblick haben noch keinen Rückblicktext.` : "",
-    missingAlt ? `${missingAlt} Bilder haben keine Alt-Texte.` : "",
-    downloadsWithoutDescription ? `${downloadsWithoutDescription} Downloads haben keine Beschreibung.` : ""
+    shortDescriptions ?`${shortDescriptions} Events haben sehr kurze Beschreibungen.` : "",
+    memberEventsWithoutTeaser ?`${memberEventsWithoutTeaser} Mitglieder-Events haben keinen oeffentlichen Teaser.` : "",
+    postWithoutReport ?`${postWithoutReport} Events im Rückblick haben noch keinen Rückblicktext.` : "",
+    missingAlt ?`${missingAlt} Bilder haben keine Alt-Texte.` : "",
+    downloadsWithoutDescription ?`${downloadsWithoutDescription} Downloads haben keine Beschreibung.` : ""
   ].filter(Boolean);
-  return `<section class="panel ai-panel"><div class="actions" style="justify-content:space-between"><h2>ChatGPT-Hinweise</h2><a class="button button--secondary button--small" href="#/cms/chatgpt">KI-Prüfung oeffnen</a></div>${hints.length ? `<div class="setup-steps">${hints.map((hint) => `<div class="setup-step"><span>${escapeHtml(hint)}</span><strong>Hinweis</strong></div>`).join("")}</div>` : `<p>Keine akuten ChatGPT-Hinweise aus den aktuellen CMS-Daten.</p>`}<p class="muted" style="margin-top:14px">KI-Hinweise sind redaktionelle Empfehlungen und blockieren keine Pipeline-Statuswechsel.</p></section>`;
+  return `<section class="panel ai-panel"><div class="actions" style="justify-content:space-between"><h2>ChatGPT-Hinweise</h2><a class="button button--secondary button--small" href="#/cms/chatgpt">KI-Prüfung oeffnen</a></div>${hints.length ?`<div class="setup-steps">${hints.map((hint) => `<div class="setup-step"><span>${escapeHtml(hint)}</span><strong>Hinweis</strong></div>`).join("")}</div>` : `<p>Keine akuten ChatGPT-Hinweise aus den aktuellen CMS-Daten.</p>`}<p class="muted" style="margin-top:14px">KI-Hinweise sind redaktionelle Empfehlungen und blockieren keine Pipeline-Statuswechsel.</p></section>`;
 }
 
 export async function dashboardPage() {
@@ -985,18 +1003,19 @@ function hasLiveCmsEventIdentity(event = {}) {
   return Boolean(title) && !isCmsDemoRecord(event);
 }
 
-function eventTable(events, { showThumb = false, mediaAssets = [], returnTo = "#/cms/events" } = {}) {
-  return `<section class="panel"><div class="table-wrap"><table class="table ${showThumb ? "table--event-followup" : ""}"><thead><tr>${showThumb ? "<th>Bild</th>" : ""}<th>Event</th><th>Datum</th><th>Ablauf</th><th>Zugang</th><th>Lifecycle</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${events.map((event) => `<tr>${showThumb ? `<td><div class="topic-thumb topic-thumb--table editorial-thumb--table event-thumb--table">${eventThumb(event, mediaAssets, returnTo)}</div></td>` : ""}<td><a class="link" href="#/cms/event/${event.id}">${escapeHtml(event.title)}</a></td><td>${formatDate(event.date)}</td><td>${event.expiresAt ? formatDateTime(event.expiresAt) : "-"}</td><td>${accessLabels[event.accessType]}</td><td>${lifecycleLabels[event.lifecyclePhase]}</td><td>${status(event.status)}</td><td>${eventActionButtons(event)}</td></tr>`).join("")}</tbody></table></div></section>`;
+function eventTable(events, { showThumb = false, mediaAssets = [], registrations = [], returnTo = "#/cms/events" } = {}) {
+  const registrationCount = (eventId) => registrations.filter((item) => item.eventId === eventId && item.status !== "cancelled").length;
+  return `<section class="panel"><div class="table-wrap"><table class="table ${showThumb ?"table--event-followup" : ""}"><thead><tr>${showThumb ?"<th>Bild</th>" : ""}<th>Event</th><th>Datum</th><th>Ablauf</th><th>Zugang</th><th>Anmeldungen</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${events.map((event) => `<tr>${showThumb ?`<td><div class="topic-thumb topic-thumb--table editorial-thumb--table event-thumb--table">${eventThumb(event, mediaAssets, returnTo)}</div></td>` : ""}<td><a class="link" href="#/cms/event/${event.id}">${escapeHtml(event.title)}</a></td><td>${formatDate(event.date)}</td><td>${event.expiresAt ?formatDateTime(event.expiresAt) : "-"}</td><td>${accessLabels[event.accessType]}</td><td><strong>${registrationCount(event.id)}</strong></td><td>${status(cmsEventRegistrationIsOpen(event) ?"offen" : "geschlossen")}</td><td>${eventActionButtons(event)}</td></tr>`).join("")}</tbody></table></div></section>`;
 }
 
 function settingValue(settings, id, fallback = []) {
   const setting = settings.find((item) => item.id === id || item.key === id);
-  return Array.isArray(setting?.value) ? setting.value : fallback;
+  return Array.isArray(setting?.value) ?setting.value : fallback;
 }
 
 export async function eventsAdminPage() {
   if (!hasCmsAccess()) return denied();
-  const [allEvents, mediaAssets, allEditorial] = await Promise.all([list("events"), list("media_assets").catch(() => []), list("editorialContent").catch(() => [])]);
+  const [allEvents, mediaAssets, allEditorial, registrations] = await Promise.all([list("events"), list("media_assets").catch(() => []), list("editorialContent").catch(() => []), list("registrations").catch(() => [])]);
   const events = allEvents
     .map(normalizeCmsEventRecord)
     .filter(hasLiveCmsEventIdentity)
@@ -1004,7 +1023,7 @@ export async function eventsAdminPage() {
     .filter((event) => !isPastCmsEvent(event))
     .sort((a, b) => (a.date || "9999-12-31").localeCompare(b.date || "9999-12-31"));
   return protect(cmsShell("cms/events", `${cmsTitle("Event-Management", "Events", `<a class="button button--primary button--small" href="#/cms/event/new">Neues Event erstellen</a>`)}
-  ${eventTable(events, { showThumb: true, mediaAssets, returnTo: "#/cms/events" })}`));
+  ${eventTable(events, { showThumb: true, mediaAssets, registrations, returnTo: "#/cms/events" })}`));
 }
 
 export async function eventFollowUpPage() {
@@ -1021,12 +1040,12 @@ export async function eventFollowUpPage() {
 }
 
 function eventTabs(id, active) {
-  return `<nav class="tabs">${[["base", "Stammdaten"], ["pre", "Vorlauf"], ["topics", "Vortraege / Referenten"], ["partners", "Co-Gastgeber"], ["registration", "Anmeldung"], ["post", "Rückblick"], ["media", "Fotogalerie / Downloads"]].map(([key, label]) => `<button data-event-tab="${key}" data-event-id="${id}" class="${active === key ? "active" : ""}">${label}</button>`).join("")}</nav>`;
+  return `<nav class="tabs">${[["base", "Stammdaten"], ["pre", "Einladung"], ["topics", "Vortraege / Referenten"], ["registration", "Anmeldung"], ["post", "Rückblick"], ["media", "Fotogalerie / Downloads"]].map(([key, label]) => `<button data-event-tab="${key}" data-event-id="${id}" class="${active === key ?"active" : ""}">${label}</button>`).join("")}</nav>`;
 }
 
 function shortText(value = "", length = 112) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
-  return text.length > length ? `${text.slice(0, Math.max(0, length - 3))}...` : text;
+  return text.length > length ?`${text.slice(0, Math.max(0, length - 3))}...` : text;
 }
 
 function personInitials(name = "") {
@@ -1034,13 +1053,13 @@ function personInitials(name = "") {
 }
 
 function speakerAvatar(speaker, className = "speaker-avatar") {
-  return `<span class="${className}">${speaker.photoUrl ? `<img src="${escapeHtml(speaker.photoUrl)}" alt="">` : personInitials(speaker.name)}</span>`;
+  return `<span class="${className}">${speaker.photoUrl ?`<img src="${escapeHtml(speaker.photoUrl)}" alt="">` : personInitials(speaker.name)}</span>`;
 }
 
 function topicThumb(topic) {
   const url = topic.imageUrl || "";
-  const content = url ? `<img src="${escapeHtml(url)}" alt="">` : `<span>Bild</span>`;
-  return `<a class="cms-thumb-action" href="${cmsThumbTarget("topics", topic, "", "imageUrl", "thumbnail_alt")}" title="${url ? "Thumb aus Mediathek waehlen" : "Thumb mit KI erstellen"}" aria-label="${url ? "Thumb aus Mediathek waehlen" : "Thumb mit KI erstellen"}">${content}</a>`;
+  const content = url ?`<img src="${escapeHtml(url)}" alt="">` : `<span>Bild</span>`;
+  return `<a class="cms-thumb-action" href="${cmsThumbTarget("topics", topic, "", "imageUrl", "thumbnail_alt")}" title="${url ?"Thumb aus Mediathek waehlen" : "Thumb mit KI erstellen"}" aria-label="${url ?"Thumb aus Mediathek waehlen" : "Thumb mit KI erstellen"}">${content}</a>`;
 }
 
 function editorialThumbUrl(item = {}) {
@@ -1049,9 +1068,9 @@ function editorialThumbUrl(item = {}) {
 
 function cmsThumbTarget(collection = "", item = {}, section = "", field = "imageUrl", altField = "thumbnail_alt") {
   const returnTo = collection === "topics"
-    ? `#/cms/topics`
+    ?`#/cms/topics`
     : collection === "editorialContent"
-      ? `#/cms/editorial/${section || item.page || "news"}`
+      ?`#/cms/editorial/${section || item.page || "news"}`
       : `#/cms/${collection}`;
   const params = new URLSearchParams({
     targetCollection: collection,
@@ -1063,24 +1082,24 @@ function cmsThumbTarget(collection = "", item = {}, section = "", field = "image
   const hasThumb = Boolean(editorialThumbUrl(item));
   const assetId = item.thumbnail_media_asset_id || item.mediaAssetId || item.media_asset_id || "";
   if (hasThumb && assetId) return `#/cms/media/edit?id=${encodeURIComponent(assetId)}&${params.toString()}`;
-  return hasThumb ? `#/cms/media/library?${params.toString()}` : `#/cms/media/ai?${params.toString()}`;
+  return hasThumb ?`#/cms/media/library?${params.toString()}` : `#/cms/media/ai?${params.toString()}`;
 }
 
 function editorialThumb(item = {}, { collection = "editorialContent", section = "", field = "imageUrl", altField = "thumbnail_alt", mediaAssets = [] } = {}) {
   const asset = recordMediaAsset(item, mediaAssets, collection, field);
   const url = mediaAssetUrl(asset || {}) || editorialThumbUrl(item);
   const content = url
-    ? `<img src="${escapeHtml(url)}" alt="">`
+    ?`<img src="${escapeHtml(url)}" alt="">`
     : `<span>Bild</span>`;
   if (!collection || !item.id) return content;
-  const targetItem = asset?.id ? { ...item, thumbnail_media_asset_id: asset.id } : item;
-  return `<a class="cms-thumb-action" href="${cmsThumbTarget(collection, targetItem, section, field, altField)}" title="${url ? "Bild bearbeiten" : "Thumb mit KI erstellen"}" aria-label="${url ? "Bild bearbeiten" : "Thumb mit KI erstellen"}">${content}</a>`;
+  const targetItem = asset?.id ?{ ...item, thumbnail_media_asset_id: asset.id } : item;
+  return `<a class="cms-thumb-action" href="${cmsThumbTarget(collection, targetItem, section, field, altField)}" title="${url ?"Bild bearbeiten" : "Thumb mit KI erstellen"}" aria-label="${url ?"Bild bearbeiten" : "Thumb mit KI erstellen"}">${content}</a>`;
 }
 
 function eventThumb(event = {}, mediaAssets = [], returnTo = "#/cms/events") {
   const asset = recordMediaAsset(event, mediaAssets, "events", "imageUrl");
   const url = eventImageUrl(event, mediaAssets);
-  const content = url ? `<img src="${escapeHtml(url)}" alt="">` : `<span>Bild</span>`;
+  const content = url ?`<img src="${escapeHtml(url)}" alt="">` : `<span>Bild</span>`;
   const params = new URLSearchParams({
     targetCollection: "events",
     targetId: event.id || "",
@@ -1089,25 +1108,108 @@ function eventThumb(event = {}, mediaAssets = [], returnTo = "#/cms/events") {
     returnTo
   });
   const href = asset?.id
-    ? `#/cms/media/edit?id=${encodeURIComponent(asset.id)}&${params.toString()}`
+    ?`#/cms/media/edit?id=${encodeURIComponent(asset.id)}&${params.toString()}`
     : `#/cms/media/library?${params.toString()}`;
-  return `<a class="cms-thumb-action" href="${href}" title="${url ? "Eventbild bearbeiten" : "Eventbild aus Mediathek waehlen"}" aria-label="${url ? "Eventbild bearbeiten" : "Eventbild aus Mediathek waehlen"}">${content}</a>`;
+  return `<a class="cms-thumb-action" href="${href}" title="${url ?"Eventbild bearbeiten" : "Eventbild aus Mediathek waehlen"}" aria-label="${url ?"Eventbild bearbeiten" : "Eventbild aus Mediathek waehlen"}">${content}</a>`;
 }
 
 function eventActionButtons(event = {}) {
-  const isActive = ["published", "active"].includes(event.status);
-  const nextStatus = isActive ? "inactive" : "published";
-  const toggleClass = isActive ? "icon-button--visible" : "icon-button--hidden";
-  const toggleLabel = isActive ? "Aktiv: auf inaktiv setzen" : "Inaktiv: auf aktiv setzen";
-  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/event/${event.id}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-event-status="${escapeHtml(event.id)}" data-status="${nextStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ? "eye" : "eyeOff")}</button></div>`;
+  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/event/${event.id}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a></div>`;
+}
+
+function cmsEventRegistrationIsOpen(event = {}) {
+  return Boolean(event.registrationEnabled)
+    || (event.accessType === "public" && event.allowPublicRegistration === true)
+    || (event.accessType === "members_only" && event.allowMemberRegistration === true)
+    || event.preStatus === "invitation_published"
+    || event.lifecyclePhase === "registration_open";
+}
+
+function defaultGlobalEventRegistrationMailText(variant = "confirmation") {
+  if (variant === "waitlist") {
+    return [
+      "Guten Tag {{firstName}} {{lastName}},",
+      "",
+      `vielen Dank fuer Ihr Interesse an "{{eventTitle}}".`,
+      "",
+      "Aktuell fuehren wir Ihre Anmeldung auf der Warteliste. Sobald ein Platz frei wird, melden wir uns bei Ihnen.",
+      "",
+      "Termin: {{eventDate}}",
+      "Ort: {{eventLocation}}",
+      "",
+      "Viele Gruesse",
+      "PROdigitalTV"
+    ].join("\n");
+  }
+  return [
+    "Guten Tag {{firstName}} {{lastName}},",
+    "",
+    `vielen Dank fuer Ihre Anmeldung zu "{{eventTitle}}".`,
+    "",
+    "Bitte bestaetigen Sie Ihre Anmeldung ueber den Button in dieser E-Mail. Erst danach ist Ihre Anmeldung verbindlich vorgemerkt.",
+    "",
+    "Termin: {{eventDate}}",
+    "Ort: {{eventLocation}}",
+    "",
+    "Nach der Bestaetigung erhalten Sie Ihren Ticket-Link. Wenn Sie die Anmeldung am Computer bestaetigen, oeffnen Sie den Ticket-Link bitte einmal auf dem Handy.",
+    "",
+    "Viele Gruesse",
+    "PROdigitalTV"
+  ].join("\n");
+}
+
+function mailTemplateSettings(record = {}) {
+  record = record || {};
+  const value = record?.value && typeof record.value === "object" ?record.value : {};
+  return {
+    registrationConfirmation: record.registrationConfirmation || value.registrationConfirmation || defaultGlobalEventRegistrationMailText("confirmation"),
+    registrationWaitlist: record.registrationWaitlist || value.registrationWaitlist || defaultGlobalEventRegistrationMailText("waitlist")
+  };
+}
+
+function browserPushSettings(record = {}) {
+  record = record || {};
+  const value = record?.value && typeof record.value === "object" ?record.value : {};
+  return {
+    vapidPublicKey: record.vapidPublicKey || value.vapidPublicKey || ""
+  };
+}
+
+function renderEventMailTemplate(template = "", event = {}) {
+  const replacements = {
+    eventTitle: event.title || "PROdigitalTV Event",
+    eventDate: event.date ?formatDate(event.date) : "dem Veranstaltungstermin",
+    eventLocation: [event.locationName, event.city].filter(Boolean).join(", ") || "dem Veranstaltungsort"
+  };
+  return String(template || "").replace(/\{\{(eventTitle|eventDate|eventLocation)\}\}/g, (_, key) => replacements[key] || "");
+}
+
+function defaultEventRegistrationMailText(event = {}, variant = "confirmation", templates = {}) {
+  const template = variant === "waitlist" ?templates.registrationWaitlist : templates.registrationConfirmation;
+  return renderEventMailTemplate(template || defaultGlobalEventRegistrationMailText(variant), event);
+}
+
+function eventRegistrationTogglePanel(event = {}) {
+  const isOpen = cmsEventRegistrationIsOpen(event);
+  return `<section class="panel" style="background:var(--pdt-bg);margin-bottom:18px">
+    <div class="actions" style="justify-content:space-between;align-items:center;gap:18px">
+      <div>
+        <p class="eyebrow">Anmeldestatus</p>
+        <h2>${isOpen ?"Anmeldung offen" : "Anmeldung geschlossen"}</h2>
+        <p class="muted">Hier wird die Anmeldung zentral mit einem Klick geoeffnet oder geschlossen. Die technischen Felder werden automatisch synchronisiert.</p>
+      </div>
+      <label class="cms-switch ${isOpen ?"is-active" : ""}">
+        <input type="checkbox" data-event-registration-toggle="${escapeHtml(event.id || "")}" ${isOpen ?"checked" : ""}>
+        <span class="cms-switch__track" aria-hidden="true"></span>
+        <span class="cms-switch__text">${isOpen ?"Aktiv" : "Inaktiv"}</span>
+      </label>
+    </div>
+    <div id="event-registration-toggle-result"></div>
+  </section>`;
 }
 
 function eventFollowUpActionButtons(event = {}) {
-  const isActive = ["published", "active"].includes(event.status);
-  const nextStatus = isActive ? "inactive" : "published";
-  const toggleClass = isActive ? "icon-button--visible" : "icon-button--hidden";
-  const toggleLabel = isActive ? "Aktiv: auf inaktiv setzen" : "Inaktiv: auf aktiv setzen";
-  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/event/${event.id}?tab=post" title="Rückblick bearbeiten" aria-label="Rückblick bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-event-status="${escapeHtml(event.id)}" data-status="${nextStatus}" data-lifecycle-phase="${isActive ? "archived" : "archive_published"}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ? "eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-event="${escapeHtml(event.id)}" data-delete-return="cms/followup" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
+  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/event/${event.id}?tab=post" title="Rückblick bearbeiten" aria-label="Rückblick bearbeiten">${iconImage("edit")}</a><button class="icon-button icon-button--danger" type="button" data-delete-event="${escapeHtml(event.id)}" data-delete-return="cms/followup" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
 }
 
 function eventImageUrl(event = {}, mediaAssets = []) {
@@ -1116,7 +1218,7 @@ function eventImageUrl(event = {}, mediaAssets = []) {
 }
 
 function eventFollowUpTable(events = [], mediaAssets = [], allEditorial = []) {
-  return `<section class="panel"><div class="table-wrap"><table class="table table--editorial table--event-followup table--with-audio"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Status</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${events.length ? events.map((event) => {
+  return `<section class="panel"><div class="table-wrap"><table class="table table--editorial table--event-followup table--with-audio"><thead><tr><th>Bild</th><th>Titel</th><th>Datum</th><th>Status</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${events.length ?events.map((event) => {
     const retrospectiveArticle = allEditorial.find((item) => {
       const category = String(item.category || "").toLowerCase();
       return retrospectiveMatchesEvent(item, event)
@@ -1125,10 +1227,10 @@ function eventFollowUpTable(events = [], mediaAssets = [], allEditorial = []) {
     });
     return `<tr>
     <td><div class="topic-thumb topic-thumb--table editorial-thumb--table event-thumb--table">${eventThumb(event, mediaAssets, "#/cms/followup")}</div></td>
-    <td><a class="link editorial-title-link" href="#/cms/event/${event.id}?tab=post" title="${escapeHtml(event.title || "-")}">${escapeHtml(shortText(event.title || "-", 70))}</a>${event.subtitle ? `<small>${escapeHtml(shortText(event.subtitle, 95))}</small>` : ""}</td>
+    <td><a class="link editorial-title-link" href="#/cms/event/${event.id}?tab=post" title="${escapeHtml(event.title || "-")}">${escapeHtml(shortText(event.title || "-", 70))}</a>${event.subtitle ?`<small>${escapeHtml(shortText(event.subtitle, 95))}</small>` : ""}</td>
     <td>${escapeHtml(formatDate(event.date))}</td>
-    <td>${status(event.lifecyclePhase === "archive_published" ? "published" : event.status || event.lifecyclePhase || "draft")}</td>
-    <td>${retrospectiveArticle ? audioListCell("editorialContent", retrospectiveArticle) : `<small class="muted">Rückblick-Beitrag fehlt</small>`}</td>
+    <td>${status(event.lifecyclePhase === "archive_published" ?"published" : event.status || event.lifecyclePhase || "draft")}</td>
+    <td>${retrospectiveArticle ?audioListCell("editorialContent", retrospectiveArticle) : `<small class="muted">Rückblick-Beitrag fehlt</small>`}</td>
     <td>${editorialMediaFlags(retrospectiveArticle || event)}</td>
     <td>${eventFollowUpActionButtons(event)}</td>
   </tr>`;
@@ -1137,16 +1239,16 @@ function eventFollowUpTable(events = [], mediaAssets = [], allEditorial = []) {
 
 function editorialSummaryThumb(item = {}) {
   const url = editorialThumbUrl(item);
-  return url ? `<span class="editorial-tool-summary-thumb"><img src="${escapeHtml(url)}" alt=""></span>` : "";
+  return url ?`<span class="editorial-tool-summary-thumb"><img src="${escapeHtml(url)}" alt=""></span>` : "";
 }
 
 function galleryThumb(gallery) {
-  const images = Array.isArray(gallery.images) ? gallery.images : [];
+  const images = Array.isArray(gallery.images) ?gallery.images : [];
   const first = images
     .filter((image) => image.url)
     .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))[0];
   return first?.url
-    ? `<img src="${escapeHtml(first.url)}" alt="">`
+    ?`<img src="${escapeHtml(first.url)}" alt="">`
     : `<span>Galerie</span>`;
 }
 
@@ -1156,7 +1258,7 @@ function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", d
     <input type="hidden" name="${inputName}DataUrl" value="">
     <input type="hidden" name="${inputName}FileName" value="">
     <input class="image-dropzone__input" type="file" name="${inputName}" accept="image/*">
-    ${aiCollage ? `<div class="image-mode-switch" role="group" aria-label="Bildquelle waehlen">
+    ${aiCollage ?`<div class="image-mode-switch" role="group" aria-label="Bildquelle waehlen">
       <button class="is-active" type="button" data-image-mode="upload">Bild hochladen</button>
       <button type="button" data-image-mode="ai">Bild erzeugen</button>
     </div>` : ""}
@@ -1164,25 +1266,25 @@ function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", d
     <div class="image-dropzone__header">
       <div><strong>${escapeHtml(label)} hochladen</strong><p>Drag-and-drop, Klick auf die Vorschau oder Datei auswaehlen.</p></div>
     </div>
-    <div class="image-dropzone__preview ${imageUrl ? "has-image" : ""}" data-image-preview>
-      ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="">` : `<span>${escapeHtml(label)} per Drag-and-drop oder Klick hochladen</span>`}
+    <div class="image-dropzone__preview ${imageUrl ?"has-image" : ""}" data-image-preview>
+      ${imageUrl ?`<img src="${escapeHtml(imageUrl)}" alt="">` : `<span>${escapeHtml(label)} per Drag-and-drop oder Klick hochladen</span>`}
     </div>
     </div>
-    <button type="button" class="image-dropzone__remove" data-image-remove aria-label="Bild-Verknuepfung loesen" title="Bild-Verknuepfung loesen" ${imageUrl ? "" : "hidden"}>${iconImage("trash")}</button>
+    <button type="button" class="image-dropzone__remove" data-image-remove aria-label="Bild-Verknuepfung loesen" title="Bild-Verknuepfung loesen" ${imageUrl ?"" : "hidden"}>${iconImage("trash")}</button>
     <div class="image-dropzone__tools" data-image-tools hidden>
       <label>Zoom <input type="range" min="0.5" max="3" step="0.01" value="1" data-image-zoom></label>
       <label>Aufloesung <select data-image-size>
-        ${[["240x180", "Thumb 240 x 180"], ["480x240", "Logo 480 x 240"], ["480x360", "Thumb 480 x 360"], ["1200x675", "Artikel 1200 x 675"], ["1600x900", "Hero 1600 x 900"]].map(([value, text]) => `<option value="${value}" ${value === defaultSize ? "selected" : ""}>${text}</option>`).join("")}
+        ${[["240x180", "Thumb 240 x 180"], ["480x240", "Logo 480 x 240"], ["480x360", "Thumb 480 x 360"], ["1200x675", "Artikel 1200 x 675"], ["1600x900", "Hero 1600 x 900"]].map(([value, text]) => `<option value="${value}" ${value === defaultSize ?"selected" : ""}>${text}</option>`).join("")}
       </select></label>
       <button type="button" class="button button--secondary button--small" data-image-crop>Crop anwenden</button>
     </div>
     <p class="muted" data-image-resolution>Ausgabeformat: ${escapeHtml(defaultSize.replace("x", " x "))} px.</p>
-    ${aiCollage ? `<div class="image-dropzone__ai" data-image-mode-panel="ai" hidden>
+    ${aiCollage ?`<div class="image-dropzone__ai" data-image-mode-panel="ai" hidden>
       <label>KI-Collage erzeugen</label>
       <textarea name="${inputName}AiPrompt" data-ai-image-prompt placeholder="Optional: Motiv, Stil oder Schwerpunkt für die Collage beschreiben. Leer lassen = aus Titel, Subtitel und Text ableiten."></textarea>
       <button class="button button--secondary button--small" type="button" data-ai-image-generate>KI-Collage als Thumb erzeugen</button>
     </div>` : ""}
-    <p class="image-dropzone__status" data-image-status>${imageUrl ? "Bild ist gespeichert." : "Kein Bild gespeichert."}</p>
+    <p class="image-dropzone__status" data-image-status>${imageUrl ?"Bild ist gespeichert." : "Kein Bild gespeichert."}</p>
   </div>`;
 }
 
@@ -1195,9 +1297,9 @@ function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altF
     targetAltField: altField,
     returnTo
   });
-  const editHref = assetId ? `#/cms/media/edit?id=${encodeURIComponent(assetId)}&${params.toString()}` : "";
+  const editHref = assetId ?`#/cms/media/edit?id=${encodeURIComponent(assetId)}&${params.toString()}` : "";
   return `<div class="linked-media-actions">
-    <a class="button button--secondary button--small" href="${editHref || `#/cms/media/library?${params.toString()}`}">${escapeHtml(label)} ${assetId ? "bearbeiten" : "aus Mediathek waehlen"}</a>
+    <a class="button button--secondary button--small" href="${editHref || `#/cms/media/library?${params.toString()}`}">${escapeHtml(label)} ${assetId ?"bearbeiten" : "aus Mediathek waehlen"}</a>
     <a class="button button--secondary button--small" href="#/cms/media/ai?${params.toString()}">${escapeHtml(label)} erstellen</a>
   </div>`;
 }
@@ -1223,13 +1325,15 @@ function memberLogoEditor(item = {}, mediaAssets = [], returnTo = "") {
   const currentAsset = memberLogoAsset(item, mediaAssets);
   const logoUrl = memberLogoUrl(item, mediaAssets);
   const editHref = currentAsset?.id
-    ? `#/cms/media/edit?id=${encodeURIComponent(currentAsset.id)}&${params.toString()}`
+    ?`#/cms/media/edit?id=${encodeURIComponent(currentAsset.id)}&${params.toString()}`
     : `#/cms/media/library?${params.toString()}`;
+  const libraryHref = `#/cms/media/library?${params.toString()}`;
   return `<div class="member-logo-editor">
-    <div class="member-logo-editor__preview">${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(item.name || "")}">` : memberLogoFallback(item)}</div>
+    <div class="member-logo-editor__preview">${logoUrl ?`<img src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(item.name || "")}">` : memberLogoFallback(item)}</div>
     <div class="member-logo-editor__actions">
       <a class="button button--primary button--small" href="${editHref}">Logo bearbeiten</a>
-      ${logoUrl ? `<button class="button button--secondary button--small" type="button" data-clear-member-logo="${escapeHtml(item.id || "")}">Logo loeschen</button>` : ""}
+      <a class="button button--secondary button--small" href="${libraryHref}">Logo austauschen</a>
+      ${logoUrl ?`<button class="button button--secondary button--small" type="button" data-clear-member-logo="${escapeHtml(item.id || "")}">Logo loeschen</button>` : ""}
       <p class="muted">Speichern im Mediathek-Editor ersetzt dieses Mitgliederlogo im bestehenden Mitgliedsprofil.</p>
     </div>
   </div>`;
@@ -1239,11 +1343,11 @@ function memberLogoThumb(item = {}, mediaAssets = [], section = "all") {
   const currentAsset = memberLogoAsset(item, mediaAssets);
   const logoUrl = memberLogoUrl(item, mediaAssets);
   const content = logoUrl
-    ? `<img src="${escapeHtml(logoUrl)}" alt="">`
+    ?`<img src="${escapeHtml(logoUrl)}" alt="">`
     : memberLogoFallback(item);
   if (!item.id) return content;
   const targetItem = { ...item, logoUrl, logo_media_asset_id: currentAsset?.id || item.logo_media_asset_id || "", thumbnail_media_asset_id: currentAsset?.id || item.thumbnail_media_asset_id || item.mediaAssetId || "" };
-  return `<a class="cms-thumb-action" href="${cmsThumbTarget("members", targetItem, section, "logoUrl", "altText")}" title="${logoUrl ? "Logo bearbeiten" : "Logo mit KI erstellen"}" aria-label="${logoUrl ? "Logo bearbeiten" : "Logo mit KI erstellen"}">${content}</a>`;
+  return `<a class="cms-thumb-action" href="${cmsThumbTarget("members", targetItem, section, "logoUrl", "altText")}" title="${logoUrl ?"Logo bearbeiten" : "Logo mit KI erstellen"}" aria-label="${logoUrl ?"Logo bearbeiten" : "Logo mit KI erstellen"}">${content}</a>`;
 }
 
 function topicSpeakersForEvent(topic, event, speakers) {
@@ -1268,18 +1372,18 @@ function eventTopicSpeakerActions(event, topic, topicSpeakers) {
 
 function topicEditorPanel(event, topics, speakers, mode, selectedTopicId, selectedSpeakerId) {
   if (!mode) return "";
-  const selectedTopic = mode === "new" ? { id: "", title: "", shortDescription: "", imageUrl: "" } : topics.find((topic) => topic.id === selectedTopicId);
+  const selectedTopic = mode === "new" ?{ id: "", title: "", shortDescription: "", imageUrl: "" } : topics.find((topic) => topic.id === selectedTopicId);
   if (mode === "assign") return "";
   if (mode === "remove") {
     const assignedTopics = topics.filter((topic) => (event.topicIds || []).includes(topic.id));
     return `<aside class="topic-detail-panel"><div class="topic-panel-head"><h2>Zuordnung loeschen</h2><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics">Schliessen</a></div>
-      <div class="topic-remove-list">${assignedTopics.length ? assignedTopics.map((topic) => `<div class="topic-remove-row"><div><strong>${escapeHtml(topic.title || "")}</strong><p>${escapeHtml(shortText(topic.shortDescription || topic.longDescription || ""))}</p></div><button class="button button--secondary button--small" data-unassign-event-topic="${topic.id}" data-event-id="${event.id}">Zuordnung entfernen</button></div>`).join("") : `<div class="alert">Dieses Event hat noch keine Vortragszuordnung.</div>`}</div>
+      <div class="topic-remove-list">${assignedTopics.length ?assignedTopics.map((topic) => `<div class="topic-remove-row"><div><strong>${escapeHtml(topic.title || "")}</strong><p>${escapeHtml(shortText(topic.shortDescription || topic.longDescription || ""))}</p></div><button class="button button--secondary button--small" data-unassign-event-topic="${topic.id}" data-event-id="${event.id}">Zuordnung entfernen</button></div>`).join("") : `<div class="alert">Dieses Event hat noch keine Vortragszuordnung.</div>`}</div>
     </aside>`;
   }
   if (mode === "referent" && selectedTopic) {
     const topicSpeakers = topicSpeakersForEvent(selectedTopic, event, speakers);
     const selectedSpeaker = speakers.find((speaker) => speaker.id === selectedSpeakerId) || { id: "", name: "", company: "", position: "", photoUrl: "" };
-    return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">Referent</p><h2>${selectedSpeaker.id ? "Referent bearbeiten" : "Referent anlegen"}</h2></div><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${selectedTopic.id}">Vortrag bearbeiten</a></div>
+    return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">Referent</p><h2>${selectedSpeaker.id ?"Referent bearbeiten" : "Referent anlegen"}</h2></div><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${selectedTopic.id}">Vortrag bearbeiten</a></div>
       <form id="event-topic-speaker-form" data-event-id="${event.id}" data-topic-id="${selectedTopic.id}" data-speaker-id="${selectedSpeaker.id || ""}" class="form-grid is-save-aware">
         <div class="field"><label>Name</label><input name="name" value="${escapeHtml(selectedSpeaker.name || "")}" required></div>
         <div class="field"><label>Firma</label><input name="company" value="${escapeHtml(selectedSpeaker.company || "")}"></div>
@@ -1292,18 +1396,18 @@ function topicEditorPanel(event, topics, speakers, mode, selectedTopicId, select
     </aside>`;
   }
   if (!selectedTopic && mode !== "new") return "";
-  const topicSpeakers = selectedTopic?.id ? topicSpeakersForEvent(selectedTopic, event, speakers) : [];
+  const topicSpeakers = selectedTopic?.id ?topicSpeakersForEvent(selectedTopic, event, speakers) : [];
   const firstTopicSpeaker = topicSpeakers[0];
   const topicHeadActions = selectedTopic.id
-    ? `<div class="topic-panel-actions">${firstTopicSpeaker ? `<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}&speaker=${firstTopicSpeaker.id}">Referent bearbeiten</a>` : `<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}">Referent hinzufuegen</a>`}<button class="button button--secondary button--small" type="button" data-copy-talk-to-topic="${selectedTopic.id}" data-event-id="${event.id}">Vortrag als Thema kopieren</button><a class="link-button" href="#/cms/event/${event.id}?tab=topics">Schliessen</a></div>`
+    ?`<div class="topic-panel-actions">${firstTopicSpeaker ?`<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}&speaker=${firstTopicSpeaker.id}">Referent bearbeiten</a>` : `<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}">Referent hinzufuegen</a>`}<button class="button button--secondary button--small" type="button" data-copy-talk-to-topic="${selectedTopic.id}" data-event-id="${event.id}">Vortrag als Thema kopieren</button><a class="link-button" href="#/cms/event/${event.id}?tab=topics">Schliessen</a></div>`
     : `<a class="link-button" href="#/cms/event/${event.id}?tab=topics">Schliessen</a>`;
   const topicEntityId = selectedTopic.id || "";
-  return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">${mode === "new" ? "Neu" : "Vortrag bearbeiten"}</p><h2>${mode === "new" ? "Neuer Vortrag" : escapeHtml(selectedTopic.title || "")}</h2></div>${topicHeadActions}</div>
+  return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">${mode === "new" ?"Neu" : "Vortrag bearbeiten"}</p><h2>${mode === "new" ?"Neuer Vortrag" : escapeHtml(selectedTopic.title || "")}</h2></div>${topicHeadActions}</div>
     <form id="event-topic-editor-form" data-event-id="${event.id}" data-topic-id="${selectedTopic.id || ""}" class="form-grid">
       <div class="field"><label>Ueberschrift</label><input name="title" value="${escapeHtml(selectedTopic.title || "")}" required>${aiFieldActions([{ action: "improveText", target: "title", label: "Ueberschrift mit ChatGPT", entityType: "topics", entityId: topicEntityId, fieldName: "title" }])}</div>
       <div class="field"><label>Text</label><textarea name="text" required>${escapeHtml(selectedTopic.longDescription || selectedTopic.shortDescription || "")}</textarea>${aiFieldActions([{ action: "generateTopicDescription", target: "text", label: "Text mit ChatGPT", entityType: "topics", entityId: topicEntityId, fieldName: "longDescription" }])}</div>
       <div class="field"><label>Thumb optional</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: selectedTopic.imageUrl || "", label: "Vortragsbild" })}</div>
-      ${selectedTopic.id ? "" : `<p class="muted">Referenten koennen nach dem Speichern des neuen Vortrags hinzugefuegt werden.</p>`}
+      ${selectedTopic.id ?"" : `<p class="muted">Referenten koennen nach dem Speichern des neuen Vortrags hinzugefuegt werden.</p>`}
       ${eventTopicSpeakerActions(event, selectedTopic, topicSpeakers)}
       <div class="actions"><a class="button button--secondary" href="#/cms/event/${event.id}?tab=topics">Abbrechen</a><button class="button button--primary">Speichern</button></div>
       <div id="event-topic-editor-result"></div>
@@ -1317,8 +1421,8 @@ function topicAssignPanel(event, topics, mode) {
   const candidates = topics.filter((topic) => !assigned.has(topic.id));
   return `<div class="topic-inline-panel"><div class="topic-panel-head"><h2>Vortrag zuordnen</h2><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics">Schliessen</a></div>
     <form id="event-topic-assign-form" data-event-id="${event.id}" class="form-grid">
-      <div class="selection-grid">${candidates.length ? candidates.map((topic) => `<label class="selection-item"><input type="radio" name="topicId" value="${topic.id}" required><span><strong>${escapeHtml(topic.title || "")}</strong><small>${escapeHtml(shortText(topic.shortDescription || topic.longDescription || ""))}</small></span></label>`).join("") : `<div class="alert">Alle vorhandenen Vortraege sind bereits zugeordnet.</div>`}</div>
-      <div class="actions"><button class="button button--primary" ${candidates.length ? "" : "disabled"}>Zuordnen</button></div>
+      <div class="selection-grid">${candidates.length ?candidates.map((topic) => `<label class="selection-item"><input type="radio" name="topicId" value="${topic.id}" required><span><strong>${escapeHtml(topic.title || "")}</strong><small>${escapeHtml(shortText(topic.shortDescription || topic.longDescription || ""))}</small></span></label>`).join("") : `<div class="alert">Alle vorhandenen Vortraege sind bereits zugeordnet.</div>`}</div>
+      <div class="actions"><button class="button button--primary" ${candidates.length ?"" : "disabled"}>Zuordnen</button></div>
       <div id="event-topic-assign-result"></div>
     </form>
   </div>`;
@@ -1329,17 +1433,17 @@ function eventTopicsEditor(event, topics, speakers, allEvents, query = new URLSe
   const assignedTopics = (event.topicIds || []).map((topicId) => topics.find((topic) => topic.id === topicId)).filter(Boolean);
   const topicLimitReached = assignedTopics.length >= 6;
   const requestedMode = query.get("mode") || "";
-  const mode = topicLimitReached && ["new", "assign"].includes(requestedMode) ? "" : requestedMode;
+  const mode = topicLimitReached && ["new", "assign"].includes(requestedMode) ?"" : requestedMode;
   const selectedTopicId = query.get("topic") || "";
   const selectedSpeakerId = query.get("speaker") || "";
-  const detailPanel = mode && mode !== "assign" ? topicEditorPanel(event, topics, speakers, mode, selectedTopicId, selectedSpeakerId) : "";
+  const detailPanel = mode && mode !== "assign" ?topicEditorPanel(event, topics, speakers, mode, selectedTopicId, selectedSpeakerId) : "";
   const assignPanel = topicAssignPanel(event, topics, mode);
-  const newHref = topicLimitReached && mode !== "new" ? `#/cms/event/${event.id}?tab=topics` : mode === "new" ? `#/cms/event/${event.id}?tab=topics` : `#/cms/event/${event.id}?tab=topics&mode=new`;
-  const newClass = mode === "new" ? "button button--primary button--small" : `button button--secondary button--small${topicLimitReached ? " disabled" : ""}`;
-  const assignHref = topicLimitReached && mode !== "assign" ? `#/cms/event/${event.id}?tab=topics` : mode === "assign" ? `#/cms/event/${event.id}?tab=topics` : `#/cms/event/${event.id}?tab=topics&mode=assign`;
-  const assignClass = mode === "assign" ? "button button--primary button--small" : `button button--secondary button--small${topicLimitReached ? " disabled" : ""}`;
-  const removeHref = mode === "remove" ? `#/cms/event/${event.id}?tab=topics` : `#/cms/event/${event.id}?tab=topics&mode=remove`;
-  const removeClass = mode === "remove" ? "button button--primary button--small" : "button button--secondary button--small";
+  const newHref = topicLimitReached && mode !== "new" ?`#/cms/event/${event.id}?tab=topics` : mode === "new" ?`#/cms/event/${event.id}?tab=topics` : `#/cms/event/${event.id}?tab=topics&mode=new`;
+  const newClass = mode === "new" ?"button button--primary button--small" : `button button--secondary button--small${topicLimitReached ?" disabled" : ""}`;
+  const assignHref = topicLimitReached && mode !== "assign" ?`#/cms/event/${event.id}?tab=topics` : mode === "assign" ?`#/cms/event/${event.id}?tab=topics` : `#/cms/event/${event.id}?tab=topics&mode=assign`;
+  const assignClass = mode === "assign" ?"button button--primary button--small" : `button button--secondary button--small${topicLimitReached ?" disabled" : ""}`;
+  const removeHref = mode === "remove" ?`#/cms/event/${event.id}?tab=topics` : `#/cms/event/${event.id}?tab=topics&mode=remove`;
+  const removeClass = mode === "remove" ?"button button--primary button--small" : "button button--secondary button--small";
   return `<div class="topic-workspace">
     <section class="topic-list-panel">
       <div class="topic-actionbar">
@@ -1348,19 +1452,19 @@ function eventTopicsEditor(event, topics, speakers, allEvents, query = new URLSe
         <a class="${removeClass}" href="${removeHref}">Loeschen</a>
       </div>
       <p class="muted">Pro Medienfruehstueck sind maximal 6 Vortraege vorgesehen. Jeder Vortrag besteht aus Thema, Beschreibung und Referent.</p>
-      ${topicLimitReached ? `<div class="alert">Maximal 6 Vortraege sind erreicht. Bitte zuerst einen Vortrag entfernen, bevor ein neuer hinzugefuegt wird.</div>` : ""}
+      ${topicLimitReached ?`<div class="alert">Maximal 6 Vortraege sind erreicht. Bitte zuerst einen Vortrag entfernen, bevor ein neuer hinzugefuegt wird.</div>` : ""}
       ${assignPanel}
       ${detailPanel}
       <h2>Bereits zugeordnet</h2>
-      <div class="assigned-topic-list">${assignedTopics.length ? assignedTopics.map((topic) => {
+      <div class="assigned-topic-list">${assignedTopics.length ?assignedTopics.map((topic) => {
         const topicSpeakers = topicSpeakersForEvent(topic, event, speakers);
         const excerpt = shortText(topic.longDescription || topic.shortDescription || "");
-        return `<div class="assigned-topic-card ${selectedTopicId === topic.id ? "active" : ""}" draggable="true" data-topic-drag-id="${topic.id}" data-event-id="${event.id}">
+        return `<div class="assigned-topic-card ${selectedTopicId === topic.id ?"active" : ""}" draggable="true" data-topic-drag-id="${topic.id}" data-event-id="${event.id}">
           <button type="button" class="drag-handle" aria-label="Vortrag verschieben">::</button>
           <a class="assigned-topic-card__link" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}">
           <div class="topic-thumb">${topicThumb(topic)}</div>
           <div class="assigned-topic-card__body"><h3>${escapeHtml(topic.title || "")}</h3><p>${escapeHtml(excerpt)}</p></div>
-          <div class="topic-speaker-badges">${topicSpeakers.length ? topicSpeakers.map((speaker) => `<span class="speaker-badge">${speakerAvatar(speaker, "speaker-badge__avatar")}<span>${escapeHtml(speaker.name || "")}</span></span>`).join("") : `<small>Keine Referenten</small>`}</div>
+          <div class="topic-speaker-badges">${topicSpeakers.length ?topicSpeakers.map((speaker) => `<span class="speaker-badge">${speakerAvatar(speaker, "speaker-badge__avatar")}<span>${escapeHtml(speaker.name || "")}</span></span>`).join("") : `<small>Keine Referenten</small>`}</div>
           <b>&gt;</b>
           </a>
         </div>`;
@@ -1372,34 +1476,78 @@ function eventTopicsEditor(event, topics, speakers, allEvents, query = new URLSe
 
 function eventPartnersEditor(event, sponsors, mediaAssets = []) {
   const selectedPartner = sponsors.find((item) => item.id === event.hostId) || null;
-  const selectedAsset = selectedPartner ? recordMediaAsset(selectedPartner, mediaAssets, "sponsors", "logoUrl") : null;
+  const selectedAsset = selectedPartner ?recordMediaAsset(selectedPartner, mediaAssets, "sponsors", "logoUrl") : null;
   const selectedLogo = mediaAssetUrl(selectedAsset || {}) || selectedPartner?.logoUrl || selectedPartner?.logo_url || selectedPartner?.imageUrl || selectedPartner?.image_url || selectedPartner?.assetUrl || "";
   const sponsorLogo = (partner = {}) => {
     const asset = recordMediaAsset(partner, mediaAssets, "sponsors", "logoUrl");
     return mediaAssetUrl(asset || {}) || partner.logoUrl || partner.logo_url || partner.imageUrl || partner.image_url || partner.assetUrl || "";
   };
+  const partnerOptions = [`<option value="__new__">Neuen Co-Gastgeber anlegen ...</option>`, `<option value="" ${!event.hostId ?"selected" : ""}>Kein Co-Gastgeber</option>`, ...sponsors.map((partner) => `<option value="${escapeHtml(partner.id)}" ${event.hostId === partner.id ?"selected" : ""}>${escapeHtml(partner.name || partner.id)}</option>`)].join("");
   return `<form id="event-partners-form" data-event-id="${event.id}" class="form-grid">
     <div class="actions" style="justify-content:space-between"><div><h2>Gastgeber / Co-Gastgeber</h2><p class="muted">PROdigitalTV ist immer Gastgeber. Pro Event kann genau ein Co-Gastgeber ausgewaehlt werden.</p></div><button class="button button--primary button--small">Alles speichern</button></div>
-    <section class="panel" style="background:var(--pdt-bg)"><h3>Gastgeber</h3><div class="event-host-static"><strong>PROdigitalTV</strong><small>Gastgeber</small></div></section>
-    <section class="panel"><h3>Co-Gastgeber auswaehlen</h3><div class="table-wrap"><table class="table table--editorial table--event-partners"><thead><tr><th>Logo</th><th>Gastgeber</th><th>Rolle</th><th>Status</th><th>Aktionen</th></tr></thead><tbody><tr><td><span class="topic-thumb topic-thumb--table partner-logo-thumb partner-logo-thumb--empty">PRO</span></td><td><label class="event-partner-choice"><input type="radio" name="hostId" value="" ${!event.hostId ? "checked" : ""}><span><strong>Kein Co-Gastgeber</strong><small>Nur PROdigitalTV anzeigen</small></span></label></td><td>Gastgeber</td><td>${status(!event.hostId ? "active" : "inactive")}</td><td><div class="table-actions table-actions--icons"></div></td></tr>${sponsors.length ? sponsors.map((partner) => { const logo = sponsorLogo(partner); const isSelected = event.hostId === partner.id; return `<tr><td><span class="topic-thumb topic-thumb--table partner-logo-thumb">${logo ? `<img src="${escapeHtml(logo)}" alt="Logo ${escapeHtml(partner.name || "")}">` : `<span>${escapeHtml((partner.name || "?").slice(0, 2).toUpperCase())}</span>`}</span></td><td><label class="event-partner-choice"><input type="radio" name="hostId" value="${partner.id}" ${isSelected ? "checked" : ""}><span><strong>${escapeHtml(partner.name || "")}</strong><small>${escapeHtml(partner.website || "")}</small></span></label></td><td>${escapeHtml(partner.role || "Co-Gastgeber")}</td><td>${status(isSelected ? "active" : "inactive")}</td><td><div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=sponsors&id=${partner.id}&section=sponsors" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a></div></td></tr>`; }).join("") : `<tr><td colspan="5">Noch keine Co-Gastgeber vorhanden.</td></tr>`}</tbody></table></div></section>
-    <section class="panel" style="background:var(--pdt-bg)"><h3>Ausgewaehlten Co-Gastgeber bearbeiten</h3>${selectedPartner ? `<div class="partner-editor-grid" style="margin-top:14px"><div class="partner-logo-editor"><div class="member-logo-editor__preview">${selectedLogo ? `<img src="${escapeHtml(selectedLogo)}" alt="Logo ${escapeHtml(selectedPartner.name || "")}">` : `<span>Noch kein Logo</span>`}</div>${linkedMediaActions({ collection: "sponsors", id: selectedPartner.id, field: "logoUrl", altField: "altText", returnTo: `#/cms/event/${event.id}?tab=partners`, label: "Logo", assetId: selectedAsset?.id || "" })}</div><div class="form-grid--two"><div class="field"><label>Name</label><input name="edit-sponsor-${selectedPartner.id}-name" value="${escapeHtml(selectedPartner.name || "")}"></div><div class="field"><label>Rolle</label><input name="edit-sponsor-${selectedPartner.id}-role" value="Co-Gastgeber" readonly></div><div class="field"><label>Website</label><input name="edit-sponsor-${selectedPartner.id}-website" value="${escapeHtml(selectedPartner.website || "")}"></div><div class="field"><label>Beschreibung</label><textarea name="edit-sponsor-${selectedPartner.id}-description">${escapeHtml(selectedPartner.description || "")}</textarea>${aiFieldActions([{ action: "generateSponsorText", target: `edit-sponsor-${selectedPartner.id}-description`, label: "Co-Gastgebertext", entityType: "sponsor", entityId: selectedPartner.id, fieldName: "description" }])}</div></div></div>` : `<p>Noch kein Co-Gastgeber ausgewaehlt.</p>`}</section>
-    <section class="panel"><h3>Neuen Co-Gastgeber anlegen und zuordnen</h3><div class="form-grid--two"><div class="field"><label>Name</label><input name="newSponsorName"></div><input type="hidden" name="newSponsorRole" value="Co-Gastgeber"><div class="field"><label>Website</label><input name="newSponsorWebsite"></div><div class="field"><label>Beschreibung</label><textarea name="newSponsorDescription"></textarea></div></div><p class="muted">Ein neu angelegter Co-Gastgeber wird direkt als einziger Co-Gastgeber dieses Events gesetzt.</p></section>
+    <section class="panel" style="background:var(--pdt-bg)"><h3>Gastgeber</h3><div class="field"><label>Gastgeber</label><select name="primaryHost" disabled><option value="prodigitaltv" selected>PROdigitalTV</option></select></div></section>
+    <section class="panel"><h3>Co-Gastgeber auswaehlen</h3><div class="form-grid--two"><div class="field"><label>Co-Gastgeber</label><select name="hostId">${partnerOptions}</select><p class="muted">Auswahl speichern, um den Co-Gastgeber mit dem Event zu verbinden.</p></div><div class="partner-select-preview">${selectedPartner ?`<div class="partner-select-preview__logo">${selectedLogo ?`<img src="${escapeHtml(selectedLogo)}" alt="Logo ${escapeHtml(selectedPartner.name || "")}">` : `<span>${escapeHtml((selectedPartner.name || "?").slice(0, 2).toUpperCase())}</span>`}</div><div><strong>${escapeHtml(selectedPartner.name || "")}</strong><small>${escapeHtml(selectedPartner.website || "")}</small><a class="button button--secondary button--small" href="#/cms/edit?module=sponsors&id=${selectedPartner.id}&section=sponsors">Bearbeiten</a></div>` : `<div class="partner-select-preview__logo partner-select-preview__logo--empty">PRO</div><div><strong>Kein Co-Gastgeber</strong><small>Nur PROdigitalTV anzeigen</small></div>`}</div></div></section>
+    <section class="panel" style="background:var(--pdt-bg)"><h3>Ausgewaehlten Co-Gastgeber bearbeiten</h3>${selectedPartner ?`<div class="partner-editor-grid" style="margin-top:14px"><div class="partner-logo-editor"><div class="member-logo-editor__preview">${selectedLogo ?`<img src="${escapeHtml(selectedLogo)}" alt="Logo ${escapeHtml(selectedPartner.name || "")}">` : `<span>Noch kein Logo</span>`}</div>${linkedMediaActions({ collection: "sponsors", id: selectedPartner.id, field: "logoUrl", altField: "altText", returnTo: `#/cms/event/${event.id}?tab=partners`, label: "Logo", assetId: selectedAsset?.id || "" })}</div><div class="form-grid--two"><div class="field"><label>Name</label><input name="edit-sponsor-${selectedPartner.id}-name" value="${escapeHtml(selectedPartner.name || "")}"></div><div class="field"><label>Rolle</label><input name="edit-sponsor-${selectedPartner.id}-role" value="Co-Gastgeber" readonly></div><div class="field"><label>Website</label><input name="edit-sponsor-${selectedPartner.id}-website" value="${escapeHtml(selectedPartner.website || "")}"></div><div class="field"><label>Beschreibung</label><textarea name="edit-sponsor-${selectedPartner.id}-description">${escapeHtml(selectedPartner.description || "")}</textarea>${aiFieldActions([{ action: "generateSponsorText", target: `edit-sponsor-${selectedPartner.id}-description`, label: "Co-Gastgebertext", entityType: "sponsor", entityId: selectedPartner.id, fieldName: "description" }])}</div></div></div>` : `<p>Noch kein Co-Gastgeber ausgewaehlt.</p>`}</section>
+    <section class="panel cms-inline-create-panel" data-new-sponsor-layer hidden><div class="field-label-row"><h3>Neuen Co-Gastgeber anlegen</h3><button type="button" class="button button--secondary button--small" data-close-new-sponsor>Abbrechen</button></div><div class="form-grid--two"><div class="field"><label>Name</label><input name="newSponsorName"></div><input type="hidden" name="newSponsorRole" value="Co-Gastgeber"><div class="field"><label>Website</label><input name="newSponsorWebsite"></div><div class="field"><label>Beschreibung</label><textarea name="newSponsorDescription"></textarea></div></div><p class="muted">Speichern legt den Co-Gastgeber an und ordnet ihn direkt diesem Event zu.</p><div class="actions"><button type="submit" class="button button--primary button--small">Anlegen und speichern</button></div></section>
     <div class="actions"><button class="button button--primary">Co-Gastgeber speichern</button></div><div id="event-partners-result"></div>
   </form>`;
 }
 
 export async function eventEditPage(id, tab = "base", query = new URLSearchParams()) {
   if (!hasCmsAccess()) return denied();
-  let event = id === "new" ? {
-    id: `event-${crypto.randomUUID()}`, title: "", subtitle: "", date: "2026-08-01", startTime: "10:00", endTime: "13:00", locationName: "", city: "", description: "", eventType: "Panel", accessType: "public", status: "draft", lifecyclePhase: "planning", registrationEnabled: false, maxParticipants: 50, expiresAt: "", address: "", phone: "", topicIds: [], speakerIds: [], sponsorIds: []
+  let event = id === "new" ?{
+    id: `event-${crypto.randomUUID()}`, title: "", subtitle: "", date: "2026-08-01", startTime: "10:00", endTime: "13:00", locationName: "", address: "", postalCode: "", city: "", description: "", eventType: "Panel", accessType: "public", status: "draft", lifecyclePhase: "planning", registrationEnabled: false, maxParticipants: 50, expiresAt: "", phone: "", topicIds: [], speakerIds: [], sponsorIds: []
   } : await getOne("events", id);
   if (!event) return eventsAdminPage();
   const [topics, speakers, sponsors, registrations, media, settings, allEvents, galleries, allEditorial, mediaAssets, audioProviders, videoLibrary] = await Promise.all([list("topics"), list("speakers"), list("sponsors"), list("registrations"), list("eventMedia"), list("settings"), list("events"), list("galleries"), list("editorialContent"), list("media_assets").catch(() => []), getOne("settings", "audioProviders").catch(() => null), list("media_videos").catch(() => [])]);
   const eventTypes = settingValue(settings, "eventTypes", ["Medienfruehstueck", "Summit", "Roundtable", "Panel", "Webinar", "Konferenz", "Workshop"]);
-  const galleryOptions = [`<option value="">Keine Galerie verknuepfen</option>`, ...galleries
+  const availableGalleries = galleries
     .filter((gallery) => gallery.status !== "archived")
-    .sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "de"))
-    .map((gallery) => `<option value="${escapeHtml(gallery.id)}" ${event.galleryId === gallery.id || (!event.galleryId && gallery.eventId === event.id) ? "selected" : ""}>${escapeHtml(gallery.title || gallery.id)} (${(gallery.images || []).length} Bilder)</option>`)].join("");
+    .sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "de"));
+  const galleryOptions = [`<option value="">Keine Galerie verknuepfen</option>`, ...availableGalleries
+    .map((gallery) => `<option value="${escapeHtml(gallery.id)}" data-gallery-payload="${galleryPayloadAttribute(gallery)}" ${event.galleryId === gallery.id || (!event.galleryId && gallery.eventId === event.id) ?"selected" : ""}>${escapeHtml(gallery.title || gallery.id)} (${(gallery.images || []).length} Bilder)</option>`)].join("");
+  const customSelect = ({ name, label, value = "", options = [], note = "", attrs = "" }) => {
+    const current = options.find((option) => String(option.value) === String(value)) || options[0] || { value: "", label: "" };
+    return `<div class="field cms-compact-select-field" data-compact-select><label>${escapeHtml(label)}</label><input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(current.value)}" ${attrs}><button type="button" class="cms-compact-select__trigger" data-compact-select-trigger aria-expanded="false">${escapeHtml(current.label)}</button><div class="cms-compact-select__menu" data-compact-select-menu hidden>${options.map((option) => `<button type="button" class="cms-compact-select__option ${String(option.value) === String(current.value) ?"is-active" : ""}" data-compact-select-value="${escapeHtml(option.value)}" data-compact-select-label="${escapeHtml(option.label)}">${escapeHtml(option.label)}</button>`).join("")}</div>${note ?`<p class="muted">${escapeHtml(note)}</p>` : ""}</div>`;
+  };
+  const eventTypeOptions = [...eventTypes.map((value) => ({ value, label: value })), { value: "__new__", label: "Neuen Eventtyp hinzufuegen ..." }];
+  const accessTypeOptions = Object.entries(accessLabels).map(([key, value]) => ({ value: key, label: value }));
+  const sponsorSelectOptions = sponsors
+    .filter((sponsor) => !["archived", "deleted"].includes(String(sponsor.status || "").toLowerCase()))
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "de"))
+    .map((sponsor) => ({ value: sponsor.id, label: sponsor.name || sponsor.id }));
+  const primaryHostOptions = [{ value: "__new_primary_host__", label: "Neuen Gastgeber anlegen ..." }, { value: "prodigitaltv", label: "PROdigitalTV" }, ...sponsorSelectOptions];
+  const coHostOptions = [{ value: "__new_co_host__", label: "Neuen Co-Gastgeber anlegen ..." }, { value: "", label: "Kein Co-Gastgeber" }, ...sponsorSelectOptions];
+  const selectedGallery = availableGalleries.find((gallery) => event.galleryId === gallery.id || (!event.galleryId && gallery.eventId === event.id));
+  const selectedGalleryId = event.galleryId || (selectedGallery?.eventId === event.id ? selectedGallery.id : "");
+  const galleryPickerOptions = [
+    { value: "", label: "Keine Galerie verknuepfen" },
+    ...availableGalleries.map((gallery) => ({ value: gallery.id, label: `${gallery.title || gallery.id} (${(gallery.images || []).length} Bilder)` }))
+  ];
+  const eventTypePicker = customSelect({ name: "eventType", label: "Eventtyp", value: event.eventType, options: eventTypeOptions, attrs: "data-event-type-select" });
+  const accessTypePicker = customSelect({ name: "accessType", label: "Zugangsart", value: event.accessType, options: accessTypeOptions });
+  const primaryHostPicker = customSelect({ name: "primaryHostId", label: "Gastgeber", value: event.primaryHostId || "prodigitaltv", options: primaryHostOptions });
+  const coHostPicker = customSelect({ name: "hostId", label: "Co-Gastgeber", value: event.hostId || "", options: coHostOptions, note: "Der Co-Gastgeber wird im Event und in der Eventbox angezeigt." });
+  const hostCreateLayer = `<div class="cms-host-create-layer" data-host-create-layer hidden>
+    <div class="cms-host-create-layer__panel" role="dialog" aria-modal="true" aria-labelledby="host-create-title">
+      <div class="field-label-row">
+        <div><p class="eyebrow">Stammdaten</p><h3 id="host-create-title" data-host-create-title>Gastgeber anlegen</h3></div>
+        <button type="button" class="button button--secondary button--small" data-host-create-cancel>Schliessen</button>
+      </div>
+      <input type="hidden" name="newHostTarget" data-host-create-target value="">
+      <div class="form-grid--two">
+        <div class="field"><label>Name</label><input name="newHostName" data-host-create-name placeholder="z. B. HEUKING"></div>
+        <div class="field"><label>Website</label><input name="newHostWebsite" placeholder="https://"></div>
+      </div>
+      <div class="field"><label>Beschreibung</label><textarea name="newHostDescription" rows="5" placeholder="Kurzbeschreibung fuer Eventbox und Detailseite"></textarea></div>
+      <p class="muted">Der neue Datensatz wird unter Sponsoren / Gastgeber gespeichert und direkt in diesem Event ausgewaehlt.</p>
+      <div class="actions"><button type="button" class="button button--primary" data-host-create-save>Anlegen und auswaehlen</button></div>
+      <div data-host-create-result></div>
+    </div>
+  </div>`;
+  const galleryPicker = customSelect({ name: "galleryId", label: "Bildergalerie", value: selectedGalleryId, options: galleryPickerOptions, note: "Bilder werden im Bereich Bildergalerien freigegeben und dieser Galerie zugeordnet." });
+  const eventGalleryCreateButton = `<button class="button button--secondary button--small" type="button" data-create-event-gallery>Event-Galerie anlegen</button>`;
+  const galleryManageButton = `<a class="button button--secondary button--small" href="#/cms/galleries">Galerien verwalten</a>`;
   if (!["base", "pre", "topics", "partners", "registration", "post", "media", "ai"].includes(tab)) tab = "base";
   const retrospectiveArticle = allEditorial.find((item) => {
     const category = String(item.category || "").toLowerCase();
@@ -1412,11 +1560,11 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     <div class="actions" style="justify-content:space-between;align-items:flex-start">
       <div><p class="eyebrow">Presse / Rückblicke</p><h2>Redaktionellen Rückblick steuern</h2><p class="muted">Erstellt oder aktualisiert einen Pressebeitrag in der Kategorie Rückblicke mit Fließtext, Event-Bezug und Galerie-Verknüpfung.</p></div>
       <div class="actions">
-        <button type="button" class="button button--primary button--small" data-create-event-retrospective="${escapeHtml(event.id)}">${retrospectiveArticle ? "Rückblick aktualisieren" : "Rückblick erstellen"}</button>
-        ${retrospectiveArticle ? `<a class="button button--secondary button--small" href="#/cms/edit?module=editorialContent&id=${escapeHtml(retrospectiveArticle.id)}&section=press">Beitrag öffnen</a>` : ""}
+        <button type="button" class="button button--primary button--small" data-create-event-retrospective="${escapeHtml(event.id)}">${retrospectiveArticle ?"Rückblick aktualisieren" : "Rückblick erstellen"}</button>
+        ${retrospectiveArticle ?`<a class="button button--secondary button--small" href="#/cms/edit?module=editorialContent&id=${escapeHtml(retrospectiveArticle.id)}&section=press">Beitrag öffnen</a>` : ""}
       </div>
     </div>
-    <div id="event-retrospective-result" class="muted">${retrospectiveArticle ? `Verknüpfter Beitrag: ${escapeHtml(retrospectiveArticle.title || retrospectiveArticle.id)}` : "Noch kein redaktioneller Rückblick zu diesem Event vorhanden."}</div>
+    <div id="event-retrospective-result" class="muted">${retrospectiveArticle ?`Verknüpfter Beitrag: ${escapeHtml(retrospectiveArticle.title || retrospectiveArticle.id)}` : "Noch kein redaktioneller Rückblick zu diesem Event vorhanden."}</div>
     <input type="hidden" data-retrospective-article-id value="${escapeHtml(retrospectiveArticleId)}">
   </section>`;
   if (tab === "post" && retrospectiveArticle) {
@@ -1428,81 +1576,135 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   }
   let content;
   if (tab === "base") {
-    content = `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid is-save-aware"><div class="form-grid--two"><div class="field"><label>Titel</label><input name="title" value="${escapeHtml(event.title)}" required>${aiFieldActions([{ action: "generateEventDescription", target: "title", label: "Ueberschrift vorschlagen", entityId: event.id, fieldName: "title" }])}</div><div class="field"><label>Untertitel</label><input name="subtitle" value="${escapeHtml(event.subtitle)}"></div></div><div class="field"><label>Beschreibung</label><textarea name="description">${escapeHtml(event.description)}</textarea>${aiFieldActions([{ action: "improveText", target: "description", label: "Mit ChatGPT bearbeiten", entityId: event.id, fieldName: "description" }, { action: "shortenText", target: "description", label: "Für Mobile kuerzen", entityId: event.id, fieldName: "description" }, { action: "generateSeoMeta", target: "description", label: "SEO erzeugen", entityId: event.id, fieldName: "description" }])}</div><div class="form-grid--two"><div class="field"><label>Datum</label><input type="date" name="date" value="${event.date}"></div><div class="field"><label>Eventtyp</label><select name="eventType">${eventTypes.map((value) => `<option ${value === event.eventType ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select></div><div class="field"><label>Neuen Eventtyp hinzufuegen</label><input name="newEventType" placeholder="z. B. Fachgespraech"></div><div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Bilder werden im Bereich Bildergalerien freigegeben und dieser Galerie zugeordnet.</p></div>${eventImageEditor(event, mediaAssets, `#/cms/event/${event.id}?tab=base`)}<div class="field"><label>Aktiv / Inaktiv</label><select name="status"><option value="published" ${event.status === "published" ? "selected" : ""}>Aktiv</option><option value="inactive" ${event.status === "inactive" ? "selected" : ""}>Inaktiv</option><option value="draft" ${event.status === "draft" ? "selected" : ""}>Entwurf</option><option value="archived" ${event.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Beginn</label><input type="time" name="startTime" value="${event.startTime}"></div><div class="field"><label>Ende</label><input type="time" name="endTime" value="${event.endTime}"></div><div class="field"><label>Location</label><input name="locationName" value="${escapeHtml(event.locationName || "")}"></div><div class="field"><label>Adresse</label><input name="address" value="${escapeHtml(event.address || "")}"></div><div class="field"><label>Stadt</label><input name="city" value="${escapeHtml(event.city || "")}"></div><div class="field"><label>Telefon Location</label><input name="phone" value="${escapeHtml(event.phone || "")}"></div><div class="field"><label>Ablaufdatum / automatisch ausblenden</label><input type="datetime-local" name="expiresAt" value="${event.expiresAt ? event.expiresAt.slice(0, 16) : ""}"></div><div class="field"><label>Zugangsart</label><select name="accessType">${Object.entries(accessLabels).map(([key, value]) => `<option value="${key}" ${key === event.accessType ? "selected" : ""}>${value}</option>`).join("")}</select></div><div class="field"><label>Lifecycle</label><select name="lifecyclePhase">${Object.entries(lifecycleLabels).map(([key, value]) => `<option value="${key}" ${key === event.lifecyclePhase ? "selected" : ""}>${value}</option>`).join("")}</select></div></div><div class="actions"><button class="button button--primary">Event speichern</button>${id !== "new" ? `<button type="button" class="button button--secondary" data-delete-event="${event.id}">Event loeschen</button>` : ""}</div><div id="event-save-result"></div></form>`;
+    content = `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid is-save-aware event-base-form"><div class="field"><label>Titel</label><input name="title" value="${escapeHtml(event.title)}" required></div><div class="field"><label>Untertitel</label><input name="subtitle" value="${escapeHtml(event.subtitle)}"></div><div class="field"><div class="field-label-row"><label>Beschreibung</label>${aiButton("improveText", "description", "Mit ChatGPT bearbeiten", { entityId: event.id, fieldName: "description" })}</div><textarea name="description">${escapeHtml(event.description)}</textarea></div><div class="form-grid--four"><div class="field"><label>Location</label><input name="locationName" value="${escapeHtml(event.locationName || "")}"></div><div class="field"><label>Straße / Nr.</label><input name="address" value="${escapeHtml(event.address || "")}"></div><div class="field"><label>PLZ</label><input name="postalCode" value="${escapeHtml(event.postalCode || event.zipCode || "")}"></div><div class="field"><label>Stadt</label><input name="city" value="${escapeHtml(event.city || "")}"></div></div><div class="form-grid--four"><div class="field"><label>Datum</label><input type="date" name="date" value="${event.date}"></div><div class="field"><label>Beginn</label><input type="time" name="startTime" value="${event.startTime}"></div><div class="field"><label>Ende</label><input type="time" name="endTime" value="${event.endTime}"></div><div class="field"><label>Ablauf</label><input type="datetime-local" name="expiresAt" value="${event.expiresAt ?event.expiresAt.slice(0, 16) : ""}"></div></div><div class="form-grid--two"><div class="event-base-form__event-type-stack">${eventTypePicker}<div class="field field--nested" data-new-event-type-field hidden><label>Neuer Eventtyp</label><input name="newEventType" placeholder="z. B. Fachgespräch"></div></div>${accessTypePicker}${primaryHostPicker}${coHostPicker}${eventImageEditor(event, mediaAssets, `#/cms/event/${event.id}?tab=base`)}</div>${hostCreateLayer}<div class="actions"><button class="button button--primary">Event speichern</button>${id !== "new" ?`<button type="button" class="button button--secondary" data-delete-event="${event.id}">Event loeschen</button>` : ""}</div><div id="event-save-result"></div></form>`;
     if (isPastCmsEvent(event)) {
       content = content
         .replace(`<div class="field"><label>Telefon Location</label><input name="phone" value="${escapeHtml(event.phone || "")}"></div>`, "")
-        .replace(`<div class="field"><label>Ablaufdatum / automatisch ausblenden</label><input type="datetime-local" name="expiresAt" value="${event.expiresAt ? event.expiresAt.slice(0, 16) : ""}"></div>`, "")
-        .replace(`<div class="field"><label>Zugangsart</label><select name="accessType">${Object.entries(accessLabels).map(([key, value]) => `<option value="${key}" ${key === event.accessType ? "selected" : ""}>${value}</option>`).join("")}</select></div>`, "")
-        .replace(`<div class="field"><label>Lifecycle</label><select name="lifecyclePhase">${Object.entries(lifecycleLabels).map(([key, value]) => `<option value="${key}" ${key === event.lifecyclePhase ? "selected" : ""}>${value}</option>`).join("")}</select></div>`, "");
+        .replace(`<div class="field"><label>Ablaufdatum / automatisch ausblenden</label><input type="datetime-local" name="expiresAt" value="${event.expiresAt ?event.expiresAt.slice(0, 16) : ""}"></div>`, "")
+        .replace(`<div class="field"><label>Zugangsart</label><select name="accessType">${Object.entries(accessLabels).map(([key, value]) => `<option value="${key}" ${key === event.accessType ?"selected" : ""}>${value}</option>`).join("")}</select></div>`, "")
+        .replace(`<div class="field"><label>Lifecycle</label><select name="lifecyclePhase">${Object.entries(lifecycleLabels).map(([key, value]) => `<option value="${key}" ${key === event.lifecyclePhase ?"selected" : ""}>${value}</option>`).join("")}</select></div>`, "");
     }
   } else if (tab === "topics") {
     content = eventTopicsEditor(event, topics, speakers, allEvents, query);
   } else if (tab === "__old_topics") {
-    content = `<h2>Zugeordnete Themen</h2><div class="filters">${topics.map((topic) => `<span class="filter ${event.topicIds.includes(topic.id) ? "active" : ""}">${escapeHtml(topic.title)}</span>`).join("")}</div><p>Themenspezifische Beschreibung und Sortierung koennen hier redaktionell erweitert werden.</p><div class="table-wrap" style="margin-top:22px"><table class="table"><thead><tr><th>Thema</th><th>Referenten</th></tr></thead><tbody>${topics.filter((topic) => event.topicIds.includes(topic.id)).map((topic) => { const topicSpeakers = speakers.filter((speaker) => speaker.topicId === topic.id || (event.speakerIds || []).includes(speaker.id)); return `<tr><td>${escapeHtml(topic.title)}</td><td>${topicSpeakers.length ? topicSpeakers.map((speaker) => `<div class="person"><div>${speaker.photoUrl ? `<img src="${escapeHtml(speaker.photoUrl)}" alt="">` : ""}</div><div><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" · "))}</small>${speaker.shortBio ? `<p>${escapeHtml(speaker.shortBio)}</p>` : ""}</div></div>`).join("") : "Noch kein Referent zugeordnet."}</td></tr>`; }).join("")}</tbody></table></div>`;
+    content = `<h2>Zugeordnete Themen</h2><div class="filters">${topics.map((topic) => `<span class="filter ${event.topicIds.includes(topic.id) ?"active" : ""}">${escapeHtml(topic.title)}</span>`).join("")}</div><p>Themenspezifische Beschreibung und Sortierung koennen hier redaktionell erweitert werden.</p><div class="table-wrap" style="margin-top:22px"><table class="table"><thead><tr><th>Thema</th><th>Referenten</th></tr></thead><tbody>${topics.filter((topic) => event.topicIds.includes(topic.id)).map((topic) => { const topicSpeakers = speakers.filter((speaker) => speaker.topicId === topic.id || (event.speakerIds || []).includes(speaker.id)); return `<tr><td>${escapeHtml(topic.title)}</td><td>${topicSpeakers.length ?topicSpeakers.map((speaker) => `<div class="person"><div>${speaker.photoUrl ?`<img src="${escapeHtml(speaker.photoUrl)}" alt="">` : ""}</div><div><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" · "))}</small>${speaker.shortBio ?`<p>${escapeHtml(speaker.shortBio)}</p>` : ""}</div></div>`).join("") : "Noch kein Referent zugeordnet."}</td></tr>`; }).join("")}</tbody></table></div>`;
   } else if (tab === "speakers") {
     const assignedSpeakers = speakers.filter((item) => (event.speakerIds || []).includes(item.id));
-    content = `<h2>Referenten im Eventkontext</h2><form id="event-speakers-form" data-event-id="${event.id}" class="form-grid"><div class="selection-grid">${speakers.length ? speakers.map((speaker) => `<label class="selection-item"><input type="checkbox" name="speakerIds" value="${speaker.id}" ${(event.speakerIds || []).includes(speaker.id) ? "checked" : ""}><span><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml(speaker.position || speaker.company || "")}</small></span>${status(speaker.status || "draft")}</label>`).join("") : `<div class="alert">Noch keine Referenten angelegt. Bitte zuerst im Bereich Referenten ein Profil mit Foto und Vita erstellen.</div>`}</div><div class="actions"><button class="button button--primary">Zuordnung speichern</button><a class="button button--secondary" href="#/cms/speakers">Referentenprofile verwalten</a></div><div id="speaker-assignment-result"></div></form>${assignedSpeakers.length ? `<div class="table-wrap" style="margin-top:24px"><table class="table"><thead><tr><th>Zugeordnet</th><th>Unternehmen</th><th>Profil</th></tr></thead><tbody>${assignedSpeakers.map((speaker) => `<tr><td>${escapeHtml(speaker.name)}</td><td>${escapeHtml(speaker.company || "-")}</td><td>${speaker.photoUrl ? "Foto vorhanden" : "Foto fehlt"} · ${speaker.shortBio || speaker.longBio ? "Vita vorhanden" : "Vita fehlt"}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
+    content = `<h2>Referenten im Eventkontext</h2><form id="event-speakers-form" data-event-id="${event.id}" class="form-grid"><div class="selection-grid">${speakers.length ?speakers.map((speaker) => `<label class="selection-item"><input type="checkbox" name="speakerIds" value="${speaker.id}" ${(event.speakerIds || []).includes(speaker.id) ?"checked" : ""}><span><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml(speaker.position || speaker.company || "")}</small></span>${status(speaker.status || "draft")}</label>`).join("") : `<div class="alert">Noch keine Referenten angelegt. Bitte zuerst im Bereich Referenten ein Profil mit Foto und Vita erstellen.</div>`}</div><div class="actions"><button class="button button--primary">Zuordnung speichern</button><a class="button button--secondary" href="#/cms/speakers">Referentenprofile verwalten</a></div><div id="speaker-assignment-result"></div></form>${assignedSpeakers.length ?`<div class="table-wrap" style="margin-top:24px"><table class="table"><thead><tr><th>Zugeordnet</th><th>Unternehmen</th><th>Profil</th></tr></thead><tbody>${assignedSpeakers.map((speaker) => `<tr><td>${escapeHtml(speaker.name)}</td><td>${escapeHtml(speaker.company || "-")}</td><td>${speaker.photoUrl ?"Foto vorhanden" : "Foto fehlt"} · ${speaker.shortBio || speaker.longBio ?"Vita vorhanden" : "Vita fehlt"}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
   } else if (tab === "partners") {
     content = eventPartnersEditor(event, sponsors, mediaAssets);
   } else if (tab === "registration") {
     const assigned = registrations.filter((item) => item.eventId === event.id);
-    content = `<div class="actions" style="justify-content:space-between;margin-bottom:18px"><h2>Anmeldungen (${assigned.length})</h2><button class="button button--secondary button--small" data-export-event="${event.id}">Anmeldungen als CSV herunterladen</button></div><section class="panel" style="background:var(--pdt-bg)"><h2>Mailtexte mit Platzhaltern</h2><p>KI erzeugt Mailtexte mit Platzhaltern und ohne echte Teilnehmerdaten.</p>${aiFieldActions([{ action: "generateRegistrationMailText", target: "ai-mail-context", label: "Bestaetigungsmail erzeugen", entityId: event.id, fieldName: "mailText" }, { action: "generateRegistrationMailText", target: "ai-mail-context", label: "Wartelistenmail erzeugen", entityId: event.id, fieldName: "waitlistMail" }])}</section><div class="table-wrap"><table class="table"><thead><tr><th>Teilnehmer</th><th>Unternehmen</th><th>E-Mail</th><th>Status</th></tr></thead><tbody>${assigned.map((registration) => `<tr><td>${registration.firstName} ${registration.lastName}</td><td>${registration.company}</td><td>${registration.email}</td><td>${status(registration.status)}</td></tr>`).join("")}</tbody></table></div>`;
+    const checkinScreenUrl = `#/event-checkin-screen/${event.id}`;
+    const mailAiContextId = `ai-mail-context-${event.id}`;
+    const globalMailTemplates = mailTemplateSettings(settings.find((item) => item.id === "mailTemplates" || item.key === "mailTemplates"));
+    const registrationMailText = event.mailText || defaultEventRegistrationMailText(event, "confirmation", globalMailTemplates);
+    const waitlistMailText = event.waitlistMail || defaultEventRegistrationMailText(event, "waitlist", globalMailTemplates);
+    const adminAddRegistrationPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)" open><summary><strong>Person manuell hinzufuegen</strong><span>Admin-Anmeldung</span></summary><form id="admin-registration-form" data-event-id="${event.id}" class="form-grid form-grid--compact"><div class="form-grid--two"><div class="field"><label>Vorname *</label><input name="firstName" autocomplete="given-name" required></div><div class="field"><label>Nachname *</label><input name="lastName" autocomplete="family-name" required></div></div><div class="form-grid--two"><div class="field"><label>Unternehmen</label><input name="company" autocomplete="organization"></div><div class="field"><label>Position / Funktion</label><input name="position" autocomplete="organization-title"></div></div><div class="form-grid--two"><div class="field"><label>E-Mail *</label><input name="email" type="email" autocomplete="email" required></div><div class="field"><label>Telefon</label><input name="phone" autocomplete="tel"></div></div><label class="checkbox checkbox--required"><input type="checkbox" name="privacyAccepted" required> Einwilligung / Datenschutz liegt vor *</label><div class="actions"><button class="button button--primary button--small" type="submit">Person hinzufuegen</button><div id="admin-registration-result"></div></div></form></details>`;
+    const registrationsToolbar = `<div class="actions" style="justify-content:space-between;margin-bottom:18px"><h2>Anmeldungen (${assigned.length})</h2><div class="actions"><button class="button button--secondary button--small" data-export-event="${event.id}">Anmeldungen als CSV herunterladen</button><button class="button button--danger button--small" data-delete-selected-registrations data-event-id="${event.id}" disabled>Ausgewaehlte loeschen</button></div></div>`;
+    const registrationsTable = `<div id="registration-bulk-result"></div><div class="table-wrap"><table class="table"><thead><tr><th><input type="checkbox" data-registration-select-all aria-label="Alle Anmeldungen auswaehlen"></th><th>Teilnehmer</th><th>Unternehmen</th><th>E-Mail</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((registration) => `<tr data-registration-row="${registration.id}"><td><input type="checkbox" data-registration-select value="${registration.id}" aria-label="Anmeldung von ${escapeHtml([registration.firstName, registration.lastName].filter(Boolean).join(" ") || registration.email || "Teilnehmer")} auswaehlen"></td><td>${escapeHtml([registration.firstName, registration.lastName].filter(Boolean).join(" ") || "-")}</td><td>${escapeHtml(registration.company || "-")}</td><td>${escapeHtml(registration.email || "-")}</td><td>${status(registration.status)}</td><td><div class="table-actions table-actions--icons"><button class="icon-button icon-button--danger" type="button" data-delete-registration="${registration.id}" data-event-id="${event.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div></td></tr>`).join("")}</tbody></table></div>`;
+    const checkinPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Einlass / Event-QR</strong><span>QR-Code anzeigen</span></summary><p>Diese Seite zeigt den QR-Code, den Teilnehmer vor Ort mit dem Handy scannen.</p><div class="actions"><a class="button button--primary button--small" href="${checkinScreenUrl}" target="_blank" rel="noreferrer">Event-QR oeffnen</a><a class="button button--secondary button--small" href="${checkinScreenUrl}">Event-QR im Browser oeffnen</a></div></details>`;
+    const mailPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Mailtexte und Erinnerungen</strong><span>anzeigen / bearbeiten</span></summary><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="registration" class="form-grid is-save-aware"><p>KI erzeugt Mailtexte mit Platzhaltern und ohne echte Teilnehmerdaten. Der Diff-Layer zeigt den vorhandenen Text und den neuen Vorschlag; gespeichert wird erst nach Uebernehmen.</p><div id="${mailAiContextId}" hidden>${escapeHtml(JSON.stringify({ event, registrations: assigned.slice(0, 3) }))}</div><fieldset class="registration-section registration-section--compact"><legend>Automatische Erinnerungen</legend><div class="registration-consents registration-consents--inline"><label class="checkbox"><input type="checkbox" name="reminder7d" ${event.reminder7d ? "checked" : ""}> 7 Tage vorher</label><label class="checkbox"><input type="checkbox" name="reminder1d" ${event.reminder1d ? "checked" : ""}> 1 Tag vorher</label><label class="checkbox"><input type="checkbox" name="reminder2h" ${event.reminder2h ? "checked" : ""}> 2 Stunden vorher</label><label class="checkbox"><input type="checkbox" name="notifyOnEventChange" ${event.notifyOnEventChange ? "checked" : ""}> Sofort bei Termin- oder Ortsaenderung</label></div></fieldset><div class="field"><label>Bestaetigungsmail</label><textarea name="mailText" rows="10">${escapeHtml(registrationMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "mailText", contextTarget: mailAiContextId, label: "Bestaetigungsmail erzeugen", entityId: event.id, fieldName: "mailText" }])}</div><div class="field"><label>Wartelistenmail</label><textarea name="waitlistMail" rows="10">${escapeHtml(waitlistMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "waitlistMail", contextTarget: mailAiContextId, label: "Wartelistenmail erzeugen", entityId: event.id, fieldName: "waitlistMail" }])}</div><div class="actions"><button class="button button--primary button--small" type="submit">Mailtexte und Erinnerungen speichern</button></div><div id="event-save-result"></div></form></details>`;
+    content = `${eventRegistrationTogglePanel(event)}${adminAddRegistrationPanel}${registrationsToolbar}${registrationsTable}${checkinPanel}${mailPanel}`;
   } else if (tab === "pre") {
-    const saveTheDateText = event.saveTheDateText || `Save the date: ${event.title || "PROdigitalTV Event"} am ${event.date ? formatDate(event.date) : "geplanten Termin"}.`;
+    const mailingType = event.mailingType || "save_the_date";
+    const saveTheDateText = event.saveTheDateText || `Save the date: ${event.title || "PROdigitalTV Event"} am ${event.date ?formatDate(event.date) : "geplanten Termin"}.`;
     const invitationText = event.invitationText || `Wir laden Sie herzlich zum ${event.title || "PROdigitalTV Event"} ein.`;
-    const preStatus = event.preStatus || "save_the_date";
-    content = `<h2>Vorlauf</h2><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="pre" class="form-grid is-save-aware"><div class="field"><label>Vorlauf-Status</label><select name="preStatus"><option value="save_the_date" ${preStatus === "save_the_date" ? "selected" : ""}>Save the date - Anmeldung geschlossen</option><option value="invitation_published" ${preStatus === "invitation_published" ? "selected" : ""}>Einladung aktiv - Anmeldung offen</option></select></div><div class="field"><label>Save-the-date-Text</label><textarea name="saveTheDateText">${escapeHtml(saveTheDateText)}</textarea></div><div class="field"><label>Einladungstext</label><textarea name="invitationText">${escapeHtml(invitationText)}</textarea>${aiFieldActions([{ action: "generateEventInvitation", target: "invitationText", label: "Einladungstext erzeugen", entityId: event.id, fieldName: "invitationText" }])}</div><div class="actions"><button class="button button--primary">Vorlauf speichern</button></div><div id="event-save-result"></div></form>`;
+    const invitationUpdateText = event.invitationUpdateText || `Update zur Einladung: ${event.title || "PROdigitalTV Event"}.`;
+    const mailingTextPanel = (key, label, field, text, aiLabel) => `<div class="field" data-mailing-text-panel="${key}" ${mailingType === key ?"" : "hidden"}><label>${label}</label><textarea name="${field}" rows="10">${escapeHtml(text)}</textarea>${aiFieldActions([{ action: "generateEventInvitation", target: field, label: aiLabel, entityId: event.id, fieldName: field }])}</div>`;
+    content = `<h2>Einladung</h2><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="pre" class="form-grid is-save-aware"><div class="alert">Der Anmeldestatus wird zentral im Reiter Anmeldung geoeffnet oder geschlossen. Dieser Bereich speichert die Einladungstexte.</div><div class="field"><label>Mailing-Art</label><select name="mailingType" data-mailing-type-select><option value="save_the_date" ${mailingType === "save_the_date" ?"selected" : ""}>Save the date</option><option value="invitation" ${mailingType === "invitation" ?"selected" : ""}>Einladung</option><option value="invitation_update" ${mailingType === "invitation_update" ?"selected" : ""}>Einladungsupdate</option></select></div>${mailingTextPanel("save_the_date", "Save-the-date-Text", "saveTheDateText", saveTheDateText, "Save-the-date Vorschlag erzeugen")}${mailingTextPanel("invitation", "Einladungstext", "invitationText", invitationText, "Einladungsvorschlag erzeugen")}${mailingTextPanel("invitation_update", "Einladungsupdate", "invitationUpdateText", invitationUpdateText, "Update-Vorschlag erzeugen")}<div class="actions"><button class="button button--primary">Einladung speichern</button></div><div id="event-save-result"></div></form>`;
   } else if (tab === "ai") {
     const eventMedia = media.filter((item) => item.eventId === event.id);
-    content = `<h2>KI-Prüfung</h2><p class="muted" style="margin-bottom:18px">Diese Prüfung erzeugt redaktionelle Empfehlungen. Blocker kommen weiterhin aus der regelbasierten Pipeline-Validierung.</p><div class="ai-quality-card"><button type="button" class="button button--primary ai-action" data-ai-action="analyzeEventPipelineQuality" data-ai-target="ai-quality-context" data-ai-entity-type="event" data-ai-entity-id="${event.id}" data-ai-field="pipelineQuality">Pipeline mit ChatGPT prüfen</button><div id="ai-quality-context" hidden>${escapeHtml(JSON.stringify({ event, media: eventMedia }))}</div></div><div class="setup-steps" style="margin-top:20px"><div class="setup-step"><span>Pflichtfelder fehlen?</span><strong>${event.title && event.date && event.locationName ? "ok" : "prüfen"}</strong></div><div class="setup-step"><span>SEO-Daten vorhanden?</span><strong>${event.seoTitle && event.seoDescription ? "ok" : "Empfehlung"}</strong></div><div class="setup-step"><span>Alt-Texte bei Bildern?</span><strong>${eventMedia.some((item) => !item.altText) ? "Empfehlung" : "ok"}</strong></div></div>`;
+    content = `<h2>KI-Prüfung</h2><p class="muted" style="margin-bottom:18px">Diese Prüfung erzeugt redaktionelle Empfehlungen. Blocker kommen weiterhin aus der regelbasierten Pipeline-Validierung.</p><div class="ai-quality-card"><button type="button" class="button button--primary ai-action" data-ai-action="analyzeEventPipelineQuality" data-ai-target="ai-quality-context" data-ai-entity-type="event" data-ai-entity-id="${event.id}" data-ai-field="pipelineQuality">Pipeline mit ChatGPT prüfen</button><div id="ai-quality-context" hidden>${escapeHtml(JSON.stringify({ event, media: eventMedia }))}</div></div><div class="setup-steps" style="margin-top:20px"><div class="setup-step"><span>Pflichtfelder fehlen?</span><strong>${event.title && event.date && event.locationName ?"ok" : "prüfen"}</strong></div><div class="setup-step"><span>SEO-Daten vorhanden?</span><strong>${event.seoTitle && event.seoDescription ?"ok" : "Empfehlung"}</strong></div><div class="setup-step"><span>Alt-Texte bei Bildern?</span><strong>${eventMedia.some((item) => !item.altText) ?"Empfehlung" : "ok"}</strong></div></div>`;
   } else {
     const assigned = media.filter((item) => item.eventId === event.id);
-    content = `<h2>${tab === "post" ? "Event-Nacharbeit" : "Medien zum Event"}</h2>${tab === "post" ? `<section class="panel" style="background:var(--pdt-bg)"><h2>Event-Nachlauf mit KI</h2>${aiFieldActions([{ action: "generateArchiveText", target: "longDescription", label: "Nachbericht erzeugen", entityId: event.id, fieldName: "archiveText" }, { action: "generateEventSummary", target: "postEventSummary", label: "Kurztext erzeugen", entityId: event.id, fieldName: "postEventSummary" }])}</section>` : `<section class="panel" style="background:var(--pdt-bg)"><h2>Fotogalerie und Downloads mit KI</h2><p>Galerie und Downloads bleiben optional. Wenn keine Bilder oder Downloads vorhanden sind, entsteht kein Pflichtfehler.</p>${aiFieldActions([{ action: "generateGalleryIntro", target: "ai-media-context", label: "Galerie-Einleitung", entityId: event.id, fieldName: "galleryIntro" }, { action: "generateImageAltText", target: "ai-media-context", label: "Alt-Texte vorbereiten", entityId: event.id, fieldName: "altTexts" }, { action: "generateDownloadDescription", target: "ai-media-context", label: "Downloadbeschreibung", entityId: event.id, fieldName: "downloadDescription" }])}<div id="ai-media-context" hidden>${escapeHtml(JSON.stringify({ event, media: assigned }))}</div></section>`}${tab === "post" ? `${retrospectiveControl}<form id="event-edit-form" data-event-id="${event.id}" class="form-grid" style="margin-bottom:22px"><div class="field"><label>Nachbericht Kurztext</label><textarea name="postEventSummary">${escapeHtml(event.postEventSummary || event.postEventummary || "")}</textarea></div><div class="field"><label>Langtext / Rückblicktext</label><textarea name="longDescription">${escapeHtml(event.longDescription || event.bodyText || event.articleText || event.archiveText || "")}</textarea><p class="muted">Dieser Text wird als Langtext für den redaktionellen Rückblick verwendet.</p></div><div class="actions"><button class="button button--primary button--small">Rückblicktext speichern</button></div><div id="event-save-result"></div></form>` : ""}<form id="media-upload-form" data-event-id="${event.id}" class="upload"><p><strong>Fotos, PDFs oder Praesentationen hochladen</strong></p><p>Drag-and-drop oder Dateiauswahl; Inhalte bleiben bis zur Freigabe intern.</p><input type="file" name="files" multiple style="margin-top:17px"><button class="button button--primary button--small" type="submit" style="margin:15px auto 0">Upload starten</button><div id="upload-result"></div></form><div class="table-wrap"><table class="table"><thead><tr><th>Datei</th><th>Typ</th><th>Sichtbarkeit</th><th>Freigabe</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((item) => `<tr><td>${escapeHtml(item.title)}</td><td>${item.mediaType}</td><td>${item.visibility}</td><td>${status(item.status)}</td><td><div class="table-actions"><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="approved">Aktiv</button><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="archived">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="eventMedia" data-record-id="${item.id}">Loeschen</button></div></td></tr>`).join("")}</tbody></table></div>`;
+    content = `<h2>${tab === "post" ?"Event-Nacharbeit" : "Medien zum Event"}</h2>${tab === "post" ?`<section class="panel" style="background:var(--pdt-bg)"><h2>Event-Nachlauf mit KI</h2>${aiFieldActions([{ action: "generateArchiveText", target: "longDescription", label: "Nachbericht erzeugen", entityId: event.id, fieldName: "archiveText" }, { action: "generateEventSummary", target: "postEventSummary", label: "Kurztext erzeugen", entityId: event.id, fieldName: "postEventSummary" }])}</section>` : `<section class="panel" style="background:var(--pdt-bg)"><h2>Fotogalerie und Downloads mit KI</h2><p>Galerie und Downloads bleiben optional. Wenn keine Bilder oder Downloads vorhanden sind, entsteht kein Pflichtfehler.</p>${aiFieldActions([{ action: "generateGalleryIntro", target: "ai-media-context", label: "Galerie-Einleitung", entityId: event.id, fieldName: "galleryIntro" }, { action: "generateImageAltText", target: "ai-media-context", label: "Alt-Texte vorbereiten", entityId: event.id, fieldName: "altTexts" }, { action: "generateDownloadDescription", target: "ai-media-context", label: "Downloadbeschreibung", entityId: event.id, fieldName: "downloadDescription" }])}<div id="ai-media-context" hidden>${escapeHtml(JSON.stringify({ event, media: assigned }))}</div></section>`}${tab === "post" ?`${retrospectiveControl}<form id="event-edit-form" data-event-id="${event.id}" class="form-grid" style="margin-bottom:22px"><div class="field"><label>Nachbericht Kurztext</label><textarea name="postEventSummary">${escapeHtml(event.postEventSummary || event.postEventummary || "")}</textarea></div><div class="field"><label>Langtext / Rückblicktext</label><textarea name="longDescription">${escapeHtml(event.longDescription || event.bodyText || event.articleText || event.archiveText || "")}</textarea><p class="muted">Dieser Text wird als Langtext für den redaktionellen Rückblick verwendet.</p></div><div class="actions"><button class="button button--primary button--small">Rückblicktext speichern</button></div><div id="event-save-result"></div></form>` : ""}<form id="media-upload-form" data-event-id="${event.id}" class="upload"><p><strong>Fotos, PDFs oder Praesentationen hochladen</strong></p><p>Drag-and-drop oder Dateiauswahl; Inhalte bleiben bis zur Freigabe intern.</p><input type="file" name="files" multiple style="margin-top:17px"><button class="button button--primary button--small" type="submit" style="margin:15px auto 0">Upload starten</button><div id="upload-result"></div></form><div class="table-wrap"><table class="table"><thead><tr><th>Datei</th><th>Typ</th><th>Sichtbarkeit</th><th>Freigabe</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((item) => `<tr><td>${escapeHtml(item.title)}</td><td>${item.mediaType}</td><td>${item.visibility}</td><td>${status(item.status)}</td><td><div class="table-actions"><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="approved">Aktiv</button><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="archived">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="eventMedia" data-record-id="${item.id}">Loeschen</button></div></td></tr>`).join("")}</tbody></table></div>`;
   }
   if (tab === "post") {
     const assigned = media.filter((item) => item.eventId === event.id);
-    const selectedGallery = event.galleryId ? galleries.find((gallery) => gallery.id === event.galleryId) : null;
+    const selectedGallery = event.galleryId
+      ?galleries.find((gallery) => gallery.id === event.galleryId)
+      : galleries.find((gallery) => gallery.eventId === event.id && gallery.status !== "archived") || null;
+    const selectedGalleryId = event.galleryId || selectedGallery?.id || "";
+    const selectedGalleryPreview = selectedGallery
+      ?`<div class="editor-gallery-preview" data-editor-gallery-preview>
+          <div>
+            <strong>${escapeHtml(selectedGallery.title || "Bildergalerie")}</strong>
+            <span>${(selectedGallery.images || []).length} Bilder</span>
+          </div>
+          ${galleryPlayerButton(selectedGallery, "Galerie abspielen")}
+        </div>`
+      : `<div class="editor-gallery-preview editor-gallery-preview--empty" data-editor-gallery-preview><p class="muted">Keine Galerie verknuepft. Galerie auswaehlen und speichern, um sie mit dem Rueckblick zu verbinden.</p></div>`;
     const postTitleValue = event.retrospectiveTitle || retrospectiveArticle?.title || `Rückblick: ${event.title || "PROdigitalTV Event"}`;
     const postSummaryValue = event.postEventSummary || event.postEventummary || retrospectiveArticle?.introText || retrospectiveArticle?.subtitle || "";
     const postLongValue = event.longDescription || event.bodyText || event.articleText || event.archiveText || retrospectiveArticle?.longDescription || retrospectiveArticle?.bodyText || retrospectiveArticle?.articleText || retrospectiveArticle?.archiveText || "";
     const retrospectiveAudioTool = retrospectiveArticle
-      ? audioGenerationPanel("editorialContent", retrospectiveArticle, { variant: "accessible", providerConfig: audioProviders })
+      ?audioGenerationPanel("editorialContent", retrospectiveArticle, { variant: "accessible", providerConfig: audioProviders })
       : `<p class="muted">Bitte zuerst den Rückblicktext speichern. Danach wird der redaktionelle Rückblick-Beitrag angelegt und die Vorlesfunktion ist hier verfügbar.</p>`;
     const retrospectiveVideoTool = retrospectiveArticle
-      ? articleVideoAttachmentEditor(retrospectiveArticle, videoLibrary)
+      ?articleVideoAttachmentEditor(retrospectiveArticle, videoLibrary)
       : `<details class="editorial-tool-details" data-editor-tool-panel="videos"><summary><span>Medien</span><strong>Videoanhaenge</strong><em>optional</em></summary><div class="editor-tool-section editor-tool-section--videos"><p class="muted">Bitte zuerst den Rückblicktext speichern. Danach wird der redaktionelle Rückblick-Beitrag angelegt und Videos koennen am Beitrag angehaengt werden.</p></div></details>`;
     content = `<h2>Event-Nacharbeit</h2>
       <section class="panel event-post-ai-panel" style="background:var(--pdt-bg)">
         ${aiFieldActions([{ action: "generateArchiveText", target: "longDescription", label: "Nachbericht erzeugen", entityId: event.id, fieldName: "archiveText" }, { action: "generateEventSummary", target: "postEventSummary", label: "Kurztext erzeugen", entityId: event.id, fieldName: "postEventSummary" }])}
       </section>
       <form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="post" class="form-grid is-save-aware event-post-workspace" style="margin-bottom:22px">
+        <input type="hidden" data-retrospective-article-id value="${escapeHtml(retrospectiveArticleId)}">
         <div class="event-post-workspace__main">
+          <div class="editorial-workflow-actions event-post-workflow-actions">
+            <button class="button button--secondary button--small" type="button" data-editor-tool-open="image">Bild</button>
+            <button class="button button--secondary button--small" type="button" data-editor-tool-open="audio">Audio</button>
+            <button class="button button--secondary button--small" type="button" data-editor-tool-open="gallery">Galerie</button>
+            <button class="button button--secondary button--small" type="button" data-editor-tool-open="videos">Video</button>
+            <button class="button button--secondary button--small" type="button" data-editor-tool-open="upload">Upload</button>
+          </div>
           <div class="field"><label>Headline Rückblick</label><input name="retrospectiveTitle" value="${escapeHtml(postTitleValue)}"></div>
           <div class="field"><label>Nachbericht Kurztext</label><textarea name="postEventSummary">${escapeHtml(postSummaryValue)}</textarea></div>
           <div class="field"><label>Langtext / Rückblicktext</label><textarea name="longDescription">${escapeHtml(postLongValue)}</textarea><p class="muted">Dieser Text wird als Langtext für den redaktionellen Rückblick verwendet.</p></div>
           <div class="actions"><button class="button button--primary button--small">Rückblicktext speichern</button></div><div id="event-save-result"></div>
         </div>
         <aside class="event-post-toolbox">
-          <details class="editorial-tool-details">
+          <details class="editorial-tool-details" data-editor-tool-panel="image">
             <summary><span>Medien</span><strong>Bild / Thumb</strong></summary>
             <div class="editor-tool-section editor-tool-section--thumb">${eventImageEditor(event, mediaAssets, `#/cms/event/${event.id}?tab=post`)}</div>
           </details>
-          <details class="editorial-tool-details">
+          <details class="editorial-tool-details" data-editor-tool-panel="audio">
             <summary><span>Audio</span><strong>Vorlesen</strong></summary>
             <div class="editor-tool-section editor-tool-section--audio">${retrospectiveAudioTool}</div>
           </details>
-          <details class="editorial-tool-details">
-            <summary><span>Medien</span><strong>Galerie</strong>${selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")}</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`}</summary>
-            <div class="editor-tool-section editor-tool-section--gallery"><div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Die Galerie wird mit dem Event und dem späteren Rückblick verbunden.</p></div></div>
+          <details class="editorial-tool-details" data-editor-tool-panel="gallery">
+            <summary><span>Medien</span><strong>Galerie</strong>${selectedGallery ?`<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")}</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`}</summary>
+            <div class="editor-tool-section editor-tool-section--gallery">
+              <div class="field"><label>Bildergalerie</label><select name="galleryId">${galleryOptions}</select><p class="muted">Die Galerie wird mit dem Event und dem spaeteren Rueckblick verbunden.</p></div>
+              ${galleryChoiceList(availableGalleries, selectedGalleryId)}
+              ${selectedGalleryPreview}
+              <div class="tool-button-row">
+                ${eventGalleryCreateButton}
+                ${galleryManageButton}
+              </div>
+              <div class="tool-button-row">
+                <button class="button button--secondary button--small" type="button" data-save-gallery-link>Galerie verknuepfen</button>
+                <button class="icon-button icon-button--danger" type="button" data-clear-linked-media="gallery" title="Galerie-Verknuepfung loesen" aria-label="Galerie-Verknuepfung loesen">${iconImage("trash")}</button>
+              </div>
+              <div class="gallery-link-result" data-gallery-link-result></div>
+            </div>
           </details>
           ${retrospectiveVideoTool}
+          <details class="editorial-tool-details" data-editor-tool-panel="upload">
+            <summary><span>Medien</span><strong>Dateien hochladen</strong><em>Fotos, PDFs, Praesentationen</em></summary>
+            <div class="editor-tool-section editor-tool-section--upload">
+              <p class="muted">Drag-and-drop oder Dateiauswahl; Inhalte bleiben bis zur Freigabe intern.</p>
+              <input type="file" name="files" multiple form="media-upload-form">
+              <button class="button button--primary button--small" type="submit" form="media-upload-form">Upload starten</button>
+              <div id="upload-result"></div>
+            </div>
+          </details>
         </aside>
       </form>
-      <form id="media-upload-form" data-event-id="${event.id}" class="upload"><p><strong>Fotos, PDFs oder Praesentationen hochladen</strong></p><p>Drag-and-drop oder Dateiauswahl; Inhalte bleiben bis zur Freigabe intern.</p><input type="file" name="files" multiple style="margin-top:17px"><button class="button button--primary button--small" type="submit" style="margin:15px auto 0">Upload starten</button><div id="upload-result"></div></form>
+      <form id="media-upload-form" data-event-id="${event.id}" class="event-post-hidden-upload-form"></form>
       <div class="table-wrap"><table class="table"><thead><tr><th>Datei</th><th>Typ</th><th>Sichtbarkeit</th><th>Freigabe</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((item) => `<tr><td>${escapeHtml(item.title)}</td><td>${item.mediaType}</td><td>${item.visibility}</td><td>${status(item.status)}</td><td><div class="table-actions"><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="approved">Aktiv</button><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="archived">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="eventMedia" data-record-id="${item.id}">Loeschen</button></div></td></tr>`).join("")}</tbody></table></div>`;
   }
-  const activeSection = isPastCmsEvent(event) ? "cms/followup" : "cms/events";
+  const activeSection = isPastCmsEvent(event) ?"cms/followup" : "cms/events";
   return protect(cmsShell(activeSection, `${cmsTitle("Event bearbeiten", escapeHtml(event.title || "Neues Event"), `<a class="button button--secondary button--small" href="#/event/${event.id}">Vorschau</a>`)}<section class="panel">${eventTabs(event.id, tab)}${content}</section>`));
 }
 
@@ -1512,8 +1714,88 @@ export async function registrationsPage() {
   return protect(cmsShell("cms/registrations", `${cmsTitle("Teilnehmermanagement", "Anmeldungen")}<section class="panel"><div class="field" style="max-width:390px;margin-bottom:18px"><label>Event auswaehlen</label><select>${events.map((event) => `<option>${escapeHtml(event.title)}</option>`).join("")}</select></div><div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Event</th><th>Bestaetigung</th><th>Mailstatus</th></tr></thead><tbody>${registrations.map((record) => `<tr><td>${record.firstName} ${record.lastName}</td><td>${record.eventTitle}</td><td>${status(record.status)}</td><td>${status(record.mailStatus)}</td></tr>`).join("")}</tbody></table></div></section>`));
 }
 
+export async function eventNotificationsPage() {
+  if (!hasCmsAccess()) return denied();
+  const [events, notifications, members] = await Promise.all([
+    list("events"),
+    list("eventNotifications").catch(() => []),
+    list("members").catch(() => [])
+  ]);
+  const activeEvents = events
+    .filter((event) => !["archived", "deleted", "inactive", "draft"].includes(String(event.status || "").toLowerCase()) && !isPastCmsEvent(event))
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  const firstEvent = activeEvents[0] || {};
+  const eventLink = firstEvent.id ? `/?v=943#/event/${firstEvent.id}` : "";
+  const rows = notifications
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+    .slice(0, 20)
+    .map((item) => {
+      const event = events.find((candidate) => candidate.id === item.eventId) || {};
+      return `<tr><td>${escapeHtml(item.title || "-")}</td><td>${escapeHtml(event.title || item.eventId || "-")}</td><td>${status(item.status || "draft")}</td><td>${escapeHtml(String(item.targetCount ?? "-"))}</td><td>${escapeHtml(String(item.queuedMailCount ?? "-"))}</td></tr>`;
+    }).join("");
+  const testMembers = members
+    .slice()
+    .sort((a, b) => String(a.name || a.company || a.title || "").localeCompare(String(b.name || b.company || b.title || "")))
+    .map((member) => {
+      const label = member.name || member.company || member.title || member.id;
+      const email = member.email || member.contactEmail || member.primaryEmail || "";
+      const checked = member.notificationTestGroup || member.isNotificationTestGroup || member.testGroup;
+      return `<label class="checkbox notification-test-group-item"><input type="checkbox" name="memberIds" value="${escapeHtml(member.id)}" ${checked ?"checked" : ""}><span><strong>${escapeHtml(label)}</strong>${email ?`<small>${escapeHtml(email)}</small>` : ""}</span></label>`;
+    }).join("");
+  return protect(cmsShell("cms/event-notifications", `${cmsTitle("Kommunikation", "Event-Benachrichtigungen")}
+    <section class="panel">
+      <form id="event-notification-form" class="form-grid">
+        <div class="form-grid--two">
+          <div class="field"><label>Art</label><select name="notificationKind" data-notification-kind><option value="event">Event-Benachrichtigung</option><option value="member_message">Mitglieder-Nachricht</option></select></div>
+          <div class="field"><label>Versand</label><select name="sendMode" data-notification-send-mode><option value="now">Sofort</option><option value="scheduled">Geplant</option><option value="auto_before_event">Automatisch vor Veranstaltung</option></select></div>
+        </div>
+        <div class="field" data-notification-event-field><label>Veranstaltung</label><select name="eventId" data-notification-event-select required>${activeEvents.map((event) => `<option value="${escapeHtml(event.id)}" data-event-title="${escapeHtml(event.title || "")}" data-event-link="/?v=943#/event/${escapeHtml(event.id)}">${escapeHtml(event.title || event.id)}</option>`).join("")}</select>${activeEvents.length ? "" : `<p class="muted">Keine aktive zukuenftige Veranstaltung vorhanden.</p>`}</div>
+        <div class="form-grid--two">
+          <div class="field"><label>Empfaenger</label><select name="recipientGroup" data-notification-recipient-group><option value="members_contacts">Mitglieder und Kontakte</option><option value="members">Nur Mitglieder</option><option value="contacts">Nur Kontakte</option><option value="test_group">Testgruppe</option></select></div>
+          <div class="field"><label>Anmeldestatus</label><select name="registrationStatus"><option value="all">Alle</option><option value="unregistered">Noch nicht angemeldet</option><option value="registered">Bereits angemeldet</option></select></div>
+        </div>
+        <input type="hidden" name="includeMembers" value="true" data-notification-include-members>
+        <input type="hidden" name="includeContacts" value="true" data-notification-include-contacts>
+        <div class="form-grid--two">
+          <div class="field" data-notification-scheduled-field hidden><label>Geplanter Zeitpunkt</label><input type="datetime-local" name="scheduledAt"></div>
+          <div class="field" data-notification-offset-field hidden><label>Automatisch vor Veranstaltung</label><select name="offsetMinutes"><option value="10080">7 Tage vorher</option><option value="1440">1 Tag vorher</option><option value="120">2 Stunden vorher</option></select></div>
+        </div>
+        <div class="field"><label>Titel</label><input name="title" data-notification-title value="${escapeHtml(firstEvent.title ? `Einladung: ${firstEvent.title}` : "Einladung zur Veranstaltung")}" required></div>
+        <div class="field"><label>Kurztext</label><textarea name="shortText" rows="4" data-notification-shorttext>${escapeHtml(firstEvent.title ? `Aktuelle Informationen zur Veranstaltung ${firstEvent.title}.` : "Aktuelle Informationen zur PROdigitalTV-Veranstaltung.")}</textarea></div>
+        <input type="hidden" name="link" data-notification-link value="${escapeHtml(eventLink)}">
+        <div class="registration-section registration-section--compact">
+          <label class="checkbox"><input type="checkbox" name="testOnly" data-notification-test-toggle> Testversand an ausgewaehlte Personen</label>
+          <div class="field" data-notification-test-field hidden><label>Testpersonen</label><textarea name="testRecipients" rows="3" placeholder="E-Mail-Adressen, getrennt durch Komma oder neue Zeile"></textarea><p class="muted">Im Testmodus wird nur an diese Adressen gesendet. Zielgruppen und Anmeldestatus bleiben unberuehrt.</p></div>
+        </div>
+        <div class="event-notification-preview" data-notification-preview>
+          <p class="eyebrow">Live-Vorschau</p>
+          <h3>${escapeHtml(firstEvent.title ? `Einladung: ${firstEvent.title}` : "Einladung zur Veranstaltung")}</h3>
+          <p>${escapeHtml(firstEvent.title ? `Aktuelle Informationen zur Veranstaltung ${firstEvent.title}.` : "Aktuelle Informationen zur PROdigitalTV-Veranstaltung.")}</p>
+          <a href="${escapeHtml(eventLink)}">Zur Veranstaltung</a>
+        </div>
+        <div class="actions"><button class="button button--primary">Benachrichtigung erstellen</button><div id="event-notification-result"></div></div>
+      </form>
+    </section>
+    <section class="panel">
+      <details class="cms-disclosure-panel">
+        <summary><strong>Testgruppe bearbeiten</strong><span>${members.filter((member) => member.notificationTestGroup || member.isNotificationTestGroup || member.testGroup).length} ausgewaehlt</span></summary>
+        <form id="notification-test-group-form" class="notification-test-group-form">
+          <p class="muted">Diese Mitglieder werden verwendet, wenn bei einer Benachrichtigung als Empfaenger <strong>Testgruppe</strong> gewaehlt ist.</p>
+          <div class="notification-test-group-list">${testMembers || `<p class="muted">Noch keine Mitglieder vorhanden.</p>`}</div>
+          <div class="actions"><button class="button button--secondary button--small">Testgruppe speichern</button><div id="notification-test-group-result"></div></div>
+        </form>
+      </details>
+    </section>
+    <section class="panel">
+      <h2>Letzte Benachrichtigungen</h2>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Titel</th><th>Event</th><th>Status</th><th>Empfaenger</th><th>E-Mail</th></tr></thead><tbody>${rows || `<tr><td colspan="5">Noch keine Benachrichtigungen erstellt.</td></tr>`}</tbody></table></div>
+    </section>`));
+}
+
 export async function mailAdminPage() {
   if (!hasCmsAccess(true)) return denied(true);
+  const templates = mailTemplateSettings(await getOne("settings", "mailTemplates").catch(() => null));
+  const pushSettings = browserPushSettings(await getOne("settings", "browserPush").catch(() => null));
   return protect(cmsShell("cms/mail-admin", `${cmsTitle("Mail", "Mail-Verwaltung")}
     <section class="panel">
       <h2>Verbindung zum Mailservice</h2>
@@ -1523,6 +1805,24 @@ export async function mailAdminPage() {
       </div>
       <div class="actions" style="margin-top:16px"><button class="button button--secondary button--small" type="button" data-mail-admin-load>Accounts und Templates laden</button><span id="mail-admin-connection-result"></span></div>
       <p class="muted" style="margin-top:12px">Der Token wird nur in dieser Browser-Sitzung gespeichert. Produktiv kommt der PHP-Mailservice ueber Firebase Hosting unter <code>/mail-api</code>.</p>
+    </section>
+    <section class="panel">
+      <h2>Browser-Push</h2>
+      <p class="muted">Hier wird der oeffentliche Firebase Web-Push-Zertifikatsschluessel gespeichert. Danach kann die Webapp auf dem Geraet ein FCM-Token erzeugen.</p>
+      <form id="browser-push-settings-form" class="form-grid">
+        <div class="field"><label>VAPID Public Key</label><input name="vapidPublicKey" autocomplete="off" value="${escapeHtml(pushSettings.vapidPublicKey)}" placeholder="Firebase Console > Cloud Messaging > Web Push-Zertifikate"></div>
+        <button class="button button--primary">Browser-Push speichern</button><div id="browser-push-settings-result"></div>
+      </form>
+    </section>
+    <section class="panel">
+      <h2>Standardtexte Event-Anmeldung</h2>
+      <p class="muted">Diese Texte gelten fuer alle Events. Im Event-Reiter Anmeldung nur dann individuell ueberschreiben, wenn der Text fuer genau diese Veranstaltung abweichen soll.</p>
+      <form id="mail-default-templates-form" class="form-grid">
+        <div class="field"><label>Bestaetigungsmail Standard</label><textarea name="registrationConfirmation" rows="11">${escapeHtml(templates.registrationConfirmation)}</textarea></div>
+        <div class="field"><label>Wartelistenmail Standard</label><textarea name="registrationWaitlist" rows="9">${escapeHtml(templates.registrationWaitlist)}</textarea></div>
+        <p class="muted">Platzhalter: <code>{{firstName}}</code>, <code>{{lastName}}</code>, <code>{{eventTitle}}</code>, <code>{{eventDate}}</code>, <code>{{eventLocation}}</code>. Links und Buttons werden vom System ergaenzt.</p>
+        <button class="button button--primary">Standardtexte speichern</button><div id="mail-default-templates-result"></div>
+      </form>
     </section>
     <section class="panel">
       <h2>Mailaccount anlegen</h2>
@@ -1728,7 +2028,7 @@ function internalUsageLabel(item = {}) {
 
 function internalStatusValue(item = {}) {
   const value = String(item.status || "").toLowerCase();
-  return ["aktiv", "active", "published", "veroeffentlicht", "veröffentlicht"].includes(value) ? "active" : "inactive";
+  return ["aktiv", "active", "published", "veroeffentlicht", "veröffentlicht"].includes(value) ?"active" : "inactive";
 }
 
 const qualityCollectionNames = [
@@ -1757,7 +2057,7 @@ function qualityUrl(value = "") {
 }
 
 function qualitySeverityLabel(severity = "warning") {
-  return severity === "error" ? status("failed") : status("draft");
+  return severity === "error" ?status("failed") : status("draft");
 }
 
 function qualityStatusLabel(value = "offen") {
@@ -1766,7 +2066,7 @@ function qualityStatusLabel(value = "offen") {
 
 function qualityEditLink(issue = {}) {
   return issue.editHref
-    ? `<a class="button button--secondary button--small" href="${escapeHtml(issue.editHref)}">Bearbeiten</a>`
+    ?`<a class="button button--secondary button--small" href="${escapeHtml(issue.editHref)}">Bearbeiten</a>`
     : `<span class="muted">nicht eindeutig zuordenbar</span>`;
 }
 
@@ -1808,7 +2108,7 @@ function qualityImageFormat(value = "") {
   const href = qualityNormalizeLink(value).split("?")[0].split("#")[0].toLowerCase();
   if (/^data:image\/([^;,]+)/i.test(value)) return value.match(/^data:image\/([^;,]+)/i)?.[1] || "data";
   const match = href.match(/\.([a-z0-9]+)$/i);
-  return match ? match[1].replace("jpeg", "jpg") : "";
+  return match ?match[1].replace("jpeg", "jpg") : "";
 }
 
 function qualityAllowedImageFormat(value = "") {
@@ -1891,6 +2191,19 @@ function qualityIsInternalAbsoluteUrl(value = "") {
   }
 }
 
+function qualityIsLegacyProdigitaltvSourceUrl(value = "") {
+  const href = qualityNormalizeLink(value);
+  if (!qualityIsExternalUrl(href)) return false;
+  try {
+    const url = new URL(href);
+    const host = url.hostname.replace(/^www\./i, "").toLowerCase();
+    if (host !== "prodigitaltv.de") return false;
+    return /^\/(?:veranstaltungen|presse)\//i.test(url.pathname || "");
+  } catch {
+    return false;
+  }
+}
+
 function qualityIsRelativePath(value = "") {
   const href = qualityNormalizeLink(value);
   return href.startsWith("/") && !href.startsWith("//");
@@ -1912,11 +2225,11 @@ function qualityClassifyLink(value = "") {
   if (!href) return "leer";
   if (/^(mailto|tel):/i.test(href)) return "kontakt";
   if (qualityIsAnchorLink(href)) return "anker";
-  if (href.startsWith("#/")) return qualityLooksDocumentUrl(href) ? "interner dokumentpfad" : "interne route";
-  if (qualityIsInternalAbsoluteUrl(href)) return qualityIsFileLike(href) ? "absolute interne datei-url" : "absolute interne url";
-  if (qualityIsExternalUrl(href)) return qualityIsVideoUrl(href) ? "externer videolink" : qualityLooksDocumentUrl(href) ? "externer dokumentlink" : "externer link";
-  if (qualityIsRelativePath(href)) return qualityIsFileLike(href) ? "relativer dateipfad" : "relativer interner pfad";
-  return qualityIsFileLike(href) ? "dateipfad" : "ungewoehnliches linkformat";
+  if (href.startsWith("#/")) return qualityLooksDocumentUrl(href) ?"interner dokumentpfad" : "interne route";
+  if (qualityIsInternalAbsoluteUrl(href)) return qualityIsFileLike(href) ?"absolute interne datei-url" : "absolute interne url";
+  if (qualityIsExternalUrl(href)) return qualityIsVideoUrl(href) ?"externer videolink" : qualityLooksDocumentUrl(href) ?"externer dokumentlink" : "externer link";
+  if (qualityIsRelativePath(href)) return qualityIsFileLike(href) ?"relativer dateipfad" : "relativer interner pfad";
+  return qualityIsFileLike(href) ?"dateipfad" : "ungewoehnliches linkformat";
 }
 
 function qualityLinkIssue(issues, collection, item, overrides = {}) {
@@ -1929,7 +2242,7 @@ function qualityLinkIssue(issues, collection, item, overrides = {}) {
 
 function qualityImageIssue(issues, collection, item, overrides = {}) {
   const imageValue = overrides.imageValue || "";
-  const shouldUseFallback = overrides.fallbackUsed ?? qualityImageIssueUsesFallback(overrides, imageValue);
+  const shouldUseFallback = Object.prototype.hasOwnProperty.call(overrides, "fallbackUsed") ? overrides.fallbackUsed : qualityImageIssueUsesFallback(overrides, imageValue);
   qualityRecordIssue(issues, collection, item, {
     imageValue,
     imageType: overrides.imageType || "Bild",
@@ -1966,7 +2279,7 @@ function qualityCollectionStatus(collectionName, error = null) {
   return {
     collectionName,
     ok: !error,
-    error: error ? String(error.message || error.code || error) : ""
+    error: error ?String(error.message || error.code || error) : ""
   };
 }
 
@@ -2003,7 +2316,7 @@ function qualityPush(issues, issue) {
     checkedAt: new Date().toISOString(),
     category: qualityIssueCategory(issue),
     key: qualityIssueKey(baseKey),
-    linkType: issue.linkType || (issue.linkValue ? qualityClassifyLink(issue.linkValue) : ""),
+    linkType: issue.linkType || (issue.linkValue ?qualityClassifyLink(issue.linkValue) : ""),
     ...issue
   });
 }
@@ -2026,9 +2339,9 @@ function qualityLinkedGallery(item = {}, galleriesById = new Map()) {
 
 function qualityPdfAssets(item = {}) {
   const assets = [
-    ...(Array.isArray(item.pdfAttachments) ? item.pdfAttachments : []),
-    ...(Array.isArray(item.documents) ? item.documents : []),
-    ...(Array.isArray(item.assets) ? item.assets : [])
+    ...(Array.isArray(item.pdfAttachments) ?item.pdfAttachments : []),
+    ...(Array.isArray(item.documents) ?item.documents : []),
+    ...(Array.isArray(item.assets) ?item.assets : [])
   ];
   if (item.documentUrl || item.document_url || item.assetUrl || item.fileUrl) {
     assets.push({
@@ -2046,8 +2359,8 @@ function qualityPdfAssets(item = {}) {
 
 function qualityVideoAssets(item = {}) {
   return [
-    ...(Array.isArray(item.videoAttachments) ? item.videoAttachments : []),
-    ...(Array.isArray(item.videos) ? item.videos : [])
+    ...(Array.isArray(item.videoAttachments) ?item.videoAttachments : []),
+    ...(Array.isArray(item.videos) ?item.videos : [])
   ];
 }
 
@@ -2123,6 +2436,7 @@ function qualityScanRecordLinks(issues, collection, item, context, options = {})
       return;
     }
     if (href.startsWith("#/") || qualityIsInternalAbsoluteUrl(href)) {
+      if (/^(sourceUrl|source_url|original_url|originalUrl)$/i.test(field) && qualityIsLegacyProdigitaltvSourceUrl(href)) return;
       if (qualityKnownRoute(href, context)) {
         const visibilityProblem = qualityRouteVisibilityProblem(href, context);
         if (visibilityProblem) {
@@ -2197,7 +2511,7 @@ function qualityMetrics(collections = {}, issues = []) {
   const allRecords = qualityCollectionNames.flatMap((name) => collections[name] || []);
   const checkedImages = qualityCollectImageCandidates(collections).length;
   const checkedLinks = qualityCollectLinkCandidates(collections).length;
-  const checkedAttachments = (collections.editorialContent || []).reduce((count, item) => count + qualityPdfAssets(item).length + qualityVideoAssets(item).length + (qualityLinkedGallery(item, new Map((collections.galleries || []).map((gallery) => [gallery.id, gallery]))) ? 1 : 0), 0)
+  const checkedAttachments = (collections.editorialContent || []).reduce((count, item) => count + qualityPdfAssets(item).length + qualityVideoAssets(item).length + (qualityLinkedGallery(item, new Map((collections.galleries || []).map((gallery) => [gallery.id, gallery]))) ?1 : 0), 0)
     + (collections.downloads || []).length
     + (collections.memberDocuments || []).length
     + (collections.eventMedia || []).length;
@@ -2246,7 +2560,7 @@ function qualityCollectRecordLinkCandidates(collection, item = {}, overrides = {
     ["source_candidates", "Quelle"]
   ];
   nestedGroups.forEach(([fieldName, label]) => {
-    (Array.isArray(item[fieldName]) ? item[fieldName] : []).forEach((entry, index) => {
+    (Array.isArray(item[fieldName]) ?item[fieldName] : []).forEach((entry, index) => {
       ["url", "fileUrl", "assetUrl", "documentUrl", "downloadUrl", "embedUrl", "youtubeUrl"].forEach((field) => {
         const candidate = qualityLinkCandidate(collection, item, `${fieldName}.${index + 1}.${field}`, entry?.[field], {
           ...overrides,
@@ -2271,7 +2585,7 @@ function qualityStaticLinkCandidates() {
 function qualityCollectLinkCandidates(collections = {}) {
   const candidates = [];
   (collections.events || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("events", item, { area: "Events", contentType: "Event" })));
-  (collections.editorialContent || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("editorialContent", item, { area: qualityEditorialArea(item), contentType: isMemberAreaEditorialItem(item) ? "Mitgliederbeitrag" : "Beitrag" })));
+  (collections.editorialContent || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("editorialContent", item, { area: qualityEditorialArea(item), contentType: isMemberAreaEditorialItem(item) ?"Mitgliederbeitrag" : "Beitrag" })));
   (collections.topics || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("topics", item, { area: "Themen", contentType: "Thema" })));
   (collections.members || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("members", item, { area: "Mitglieder", contentType: "Mitglied" })));
   (collections.boardMembers || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("boardMembers", item, { area: "Ueber uns", contentType: "Vorstand" })));
@@ -2282,7 +2596,7 @@ function qualityCollectLinkCandidates(collections = {}) {
   (collections.videos || []).forEach((item) => candidates.push(...qualityCollectRecordLinkCandidates("videos", item, { area: "Medien", contentType: "Video" })));
   (collections.galleries || []).forEach((gallery) => {
     candidates.push(...qualityCollectRecordLinkCandidates("galleries", gallery, { area: "Galerien", contentType: "Galerie" }));
-    (Array.isArray(gallery.images) ? gallery.images : []).forEach((image, index) => {
+    (Array.isArray(gallery.images) ?gallery.images : []).forEach((image, index) => {
       ["url", "imageUrl", "assetUrl", "downloadUrl"].forEach((field) => {
         const candidate = qualityLinkCandidate("galleries", gallery, `images.${index + 1}.${field}`, image?.[field], { area: "Galerien", contentType: "Galeriebild" });
         if (candidate) candidates.push(candidate);
@@ -2342,8 +2656,8 @@ function qualityCollectRecordImageCandidates(collection, item = {}, overrides = 
   const candidates = fields.map(([field, imageType]) => qualityImageCandidate(collection, item, field, item[field], {
     ...overrides,
     imageType,
-    desktop: field === "mobileImageUrl" ? false : true,
-    mobile: field === "desktopImageUrl" ? false : true
+    desktop: field === "mobileImageUrl" ?false : true,
+    mobile: field === "desktopImageUrl" ?false : true
   })).filter(Boolean);
   const nestedGroups = [
     ["videoAttachments", "Videostartbild"],
@@ -2352,7 +2666,7 @@ function qualityCollectRecordImageCandidates(collection, item = {}, overrides = 
     ["documents", "Dokumentbild"]
   ];
   nestedGroups.forEach(([fieldName, imageType]) => {
-    (Array.isArray(item[fieldName]) ? item[fieldName] : []).forEach((entry, index) => {
+    (Array.isArray(item[fieldName]) ?item[fieldName] : []).forEach((entry, index) => {
       ["posterImageUrl", "thumbnailUrl", "youtubeThumbnailUrl", "imageUrl", "assetUrl", "url", "downloadUrl"].forEach((field) => {
         const candidate = qualityImageCandidate(collection, item, `${fieldName}.${index + 1}.${field}`, entry?.[field], {
           ...overrides,
@@ -2369,7 +2683,7 @@ function qualityCollectRecordImageCandidates(collection, item = {}, overrides = 
 function qualityCollectImageCandidates(collections = {}) {
   const candidates = [];
   (collections.events || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("events", item, { area: "Events", contentType: "Event", imageType: "Eventbild", required: qualityIsVisiblePublic(item) })));
-  (collections.editorialContent || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("editorialContent", item, { area: qualityEditorialArea(item), contentType: isMemberAreaEditorialItem(item) ? "Mitgliederbeitrag" : isNewsEditorialItem(item) ? "News" : "Beitrag", imageType: isNewsEditorialItem(item) ? "News-Bild" : "Beitragsbild", required: (qualityIsVisiblePublic(item) || item.visible === true || item.visibility === "members") && !isInternalEditorialItem(item) })));
+  (collections.editorialContent || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("editorialContent", item, { area: qualityEditorialArea(item), contentType: isMemberAreaEditorialItem(item) ?"Mitgliederbeitrag" : isNewsEditorialItem(item) ?"News" : "Beitrag", imageType: isNewsEditorialItem(item) ?"News-Bild" : "Beitragsbild", required: (qualityIsVisiblePublic(item) || item.visible === true || item.visibility === "members") && !isInternalEditorialItem(item) })));
   (collections.topics || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("topics", item, { area: "Themen", contentType: "Thema", imageType: "Themenbild", required: !["inactive", "archived", "deleted", "hidden"].includes(String(item.status || "").toLowerCase()) })));
   (collections.members || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("members", item, { area: "Mitglieder", contentType: "Mitglied", imageType: "Mitgliederlogo", required: memberIsLive(item) })));
   (collections.boardMembers || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("boardMembers", item, { area: "Ueber uns", contentType: "Vorstand", imageType: "Profilbild" })));
@@ -2380,12 +2694,12 @@ function qualityCollectImageCandidates(collections = {}) {
   (collections.videos || []).forEach((item) => candidates.push(...qualityCollectRecordImageCandidates("videos", item, { area: "Medien", contentType: "Video", imageType: "Videostartbild", required: Boolean(item.youtubeVideoId || item.youtubeUrl || item.url || item.videoId) })));
   (collections.galleries || []).forEach((gallery) => {
     candidates.push(...qualityCollectRecordImageCandidates("galleries", gallery, { area: "Galerien", contentType: "Galerie", imageType: "Galeriebild" }));
-    (Array.isArray(gallery.images) ? gallery.images : []).forEach((image, index) => {
+    (Array.isArray(gallery.images) ?gallery.images : []).forEach((image, index) => {
       ["url", "imageUrl", "assetUrl", "downloadUrl", "thumbnailUrl"].forEach((field) => {
         const candidate = qualityImageCandidate("galleries", gallery, `images.${index + 1}.${field}`, image?.[field], {
           area: "Galerien",
           contentType: "Galeriebild",
-          imageType: field === "thumbnailUrl" ? "Galerie-Thumbnail" : "Galeriebild",
+          imageType: field === "thumbnailUrl" ?"Galerie-Thumbnail" : "Galeriebild",
           required: true
         });
         if (candidate) candidates.push(candidate);
@@ -2411,10 +2725,15 @@ async function qualityFetchCheck(url, timeoutMs = 3500) {
     }
     return { ok: response.ok, status: response.status, error: "" };
   } catch (error) {
-    return { ok: false, status: 0, error: error?.name === "AbortError" ? "Timeout" : String(error?.message || error || "Fetch fehlgeschlagen") };
+    return { ok: false, status: 0, error: error?.name === "AbortError" ?"Timeout" : String(error?.message || error || "Fetch fehlgeschlagen") };
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+function qualityIsExternalBrowserFetchBlocked(result = {}) {
+  const error = String(result.error || "").toLowerCase();
+  return !result.ok && !result.status && (error.includes("failed to fetch") || error.includes("networkerror"));
 }
 
 async function qualityMapLimit(items, limit, mapper) {
@@ -2499,7 +2818,7 @@ async function qualityTechnicalImageIssues(collections = {}) {
       qualityAddImageFinding(issues, candidate, {
         faultType: "Bild liegt ausserhalb erlaubter Speicherbereiche",
         description: `${candidate.field}: ${src}`,
-        severity: qualityIsExternalUrl(src) && !qualityIsInternalAbsoluteUrl(src) ? "warning" : "error"
+        severity: qualityIsExternalUrl(src) && !qualityIsInternalAbsoluteUrl(src) ?"warning" : "error"
       });
     }
     if (format && !qualityAllowedImageFormat(src)) {
@@ -2519,8 +2838,8 @@ async function qualityTechnicalImageIssues(collections = {}) {
     const head = await qualityImageHead(src, 2500);
     if (!head.ok) {
       qualityAddImageFinding(issues, candidate, {
-        faultType: candidate.imageType === "Videostartbild" ? "Erforderliches Videostartbild fehlt" : candidate.imageType === "Galeriebild" ? "Galerie verweist auf nicht vorhandene Bilder" : "Bilddatei existiert nicht",
-        description: `${candidate.field}: Bilddatei nicht erreichbar${head.status ? ` (HTTP ${head.status})` : head.error ? ` (${head.error})` : ""}.`,
+        faultType: candidate.imageType === "Videostartbild" ?"Erforderliches Videostartbild fehlt" : candidate.imageType === "Galeriebild" ?"Galerie verweist auf nicht vorhandene Bilder" : "Bilddatei existiert nicht",
+        description: `${candidate.field}: Bilddatei nicht erreichbar${head.status ?` (HTTP ${head.status})` : head.error ?` (${head.error})` : ""}.`,
         severity: "error"
       });
       return;
@@ -2537,7 +2856,7 @@ async function qualityTechnicalImageIssues(collections = {}) {
       qualityAddImageFinding(issues, candidate, {
         faultType: "Bilddatei ist nicht lesbar",
         description: `${candidate.field}: ${loaded.error}.`,
-        severity: qualityIsExternalUrl(src) && !qualityIsInternalAbsoluteUrl(src) ? "warning" : "error"
+        severity: qualityIsExternalUrl(src) && !qualityIsInternalAbsoluteUrl(src) ?"warning" : "error"
       });
       return;
     }
@@ -2584,7 +2903,7 @@ async function qualityTechnicalLinkIssues(collections = {}) {
   });
   internalFileCandidates.forEach((candidate) => {
     const href = candidate.href;
-    const path = qualityIsInternalAbsoluteUrl(href) ? new URL(href).pathname : href;
+    const path = qualityIsInternalAbsoluteUrl(href) ?new URL(href).pathname : href;
     if (!path.startsWith("/assets/") && !path.startsWith("/images/") && !path.startsWith("/manifest.json") && !path.startsWith("/src/")) {
       qualityAddLinkFinding(issues, candidate.collection, candidate.item, {
         field: candidate.field,
@@ -2599,16 +2918,16 @@ async function qualityTechnicalLinkIssues(collections = {}) {
     }
   });
   await qualityMapLimit(internalFileCandidates, 4, async (candidate) => {
-    const href = qualityIsInternalAbsoluteUrl(candidate.href) ? new URL(candidate.href).pathname : candidate.href;
+    const href = qualityIsInternalAbsoluteUrl(candidate.href) ?new URL(candidate.href).pathname : candidate.href;
     const result = await qualityFetchCheck(href, 2500);
     if (result.ok) return;
     qualityAddLinkFinding(issues, candidate.collection, candidate.item, {
       field: candidate.field,
       href: candidate.href,
       area: candidate.area,
-      contentType: qualityLooksDocumentUrl(candidate.href) ? "Dokument" : candidate.contentType,
-      faultType: qualityLooksDocumentUrl(candidate.href) ? "Dokumentlink fehlt" : qualityIsVideoUrl(candidate.href) ? "Interne Videodatei fehlt" : "Upload-Datei fehlt",
-      description: `${candidate.field}: Datei nicht erreichbar${result.status ? ` (HTTP ${result.status})` : result.error ? ` (${result.error})` : ""}.`,
+      contentType: qualityLooksDocumentUrl(candidate.href) ?"Dokument" : candidate.contentType,
+      faultType: qualityLooksDocumentUrl(candidate.href) ?"Dokumentlink fehlt" : qualityIsVideoUrl(candidate.href) ?"Interne Videodatei fehlt" : "Upload-Datei fehlt",
+      description: `${candidate.field}: Datei nicht erreichbar${result.status ?` (HTTP ${result.status})` : result.error ?` (${result.error})` : ""}.`,
       severity: "error",
       editHref: candidate.editHref
     });
@@ -2636,13 +2955,14 @@ async function qualityTechnicalLinkIssues(collections = {}) {
     }
     const result = await qualityFetchCheck(parsed.href, 3500);
     if (result.ok) return;
+    if (qualityIsExternalBrowserFetchBlocked(result)) return;
     qualityAddLinkFinding(issues, candidate.collection, candidate.item, {
       field: candidate.field,
       href: candidate.href,
       area: candidate.area,
-      contentType: qualityIsVideoUrl(candidate.href) ? "Video" : candidate.contentType,
-      faultType: qualityIsVideoUrl(candidate.href) ? "Externer Video-Link nicht sicher pruefbar" : "Externer Link nicht erreichbar",
-      description: `${candidate.field}: ${candidate.href}${result.status ? ` (HTTP ${result.status})` : result.error ? ` (${result.error})` : ""}.`,
+      contentType: qualityIsVideoUrl(candidate.href) ?"Video" : candidate.contentType,
+      faultType: qualityIsVideoUrl(candidate.href) ?"Externer Video-Link nicht sicher pruefbar" : "Externer Link nicht erreichbar",
+      description: `${candidate.field}: ${candidate.href}${result.status ?` (HTTP ${result.status})` : result.error ?` (${result.error})` : ""}.`,
       severity: "warning",
       editHref: candidate.editHref
     });
@@ -2735,7 +3055,7 @@ function qualityAnalyze(collections, collectionStatuses) {
       href: candidate.href,
       area: candidate.area,
       contentType: candidate.contentType,
-      faultType: candidate.collection === "footer" ? "Footerlink fuehrt ins Leere" : "Menue-Link fuehrt ins Leere",
+      faultType: candidate.collection === "footer" ?"Footerlink fuehrt ins Leere" : "Menue-Link fuehrt ins Leere",
       description: `${candidate.field}: ${candidate.href}`,
       severity: "error",
       editHref: ""
@@ -2804,7 +3124,7 @@ function qualityAnalyze(collections, collectionStatuses) {
     const visible = qualityIsVisiblePublic(item) || item.visible === true || item.visibility === "members";
     const isMemberArea = isMemberAreaEditorialItem(item);
     const editorialArea = qualityEditorialArea(item);
-    const editorialType = isMemberArea ? "Mitgliederbeitrag" : isInternalEditorialItem(item) ? "Interna" : isNewsEditorialItem(item) ? "News" : "Beitrag";
+    const editorialType = isMemberArea ?"Mitgliederbeitrag" : isInternalEditorialItem(item) ?"Interna" : isNewsEditorialItem(item) ?"News" : "Beitrag";
     const imageUrl = qualityImageUrl(item);
     if (visible && !imageUrl && !isInternalEditorialItem(item)) {
       qualityRecordIssue(issues, "editorialContent", item, {
@@ -2899,7 +3219,7 @@ function qualityAnalyze(collections, collectionStatuses) {
   });
 
   galleries.forEach((gallery) => {
-    const images = Array.isArray(gallery.images) ? gallery.images : [];
+    const images = Array.isArray(gallery.images) ?gallery.images : [];
     if (qualityIsVisiblePublic(gallery) && !images.length) {
       qualityRecordIssue(issues, "galleries", gallery, {
         area: "Galerien",
@@ -3007,7 +3327,7 @@ function qualityAnalyze(collections, collectionStatuses) {
   downloads.forEach((item) => {
     const url = qualityUrl(item.documentUrl || item.assetUrl || item.fileUrl || item.downloadUrl || item.url || "");
     if (!url) {
-      qualityRecordIssue(issues, item.documentUrl !== undefined ? "downloads" : "memberDocuments", item, {
+      qualityRecordIssue(issues, item.documentUrl !== undefined ?"downloads" : "memberDocuments", item, {
         area: "Downloads",
         contentType: "Download",
         faultType: "Notwendiger Download fehlt",
@@ -3033,7 +3353,7 @@ function qualityAnalyze(collections, collectionStatuses) {
   });
 
   [...(collections.boardMembers || []), ...(collections.sponsors || []), ...(collections.speakers || [])].forEach((item) => {
-    const collection = (collections.boardMembers || []).includes(item) ? "boardMembers" : (collections.sponsors || []).includes(item) ? "sponsors" : "speakers";
+    const collection = (collections.boardMembers || []).includes(item) ?"boardMembers" : (collections.sponsors || []).includes(item) ?"sponsors" : "speakers";
     if (collection === "sponsors" && String(item.status || "").toLowerCase() === "published" && !qualityUrl(item.logoUrl || item.imageUrl || item.assetUrl)) {
       qualityImageIssue(issues, "sponsors", item, {
         area: "Events",
@@ -3046,8 +3366,8 @@ function qualityAnalyze(collections, collectionStatuses) {
       });
     }
     qualityScanRecordLinks(issues, collection, item, context, {
-      area: collection === "boardMembers" ? "Ueber uns" : "Events",
-      contentType: collection === "boardMembers" ? "Vorstand" : collection === "sponsors" ? "Sponsor" : "Referent"
+      area: collection === "boardMembers" ?"Ueber uns" : "Events",
+      contentType: collection === "boardMembers" ?"Vorstand" : collection === "sponsors" ?"Sponsor" : "Referent"
     });
   });
 
@@ -3073,7 +3393,7 @@ function qualityAnalyze(collections, collectionStatuses) {
   });
 
   return issues.sort((a, b) => {
-    if (a.severity !== b.severity) return a.severity === "error" ? -1 : 1;
+    if (a.severity !== b.severity) return a.severity === "error" ?-1 : 1;
     return String(a.area).localeCompare(String(b.area), "de", { sensitivity: "base" })
       || String(a.title).localeCompare(String(b.title), "de", { sensitivity: "base" });
   });
@@ -3086,10 +3406,10 @@ export async function qualityPage() {
   const baseIssues = qualityAnalyze(collections, statuses);
   const issues = [
     ...baseIssues,
-    ...(mobileReadOnly ? [] : await qualityTechnicalImageIssues(collections)),
-    ...(mobileReadOnly ? [] : await qualityTechnicalLinkIssues(collections))
+    ...(mobileReadOnly ?[] : await qualityTechnicalImageIssues(collections)),
+    ...(mobileReadOnly ?[] : await qualityTechnicalLinkIssues(collections))
   ].sort((a, b) => {
-    if (a.severity !== b.severity) return a.severity === "error" ? -1 : 1;
+    if (a.severity !== b.severity) return a.severity === "error" ?-1 : 1;
     return String(a.area).localeCompare(String(b.area), "de", { sensitivity: "base" })
       || String(a.title).localeCompare(String(b.title), "de", { sensitivity: "base" });
   });
@@ -3113,8 +3433,8 @@ export async function qualityPage() {
     data-quality-key="${escapeHtml(issue.key || "")}"
     data-quality-severity="${escapeHtml(issue.severity || "warning")}"
     data-quality-category="${escapeHtml(issue.category || "other")}"
-    data-quality-desktop="${issue.desktop ? "1" : "0"}"
-    data-quality-mobile="${issue.mobile ? "1" : "0"}"
+    data-quality-desktop="${issue.desktop ?"1" : "0"}"
+    data-quality-mobile="${issue.mobile ?"1" : "0"}"
     data-quality-area="${escapeHtml(issue.area || "")}"
     data-quality-type="${escapeHtml(issue.contentType || "")}"
     data-quality-title="${escapeHtml(issue.title || "")}"
@@ -3126,14 +3446,14 @@ export async function qualityPage() {
     <td>${escapeHtml(issue.description || "-")}</td>
     <td>${escapeHtml(issue.linkValue || issue.imageValue || "-")}</td>
     <td>${escapeHtml(issue.linkType || issue.imageType || "-")}</td>
-    <td>${issue.imageType ? escapeHtml(issue.fallbackUsed ? `ja: ${issue.fallbackValue || "-"}` : "nein") : "-"}</td>
-    <td>${issue.imageType ? escapeHtml([issue.expectedStorage ? `Erwartet: ${issue.expectedStorage}` : "", issue.repairHint || "Bild neu auswaehlen oder erneut hochladen"].filter(Boolean).join(" | ")) : "-"}</td>
-    <td>${issue.desktop ? "ja" : "nein"}</td>
-    <td>${issue.mobile ? "ja" : "nein"}</td>
+    <td>${issue.imageType ?escapeHtml(issue.fallbackUsed ?`ja: ${issue.fallbackValue || "-"}` : "nein") : "-"}</td>
+    <td>${issue.imageType ?escapeHtml([issue.expectedStorage ?`Erwartet: ${issue.expectedStorage}` : "", issue.repairHint || "Bild neu auswaehlen oder erneut hochladen"].filter(Boolean).join(" | ")) : "-"}</td>
+    <td>${issue.desktop ?"ja" : "nein"}</td>
+    <td>${issue.mobile ?"ja" : "nein"}</td>
     <td>${qualitySeverityLabel(issue.severity)}</td>
-    <td data-quality-status-cell>${qualityStatusLabel(issue.status)}${mobileReadOnly ? "" : ` <button class="button button--secondary button--small" type="button" data-quality-toggle="${escapeHtml(issue.key || "")}">erledigt</button>`}</td>
+    <td data-quality-status-cell>${qualityStatusLabel(issue.status)}${mobileReadOnly ?"" : ` <button class="button button--secondary button--small" type="button" data-quality-toggle="${escapeHtml(issue.key || "")}">erledigt</button>`}</td>
     <td>${escapeHtml(formatDateTime(issue.checkedAt || checkedAt))}</td>
-    <td>${mobileReadOnly ? `<span class="muted">nur Desktop</span>` : qualityEditLink(issue)}</td>
+    <td>${mobileReadOnly ?`<span class="muted">nur Desktop</span>` : qualityEditLink(issue)}</td>
   </tr>`).join("");
   return protect(cmsShell("cms/quality", `${cmsTitle("Qualitätsprüfung", "Qualitätsprüfung")}
     <section class="panel">
@@ -3146,14 +3466,15 @@ export async function qualityPage() {
         <div class="setup-step"><span>Warnungen</span><strong>${metrics.warnings}</strong></div>
         <div class="setup-step"><span>Desktop-Probleme</span><strong>${metrics.desktop}</strong></div>
         <div class="setup-step"><span>Mobile-Probleme</span><strong>${metrics.mobile}</strong></div>
+        <div class="setup-step"><span>Alt-Texte</span><strong><button class="link-button" type="button" data-quality-fill-alt-texts>fehlende ergaenzen</button></strong><small id="quality-alt-text-result"></small></div>
         <div class="setup-step"><span>Letzte Prüfung</span><strong>${escapeHtml(formatDateTime(checkedAt))}</strong></div>
       </div>
-      <p class="muted" style="margin-top:14px">Diese Prüfung ist nur lesend. Es werden keine Inhalte geändert, keine Bildpfade korrigiert und keine Veröffentlichungen blockiert.${mobileReadOnly ? " Mobile Ansicht: schnelle Nur-Lese-Auswertung ohne externe Netzwerkprüfung." : ""}</p>
+      <p class="muted" style="margin-top:14px">Diese Prüfung ist nur lesend. Es werden keine Inhalte geändert, keine Bildpfade korrigiert und keine Veröffentlichungen blockiert.${mobileReadOnly ?" Mobile Ansicht: schnelle Nur-Lese-Auswertung ohne externe Netzwerkprüfung." : ""}</p>
     </section>
     <section class="panel">
       <div class="filters" data-quality-filters>${filters.map(([id, label], index) => {
         const html = qualityFilterButton(id, label);
-        return index === 0 ? html.replace('class="filter"', 'class="filter active"') : html;
+        return index === 0 ?html.replace('class="filter"', 'class="filter active"') : html;
       }).join("")}</div>
       <div class="field" style="max-width:320px;margin:0 0 16px"><label>Sortierung</label><select data-quality-sort>
         <option value="errors">Fehler zuerst</option>
@@ -3188,15 +3509,15 @@ export async function moduleListPage(module, section = "all") {
     mailQueue: ["Mail-Queue", "Mail", "to", "subject"],
     eventMedia: ["Event-Nachlauf / Medien", "Medium", "title", "visibility"]
   }[module];
-  const editorialConfig = module === "editorialContent" ? editorialSections[section] || editorialSections.all : null;
+  const editorialConfig = module === "editorialContent" ?editorialSections[section] || editorialSections.all : null;
   const records = (await list(module))
     .filter((item) => !editorialConfig || editorialConfig.filter(item))
     .filter((item) => module !== "editorialContent" || section !== "interna" || !isAiGeneratedEditorialItem(item))
     .filter((item) => module !== "members" || memberIsManagedActive(item))
     .sort((a, b) => {
       if (module === "members") {
-        const sortA = Number.isFinite(Number(a.sortOrder)) ? Number(a.sortOrder) : 9999;
-        const sortB = Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : 9999;
+        const sortA = Number.isFinite(Number(a.sortOrder)) ?Number(a.sortOrder) : 9999;
+        const sortB = Number.isFinite(Number(b.sortOrder)) ?Number(b.sortOrder) : 9999;
         if (sortA !== sortB) return sortA - sortB;
         return String(a.name || "").localeCompare(String(b.name || ""), "de", { sensitivity: "base" });
       }
@@ -3215,47 +3536,47 @@ export async function moduleListPage(module, section = "all") {
       if (dateA || dateB) return dateB - dateA;
       return Number(b.sortOrder || 0) - Number(a.sortOrder || 0);
     });
-  const memberMediaAssets = module === "members" ? await list("media_assets").catch(() => []) : [];
-  const linkedMediaAssets = ["editorialContent", "boardMembers", "speakers", "sponsors"].includes(module) ? await list("media_assets").catch(() => []) : [];
+  const memberMediaAssets = module === "members" ?await list("media_assets").catch(() => []) : [];
+  const linkedMediaAssets = ["editorialContent", "boardMembers", "speakers", "sponsors"].includes(module) ?await list("media_assets").catch(() => []) : [];
   const active = editorialConfig?.active || { topics: "cms/topics", galleries: "cms/galleries", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", membershipApplications: "cms/membership-applications", memberDocuments: "cms/member-documents", memberDirectories: "cms/member-directories", users: "cms/users", boardMembers: "cms/board", editorialContent: "cms/editorial", mailQueue: "cms/mail", eventMedia: "cms/followup" }[module];
   const editable = !["mailQueue", "eventMedia"].includes(module);
   const manageable = module !== "mailQueue";
-  const inactiveStatus = module === "editorialContent" || module === "eventMedia" || module === "speakers" || module === "sponsors" || module === "galleries" || module === "memberDocuments" ? "archived" : "inactive";
-  const activeStatus = ["editorialContent", "speakers", "sponsors", "galleries", "memberDocuments"].includes(module) ? "published" : module === "eventMedia" ? "approved" : "active";
+  const inactiveStatus = module === "editorialContent" || module === "eventMedia" || module === "speakers" || module === "sponsors" || module === "galleries" || module === "memberDocuments" ?"archived" : "inactive";
+  const activeStatus = ["editorialContent", "speakers", "sponsors", "galleries", "memberDocuments"].includes(module) ?"published" : module === "eventMedia" ?"approved" : "active";
   const title = editorialConfig?.title || config[0];
   const itemLabel = editorialConfig?.itemLabel || config[1];
   const createParams = editorialConfig?.createParams || "";
-  const emptyText = editorialConfig ? `Noch keine Inhalte in ${escapeHtml(title)}.` : "Noch keine Eintraege vorhanden.";
+  const emptyText = editorialConfig ?`Noch keine Inhalte in ${escapeHtml(title)}.` : "Noch keine Eintraege vorhanden.";
   if (module === "topics") {
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${cmsBulkToolbar(records, { collection: "topics", label: "Themen" })}<div class="table-wrap"><table class="table table--editorial table--topics table--with-audio"><thead><tr><th class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-select-all ${records.length ? "" : "disabled"} aria-label="Alle Themen auswaehlen"></th><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "Thema")} auswaehlen"></td><td><div class="topic-thumb topic-thumb--table">${topicThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>Thema</td><td>${audioListCell("topics", item)}</td><td>${editorialMediaFlags(item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${cmsBulkToolbar(records, { collection: "topics", label: "Themen" })}<div class="table-wrap"><table class="table table--editorial table--topics table--with-audio"><thead><tr><th class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-select-all ${records.length ?"" : "disabled"} aria-label="Alle Themen auswaehlen"></th><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "Thema")} auswaehlen"></td><td><div class="topic-thumb topic-thumb--table">${topicThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>Thema</td><td>${audioListCell("topics", item)}</td><td>${editorialMediaFlags(item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "galleries") {
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--galleries"><thead><tr><th>Bild</th><th>Titel</th><th>Bilder</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table gallery-thumb--table">${galleryThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a><small>${escapeHtml(shortText(item.description || "-", 90))}</small></td><td>${(item.images || []).length}</td><td>${galleryListStatus(item)}</td><td>${galleryActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="5">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--galleries"><thead><tr><th>Bild</th><th>Titel</th><th>Bilder</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table gallery-thumb--table">${galleryThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a><small>${escapeHtml(shortText(item.description || "-", 90))}</small></td><td>${(item.images || []).length}</td><td>${galleryListStatus(item)}</td><td>${galleryActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="5">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "editorialContent") {
-    const actionButtons = section === "interna" ? internalEditorialActionButtons : editorialVisibilityActionButtons;
+    const actionButtons = section === "interna" ?internalEditorialActionButtons : editorialVisibilityActionButtons;
     const isBulkEditorialList = ["news", "press"].includes(section);
     if (section === "interna") {
       const legacyCount = records.filter((item) => internalUsageKey(item) === "legacy").length;
-      const legacyAction = legacyCount ? `<button class="button button--danger button--small" type="button" data-delete-internal-legacy>Altbestand löschen (${legacyCount})</button>` : "";
-      return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<div class="actions">${legacyAction}<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a></div>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--interna"><thead><tr><th>Bereich</th><th>Titel</th><th>Typ</th><th>Nutzung</th><th>Sortierung</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => { const usageKey = internalUsageKey(item); return `<tr class="internal-row internal-row--${escapeHtml(internalAreaKey(item))}" data-internal-usage="${escapeHtml(usageKey)}" data-record-id="${escapeHtml(item.id)}"><td>${internalAreaButton(item)}</td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || item.titel || "-")}">${escapeHtml(shortText(item.title || item.titel || "-", 76))}</a><small>${escapeHtml(shortText(item.introText || item.kurztext || item.bodyText || item.langtext || "-", 110))}</small></td><td><button class="internal-type-pill internal-preview-button" type="button" data-internal-preview="${escapeHtml(item.id)}">${escapeHtml(internalTypeLabel(item.typ || item.type || item.section))}</button></td><td><button class="internal-type-pill internal-usage-pill internal-usage-pill--${usageKey === "portal" ? "portal" : usageKey === "legacy" ? "legacy" : "other"} internal-preview-button" type="button" data-internal-preview="${escapeHtml(item.id)}">${escapeHtml(internalUsageLabel(item))}</button></td><td>${escapeHtml(String(item.sortOrder ?? item.sortierung ?? "-"))}</td><td>${status(internalStatusValue(item))}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`; }).join("") : `<tr><td colspan="7">${emptyText}</td></tr>`}</tbody></table></div><div id="internal-legacy-delete-result"></div></section>`));
+      const legacyAction = legacyCount ?`<button class="button button--danger button--small" type="button" data-delete-internal-legacy>Altbestand löschen (${legacyCount})</button>` : "";
+      return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<div class="actions">${legacyAction}<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a></div>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--interna"><thead><tr><th>Bereich</th><th>Titel</th><th>Typ</th><th>Nutzung</th><th>Sortierung</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => { const usageKey = internalUsageKey(item); return `<tr class="internal-row internal-row--${escapeHtml(internalAreaKey(item))}" data-internal-usage="${escapeHtml(usageKey)}" data-record-id="${escapeHtml(item.id)}"><td>${internalAreaButton(item)}</td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || item.titel || "-")}">${escapeHtml(shortText(item.title || item.titel || "-", 76))}</a><small>${escapeHtml(shortText(item.introText || item.kurztext || item.bodyText || item.langtext || "-", 110))}</small></td><td><button class="internal-type-pill internal-preview-button" type="button" data-internal-preview="${escapeHtml(item.id)}">${escapeHtml(internalTypeLabel(item.typ || item.type || item.section))}</button></td><td><button class="internal-type-pill internal-usage-pill internal-usage-pill--${usageKey === "portal" ?"portal" : usageKey === "legacy" ?"legacy" : "other"} internal-preview-button" type="button" data-internal-preview="${escapeHtml(item.id)}">${escapeHtml(internalUsageLabel(item))}</button></td><td>${escapeHtml(String(item.sortOrder ?? item.sortierung ?? "-"))}</td><td>${status(internalStatusValue(item))}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`; }).join("") : `<tr><td colspan="7">${emptyText}</td></tr>`}</tbody></table></div><div id="internal-legacy-delete-result"></div></section>`));
     }
-    const bulkLabel = section === "press" ? "Presse" : "News";
-    const selectHead = isBulkEditorialList ? `<th class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-select-all ${records.length ? "" : "disabled"} aria-label="Alle ${bulkLabel} auswaehlen"></th>` : "";
-    const selectCell = (item) => isBulkEditorialList ? `<td class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || bulkLabel)} auswaehlen"></td>` : "";
-    const emptyColspan = isBulkEditorialList ? 8 : 7;
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${isBulkEditorialList ? cmsBulkToolbar(records, { collection: "editorialContent", label: bulkLabel }) : ""}<div class="table-wrap"><table class="table table--editorial table--with-audio${section === "press" ? " table--press" : ""}${section === "news" ? " table--news" : ""}"><thead><tr>${selectHead}<th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr>${selectCell(item)}<td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td><td>${audioListCell("editorialContent", item, { showMeta: false })}</td><td>${editorialMediaFlags(item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${emptyColspan}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    const bulkLabel = section === "press" ?"Presse" : "News";
+    const selectHead = isBulkEditorialList ?`<th class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-select-all ${records.length ?"" : "disabled"} aria-label="Alle ${bulkLabel} auswaehlen"></th>` : "";
+    const selectCell = (item) => isBulkEditorialList ?`<td class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || bulkLabel)} auswaehlen"></td>` : "";
+    const emptyColspan = isBulkEditorialList ?8 : 7;
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${isBulkEditorialList ?cmsBulkToolbar(records, { collection: "editorialContent", label: bulkLabel }) : ""}<div class="table-wrap"><table class="table table--editorial table--with-audio${section === "press" ?" table--press" : ""}${section === "news" ?" table--news" : ""}"><thead><tr>${selectHead}<th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr>${selectCell(item)}<td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td><td>${audioListCell("editorialContent", item, { showMeta: false })}</td><td>${editorialMediaFlags(item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${emptyColspan}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "members") {
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--members"><thead><tr><th>Logo</th><th>Mitglied</th><th>Ansprechperson</th><th>Kontakt</th><th>Art</th><th>Ort</th><th>Visible</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table member-logo-thumb--table">${memberLogoThumb(item, memberMediaAssets, section)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a>${memberProfileMissingCell(item)}</td><td>${escapeHtml(shortText(item.contactName || [item.firstName, item.lastName].filter(Boolean).join(" ") || "-", 70))}</td><td>${memberContactCell(item)}</td><td class="member-type-short" title="${escapeHtml(memberMembershipTypeTitle(item))}">${escapeHtml(memberMembershipTypeLabel(item))}</td><td>${escapeHtml([item.postalCode, item.city].filter(Boolean).join(" ") || "-")}</td><td>${memberVisibleToggleCell(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--members"><thead><tr><th>Logo</th><th>Mitglied</th><th>Ansprechperson</th><th>Kontakt</th><th>Art</th><th>Ort</th><th>Visible</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table member-logo-thumb--table">${memberLogoThumb(item, memberMediaAssets, section)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a>${memberProfileMissingCell(item)}</td><td>${escapeHtml(shortText(item.contactName || [item.firstName, item.lastName].filter(Boolean).join(" ") || "-", 70))}</td><td>${memberContactCell(item)}</td><td class="member-type-short" title="${escapeHtml(memberMembershipTypeTitle(item))}">${escapeHtml(memberMembershipTypeLabel(item))}</td><td>${escapeHtml([item.postalCode, item.city].filter(Boolean).join(" ") || "-")}</td><td>${memberVisibleToggleCell(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (["boardMembers", "speakers", "sponsors"].includes(module)) {
-    const imageField = module === "sponsors" ? "logoUrl" : "photoUrl";
+    const imageField = module === "sponsors" ?"logoUrl" : "photoUrl";
     const titleField = config[2];
     const subField = config[3];
-    const tableClass = module === "sponsors" ? "table table--editorial table--sponsors-hosts" : module === "boardMembers" ? "table table--editorial table--board-members" : "table table--editorial";
-    const imageLabel = module === "sponsors" ? "Logo" : "Bild";
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="${tableClass}"><thead><tr><th>${imageLabel}</th><th>${itemLabel}</th><th>Datum / Gueltigkeit</th><th>Beschreibung / Zuordnung</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ? records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: module, section, field: imageField, altField: "altText", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item[titleField] || "-")}">${escapeHtml(shortText(item[titleField] || "-", 60))}</a></td><td>${escapeHtml(item.publishDate || item.date || "-")}<br><small>${escapeHtml(item.validFrom || "-")} bis ${escapeHtml(item.validTo || "unendlich")}</small></td><td>${escapeHtml(item[subField] || "-")}</td><td>${status(item.status || item.visibility || "active")}</td><td>${cmsListActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    const tableClass = module === "sponsors" ?"table table--editorial table--sponsors-hosts" : module === "boardMembers" ?"table table--editorial table--board-members" : "table table--editorial";
+    const imageLabel = module === "sponsors" ?"Logo" : "Bild";
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="${tableClass}"><thead><tr><th>${imageLabel}</th><th>${itemLabel}</th><th>Datum / Gueltigkeit</th><th>Beschreibung / Zuordnung</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: module, section, field: imageField, altField: "altText", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item[titleField] || "-")}">${escapeHtml(shortText(item[titleField] || "-", 60))}</a></td><td>${escapeHtml(item.publishDate || item.date || "-")}<br><small>${escapeHtml(item.validFrom || "-")} bis ${escapeHtml(item.validTo || "unendlich")}</small></td><td>${escapeHtml(item[subField] || "-")}</td><td>${status(item.status || item.visibility || "active")}</td><td>${cmsListActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "mailQueue") {
     const counters = {
@@ -3270,22 +3591,22 @@ export async function moduleListPage(module, section = "all") {
           <div class="setup-step"><span>Gesendet</span><strong>${counters.sent}</strong></div>
           <div class="setup-step"><span>Fehler</span><strong>${counters.failed}</strong></div>
         </div>
-        <div class="table-wrap"><table class="table">
+        <div class="table-wrap"><table class="table table--mail-queue">
           <thead><tr><th>Status</th><th>Typ</th><th>Empfaenger</th><th>Betreff</th><th>Bezug</th><th>Zeit</th><th>Fehler</th></tr></thead>
-          <tbody>${records.length ? records.map((item) => `<tr>
+          <tbody>${records.length ?records.map((item) => `<tr>
             <td>${status(item.status || "queued")}</td>
             <td>${escapeHtml(item.type || item.template || "-")}</td>
             <td>${escapeHtml(item.to || item.replyTo || "-")}</td>
             <td>${escapeHtml(shortText(item.subject || "-", 70))}</td>
             <td>${escapeHtml(mailReference(item))}</td>
             <td><small>Queue: ${escapeHtml(mailQueueDate(item.queuedAt || item.createdAt))}</small><br><small>Gesendet: ${escapeHtml(mailQueueDate(item.sentAt))}</small><br><small>Fehler: ${escapeHtml(mailQueueDate(item.failedAt))}</small></td>
-            <td>${item.error ? `<span class="alert alert--error" style="display:block;margin:0">${escapeHtml(shortText(item.error, 130))}</span>` : "-"}</td>
+            <td>${item.error ?`<span class="alert alert--error" style="display:block;margin:0">${escapeHtml(shortText(item.error, 130))}</span>` : "-"}</td>
           </tr>`).join("") : `<tr><td colspan="7">${emptyText}</td></tr>`}</tbody>
         </table></div>
         <p class="muted" style="margin-top:14px">Neue Mitgliedsantraege und Event-Anmeldungen erzeugen automatisch Eintraege in dieser Queue. Der Firebase-Function-Trigger versendet queued Mails per SMTP und schreibt danach den Status.</p>
       </section>`));
   }
-  return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, editable ? `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>` : "")}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>${itemLabel}</th><th>Datum / Gueltigkeit</th><th>Beschreibung / Zuordnung</th><th>Status</th>${editable || manageable ? "<th>Aktionen</th>" : ""}</tr></thead><tbody>${records.length ? records.map((item) => `<tr><td>${escapeHtml(item[config[2]] || "-")}</td><td>${escapeHtml(item.publishDate || item.date || "-")}<br><small>${escapeHtml(item.validFrom || "-")} bis ${escapeHtml(item.validTo || "unendlich")}</small></td><td>${escapeHtml(item[config[3]] || "-")}</td><td>${status(item.status || item.visibility || "active")}</td>${editable || manageable ? `<td>${cmsListActionButtons(item, section, module, activeStatus, inactiveStatus, { editable, manageable })}</td>` : ""}</tr>`).join("") : `<tr><td colspan="${editable || manageable ? 5 : 4}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+  return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, editable ?`<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>` : "")}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>${itemLabel}</th><th>Datum / Gueltigkeit</th><th>Beschreibung / Zuordnung</th><th>Status</th>${editable || manageable ?"<th>Aktionen</th>" : ""}</tr></thead><tbody>${records.length ?records.map((item) => `<tr><td>${escapeHtml(item[config[2]] || "-")}</td><td>${escapeHtml(item.publishDate || item.date || "-")}<br><small>${escapeHtml(item.validFrom || "-")} bis ${escapeHtml(item.validTo || "unendlich")}</small></td><td>${escapeHtml(item[config[3]] || "-")}</td><td>${status(item.status || item.visibility || "active")}</td>${editable || manageable ?`<td>${cmsListActionButtons(item, section, module, activeStatus, inactiveStatus, { editable, manageable })}</td>` : ""}</tr>`).join("") : `<tr><td colspan="${editable || manageable ?5 : 4}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
 }
 
 function topicSpeakerEditor(topic, speaker) {
@@ -3294,15 +3615,15 @@ function topicSpeakerEditor(topic, speaker) {
 
 function topicSpeakerManager(topic, speakers) {
   const assigned = speakers.filter((speaker) => speaker.topicId === topic.id || (speaker.topicIds || []).includes(topic.id));
-  return `<div class="form-grid" style="margin-top:18px"><h2>Referenten</h2><div class="selection-grid">${speakers.length ? speakers.map((speaker) => `<label class="selection-item"><input type="checkbox" name="assignedSpeakerIds" value="${speaker.id}" ${speaker.topicId === topic.id || (speaker.topicIds || []).includes(topic.id) ? "checked" : ""}><span><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml(speaker.company || "")}</small></span></label>`).join("") : `<div class="alert">Noch keine Referenten vorhanden.</div>`}</div>${assigned.length ? assigned.map((speaker) => `<section class="panel"><h3>${escapeHtml(speaker.name || "Referent")}</h3>${topicSpeakerEditor(topic, speaker)}</section>`).join("") : ""}<section class="panel"><h3>Neuen Referenten anlegen</h3><div class="form-grid--two"><div class="field"><label>Referentname</label><input name="newSpeakerName"></div><div class="field"><label>Firma</label><input name="newSpeakerCompany"></div><div class="field"><label>Position</label><input name="newSpeakerPosition"></div><div class="field"><label>Kurzvita</label><textarea name="newSpeakerShortBio"></textarea></div></div></section></div>`;
+  return `<div class="form-grid" style="margin-top:18px"><h2>Referenten</h2><div class="selection-grid">${speakers.length ?speakers.map((speaker) => `<label class="selection-item"><input type="checkbox" name="assignedSpeakerIds" value="${speaker.id}" ${speaker.topicId === topic.id || (speaker.topicIds || []).includes(topic.id) ?"checked" : ""}><span><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml(speaker.company || "")}</small></span></label>`).join("") : `<div class="alert">Noch keine Referenten vorhanden.</div>`}</div>${assigned.length ?assigned.map((speaker) => `<section class="panel"><h3>${escapeHtml(speaker.name || "Referent")}</h3>${topicSpeakerEditor(topic, speaker)}</section>`).join("") : ""}<section class="panel"><h3>Neuen Referenten anlegen</h3><div class="form-grid--two"><div class="field"><label>Referentname</label><input name="newSpeakerName"></div><div class="field"><label>Firma</label><input name="newSpeakerCompany"></div><div class="field"><label>Position</label><input name="newSpeakerPosition"></div><div class="field"><label>Kurzvita</label><textarea name="newSpeakerShortBio"></textarea></div></div></section></div>`;
 }
 
 const memberContactFunctions = ["", "Buchhaltung", "Geschaeftsleitung", "Marketing", "Sales / Verkauf", "Redaktion", "Event", "Technik", "Presse", "Sonstiges"];
 
 function memberContactFunctionOptions(value = "") {
   const current = String(value || "");
-  const options = memberContactFunctions.includes(current) ? memberContactFunctions : [current, ...memberContactFunctions];
-  return options.map((option) => `<option value="${escapeHtml(option)}" ${current === option ? "selected" : ""}>${escapeHtml(option || "Funktion waehlen")}</option>`).join("");
+  const options = memberContactFunctions.includes(current) ?memberContactFunctions : [current, ...memberContactFunctions];
+  return options.map((option) => `<option value="${escapeHtml(option)}" ${current === option ?"selected" : ""}>${escapeHtml(option || "Funktion waehlen")}</option>`).join("");
 }
 
 function youtubeVideoIdFromValue(value = "") {
@@ -3317,9 +3638,9 @@ function youtubeVideoIdFromValue(value = "") {
 
 function articleVideoAttachments(item = {}) {
   const raw = Array.isArray(item.videoAttachments)
-    ? item.videoAttachments
+    ?item.videoAttachments
     : Array.isArray(item.videos)
-      ? item.videos
+      ?item.videos
       : [];
   return raw
     .map((video, index) => ({
@@ -3342,7 +3663,7 @@ function articleVideoAttachments(item = {}) {
 
 function articleVideoAttachmentRow(video = {}, index = 0) {
   const id = video.id || `video-${index + 1}`;
-  const url = video.youtubeUrl || (video.youtubeVideoId ? `https://www.youtube.com/watch?v=${video.youtubeVideoId}` : "");
+  const url = video.youtubeUrl || (video.youtubeVideoId ?`https://www.youtube.com/watch?v=${video.youtubeVideoId}` : "");
   return `<fieldset class="video-attachment-row" data-video-attachment-row>
     <legend>Video ${index + 1}</legend>
     <input type="hidden" name="videoId${index}" value="${escapeHtml(id)}">
@@ -3353,8 +3674,8 @@ function articleVideoAttachmentRow(video = {}, index = 0) {
       <div class="field"><label>Startbild / Posterbild</label><input name="videoPosterImageUrl${index}" value="${escapeHtml(video.posterImageUrl || "")}" placeholder="Bild-URL oder YouTube-Thumbnail"></div>
       <div class="field"><label>Alt-Text Startbild</label><input name="videoPosterImageAlt${index}" value="${escapeHtml(video.posterImageAlt || "")}"></div>
       <div class="field"><label>Sortierung</label><input name="videoSortOrder${index}" type="number" min="1" value="${escapeHtml(video.sortOrder || index + 1)}"></div>
-      <div class="field"><label>Privacy</label><select name="videoPrivacyStatus${index}">${["unlisted", "private", "public", "unknown"].map((value) => `<option value="${value}" ${String(video.privacyStatus || "unlisted") === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select></div>
-      <div class="field"><label>Status</label><select name="videoStatus${index}">${["ready", "draft", "published", "hidden", "error"].map((value) => `<option value="${value}" ${String(video.status || "ready") === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select></div>
+      <div class="field"><label>Privacy</label><select name="videoPrivacyStatus${index}">${["unlisted", "private", "public", "unknown"].map((value) => `<option value="${value}" ${String(video.privacyStatus || "unlisted") === value ?"selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select></div>
+      <div class="field"><label>Status</label><select name="videoStatus${index}">${["ready", "draft", "published", "hidden", "error"].map((value) => `<option value="${value}" ${String(video.status || "ready") === value ?"selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select></div>
       <div class="field field--wide"><label>Beschreibung</label><textarea name="videoDescription${index}">${escapeHtml(video.description || "")}</textarea></div>
     </div>
     <button class="icon-button icon-button--danger" type="button" data-remove-video-attachment title="Video entfernen" aria-label="Video entfernen">${iconImage("trash")}</button>
@@ -3363,8 +3684,8 @@ function articleVideoAttachmentRow(video = {}, index = 0) {
 
 function videoLibrarySnapshot(video = {}, index = 0) {
   const youtubeVideoId = youtubeVideoIdFromValue(video.youtubeVideoId || video.youtubeUrl || video.url || video.embedUrl || "");
-  const youtubeUrl = video.youtubeUrl || video.url || (youtubeVideoId ? `https://www.youtube.com/watch?v=${youtubeVideoId}` : "");
-  const posterImageUrl = video.posterImageUrl || video.thumbnailUrl || video.youtubeThumbnailUrl || (youtubeVideoId ? `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg` : "");
+  const youtubeUrl = video.youtubeUrl || video.url || (youtubeVideoId ?`https://www.youtube.com/watch?v=${youtubeVideoId}` : "");
+  const posterImageUrl = video.posterImageUrl || video.thumbnailUrl || video.youtubeThumbnailUrl || (youtubeVideoId ?`https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg` : "");
   return {
     ...video,
     id: video.id || `video-${index + 1}`,
@@ -3390,7 +3711,7 @@ function videoLibraryOptionPayload(video = {}) {
 }
 
 function usableCentralVideos(videoLibrary = []) {
-  return (Array.isArray(videoLibrary) ? videoLibrary : [])
+  return (Array.isArray(videoLibrary) ?videoLibrary : [])
     .map((video, index) => videoLibrarySnapshot(video, index))
     .filter((video) => video.youtubeVideoId || video.youtubeUrl)
     .filter((video) => !["archived", "deleted", "hidden", "error"].includes(String(video.status || "ready").toLowerCase()))
@@ -3411,7 +3732,7 @@ function articleVideoAssignmentRow(video = {}, index = 0) {
     <input type="hidden" name="videoSortOrder${index}" value="${escapeHtml(item.sortOrder || index + 1)}">
     <input type="hidden" name="videoPrivacyStatus${index}" value="${escapeHtml(item.privacyStatus || "unlisted")}">
     <input type="hidden" name="videoStatus${index}" value="${escapeHtml(item.status || "ready")}">
-    ${item.posterImageUrl ? `<img src="${escapeHtml(item.posterImageUrl)}" alt="${escapeHtml(item.posterImageAlt || item.title || "Video")}">` : `<span class="video-assignment-row__icon">Video</span>`}
+    ${item.posterImageUrl ?`<img src="${escapeHtml(item.posterImageUrl)}" alt="${escapeHtml(item.posterImageAlt || item.title || "Video")}">` : `<span class="video-assignment-row__icon">Video</span>`}
     <div><strong>${escapeHtml(item.title || item.youtubeVideoId || "Video")}</strong><small>${escapeHtml(item.youtubeUrl || "")}</small></div>
     <button class="icon-button icon-button--danger" type="button" data-remove-video-attachment title="Video entfernen" aria-label="Video entfernen">${iconImage("trash")}</button>
   </div>`;
@@ -3427,7 +3748,7 @@ function articleVideoAttachmentEditor(item = {}, videoLibrary = []) {
     return `<option value="${escapeHtml(snapshot.id)}" data-video-payload="${videoLibraryOptionPayload(snapshot)}">${escapeHtml(snapshot.title || snapshot.youtubeVideoId || snapshot.id)}</option>`;
   })].join("");
   return `<details class="editorial-tool-details" data-editor-tool-panel="videos">
-    <summary><span>Medien</span><strong>Video</strong><em>${videos.length ? `${videos.length} zugeordnet` : "optional"}</em></summary>
+    <summary><span>Medien</span><strong>Video</strong><em>${videos.length ?`${videos.length} zugeordnet` : "optional"}</em></summary>
     <div class="editor-tool-section editor-tool-section--videos" data-video-attachments>
       <div class="video-attachment-list" data-video-attachment-list>${rows || `<p class="muted">Noch kein Video zugeordnet.</p>`}</div>
       <div class="field"><label>Video zuordnen</label><select data-video-library-select>${options}</select></div>
@@ -3498,43 +3819,43 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
   };
   const definition = definitions[module];
   if (!definition) return dashboardPage();
-  const fallbackItem = { id, page: query.get("page") || "", section: query.get("section") || "", key: query.get("page") && query.get("section") ? `${query.get("page")}.${query.get("section")}` : "", category: module === "topics" ? "Thema" : "", title: id, status: module === "topics" ? "active" : module === "galleries" ? "published" : "draft", visibility: "public", images: [], createdAt: new Date().toISOString() };
+  const fallbackItem = { id, page: query.get("page") || "", section: query.get("section") || "", key: query.get("page") && query.get("section") ?`${query.get("page")}.${query.get("section")}` : "", category: module === "topics" ?"Thema" : "", title: id, status: module === "topics" ?"active" : module === "galleries" ?"published" : "draft", visibility: "public", images: [], createdAt: new Date().toISOString() };
   const item = id === "new"
-    ? { ...fallbackItem, id: `${module}-${crypto.randomUUID()}` }
+    ?{ ...fallbackItem, id: `${module}-${crypto.randomUUID()}` }
     : module === "members"
-      ? await resolveMemberEditorItem(id) || fallbackItem
+      ?await resolveMemberEditorItem(id) || fallbackItem
       : (await getOne(module, id)) || fallbackItem;
-  const topicSpeakers = module === "topics" ? await list("speakers") : [];
-  const memberMediaAssets = module === "members" ? await list("media_assets").catch(() => []) : [];
-  const editMediaAssets = ["editorialContent", "topics", "sponsors"].includes(module) ? await list("media_assets").catch(() => []) : [];
-  const audioProviders = ["editorialContent", "topics"].includes(module) ? await getOne("settings", "audioProviders").catch(() => null) : null;
-  const videoLibrary = module === "editorialContent" ? await list("media_videos").catch(() => []) : [];
+  const topicSpeakers = module === "topics" ?await list("speakers") : [];
+  const memberMediaAssets = module === "members" ?await list("media_assets").catch(() => []) : [];
+  const editMediaAssets = ["editorialContent", "topics", "sponsors"].includes(module) ?await list("media_assets").catch(() => []) : [];
+  const audioProviders = ["editorialContent", "topics"].includes(module) ?await getOne("settings", "audioProviders").catch(() => null) : null;
+  const videoLibrary = module === "editorialContent" ?await list("media_videos").catch(() => []) : [];
   const documentLibrary = module === "editorialContent"
-    ? [
+    ?[
       ...(await list("downloads").catch(() => [])).map((document) => ({ ...document, documentCollection: "downloads" })),
       ...(await list("memberDocuments").catch(() => [])).map((document) => ({ ...document, documentCollection: "memberDocuments" }))
     ].filter((document) => !["archived", "deleted"].includes(String(document.status || "").toLowerCase()))
       .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || String(a.title || a.fileName || "").localeCompare(String(b.title || b.fileName || ""), "de"))
     : [];
   const memberOptions = module === "users"
-    ? (await list("members"))
+    ?(await list("members"))
       .filter((member) => (member.status || "active") === "active")
       .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
     : [];
   if (module === "galleries") {
     const [events, media] = await Promise.all([list("events"), list("eventMedia")]);
-    const images = Array.isArray(item.images) ? item.images.slice().sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)) : [];
+    const images = Array.isArray(item.images) ?item.images.slice().sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)) : [];
     const linkedEventId = item.eventId || item.linkedEventId || "";
     const eventOptions = [`<option value="">Kein Event zugeordnet</option>`, ...events
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
-      .map((event) => `<option value="${escapeHtml(event.id)}" ${linkedEventId === event.id ? "selected" : ""}>${escapeHtml([event.date, event.title].filter(Boolean).join(" · "))}</option>`)].join("");
+      .map((event) => `<option value="${escapeHtml(event.id)}" ${linkedEventId === event.id ?"selected" : ""}>${escapeHtml([event.date, event.title].filter(Boolean).join(" · "))}</option>`)].join("");
     const imageKeys = new Set(images.flatMap((image) => [image.id, image.url, image.storagePath].filter(Boolean)));
     const candidateMedia = media
       .filter((entry) => entry.mediaType === "image" && entry.fileUrl)
       .filter((entry) => !imageKeys.has(entry.id) && !imageKeys.has(entry.fileUrl) && !imageKeys.has(entry.storagePath))
       .sort((a, b) => String(b.uploadedAt || b.createdAt || "").localeCompare(String(a.uploadedAt || a.createdAt || "")));
     const uploadCandidates = candidateMedia.length
-      ? `<div class="gallery-editor__grid">${candidateMedia.map((medium, index) => `<article class="gallery-editor__item gallery-editor__item--candidate">
+      ?`<div class="gallery-editor__grid">${candidateMedia.map((medium, index) => `<article class="gallery-editor__item gallery-editor__item--candidate">
           <img src="${escapeHtml(medium.fileUrl)}" alt="">
           <input type="hidden" name="media-${index}-id" value="${escapeHtml(medium.id || "")}">
           <input type="hidden" name="media-${index}-url" value="${escapeHtml(medium.fileUrl || "")}">
@@ -3551,7 +3872,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
       <section class="panel"><form id="gallery-edit-form" data-gallery-id="${escapeHtml(item.id)}" class="form-grid">
         <div class="form-grid--two">
           <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(item.title || "")}" required></div>
-          <div class="field"><label>Status</label><select name="status"><option value="published" ${item.status === "published" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div>
+          <div class="field"><label>Status</label><select name="status"><option value="published" ${item.status === "published" ?"selected" : ""}>Veroeffentlicht / Aktiv</option><option value="draft" ${item.status === "draft" ?"selected" : ""}>Entwurf</option><option value="archived" ${item.status === "archived" ?"selected" : ""}>Archiviert</option></select></div>
         </div>
         <div class="field"><label>Event-Zuordnung</label><select name="eventId">${eventOptions}</select><p class="muted">Diese Galerie erscheint beim verknuepften Event. Beitraege koennen die Galerie separat im Beitragseditor auswaehlen.</p></div>
         <div class="field"><label>Beschreibung</label><textarea name="description">${escapeHtml(item.description || "")}</textarea></div>
@@ -3564,7 +3885,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
             <input type="file" name="galleryImagesDrop" accept="image/*" multiple hidden>
           </label>
           <p class="muted">Reihenfolge: Bildkarten ziehen und vor dem Speichern neu anordnen.</p>
-          <div class="gallery-editor__grid" data-gallery-sortable>${images.length ? images.map((image, index) => `<article class="gallery-editor__item" draggable="true" data-gallery-image-item><button class="gallery-editor__drag" type="button" aria-label="Bild verschieben">?</button><img src="${escapeHtml(image.url)}" alt=""><input type="hidden" name="image-${index}-id" value="${escapeHtml(image.id || "")}"><input type="hidden" name="image-${index}-url" value="${escapeHtml(image.url || "")}"><input type="hidden" name="image-${index}-storagePath" value="${escapeHtml(image.storagePath || "")}"><input type="hidden" name="image-${index}-fileName" value="${escapeHtml(image.fileName || "")}"><input type="hidden" name="image-${index}-mediaAssetId" value="${escapeHtml(image.mediaAssetId || image.media_asset_id || "")}"><div class="gallery-editor__media-transfer">${image.mediaAssetId || image.media_asset_id ? `<a class="button button--secondary button--small" href="#/cms/media/edit?id=${escapeHtml(image.mediaAssetId || image.media_asset_id)}">In Mediathek</a>` : `<button class="button button--secondary button--small" type="button" data-gallery-image-to-media data-gallery-image-id="${escapeHtml(image.id || "")}">In Mediathek verschieben</button>`}</div><div class="field"><label>Bildtitel / Caption</label><input name="image-${index}-caption" value="${escapeHtml(image.caption || image.title || "")}"></div><div class="field"><label>Alt-Text</label><input name="image-${index}-altText" value="${escapeHtml(image.altText || image.fileName || "")}"></div><label class="checkbox-line"><input type="checkbox" name="image-${index}-remove"> Bild aus Galerie entfernen</label></article>`).join("") : `<div class="alert">Noch keine Bilder. Bitte Bilder hochladen und speichern.</div>`}</div>
+          <div class="gallery-editor__grid" data-gallery-sortable>${images.length ?images.map((image, index) => `<article class="gallery-editor__item" draggable="true" data-gallery-image-item><button class="gallery-editor__drag" type="button" aria-label="Bild verschieben">?</button><img src="${escapeHtml(image.url)}" alt=""><input type="hidden" name="image-${index}-id" value="${escapeHtml(image.id || "")}"><input type="hidden" name="image-${index}-url" value="${escapeHtml(image.url || "")}"><input type="hidden" name="image-${index}-storagePath" value="${escapeHtml(image.storagePath || "")}"><input type="hidden" name="image-${index}-fileName" value="${escapeHtml(image.fileName || "")}"><input type="hidden" name="image-${index}-mediaAssetId" value="${escapeHtml(image.mediaAssetId || image.media_asset_id || "")}"><div class="gallery-editor__media-transfer">${image.mediaAssetId || image.media_asset_id ?`<a class="button button--secondary button--small" href="#/cms/media/edit?id=${escapeHtml(image.mediaAssetId || image.media_asset_id)}">In Mediathek</a>` : `<button class="button button--secondary button--small" type="button" data-gallery-image-to-media data-gallery-image-id="${escapeHtml(image.id || "")}">In Mediathek verschieben</button>`}</div><div class="field"><label>Bildtitel / Caption</label><input name="image-${index}-caption" value="${escapeHtml(image.caption || image.title || "")}"></div><div class="field"><label>Alt-Text</label><input name="image-${index}-altText" value="${escapeHtml(image.altText || image.fileName || "")}"></div><label class="checkbox-line"><input type="checkbox" name="image-${index}-remove"> Bild aus Galerie entfernen</label></article>`).join("") : `<div class="alert">Noch keine Bilder. Bitte Bilder hochladen und speichern.</div>`}</div>
         </section>
         <section class="gallery-editor">
           <div class="gallery-editor__head"><div><p class="eyebrow">Uploadfolder</p><h3>Bilder freigeben und zuordnen</h3></div></div>
@@ -3579,16 +3900,16 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
     && (editorialKind === "member-area" || query.get("section") === "member-area" || isMemberAreaEditorialItem(item));
   if (module === "editorialContent" && (isMemberAreaEditor || ["press", "news", "pressRelease"].includes(editorialKind) || isPressEditorialItem(item) || isNewsEditorialItem(item))) {
     const sectionKey = isMemberAreaEditor
-      ? "member-area"
-      : item.page === "news" || item.section === "news" || query.get("page") === "news" || query.get("section") === "news" ? "news" : "press";
+      ?"member-area"
+      : item.page === "news" || item.section === "news" || query.get("page") === "news" || query.get("section") === "news" ?"news" : "press";
     const [allEditorial, events, sponsors, galleries] = await Promise.all([list("editorialContent"), list("events"), list("sponsors"), list("galleries")]);
     const categories = Array.from(new Set(allEditorial
       .filter((entry) => entry.page === sectionKey)
-      .map((entry) => entry.category || (sectionKey === "press" ? "Presse" : sectionKey === "member-area" ? "Member Infos" : "News"))
+      .map((entry) => entry.category || (sectionKey === "press" ?"Presse" : sectionKey === "member-area" ?"Member Infos" : "News"))
       .filter(Boolean))).sort((a, b) => a.localeCompare(b));
-    const categoryValue = item.category || (sectionKey === "press" ? "Presse" : sectionKey === "member-area" ? "Member Infos" : "News");
-    const categoryOptions = Array.from(new Set([categoryValue, sectionKey === "press" ? "Rückblicke" : "", ...categories])).filter(Boolean);
-    const backPath = sectionKey === "press" ? "editorial/press" : sectionKey === "member-area" ? "editorial/member-area" : "editorial/news";
+    const categoryValue = item.category || (sectionKey === "press" ?"Presse" : sectionKey === "member-area" ?"Member Infos" : "News");
+    const categoryOptions = Array.from(new Set([categoryValue, sectionKey === "press" ?"Rückblicke" : "", ...categories])).filter(Boolean);
+    const backPath = sectionKey === "press" ?"editorial/press" : sectionKey === "member-area" ?"editorial/member-area" : "editorial/news";
     const defaultRetrospectivePrompt = `Erstelle aus der folgenden Pressemitteilung einen redaktionellen Rückblicksbeitrag für PROdigitalTV.
 
 Ziel:
@@ -3625,17 +3946,17 @@ Ausgangstext:
     const retrospectivePrompt = defaultRetrospectivePrompt;
     const eventOptions = [`<option value="">Kein Event verknuepfen</option>`, ...events
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
-      .map((event) => `<option value="${escapeHtml(event.id)}" ${item.linkedEventId === event.id ? "selected" : ""}>${escapeHtml([event.date, event.title].filter(Boolean).join(" · "))}</option>`)].join("");
+      .map((event) => `<option value="${escapeHtml(event.id)}" ${item.linkedEventId === event.id ?"selected" : ""}>${escapeHtml([event.date, event.title].filter(Boolean).join(" · "))}</option>`)].join("");
     const sponsorOptions = [`<option value="">Kein Sponsorlogo</option>`, ...sponsors
       .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
-      .map((sponsor) => `<option value="${escapeHtml(sponsor.id)}" ${item.sponsorId === sponsor.id ? "selected" : ""}>${escapeHtml([sponsor.name, sponsor.role].filter(Boolean).join(" · "))}</option>`)].join("");
+      .map((sponsor) => `<option value="${escapeHtml(sponsor.id)}" ${item.sponsorId === sponsor.id ?"selected" : ""}>${escapeHtml([sponsor.name, sponsor.role].filter(Boolean).join(" · "))}</option>`)].join("");
     const galleryOptions = [`<option value="">Keine Galerie</option>`, ...galleries
       .filter((gallery) => gallery.status !== "archived")
       .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")))
-      .map((gallery) => `<option value="${escapeHtml(gallery.id)}" data-gallery-payload="${galleryPayloadAttribute(gallery)}" ${item.galleryId === gallery.id ? "selected" : ""}>${escapeHtml(gallery.title || gallery.id)} (${(gallery.images || []).length})</option>`)].join("");
-    const selectedGallery = item.galleryId ? galleries.find((gallery) => gallery.id === item.galleryId) : null;
+      .map((gallery) => `<option value="${escapeHtml(gallery.id)}" data-gallery-payload="${galleryPayloadAttribute(gallery)}" ${item.galleryId === gallery.id ?"selected" : ""}>${escapeHtml(gallery.title || gallery.id)} (${(gallery.images || []).length})</option>`)].join("");
+    const selectedGallery = item.galleryId ?galleries.find((gallery) => gallery.id === item.galleryId) : null;
     const selectedGalleryPreview = selectedGallery
-      ? `<div class="editor-gallery-preview" data-editor-gallery-preview>
+      ?`<div class="editor-gallery-preview" data-editor-gallery-preview>
           <div>
             <strong>${escapeHtml(selectedGallery.title || "Bildergalerie")}</strong>
             <span>${(selectedGallery.images || []).length} Bilder</span>
@@ -3644,26 +3965,26 @@ Ausgangstext:
         </div>`
       : `<div class="editor-gallery-preview editor-gallery-preview--empty" data-editor-gallery-preview><p class="muted">Keine Galerie ausgewaehlt. Nach dem Speichern erscheint hier der Playbutton für die verknuepfte Galerie.</p></div>`;
     const isRetrospectiveEditor = sectionKey === "press" && (item.isRetrospective || ["Rückblicke", "Rückblicke"].includes(item.category) || item.linkedEventId);
-    const thumbState = `${editorialSummaryThumb(item)}${item.imageUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`}`;
-    const audioState = item.audioUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
-    const galleryState = selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
+    const thumbState = `${editorialSummaryThumb(item)}${item.imageUrl ?`<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`}`;
+    const audioState = item.audioUrl ?`<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
+    const galleryState = selectedGallery ?`<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
     const selectedDocumentId = item.downloadId || item.download_id || item.documentId || item.document_id || "";
-    const selectedDocument = selectedDocumentId ? documentLibrary.find((document) => document.id === selectedDocumentId) : null;
+    const selectedDocument = selectedDocumentId ?documentLibrary.find((document) => document.id === selectedDocumentId) : null;
     const selectedDocumentUrl = selectedDocument?.documentUrl || selectedDocument?.assetUrl || selectedDocument?.fileUrl || selectedDocument?.downloadUrl || selectedDocument?.url || item.documentUrl || "";
     const selectedDocumentTitle = selectedDocument?.title || selectedDocument?.fileName || item.documentTitle || item.documentFileName || item.assetFileName || "PDF-Anhang";
-    const documentOptions = documentLibrary.map((document) => `<option value="${escapeHtml(document.id)}" ${document.id === selectedDocumentId ? "selected" : ""}>${escapeHtml(document.title || document.fileName || document.id)}${document.documentCollection === "memberDocuments" ? " / Mitglieder" : ""}</option>`).join("");
-    const documentState = selectedDocumentUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">PDF vorhanden</small>` : `<small class="editorial-tool-state">Kein PDF</small>`;
+    const documentOptions = documentLibrary.map((document) => `<option value="${escapeHtml(document.id)}" ${document.id === selectedDocumentId ?"selected" : ""}>${escapeHtml(document.title || document.fileName || document.id)}${document.documentCollection === "memberDocuments" ?" / Mitglieder" : ""}</option>`).join("");
+    const documentState = selectedDocumentUrl ?`<small class="editorial-tool-state editorial-tool-state--ready">PDF vorhanden</small>` : `<small class="editorial-tool-state">Kein PDF</small>`;
     const documentTitle = selectedDocumentTitle;
-    const publicArticlePath = sectionKey === "member-area" ? `portal/article/${item.id}` : isRetrospectiveEditor ? `retrospective/${item.id}` : sectionKey === "news" ? `news/${item.id}` : `retrospective/${item.id}`;
+    const publicArticlePath = sectionKey === "member-area" ?`portal/article/${item.id}` : isRetrospectiveEditor ?`retrospective/${item.id}` : sectionKey === "news" ?`news/${item.id}` : `retrospective/${item.id}`;
     const publicArticleHref = `/?real=1#/${escapeHtml(publicArticlePath)}`;
     const sourceJsonValue = JSON.stringify(item.source_snapshot_json || item.sources || [], null, 2);
-    const tagsValue = Array.isArray(item.tags) ? item.tags.join(", ") : item.tags || "";
-    const editorTitle = sectionKey === "press" ? "Pressemeldung bearbeiten" : sectionKey === "member-area" ? "Mitgliederbeitrag bearbeiten" : "News bearbeiten";
+    const tagsValue = Array.isArray(item.tags) ?item.tags.join(", ") : item.tags || "";
+    const editorTitle = sectionKey === "press" ?"Pressemeldung bearbeiten" : sectionKey === "member-area" ?"Mitgliederbeitrag bearbeiten" : "News bearbeiten";
     return protect(cmsShell(`cms/${backPath}`, `${cmsTitle("Redaktion", editorTitle, `<a class="button button--secondary button--small" href="#/cms/${backPath}">Zurueck</a>`)}
       <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid">
         <input type="hidden" name="page" value="${escapeHtml(sectionKey)}">
-        <input type="hidden" name="section" value="${escapeHtml(sectionKey === "press" ? "pressRelease" : sectionKey)}">
-        ${sectionKey === "member-area" ? `<input type="hidden" name="visibility" value="members">` : ""}
+        <input type="hidden" name="section" value="${escapeHtml(sectionKey === "press" ?"pressRelease" : sectionKey)}">
+        ${sectionKey === "member-area" ?`<input type="hidden" name="visibility" value="members">` : ""}
         <input type="hidden" name="key" value="${escapeHtml(item.key || `${sectionKey}.${item.id}`)}">
         <input type="hidden" name="validFrom" value="${escapeHtml(item.validFrom || item.publishDate || "")}">
         <div class="editorial-workspace editorial-workspace--text-editor">
@@ -3677,7 +3998,7 @@ Ausgangstext:
             </div>
             <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Titel / Headline</label>${aiFieldActions([{ action: "improveText", target: "title", label: "Headline erzeugen", entityType: module, entityId: item.id, fieldName: "title" }])}</div><textarea name="title" rows="2" required>${escapeHtml(item.title || "")}</textarea></div>
             <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Subline</label>${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Subline erzeugen", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div><textarea name="subtitle" rows="2">${escapeHtml(item.subtitle || "")}</textarea></div>
-            <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Haupttext</label>${aiFieldActions(sectionKey === "press" ? [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }, { action: "rewritePressRetrospective", target: "bodyText", label: "Rückblick aus Pressemitteilung", entityType: module, entityId: item.id, fieldName: "bodyText", promptField: "retrospectivePrompt" }] : [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div><textarea name="bodyText" required>${escapeHtml(item.bodyText || "")}</textarea></div>
+            <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Haupttext</label>${aiFieldActions(sectionKey === "press" ?[{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }, { action: "rewritePressRetrospective", target: "bodyText", label: "Rückblick aus Pressemitteilung", entityType: module, entityId: item.id, fieldName: "bodyText", promptField: "retrospectivePrompt" }] : [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div><textarea name="bodyText" required>${escapeHtml(item.bodyText || "")}</textarea></div>
             <div class="field editorial-text-field"><div class="editorial-field-head"><label>Shorttext / Intro</label>${aiFieldActions([{ action: "shortenText", target: "introText", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "introText" }])}</div><textarea name="introText">${escapeHtml(item.introText || "")}</textarea></div>
             <div class="actions editorial-save-inline">
               <button class="button button--primary">Speichern</button>
@@ -3686,14 +4007,14 @@ Ausgangstext:
           <aside class="editorial-tools">
             <section class="editorial-meta-panel">
               <div class="editorial-tools__head"><p class="eyebrow">Meta</p><h3>Veroeffentlichung</h3></div>
-              <div class="field"><label>Kategorie</label><select name="category">${categoryOptions.map((category) => `<option value="${escapeHtml(category)}" ${category === categoryValue ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}</select></div>
-              ${sectionKey === "news" ? `<div class="field"><label>Tags</label><input name="tags" value="${escapeHtml(tagsValue)}" placeholder="Streaming, KI, Vermarktung"></div>` : ""}
-              <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="published" ${item.status === "published" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div>
+              <div class="field"><label>Kategorie</label><select name="category">${categoryOptions.map((category) => `<option value="${escapeHtml(category)}" ${category === categoryValue ?"selected" : ""}>${escapeHtml(category)}</option>`).join("")}</select></div>
+              ${sectionKey === "news" ?`<div class="field"><label>Tags</label><input name="tags" value="${escapeHtml(tagsValue)}" placeholder="Streaming, KI, Vermarktung"></div>` : ""}
+              <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ?"selected" : ""}>Entwurf</option><option value="published" ${item.status === "published" ?"selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ?"selected" : ""}>Archiviert</option></select></div>
               <div class="meta-date-row"><div class="field"><label>Veroeffentlichungsdatum</label><input type="date" name="publishDate" value="${escapeHtml(item.publishDate || "")}"></div><div class="field"><label>Enddatum</label><input type="date" name="validTo" value="${escapeHtml(item.validTo || "")}"></div></div>
             </section>
             <details class="editorial-tool-details">
               <summary><span>Medien</span><strong>Bild / Thumb</strong>${thumbState}</summary>
-              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultize: "1200x675", aiCollage: false })}${linkedMediaActions({ collection: module, id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=${module}&id=${item.id}&section=${sectionKey}`, assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, module, "imageUrl")?.id || "" })}</div>${sectionKey === "news" ? `<div class="field"><label>Thumbnail-Prompt</label><textarea name="thumbnail_prompt">${escapeHtml(item.thumbnail_prompt || item.thumbnailPrompt || "")}</textarea></div><div class="field"><label>Thumbnail-Alt-Text</label><input name="thumbnail_alt" value="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || "")}"></div>` : ""}</div>
+              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultize: "1200x675", aiCollage: false })}${linkedMediaActions({ collection: module, id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=${module}&id=${item.id}&section=${sectionKey}`, assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, module, "imageUrl")?.id || "" })}</div>${sectionKey === "news" ?`<div class="field"><label>Thumbnail-Prompt</label><textarea name="thumbnail_prompt">${escapeHtml(item.thumbnail_prompt || item.thumbnailPrompt || "")}</textarea></div><div class="field"><label>Thumbnail-Alt-Text</label><input name="thumbnail_alt" value="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || "")}"></div>` : ""}</div>
             </details>
             <details class="editorial-tool-details" data-editor-tool-panel="audio">
               <summary><span>Audio</span><strong>Vorlesen</strong>${audioState}</summary>
@@ -3714,20 +4035,20 @@ Ausgangstext:
             <details class="editorial-tool-details" data-editor-tool-panel="pdf">
               <summary><span>Medien</span><strong>PDF</strong>${documentState}</summary>
               <div class="editor-tool-section editor-tool-section--pdf">
-                ${selectedDocumentUrl ? `<div class="member-pdf-asset"><strong>${escapeHtml(documentTitle)}</strong><a class="button button--secondary button--small" href="${escapeHtml(selectedDocumentUrl)}" target="_blank" rel="noreferrer">PDF oeffnen</a></div>` : `<p class="muted">Noch kein PDF-Anhang vorhanden.</p>`}
+                ${selectedDocumentUrl ?`<div class="member-pdf-asset"><strong>${escapeHtml(documentTitle)}</strong><a class="button button--secondary button--small" href="${escapeHtml(selectedDocumentUrl)}" target="_blank" rel="noreferrer">PDF oeffnen</a></div>` : `<p class="muted">Noch kein PDF-Anhang vorhanden.</p>`}
                 <div class="field"><label>Dokument zuordnen</label><select name="downloadId"><option value="">Kein PDF zugeordnet</option>${documentOptions}</select><p class="muted">PDFs werden zentral in der Dokumentenverwaltung gepflegt und hier nur verknuepft.</p></div>
               </div>
             </details>
             ${articleVideoAttachmentEditor(item, videoLibrary)}
-            ${sectionKey === "member-area" ? "" : `<details class="editorial-tool-details">
+            ${sectionKey === "member-area" ?"" : `<details class="editorial-tool-details">
               <summary><span>Werkzeuge</span><strong>Rückblick & Verknüpfungen</strong></summary>
             <section class="retrospective-tool">
-              ${sectionKey === "news" ? `<div class="field"><label>Quellen</label><textarea name="source_snapshot_json_text" placeholder='[{ "title": "", "url": "", "source_type": "" }]'>${escapeHtml(sourceJsonValue)}</textarea></div><div class="field"><label>Interne Hinweise</label><textarea name="editorial_note">${escapeHtml(item.editorial_note || item.editorialNote || "")}</textarea></div>` : ""}
+              ${sectionKey === "news" ?`<div class="field"><label>Quellen</label><textarea name="source_snapshot_json_text" placeholder='[{ "title": "", "url": "", "source_type": "" }]'>${escapeHtml(sourceJsonValue)}</textarea></div><div class="field"><label>Interne Hinweise</label><textarea name="editorial_note">${escapeHtml(item.editorial_note || item.editorialNote || "")}</textarea></div>` : ""}
               <div class="field"><label>Rückblick-Prompt</label><textarea name="retrospectivePrompt">${escapeHtml(retrospectivePrompt)}</textarea></div>
               <div class="field"><label>Event-Bezug</label><select name="linkedEventId">${eventOptions}</select></div>
               <div class="field"><label>Sponsorlogo</label><select name="sponsorId">${sponsorOptions}</select></div>
-              <label class="checkbox-line"><input type="checkbox" name="isRetrospective" ${item.isRetrospective ? "checked" : ""}> Unter Rückblicke / Event-Nachlauf anzeigen</label>
-              <label class="checkbox-line"><input type="checkbox" name="showGallery" ${item.showGallery ? "checked" : ""}> Bildergalerie aus Event-Medien anzeigen</label>
+              <label class="checkbox-line"><input type="checkbox" name="isRetrospective" ${item.isRetrospective ?"checked" : ""}> Unter Rückblicke / Event-Nachlauf anzeigen</label>
+              <label class="checkbox-line"><input type="checkbox" name="showGallery" ${item.showGallery ?"checked" : ""}> Bildergalerie aus Event-Medien anzeigen</label>
               <input type="hidden" name="galleryEventId" value="${escapeHtml(item.galleryEventId || item.linkedEventId || "")}">
               <p class="muted">Im Rückblick-Modus formuliert ChatGPT Headline, Subline und Haupttext als nachträgliche Berichterstattung über das vergangene Event.</p>
               ${aiFieldActions([{ action: "rewritePressRetrospective", target: "bodyText", label: "Rückblick-Fliesstext erzeugen", entityType: module, entityId: item.id, fieldName: "bodyText", promptField: "retrospectivePrompt" }])}
@@ -3743,10 +4064,10 @@ Ausgangstext:
     const galleryOptions = [`<option value="">Keine Galerie</option>`, ...galleries
       .filter((gallery) => gallery.status !== "archived")
       .sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")))
-      .map((gallery) => `<option value="${escapeHtml(gallery.id)}" data-gallery-payload="${galleryPayloadAttribute(gallery)}" ${item.galleryId === gallery.id ? "selected" : ""}>${escapeHtml(gallery.title || gallery.id)} (${(gallery.images || []).length})</option>`)].join("");
-    const selectedGallery = item.galleryId ? galleries.find((gallery) => gallery.id === item.galleryId) : null;
+      .map((gallery) => `<option value="${escapeHtml(gallery.id)}" data-gallery-payload="${galleryPayloadAttribute(gallery)}" ${item.galleryId === gallery.id ?"selected" : ""}>${escapeHtml(gallery.title || gallery.id)} (${(gallery.images || []).length})</option>`)].join("");
+    const selectedGallery = item.galleryId ?galleries.find((gallery) => gallery.id === item.galleryId) : null;
     const selectedGalleryPreview = selectedGallery
-      ? `<div class="editor-gallery-preview" data-editor-gallery-preview>
+      ?`<div class="editor-gallery-preview" data-editor-gallery-preview>
           <div>
             <strong>${escapeHtml(selectedGallery.title || "Bildergalerie")}</strong>
             <span>${(selectedGallery.images || []).length} Bilder</span>
@@ -3754,9 +4075,9 @@ Ausgangstext:
           ${galleryPlayerButton(selectedGallery, "Galerie abspielen")}
         </div>`
       : `<div class="editor-gallery-preview editor-gallery-preview--empty" data-editor-gallery-preview><p class="muted">Keine Galerie verknuepft. Galerie auswaehlen, speichern, danach kann sie hier abgespielt werden.</p></div>`;
-    const thumbState = `${editorialSummaryThumb(item)}${item.imageUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`}`;
-    const audioState = item.audioUrl ? `<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
-    const galleryState = selectedGallery ? `<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
+    const thumbState = `${editorialSummaryThumb(item)}${item.imageUrl ?`<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`}`;
+    const audioState = item.audioUrl ?`<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
+    const galleryState = selectedGallery ?`<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
     return protect(cmsShell("cms/topics", `${cmsTitle("Redaktion", "Thema bearbeiten", `<a class="button button--secondary button--small" href="#/cms/topics">Zurueck</a>`)}
       <section class="panel"><form id="topic-editor-form" data-topic-id="${item.id}" class="form-grid is-save-aware">
         <div class="editorial-workspace editorial-workspace--text-editor">
@@ -3770,7 +4091,7 @@ Ausgangstext:
             <section class="editorial-meta-panel">
               <div class="editorial-tools__head"><p class="eyebrow">Meta</p><h3>Veroeffentlichung</h3></div>
               <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(item.category || "Thema")}"></div>
-              <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="active" ${item.status === "active" ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="inactive" ${item.status === "inactive" ? "selected" : ""}>Inaktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div>
+              <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ?"selected" : ""}>Entwurf</option><option value="active" ${item.status === "active" ?"selected" : ""}>Veroeffentlicht / Aktiv</option><option value="inactive" ${item.status === "inactive" ?"selected" : ""}>Inaktiv</option><option value="archived" ${item.status === "archived" ?"selected" : ""}>Archiviert</option></select></div>
               <div class="meta-date-row"><div class="field"><label>Veroeffentlichungsdatum</label><input type="date" name="publishDate" value="${escapeHtml(item.publishDate || "")}"></div><div class="field"><label>Enddatum</label><input type="date" name="validTo" value="${escapeHtml(item.validTo || "")}"></div></div>
             </section>
             <details class="editorial-tool-details">
@@ -3826,7 +4147,7 @@ Ausgangstext:
             </details>
             <details class="editorial-tool-details">
               <summary><span>Medien</span><strong>Hero-Bild</strong></summary>
-              <div class="editor-tool-section"><div class="field"><label>Hero-Bild</label><div class="asset-preview">${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" alt="">` : `<p class="muted">Noch kein Bild zugeordnet.</p>`}</div>${linkedMediaActions({ collection: "editorialContent", id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=editorialContent&id=${item.id}&section=interna`, label: "Bild", assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, "editorialContent", "imageUrl")?.id || "" })}<p class="muted">Bild aus der Mediathek zuordnen oder dort neu erstellen.</p></div></div>
+              <div class="editor-tool-section"><div class="field"><label>Hero-Bild</label><div class="asset-preview">${item.imageUrl ?`<img src="${escapeHtml(item.imageUrl)}" alt="">` : `<p class="muted">Noch kein Bild zugeordnet.</p>`}</div>${linkedMediaActions({ collection: "editorialContent", id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=editorialContent&id=${item.id}&section=interna`, label: "Bild", assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, "editorialContent", "imageUrl")?.id || "" })}<p class="muted">Bild aus der Mediathek zuordnen oder dort neu erstellen.</p></div></div>
             </details>
           </aside>
         </div>
@@ -3840,12 +4161,12 @@ Ausgangstext:
     ].filter((download) => !["archived", "deleted"].includes(String(download.status || "").toLowerCase()))
       .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || String(a.title || "").localeCompare(String(b.title || ""), "de"));
     const internalDownloadOptions = internalDownloads
-      .map((download) => `<option value="${escapeHtml(download.id)}" ${(item.downloadId || item.download_id) === download.id ? "selected" : ""}>${escapeHtml(download.title || download.fileName || download.id)}</option>`)
+      .map((download) => `<option value="${escapeHtml(download.id)}" ${(item.downloadId || item.download_id) === download.id ?"selected" : ""}>${escapeHtml(download.title || download.fileName || download.id)}</option>`)
       .join("");
     const internalDocumentField = `<div class="field field--internal-download"><label>Dokument aus Dokumentenverwaltung</label><select name="downloadId"><option value="">Kein Dokument zugeordnet</option>${internalDownloadOptions}</select><p class="muted">Dokumente werden zentral gepflegt und hier nur verknuepft.</p></div>`;
-    const internalImageField = `<div class="field"><label>Bild</label><div class="asset-preview">${item.imageUrl ? `<img src="${escapeHtml(item.imageUrl)}" alt="">` : `<p class="muted">Noch kein Bild zugeordnet.</p>`}</div>${linkedMediaActions({ collection: "editorialContent", id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=editorialContent&id=${item.id}&section=interna`, label: "Bild", assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, "editorialContent", "imageUrl")?.id || "" })}<p class="muted">Bild aus der Mediathek zuordnen oder dort neu erstellen.</p></div>`;
+    const internalImageField = `<div class="field"><label>Bild</label><div class="asset-preview">${item.imageUrl ?`<img src="${escapeHtml(item.imageUrl)}" alt="">` : `<p class="muted">Noch kein Bild zugeordnet.</p>`}</div>${linkedMediaActions({ collection: "editorialContent", id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=editorialContent&id=${item.id}&section=interna`, label: "Bild", assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, "editorialContent", "imageUrl")?.id || "" })}<p class="muted">Bild aus der Mediathek zuordnen oder dort neu erstellen.</p></div>`;
     if (managed) {
-      const joinDownloadField = item.bereich === "mitglied_werden" ? internalDocumentField : "";
+      const joinDownloadField = item.bereich === "mitglied_werden" ?internalDocumentField : "";
       const statusValue = item.status || "aktiv";
       const visibilityValue = item.sichtbarkeit || item.visibility || "oeffentlich";
       return protect(cmsShell("cms/editorial/interna", `${cmsTitle("Interna", "Textbaustein bearbeiten", `<div class="actions"><button class="button button--secondary button--small" type="button" data-internal-preview="${escapeHtml(item.id)}">Vorschau</button><a class="button button--secondary button--small" href="#/cms/editorial/interna">Zurueck</a></div>`)}
@@ -3864,8 +4185,8 @@ Ausgangstext:
                 <summary><span>Meta</span><strong>Interna-Block</strong></summary>
                 <div class="editor-tool-section">
                 <div class="field"><label>Slug</label><input name="slug" value="${escapeHtml(item.slug || item.id || "")}" required><p class="muted">Nach Anlage möglichst nicht mehr ändern.</p></div>
-                <div class="field field--internal-area"><label>Bereich</label><select name="bereich"><option value="ueber_uns" ${item.bereich === "ueber_uns" ? "selected" : ""}>Über uns</option><option value="mitglied_werden" ${item.bereich === "mitglied_werden" ? "selected" : ""}>Mitglied werden</option></select></div>
-                <div class="field field--internal-type"><label>Typ</label><select name="typ">${["hero", "textblock", "vorteil", "eventformat", "kachelgruppe", "cta"].map((type) => `<option value="${type}" ${item.typ === type ? "selected" : ""}>${type}</option>`).join("")}</select></div>
+                <div class="field field--internal-area"><label>Bereich</label><select name="bereich"><option value="ueber_uns" ${item.bereich === "ueber_uns" ?"selected" : ""}>Über uns</option><option value="mitglied_werden" ${item.bereich === "mitglied_werden" ?"selected" : ""}>Mitglied werden</option></select></div>
+                <div class="field field--internal-type"><label>Typ</label><select name="typ">${["hero", "textblock", "vorteil", "eventformat", "kachelgruppe", "cta"].map((type) => `<option value="${type}" ${item.typ === type ?"selected" : ""}>${type}</option>`).join("")}</select></div>
                 <div class="field"><label>Sortierung</label><input name="sortierung" type="number" value="${escapeHtml(item.sortierung ?? item.sortOrder ?? 10)}"></div>
                 <div class="field"><label>Icon</label><input name="icon" value="${escapeHtml(item.icon || "")}" placeholder="network, compass, law ..."></div>
                 <p class="muted">Sichtbarkeit und Status werden in der Liste über das Auge gesteuert.</p>
@@ -3879,7 +4200,7 @@ Ausgangstext:
                 <summary><span>Medien</span><strong>Bild</strong></summary>
                 <div class="editor-tool-section">${internalImageField}</div>
               </details>
-              ${joinDownloadField ? `<details class="editorial-tool-details"><summary><span>Dokument</span><strong>Download</strong></summary><div class="editor-tool-section">${joinDownloadField}</div></details>` : ""}
+              ${joinDownloadField ?`<details class="editorial-tool-details"><summary><span>Dokument</span><strong>Download</strong></summary><div class="editor-tool-section">${joinDownloadField}</div></details>` : ""}
               <details class="editorial-tool-details">
                 <summary><span>Audio</span><strong>Audio & Barrierefreiheit</strong>${audioStatusBadge(audioVariantState("editorialContent", item, "accessible"))}</summary>
                 <div class="editor-tool-section editor-tool-section--audio">${audioGenerationPanel("editorialContent", item, { providerConfig: audioProviders })}</div>
@@ -3928,48 +4249,48 @@ Ausgangstext:
   }
   const fieldHtml = definition.fields.map(([field, label]) => {
     const long = ["description", "shortDescription", "longDescription", "articleText", "topicText", "shortBio", "longBio", "introText", "bodyText", "seoDescription"].includes(field);
-    const action = module === "topics" ? "generateTopicDescription" : module === "speakers" ? "generateSpeakerTalkText" : module === "sponsors" ? "generateSponsorText" : "improveText";
-    const ai = long || field.toLowerCase().includes("seo") ? aiFieldActions([{ action: field.toLowerCase().includes("seo") ? "generateSeoMeta" : action, target: field, label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: field }]) : "";
+    const action = module === "topics" ?"generateTopicDescription" : module === "speakers" ?"generateSpeakerTalkText" : module === "sponsors" ?"generateSponsorText" : "improveText";
+    const ai = long || field.toLowerCase().includes("seo") ?aiFieldActions([{ action: field.toLowerCase().includes("seo") ?"generateSeoMeta" : action, target: field, label: "Mit ChatGPT bearbeiten", entityType: module, entityId: item.id, fieldName: field }]) : "";
     if (module === "users" && field === "memberId") {
       const currentMemberId = item?.memberId || "";
       const options = [
-        `<option value="" ${currentMemberId ? "" : "selected"}>Keine Verknuepfung</option>`,
-        ...memberOptions.map((member) => `<option value="${escapeHtml(member.id)}" ${currentMemberId === member.id ? "selected" : ""}>${escapeHtml([member.name || member.id, member.city].filter(Boolean).join(" / "))}</option>`)
+        `<option value="" ${currentMemberId ?"" : "selected"}>Keine Verknuepfung</option>`,
+        ...memberOptions.map((member) => `<option value="${escapeHtml(member.id)}" ${currentMemberId === member.id ?"selected" : ""}>${escapeHtml([member.name || member.id, member.city].filter(Boolean).join(" / "))}</option>`)
       ].join("");
       return `<div class="field"><label>${label}</label><select name="memberId">${options}</select><p class="muted">Verknuepft diesen User mit dem Mitgliedsprofil, das er im Mitgliederbereich bearbeiten darf.</p></div>`;
     }
     if (module === "members" && field === "membershipType") {
       const currentType = item?.membershipType || "";
-      return `<div class="field"><label>${label}</label><select name="membershipType"><option value="" ${currentType ? "" : "selected"}>Nicht festgelegt</option><option value="company" ${currentType === "company" ? "selected" : ""}>Firmenmitglied</option><option value="individual" ${currentType === "individual" ? "selected" : ""}>Einzelmitglied</option></select></div>`;
+      return `<div class="field"><label>${label}</label><select name="membershipType"><option value="" ${currentType ?"" : "selected"}>Nicht festgelegt</option><option value="company" ${currentType === "company" ?"selected" : ""}>Firmenmitglied</option><option value="individual" ${currentType === "individual" ?"selected" : ""}>Einzelmitglied</option></select></div>`;
     }
-    return `<div class="field"><label>${label}</label>${long ? `<textarea name="${field}">${escapeHtml(item?.[field] || "")}</textarea>` : `<input name="${field}" value="${escapeHtml(item?.[field] || "")}">`}${ai}</div>`;
+    return `<div class="field"><label>${label}</label>${long ?`<textarea name="${field}">${escapeHtml(item?.[field] || "")}</textarea>` : `<input name="${field}" value="${escapeHtml(item?.[field] || "")}">`}${ai}</div>`;
   }).join("");
   const memberField = (field, label) => {
     const long = field === "description" || field === "shortDescription";
     const value = field === "contactName"
-      ? item?.contactName || item?.profileContactName || ""
+      ?item?.contactName || item?.profileContactName || ""
       : field === "contactEmail"
-        ? item?.contactEmail || item?.email || ""
+        ?item?.contactEmail || item?.email || ""
         : field === "contactPhone"
-          ? item?.contactPhone || item?.phone || ""
+          ?item?.contactPhone || item?.phone || ""
           : field === "contactMobile"
-            ? item?.contactMobile || item?.mobile || ""
+            ?item?.contactMobile || item?.mobile || ""
             : field === "description"
-              ? memberDescriptionValue(item)
+              ?memberDescriptionValue(item)
               : item?.[field] || "";
     if (field === "membershipType") {
       const currentType = item?.membershipType || "";
-      return `<div class="field"><label>${label}</label><select name="membershipType"><option value="" ${currentType ? "" : "selected"}>Nicht festgelegt</option><option value="company" ${currentType === "company" ? "selected" : ""}>Firmenmitglied</option><option value="individual" ${currentType === "individual" ? "selected" : ""}>Einzelmitglied</option></select></div>`;
+      return `<div class="field"><label>${label}</label><select name="membershipType"><option value="" ${currentType ?"" : "selected"}>Nicht festgelegt</option><option value="company" ${currentType === "company" ?"selected" : ""}>Firmenmitglied</option><option value="individual" ${currentType === "individual" ?"selected" : ""}>Einzelmitglied</option></select></div>`;
     }
-    return `<div class="field"><label>${label}</label>${long ? `<textarea name="${field}">${escapeHtml(value)}</textarea>` : `<input name="${field}" value="${escapeHtml(value)}">`}</div>`;
+    return `<div class="field"><label>${label}</label>${long ?`<textarea name="${field}">${escapeHtml(value)}</textarea>` : `<input name="${field}" value="${escapeHtml(value)}">`}</div>`;
   };
-  const memberEventContactLimit = item?.membershipType === "company" ? 5 : 1;
+  const memberEventContactLimit = item?.membershipType === "company" ?5 : 1;
   const normalizeMemberEventContact = (contact = {}) => {
     const fullName = String(contact.name || "").trim();
     const parts = fullName.split(/\s+/).filter(Boolean);
     return {
-      firstName: contact.firstName || contact.vorname || (parts.length > 1 ? parts.slice(0, -1).join(" ") : fullName),
-      lastName: contact.lastName || contact.nachname || (parts.length > 1 ? parts.slice(-1).join(" ") : ""),
+      firstName: contact.firstName || contact.vorname || (parts.length > 1 ?parts.slice(0, -1).join(" ") : fullName),
+      lastName: contact.lastName || contact.nachname || (parts.length > 1 ?parts.slice(-1).join(" ") : ""),
       name: fullName,
       role: contact.role || contact.function || contact.department || "",
       email: contact.email || "",
@@ -3977,7 +4298,7 @@ Ausgangstext:
     };
   };
   const memberEventContacts = Array.isArray(item?.eventContacts) && item.eventContacts.length
-    ? item.eventContacts.map(normalizeMemberEventContact)
+    ?item.eventContacts.map(normalizeMemberEventContact)
     : ([{
         firstName: item?.firstName || "",
         lastName: item?.lastName || "",
@@ -3987,9 +4308,9 @@ Ausgangstext:
         phone: item?.phone || item?.contactPhone || item?.mobile || item?.contactMobile || ""
       }].map(normalizeMemberEventContact).filter((contact) => contact.firstName || contact.lastName || contact.name || contact.email || contact.phone));
   const memberEventContactsHtml = module === "members"
-    ? `<div class="member-edit-form__event-contacts">
+    ?`<div class="member-edit-form__event-contacts">
         <p class="eyebrow">Kontaktdaten</p>
-        <p class="muted">${memberEventContactLimit === 1 ? "Einzelmitglieder: 1 Kontakt." : "Firmenmitglieder: bis zu 5 Kontakte."}</p>
+        <p class="muted">${memberEventContactLimit === 1 ?"Einzelmitglieder: 1 Kontakt." : "Firmenmitglieder: bis zu 5 Kontakte."}</p>
         ${Array.from({ length: memberEventContactLimit }, (_, index) => {
           const contact = memberEventContacts[index] || {};
           return `<fieldset class="member-event-contact-row">
@@ -4007,49 +4328,50 @@ Ausgangstext:
     : "";
   const memberAccessStatus = item?.membershipAccessStatus || "active";
   const memberAccessControls = module === "members"
-    ? `<div class="member-edit-form__access">
+    ?`<div class="member-edit-form__access">
         <p class="eyebrow">Zugang steuern</p>
         <p class="muted">Ab diesem Datum hat das Mitglied keinen Portalzugang mehr und erscheint nicht mehr im Mitgliederverzeichnis.</p>
         <div class="form-grid form-grid--two">
           <div class="field"><label>Mitgliedschaftsstatus</label><select name="membershipAccessStatus">
-            <option value="active" ${memberAccessStatus === "active" ? "selected" : ""}>Aktiv</option>
-            <option value="inactive" ${memberAccessStatus === "inactive" ? "selected" : ""}>Inaktiv</option>
-            <option value="cancelled" ${memberAccessStatus === "cancelled" ? "selected" : ""}>Gekündigt</option>
+            <option value="active" ${memberAccessStatus === "active" ?"selected" : ""}>Aktiv</option>
+            <option value="inactive" ${memberAccessStatus === "inactive" ?"selected" : ""}>Inaktiv</option>
+            <option value="cancelled" ${memberAccessStatus === "cancelled" ?"selected" : ""}>Gekündigt</option>
           </select></div>
           <div class="field"><label>Gekündigt / inaktiv ab</label><input name="membershipAccessEffectiveAt" type="date" value="${escapeHtml(timestampInputDate(item?.membershipAccessEffectiveAt))}"><p class="muted">Leer = sofort.</p></div>
         </div>
+        <label class="checkbox"><input type="checkbox" name="notificationTestGroup" ${item?.notificationTestGroup || item?.isNotificationTestGroup || item?.testGroup ?"checked" : ""}> Teil der Benachrichtigungs-Testgruppe</label>
       </div>`
     : "";
   const imageUpload = module === "topics"
-    ? `<div class="field"><label>Themenbild hochladen</label><input type="file" name="assetFile" accept="image/*"><p class="muted">Das neue Bild ersetzt beim Speichern das zugeordnete Bild.</p></div>`
+    ?`<div class="field"><label>Themenbild hochladen</label><input type="file" name="assetFile" accept="image/*"><p class="muted">Das neue Bild ersetzt beim Speichern das zugeordnete Bild.</p></div>`
     : module === "members"
-      ? `<div class="field field--member-logo"><label>Logo</label>${memberLogoEditor(item, memberMediaAssets, `#/cms/edit?module=members&id=${item.id}&section=${query.get("section") || "all"}`)}</div>`
+      ?`<div class="field field--member-logo"><label>Logo</label>${memberLogoEditor(item, memberMediaAssets, `#/cms/edit?module=members&id=${item.id}&section=${query.get("section") || "all"}`)}</div>`
       : module === "boardMembers"
-      ? `<div class="field"><label>Vorstandsfoto hochladen</label><input type="file" name="assetFile" accept="image/*"><p class="muted">Das Foto wird beim Speichern dem Vorstandsprofil zugeordnet.</p></div>`
+      ?`<div class="field"><label>Vorstandsfoto hochladen</label><input type="file" name="assetFile" accept="image/*"><p class="muted">Das Foto wird beim Speichern dem Vorstandsprofil zugeordnet.</p></div>`
       : module === "speakers"
-        ? `<div class="field"><label>Referentenfoto hochladen</label><input type="file" name="assetFile" accept="image/*"><p class="muted">Das Foto wird beim Speichern dem Referentenprofil zugeordnet und im Eventkontext angezeigt.</p></div>`
+        ?`<div class="field"><label>Referentenfoto hochladen</label><input type="file" name="assetFile" accept="image/*"><p class="muted">Das Foto wird beim Speichern dem Referentenprofil zugeordnet und im Eventkontext angezeigt.</p></div>`
       : module === "sponsors"
-        ? (() => { const asset = recordMediaAsset(item, editMediaAssets, "sponsors", "logoUrl"); const logoUrl = mediaAssetUrl(asset || {}) || item.logoUrl || ""; return `<div class="field"><label>Logo</label><div class="member-logo-editor"><div class="member-logo-editor__preview">${logoUrl ? `<img src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(item.name || "")}">` : `<span>Noch kein Logo</span>`}</div><div class="member-logo-editor__actions">${linkedMediaActions({ collection: "sponsors", id: item.id, field: "logoUrl", altField: "altText", returnTo: `#/cms/edit?module=sponsors&id=${item.id}`, label: "Logo", assetId: asset?.id || "" })}<input type="file" name="assetFile" accept="image/*"><p class="muted">Logo aus der Mediathek waehlen oder direkt eine neue Datei hochladen.</p></div></div></div>`; })()
+        ?(() => { const asset = recordMediaAsset(item, editMediaAssets, "sponsors", "logoUrl"); const logoUrl = mediaAssetUrl(asset || {}) || item.logoUrl || ""; return `<div class="field"><label>Logo</label><div class="member-logo-editor"><div class="member-logo-editor__preview">${logoUrl ?`<img src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(item.name || "")}">` : `<span>Noch kein Logo</span>`}</div><div class="member-logo-editor__actions">${linkedMediaActions({ collection: "sponsors", id: item.id, field: "logoUrl", altField: "altText", returnTo: `#/cms/edit?module=sponsors&id=${item.id}`, label: "Logo", assetId: asset?.id || "" })}<input type="file" name="assetFile" accept="image/*"><p class="muted">Logo aus der Mediathek waehlen oder direkt eine neue Datei hochladen.</p></div></div></div>`; })()
       : module === "memberDocuments"
-        ? `<div class="field"><label>Dokument hochladen</label><input type="file" name="assetFile" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,image/*,application/pdf"><p class="muted">PDF oder Datei für den Mitgliederbereich.</p></div>`
+        ?`<div class="field"><label>Dokument hochladen</label><input type="file" name="assetFile" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,image/*,application/pdf"><p class="muted">PDF oder Datei für den Mitgliederbereich.</p></div>`
       : module === "memberDirectories"
-        ? `<div class="field"><label>Verzeichnis-Datei hochladen</label><input type="file" name="assetFile" accept=".pdf,.csv,.xlsx,.xls,application/pdf"><p class="muted">Optionales Mitgliederverzeichnis als Datei.</p></div>`
+        ?`<div class="field"><label>Verzeichnis-Datei hochladen</label><input type="file" name="assetFile" accept=".pdf,.csv,.xlsx,.xls,application/pdf"><p class="muted">Optionales Mitgliederverzeichnis als Datei.</p></div>`
       : "";
-  const speakerManager = module === "topics" ? topicSpeakerManager(item, topicSpeakers) : "";
-  const activeStatus = ["topics", "members", "boardMembers", "memberDirectories", "users"].includes(module) ? "active" : "published";
-  const editorialBack = query.get("section") && editorialSections[query.get("section")] ? `editorial/${query.get("section")}` : item.page === "press" ? "editorial/press" : item.page === "news" ? "editorial/news" : module === "editorialContent" ? "editorial/interna" : "editorial";
+  const speakerManager = module === "topics" ?topicSpeakerManager(item, topicSpeakers) : "";
+  const activeStatus = ["topics", "members", "boardMembers", "memberDirectories", "users"].includes(module) ?"active" : "published";
+  const editorialBack = query.get("section") && editorialSections[query.get("section")] ?`editorial/${query.get("section")}` : item.page === "press" ?"editorial/press" : item.page === "news" ?"editorial/news" : module === "editorialContent" ?"editorial/interna" : "editorial";
   const backSection = { boardMembers: "board", editorialContent: editorialBack, speakers: "speakers", sponsors: "sponsors", memberDocuments: "member-documents", memberDirectories: "member-directories" }[module] || module;
   const activeSection = { topics: "cms/topics", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", memberDocuments: "cms/member-documents", memberDirectories: "cms/member-directories", users: "cms/users", boardMembers: "cms/board", editorialContent: `cms/${editorialBack}` }[module] || "cms/editorial";
   const statusVisibilityControls = module === "members"
-    ? ""
-    : `<div class="form-grid--two"><div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ? "selected" : ""}>Entwurf</option><option value="${activeStatus}" ${item.status === activeStatus ? "selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ? "selected" : ""}>Archiviert</option></select></div><div class="field"><label>Sichtbarkeit</label><select name="visibility"><option value="public" ${item.visibility === "public" ? "selected" : ""}>Oeffentlich</option><option value="members" ${item.visibility === "members" ? "selected" : ""}>Mitglieder</option><option value="internal" ${item.visibility === "internal" ? "selected" : ""}>Intern</option></select></div></div>`;
-  const formClass = module === "members" ? "form-grid form-grid--two member-edit-form" : "form-grid";
-  const editorialVideoHtml = module === "editorialContent" ? articleVideoAttachmentEditor(item, videoLibrary) : "";
+    ?""
+    : `<div class="form-grid--two"><div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ?"selected" : ""}>Entwurf</option><option value="${activeStatus}" ${item.status === activeStatus ?"selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ?"selected" : ""}>Archiviert</option></select></div><div class="field"><label>Sichtbarkeit</label><select name="visibility"><option value="public" ${item.visibility === "public" ?"selected" : ""}>Oeffentlich</option><option value="members" ${item.visibility === "members" ?"selected" : ""}>Mitglieder</option><option value="internal" ${item.visibility === "internal" ?"selected" : ""}>Intern</option></select></div></div>`;
+  const formClass = module === "members" ?"form-grid form-grid--two member-edit-form" : "form-grid";
+  const editorialVideoHtml = module === "editorialContent" ?articleVideoAttachmentEditor(item, videoLibrary) : "";
   const memberWebsiteValue = String(item?.website || item?.url || "").trim();
-  const memberWebsiteHref = memberWebsiteValue && /^https?:\/\//i.test(memberWebsiteValue) ? memberWebsiteValue : memberWebsiteValue ? `https://${memberWebsiteValue}` : "";
-  const memberWebsiteLink = memberWebsiteHref ? `<p class="muted"><a class="link" href="${escapeHtml(memberWebsiteHref)}" target="_blank" rel="noopener">Website oeffnen</a></p>` : "";
+  const memberWebsiteHref = memberWebsiteValue && /^https?:\/\//i.test(memberWebsiteValue) ?memberWebsiteValue : memberWebsiteValue ?`https://${memberWebsiteValue}` : "";
+  const memberWebsiteLink = memberWebsiteHref ?`<p class="muted"><a class="link" href="${escapeHtml(memberWebsiteHref)}" target="_blank" rel="noopener">Website oeffnen</a></p>` : "";
   const memberEditHtml = module === "members"
-    ? `<div class="member-edit-form__column member-edit-form__column--identity">
+    ?`<div class="member-edit-form__column member-edit-form__column--identity">
         <section class="member-edit-card">
           <p class="eyebrow">Stammdaten</p>
         <div class="form-grid form-grid--member-base">
@@ -4079,7 +4401,7 @@ Ausgangstext:
       </div>`
     : `${fieldHtml}${imageUpload}${editorialVideoHtml}`;
   const saveControls = module === "members"
-    ? `<div class="member-edit-savebar"><button class="button button--primary">Speichern</button><div id="content-save-result"></div></div>`
+    ?`<div class="member-edit-savebar"><button class="button button--primary">Speichern</button><div id="content-save-result"></div></div>`
     : `<button class="button button--primary">Speichern</button><div id="content-save-result"></div>`;
   return protect(cmsShell(activeSection, `${cmsTitle("Bearbeiten", `${definition.title} pflegen`, `<a class="button button--secondary button--small" href="#/cms/${backSection}">Zurueck</a>`)}<section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="${formClass}">${memberEditHtml}${statusVisibilityControls}${saveControls}</form></section>${speakerManager}`));
 }
@@ -4098,7 +4420,7 @@ export async function audioAdminPage() {
       audioCollection: "editorialContent",
       audioArea: audioAreaLabel(item),
       audioSubarea: audioSubareaLabel(item),
-      editHref: `#/cms/edit?module=editorialContent&id=${item.id}${item.section ? `&section=${item.section}` : ""}`
+      editHref: `#/cms/edit?module=editorialContent&id=${item.id}${item.section ?`&section=${item.section}` : ""}`
     }));
   const topicRows = topics
     .filter((item) => audioSourceText("topics", item))
@@ -4124,12 +4446,12 @@ export async function audioAdminPage() {
     if (!info.activeUrl) acc.missing += 1;
     return acc;
   }, { total: 0, ready: 0, missing: 0, outdated: 0, error: 0, elevenlabs: 0 });
-  const defaultProviderLabel = elevenlabs.enabled ? "ElevenLabs" : "Gemini";
+  const defaultProviderLabel = elevenlabs.enabled ?"ElevenLabs" : "Gemini";
   const defaultModelLabel = elevenlabs.enabled
-    ? (elevenlabs.modelId || "eleven_multilingual_v2")
+    ?(elevenlabs.modelId || "eleven_multilingual_v2")
     : "gemini-2.5-flash-preview-tts";
   const defaultVoiceLabel = elevenlabs.enabled
-    ? (elevenlabs.voiceName || elevenlabs.voiceId || "Standardstimme")
+    ?(elevenlabs.voiceName || elevenlabs.voiceId || "Standardstimme")
     : "Gemini TTS";
   const areaOptions = Array.from(new Set(rows.map((item) => item.audioArea).filter(Boolean)))
     .sort((a, b) => {
@@ -4145,13 +4467,13 @@ export async function audioAdminPage() {
     const title = item.title || item.titel || item.slug || item.id;
     const info = activeAudioInfo(collection, item);
     const generatedAt = timestampText(info.generatedAt);
-    const actionLabel = `${info.activeUrl ? "Neu erzeugen" : "Erzeugen"} mit ${defaultProviderLabel}`;
+    const actionLabel = `${info.activeUrl ?"Neu erzeugen" : "Erzeugen"} mit ${defaultProviderLabel}`;
     return `<tr data-audio-area="${escapeHtml(item.audioArea)}" data-audio-subarea="${escapeHtml(item.audioSubarea || "")}">
       <td><a class="link editorial-title-link" href="${escapeHtml(item.editHref)}">${escapeHtml(title)}</a><br><small>${escapeHtml(`${collection}/${item.id}`)}</small></td>
       <td>${escapeHtml(item.audioArea)}</td>
       <td>${audioListCell(collection, item, { meta: "state" })}</td>
       <td>${escapeHtml(info.provider || defaultProviderLabel)}<br><small>${escapeHtml(info.modelId || defaultModelLabel)}</small></td>
-      <td>${escapeHtml(info.voiceName || defaultVoiceLabel)}${generatedAt ? `<br><small>${escapeHtml(generatedAt)}</small>` : ""}${info.karaokeEnabled ? "<br><small>Karaoke bereit</small>" : ""}</td>
+      <td>${escapeHtml(info.voiceName || defaultVoiceLabel)}${generatedAt ?`<br><small>${escapeHtml(generatedAt)}</small>` : ""}${info.karaokeEnabled ?"<br><small>Karaoke bereit</small>" : ""}</td>
       <td><button type="button" class="button button--secondary button--small" data-generate-article-speech data-collection="${collection}" data-record-id="${item.id}" data-tts-variant="all" title="${escapeHtml(`Aktuelle Default-Konfiguration: ${defaultModelLabel} / ${defaultVoiceLabel}`)}">${escapeHtml(actionLabel)}</button></td>
     </tr>`;
   }).join("");
@@ -4164,7 +4486,7 @@ export async function audioAdminPage() {
         <div class="setup-step"><span>Audio vorhanden</span><strong>${summary.ready}</strong></div>
         <div class="setup-step"><span>Nicht erzeugt</span><strong>${summary.missing}</strong></div>
         <div class="setup-step"><span>Fehler / veraltet</span><strong>${summary.error + summary.outdated}</strong></div>
-        <div class="setup-step"><span>ElevenLabs</span><strong>${elevenlabs.enabled ? "Aktiv" : "Inaktiv"}</strong><small>${escapeHtml(elevenlabs.voiceName || "Keine Standardstimme gespeichert")}</small></div>
+        <div class="setup-step"><span>ElevenLabs</span><strong>${elevenlabs.enabled ?"Aktiv" : "Inaktiv"}</strong><small>${escapeHtml(elevenlabs.voiceName || "Keine Standardstimme gespeichert")}</small></div>
       </div>
     </section>
     <section class="panel">
@@ -4190,7 +4512,7 @@ export async function audioAdminPage() {
 export async function setupPage() {
   if (!hasCmsAccess(true)) return denied(true);
   const setup = await getOne("system", "setup");
-  return protect(cmsShell("cms/setup", `${cmsTitle("System / Einrichtung", "Firebase Setup-Assistent")}<div class="cms-columns"><section class="panel"><h2>Installationsstatus</h2><div class="setup-steps"><div class="setup-step"><span>Installation</span>${status(setup?.installed ? "installed" : "not_installed")}</div><div class="setup-step"><span>Version</span><strong>${setup?.version || "-"}</strong></div></div><div class="actions" style="margin-top:22px;flex-wrap:wrap"><button class="button button--dark button--small" data-setup-action="connection">Verbindung testen</button><button class="button button--dark button--small" data-setup-action="structure">Struktur prüfen</button><button class="button button--primary button--small" data-setup-action="initialize">Basisdaten anlegen</button></div><div id="setup-result" style="margin-top:18px"></div></section><section class="panel"><h2>Setup-Protokoll</h2>${(setup?.setupLog || []).length ? setup.setupLog.map((log) => `<div class="fact"><strong>${escapeHtml(log.message)}</strong><span class="muted">${formatDateTime(log.timestamp)}</span></div>`).join("") : `<p>Noch keine protokollierten Setup-Aktionen.</p>`}</section></div>`), true);
+  return protect(cmsShell("cms/setup", `${cmsTitle("System / Einrichtung", "Firebase Setup-Assistent")}<div class="cms-columns"><section class="panel"><h2>Installationsstatus</h2><div class="setup-steps"><div class="setup-step"><span>Installation</span>${status(setup?.installed ?"installed" : "not_installed")}</div><div class="setup-step"><span>Version</span><strong>${setup?.version || "-"}</strong></div></div><div class="actions" style="margin-top:22px;flex-wrap:wrap"><button class="button button--dark button--small" data-setup-action="connection">Verbindung testen</button><button class="button button--dark button--small" data-setup-action="structure">Struktur prüfen</button><button class="button button--primary button--small" data-setup-action="initialize">Basisdaten anlegen</button></div><div id="setup-result" style="margin-top:18px"></div></section><section class="panel"><h2>Setup-Protokoll</h2>${(setup?.setupLog || []).length ?setup.setupLog.map((log) => `<div class="fact"><strong>${escapeHtml(log.message)}</strong><span class="muted">${formatDateTime(log.timestamp)}</span></div>`).join("") : `<p>Noch keine protokollierten Setup-Aktionen.</p>`}</section></div>`), true);
 }
 
 export async function chatGptPage() {
@@ -4238,7 +4560,7 @@ export async function aiSettingsPage() {
   return protect(cmsShell("cms/ai-settings", `${cmsTitle("System", "ChatGPT-Einstellungen")}
     <section class="panel">
       <form id="ai-settings-form" class="form-grid">
-        <label class="checkbox"><input type="checkbox" name="enabled" ${settings.enabled ? "checked" : ""}> ChatGPT aktivieren</label>
+        <label class="checkbox"><input type="checkbox" name="enabled" ${settings.enabled ?"checked" : ""}> ChatGPT aktivieren</label>
         <div class="form-grid--two">
           <div class="field"><label>Provider</label><input name="provider" value="openai" disabled></div>
           <div class="field"><label>Modell</label><input name="model" value="${escapeHtml(settings.model || "gpt-4.1-mini")}"></div>
@@ -4246,9 +4568,9 @@ export async function aiSettingsPage() {
           <div class="field"><label>Maximale Antwortlaenge</label><input name="maxTokens" type="number" min="100" max="4000" value="${settings.maxTokens || 900}"></div>
         </div>
         <div class="field"><label>Standard-Tonalitaet</label><textarea name="defaultTone">${escapeHtml(settings.defaultTone || "")}</textarea></div>
-        <label class="checkbox"><input type="checkbox" name="allowAdmin" ${settings.allowedRoles?.includes("admin") ? "checked" : ""}> Admins duerfen ChatGPT nutzen</label>
-        <label class="checkbox"><input type="checkbox" name="allowEditor" ${settings.allowedRoles?.includes("editor") ? "checked" : ""}> Editoren duerfen ChatGPT nutzen</label>
-        <label class="checkbox"><input type="checkbox" name="loggingEnabled" ${settings.loggingEnabled !== false ? "checked" : ""}> KI-Aktionen in aiLogs protokollieren</label>
+        <label class="checkbox"><input type="checkbox" name="allowAdmin" ${settings.allowedRoles?.includes("admin") ?"checked" : ""}> Admins duerfen ChatGPT nutzen</label>
+        <label class="checkbox"><input type="checkbox" name="allowEditor" ${settings.allowedRoles?.includes("editor") ?"checked" : ""}> Editoren duerfen ChatGPT nutzen</label>
+        <label class="checkbox"><input type="checkbox" name="loggingEnabled" ${settings.loggingEnabled !== false ?"checked" : ""}> KI-Aktionen in aiLogs protokollieren</label>
         <div class="alert">Der OpenAI API-Key wird nicht im Frontend gespeichert. Hinterlege ihn serverseitig als Firebase Secret <code>OPENAI_API_KEY</code>.</div>
         <div class="actions"><button class="button button--primary">Einstellungen speichern</button><button type="button" class="button button--secondary" id="ai-test-connection">Verbindung testen</button></div>
         <div id="ai-settings-result"></div>
