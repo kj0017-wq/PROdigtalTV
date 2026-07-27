@@ -126,15 +126,23 @@ async function emailBelongsToMember(email = "") {
 async function eventNotificationTargets(eventId = "", options = {}) {
   const hasEvent = Boolean(clean(eventId));
   const recipientGroup = clean(options.recipientGroup || "");
+  const includeMembers = ["members", "members_contacts", "test_group"].includes(recipientGroup) || options.includeMembers === true;
+  const includeContacts = ["contacts", "members_contacts"].includes(recipientGroup) || options.includeContacts === true;
   const [membersSnapshot, contactsSnapshot, registrationsSnapshot] = await Promise.all([
-    (options.includeMembers || recipientGroup === "test_group") ? db.collection("members").get() : Promise.resolve({ docs: [] }),
-    (options.includeContacts && recipientGroup !== "test_group") ? db.collection("contacts").get() : Promise.resolve({ docs: [] }),
+    includeMembers ? db.collection("members").get() : Promise.resolve({ docs: [] }),
+    includeContacts ? db.collection("contacts").get() : Promise.resolve({ docs: [] }),
     hasEvent ? db.collection("registrations").where("eventId", "==", eventId).get() : Promise.resolve({ docs: [] })
   ]);
   const activeRegistrations = registrationsSnapshot.docs
     .map((document) => ({ id: document.id, ...document.data() }))
     .filter(registrationIsActive);
   const registeredEmails = new Set(activeRegistrations.map((registration) => clean(registration.email).toLowerCase()).filter(Boolean));
+  const officialMemberEmails = new Set();
+  membersSnapshot.docs.forEach((document) => {
+    const member = { id: document.id, ...document.data() };
+    if (!memberCanMatchRegistration(member)) return;
+    normalizedMemberEmails(member).forEach((email) => officialMemberEmails.add(email));
+  });
   const people = new Map();
   const addPerson = (email, person = {}, source = "contact") => {
     const normalizedEmail = clean(email).toLowerCase();
@@ -166,7 +174,9 @@ async function eventNotificationTargets(eventId = "", options = {}) {
     const contact = { id: document.id, ...document.data() };
     if (["archived", "deleted", "inactive"].includes(clean(contact.status).toLowerCase())) return;
     if (contact.notificationOptOut === true || contact.reminderConsent === false) return;
-    addPerson(contact.email, contact, "contact");
+    const email = clean(contact.email).toLowerCase();
+    if (officialMemberEmails.has(email)) return;
+    addPerson(email, contact, "contact");
   });
   return [...people.values()];
 }
@@ -179,7 +189,7 @@ async function queueEventNotificationDelivery(notification = {}, eventRecord = {
   let queued = 0;
   let pushed = 0;
   for (const target of targets) {
-    const link = notification.link || eventUrl(eventRecord.id);
+    const link = notification.linkEnabled === false ? "" : clean(notification.link || eventUrl(eventRecord.id));
     const body = target.audienceType === "registered"
       ? notification.registeredText || notification.shortText
       : notification.invitationText || notification.shortText;
@@ -193,19 +203,19 @@ async function queueEventNotificationDelivery(notification = {}, eventRecord = {
       for (const tokenDocument of tokens.docs) {
         const token = clean(tokenDocument.data()?.token);
         if (!token) continue;
-        await getMessaging().send({
+        const pushMessage = {
           token,
           notification: { title: notification.title, body },
-          webpush: { fcmOptions: { link } },
           data: { eventId: eventRecord.id, notificationId: notification.id, link }
-        });
+        };
+        if (link) pushMessage.webpush = { fcmOptions: { link } };
+        await getMessaging().send(pushMessage);
         pushDelivered = true;
         pushed += 1;
       }
     } catch {
       pushDelivered = false;
     }
-    if (pushDelivered) continue;
     await queueMail({
       type: "event_notification",
       template: "event_notification",
@@ -215,6 +225,7 @@ async function queueEventNotificationDelivery(notification = {}, eventRecord = {
       title: notification.title,
       shortText: body,
       link,
+      linkEnabled: notification.linkEnabled !== false,
       audienceType: target.audienceType,
       personName: clean(`${target.firstName || ""} ${target.lastName || ""}`) || target.company || ""
     });
@@ -298,7 +309,7 @@ function registrationConfirmationUrl(token) {
 }
 
 function publicHashUrl(path) {
-  return `${PUBLIC_APP_BASE_URL}/?v=${Date.now()}#/${path}`;
+  return `${PUBLIC_APP_BASE_URL}/${String(path || "").replace(/^\/+/, "")}?v=${Date.now()}`;
 }
 
 function registrationTicketUrl(token) {
@@ -567,7 +578,7 @@ function renderMail(mail, context = {}) {
   if (mail.template === "event_notification") {
     const title = clean(mail.title || eventRecord.title || "PROdigitalTV Veranstaltung");
     const body = clean(mail.shortText || mail.text || "Neue Informationen zu einer PROdigitalTV-Veranstaltung.");
-    const link = clean(mail.link || eventUrl(mail.eventId || eventRecord.id || ""));
+    const link = mail.linkEnabled === false ? "" : clean(mail.link || eventUrl(mail.eventId || eventRecord.id || ""));
     const optOutUrl = notificationOptOutUrl(mail.to);
     const salutation = clean(mail.personName) ? `Guten Tag ${clean(mail.personName)},` : "Guten Tag,";
     const intro = mail.audienceType === "registered"
@@ -882,6 +893,9 @@ exports.createEventNotification = onCall({ region }, async (request) => {
     .filter((email, index, all) => all.indexOf(email) === index);
   const testOnly = Boolean(input.testOnly);
   if (testOnly && !testRecipients.length) throw new HttpsError("invalid-argument", "Bitte mindestens eine Testperson eintragen.");
+  const recipientGroup = ["members", "contacts", "members_contacts", "test_group", "test_person"].includes(clean(input.recipientGroup))
+    ? clean(input.recipientGroup)
+    : "members_contacts";
   const offsetMinutes = Number(input.offsetMinutes || 0);
   let scheduledAt = null;
   if (sendMode === "scheduled" && clean(input.scheduledAt)) {
@@ -893,18 +907,22 @@ exports.createEventNotification = onCall({ region }, async (request) => {
     const startMs = eventDateTimeMillis(eventRecord);
     if (startMs) scheduledAt = Timestamp.fromMillis(Math.max(Date.now(), startMs - offsetMinutes * 60 * 1000));
   }
+  const linkEnabled = input.linkEnabled !== false && clean(input.linkEnabled) !== "false";
+  const submittedLink = clean(input.link);
+  const defaultLink = notificationKind === "event" ? eventUrl(eventId) : publicHashUrl("members");
   const notification = {
     id: notificationRef.id,
     eventId: notificationKind === "event" ? eventId : "",
     notificationKind,
     title,
     shortText,
-    link: notificationKind === "event" ? eventUrl(eventId) : publicHashUrl("members"),
+    linkEnabled,
+    link: linkEnabled ? submittedLink || defaultLink : "",
     testOnly,
     testRecipients: testOnly ? testRecipients : [],
-    recipientGroup: clean(input.recipientGroup || ""),
-    includeMembers: input.includeMembers !== false && clean(input.includeMembers) !== "false",
-    includeContacts: input.includeContacts !== false && clean(input.includeContacts) !== "false",
+    recipientGroup,
+    includeMembers: ["members", "members_contacts", "test_group"].includes(recipientGroup),
+    includeContacts: ["contacts", "members_contacts"].includes(recipientGroup),
     registrationStatus: ["all", "registered", "unregistered"].includes(clean(input.registrationStatus)) ? clean(input.registrationStatus) : "all",
     sendMode,
     offsetMinutes: Number.isFinite(offsetMinutes) ? offsetMinutes : 0,
@@ -920,6 +938,39 @@ exports.createEventNotification = onCall({ region }, async (request) => {
     return { id: notificationRef.id, ...result };
   }
   return { id: notificationRef.id, scheduled: true };
+});
+
+exports.previewEventNotification = onCall({ region }, async (request) => {
+  await requireEditor(request);
+  const input = request.data?.input || {};
+  const notificationKind = clean(input.notificationKind) === "member_message" ? "member_message" : "event";
+  const eventId = clean(input.eventId);
+  if (notificationKind === "event" && !eventId) throw new HttpsError("invalid-argument", "Bitte Veranstaltung auswaehlen.");
+  const testRecipients = clean(input.testRecipients)
+    .split(/[\s,;]+/)
+    .map((email) => mailAddress(email))
+    .filter(Boolean)
+    .filter((email, index, all) => all.indexOf(email) === index);
+  const testOnly = Boolean(input.testOnly);
+  if (testOnly && !testRecipients.length) throw new HttpsError("invalid-argument", "Bitte mindestens eine Testperson eintragen.");
+  const recipientGroup = ["members", "contacts", "members_contacts", "test_group", "test_person"].includes(clean(input.recipientGroup))
+    ? clean(input.recipientGroup)
+    : "members_contacts";
+  const registrationStatus = ["all", "registered", "unregistered"].includes(clean(input.registrationStatus)) ? clean(input.registrationStatus) : "all";
+  const targets = testOnly
+    ? testRecipients.map((email) => ({ email, audienceType: "test" }))
+    : await eventNotificationTargets(notificationKind === "event" ? eventId : "", {
+      recipientGroup,
+      includeMembers: ["members", "members_contacts", "test_group"].includes(recipientGroup),
+      includeContacts: ["contacts", "members_contacts"].includes(recipientGroup),
+      registrationStatus
+    });
+  return {
+    targetCount: targets.length,
+    mailCount: targets.length,
+    testOnly,
+    recipientGroup
+  };
 });
 
 exports.registerNotificationToken = onCall({ region }, async (request) => {
@@ -944,6 +995,24 @@ exports.registerNotificationToken = onCall({ region }, async (request) => {
     createdAt: FieldValue.serverTimestamp()
   }, { merge: true });
   return { status: "active", id: tokenId };
+});
+
+exports.getNotificationPushStatus = onCall({ region }, async (request) => {
+  await requireEditor(request);
+  const requestedEmails = Array.isArray(request.data?.emails) ? request.data.emails : [];
+  const emailSet = new Set(requestedEmails.map((email) => mailAddress(email)).filter(Boolean));
+  if (!emailSet.size) return { activeEmails: [] };
+  const tokens = await db.collection("notificationTokens")
+    .where("status", "==", "active")
+    .get();
+  const activeEmails = new Set();
+  tokens.docs.forEach((document) => {
+    const token = document.data() || {};
+    const email = mailAddress(token.email);
+    if (!email || !token.token || !emailSet.has(email)) return;
+    activeEmails.add(email);
+  });
+  return { activeEmails: [...activeEmails] };
 });
 
 exports.unsubscribeEventNotifications = onCall({ region, invoker: "public" }, async (request) => {

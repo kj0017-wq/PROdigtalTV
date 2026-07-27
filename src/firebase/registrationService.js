@@ -1,5 +1,6 @@
 import { getOne, upsert } from "./dataService.js";
 import { getFirebaseServices } from "./firebaseClient.js";
+import { normalizeLifecyclePhase } from "../data/platformConstants.js";
 
 const ticketStoragePrefix = "pdtv-event-ticket:";
 const ticketCookiePrefix = "pdtv_event_ticket_";
@@ -11,7 +12,7 @@ function eventRegistrationIsOpen(event = {}) {
     || (event.accessType === "members_only" && event.allowMemberRegistration === true)
     || ["open", "offen", "active", "aktiv", "registration_open"].includes(registrationState)
     || event.preStatus === "invitation_published"
-    || event.lifecyclePhase === "registration_open";
+    || normalizeLifecyclePhase(event.lifecyclePhase) === "registration_open";
 }
 
 function ticketStorageKey(eventId) {

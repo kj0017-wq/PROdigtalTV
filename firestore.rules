@@ -162,6 +162,10 @@ service cloud.firestore {
         );
     }
 
+    match /contacts/{id} {
+      allow read, write: if editor();
+    }
+
     match /boardMembers/{id} {
       allow read: if resource.data.visibility == "public" && resource.data.status == "active" || editor();
       allow write: if editor();

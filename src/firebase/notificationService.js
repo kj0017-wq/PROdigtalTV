@@ -23,6 +23,20 @@ export async function createEventNotification(input = {}) {
   return (await callable({ input })).data;
 }
 
+export async function previewEventNotification(input = {}) {
+  const firebase = await getFirebaseServices();
+  if (!firebase) throw new Error("Firebase ist nicht erreichbar. Versand kann nicht vorbereitet werden.");
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "previewEventNotification");
+  return (await callable({ input })).data;
+}
+
+export async function getNotificationPushStatus(emails = []) {
+  const firebase = await getFirebaseServices();
+  if (!firebase) return { activeEmails: [] };
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "getNotificationPushStatus");
+  return (await callable({ emails })).data;
+}
+
 export async function unsubscribeEventNotifications(hash = "") {
   const firebase = await getFirebaseServices();
   if (!firebase) throw new Error("Firebase ist nicht erreichbar. Abmeldung kann nicht gespeichert werden.");

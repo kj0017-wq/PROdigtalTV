@@ -65,9 +65,10 @@ const sections = [
     route: "cms/mail",
     title: "Kommunikation",
     children: [
-      ["cms/mail", "Mail-Queue"],
-      ["cms/event-notifications", "Event-Benachrichtigungen"],
-      ["cms/mail-admin", "Mail-Verwaltung"]
+      ["cms/event-notifications", "Push Benachrichtigung"],
+      ["cms/people", "Mailingadressen"],
+      ["cms/mail", "Mailing Queue"],
+      ["cms/mail-admin", "Mailingverwaltung"]
     ]
   },
   {

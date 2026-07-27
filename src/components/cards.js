@@ -27,7 +27,7 @@ export function eventCard(event, archive = false, partners = []) {
         <div class="event-showcase__fact"><small>Veranstaltungsort</small><strong>${escapeHtml(event.locationName)}</strong><span>${escapeHtml(event.city)}</span></div>
         ${promotedPartners.length ? `<div class="event-showcase__fact event-showcase__fact--partner"><small>${eventSponsors.length ? "Gastgeber / Sponsor" : "Gastgeber"}</small><strong>${escapeHtml(promotedPartners.map((partner) => partner.name).join(" - "))}</strong></div>` : ""}
       </div>
-      ${archive ? "" : `<a class="link" href="#/event/${event.id}">Zum Event -></a>`}
+      ${archive ? "" : `<a class="link event-card__cta" href="#/event/${event.id}">Eventdetails ansehen -></a>`}
     </div>
   </article>`;
 }

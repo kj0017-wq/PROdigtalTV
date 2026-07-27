@@ -2,6 +2,7 @@ import { route, onRouteChange, go } from "./utils/router.js";
 import { currentUser, canUseCms, isAdmin, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=471";
 import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=517";
 import { escapeHtml, formatDate } from "./utils/format.js";
+import { normalizeLifecyclePhase } from "./data/platformConstants.js";
 
 const root = document.querySelector("#app");
 const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
@@ -9,12 +10,12 @@ const mediaProxyFunctionUrl = "https://europe-west3-prodigitaltv-da47b.cloudfunc
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=679");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=643");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=681");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=667");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=493");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=103");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=13");
-const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=5");
+const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=7");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=13");
 const firebaseClientService = () => lazy.firebaseClientService ||= import("./firebase/firebaseClient.js?v=1");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
@@ -27,6 +28,7 @@ const aiSourceCatalogService = () => lazy.aiSourceCatalog ||= import("./data/aiS
 const createRegistration = async (...args) => (await registrationService()).createRegistration(...args);
 const createAdminRegistration = async (...args) => (await registrationService()).createAdminRegistration(...args);
 const createEventNotification = async (...args) => (await notificationService()).createEventNotification(...args);
+const previewEventNotification = async (...args) => (await notificationService()).previewEventNotification(...args);
 const enableBrowserNotifications = async (...args) => (await notificationService()).enableBrowserNotifications(...args);
 const unsubscribeEventNotifications = async (...args) => (await notificationService()).unsubscribeEventNotifications(...args);
 const cancelRegistration = async (...args) => (await registrationService()).cancelRegistration(...args);
@@ -79,7 +81,7 @@ function applyTheme(theme = storedTheme()) {
 }
 
 function mobileCmsDisabled() {
-  return window.matchMedia?.("(max-width: 820px), (pointer: coarse)")?.matches;
+  return window.matchMedia?.("(max-width: 820px)")?.matches;
 }
 
 function mobileCmsPlaceholder() {
@@ -214,7 +216,7 @@ async function viewForRoute(current) {
     window.__pdtCmsStage = "import:cmsPages";
     const {
       dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage,
-      moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, aiAccessPage, mailAdminPage, audioAdminPage, memberAreaAdminPage, qualityPage, eventNotificationsPage
+      moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, aiAccessPage, mailAdminPage, audioAdminPage, memberAreaAdminPage, qualityPage, eventNotificationsPage, peoplePage
     } = await cmsPages();
     window.__pdtCmsStage = `cms:${current.id || "dashboard"}`;
     if (!current.id) return dashboardPage();
@@ -233,6 +235,7 @@ async function viewForRoute(current) {
     if (current.id === "galleries") return moduleListPage("galleries");
     if (current.id === "speakers") return moduleListPage("speakers");
     if (current.id === "sponsors") return moduleListPage("sponsors");
+    if (current.id === "people") return peoplePage(current.query);
     if (current.id === "members") {
       window.__pdtCmsStage = "cms:members:list";
       return moduleListPage("members");
@@ -325,8 +328,15 @@ async function render() {
   } catch (error) {
     clearRoutePending();
     console.error(error);
-    const isLocalCmsRoute = currentRoute?.path === "cms" && ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-    root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Seite konnte nicht geladen werden</p><h1>Bitte neu laden</h1><p style="margin:14px 0 24px">${escapeHtml(error.message || String(error))}</p>${isLocalCmsRoute ? `<button class="button button--primary" type="button" onclick="window.location.reload()">Neu laden</button>` : `<a class="button button--primary" href="#/login">Zum Login</a>`}</div></section>`;
+    const message = error.message || String(error);
+    const isCmsRoute = currentRoute?.path === "cms";
+    const isPermissionError = /missing or insufficient permissions|permission-denied|permissions/i.test(message);
+    if (isCmsRoute && isPermissionError) {
+      await logout().catch(() => {});
+      root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Zugriff geschuetzt</p><h1>CMS-Login erforderlich</h1><p style="margin:14px 0 24px">Die Firebase-Sitzung ist abgelaufen oder hat keine CMS-Rechte. Bitte neu anmelden.</p><div class="actions"><a class="button button--primary" href="#/login">Anmelden</a></div></div></section>`;
+      return;
+    }
+    root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Seite konnte nicht geladen werden</p><h1>Bitte neu laden</h1><p style="margin:14px 0 24px">${escapeHtml(message)}</p><button class="button button--primary" type="button" onclick="window.location.reload()">Neu laden</button></div></section>`;
   }
 }
 
@@ -1572,16 +1582,22 @@ function memberMembershipLabel(membershipType = "") {
 function collectMemberEventContacts(form, membershipType = "") {
   const limit = memberEventContactLimit(membershipType);
   const contacts = [];
+  const splitLegacyContactName = (value = "") => {
+    const parts = String(value || "").trim().split(/\s+/).filter(Boolean);
+    if (parts.length <= 1) return { firstName: parts[0] || "", lastName: "" };
+    return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+  };
   for (let index = 0; index < limit; index += 1) {
     const legacyName = String(form.querySelector(`[name="eventContactName${index}"]`)?.value || "").trim();
-    const firstName = String(form.querySelector(`[name="eventContactFirstName${index}"]`)?.value || "").trim();
-    const lastName = String(form.querySelector(`[name="eventContactLastName${index}"]`)?.value || "").trim();
+    const legacyParts = splitLegacyContactName(legacyName);
+    const firstName = String(form.querySelector(`[name="eventContactFirstName${index}"]`)?.value || "").trim() || legacyParts.firstName;
+    const lastName = String(form.querySelector(`[name="eventContactLastName${index}"]`)?.value || "").trim() || legacyParts.lastName;
     const name = [firstName, lastName].filter(Boolean).join(" ") || legacyName;
     const role = String(form.querySelector(`[name="eventContactRole${index}"]`)?.value || "").trim();
     const email = String(form.querySelector(`[name="eventContactEmail${index}"]`)?.value || "").trim();
     const phone = String(form.querySelector(`[name="eventContactPhone${index}"]`)?.value || "").trim();
     if (!firstName && !lastName && !legacyName && !role && !email && !phone) continue;
-    if (!firstName || !lastName || !email || !phone) {
+    if (!name || !email || !phone) {
       throw new Error(`Eventkontakt ${index + 1} bitte mit Name, E-Mail und Telefon vollständig ausfüllen.`);
     }
     contacts.push({ firstName, lastName, name, role, email, phone });
@@ -2771,7 +2787,7 @@ function creativeThumbPrompt(context = {}, userPrompt = "", variantNumber = 1) {
     baseIdea,
     antiGeneric,
     brandConstraint,
-    "Der thematische Bezug zu digitaler Medienwirtschaft, Streaming, TV, Plattformen, Redaktion, Technologie oder Netzwerk soll spürbar sein, darf aber metaphorisch, abstrakt oder unerwartet geloest werden.",
+    "Der thematische Bezug zu digitaler Medienwirtschaft, Streaming, TV, Plattformen, Redaktion, Technologie oder Netzwerk soll spuÌˆrbar sein, darf aber metaphorisch, abstrakt oder unerwartet geloest werden.",
     "Einschraenkungen: keine echten Logos, keine identifizierbaren realen Personen, keine Textfehler im Bild, keine Comic-Optik, keine irrefuehrenden Fakten.",
     "Format: 16:9, geeignet als Website-Thumbnail und Artikelkopf."
   ].filter(Boolean).join("\n");
@@ -4804,7 +4820,7 @@ function parseStructuredEventTextRobust(value = "", structured = null) {
     ? {
         title: structured.headline || structured.title || structured.Headline || structured.Titel || "",
         subtitle: structured.subline || structured.subtitle || structured.Subline || structured.Untertitel || "",
-        description: structured.bodyText || structured.articleText || structured.body || structured.text || structured.Beitragstext || structured.Beschreibung || ""
+        description: structured.bodyText || structured.articleText || structured.body || structured.text || structured.beitragstext || structured.Beitragstext || structured.Beschreibung || ""
       }
     : {};
   const text = String(value || "").replace(/\r/g, "").trim();
@@ -4849,7 +4865,7 @@ function parseStructuredEventText(value = "", structured = null) {
     ? {
         title: structured.headline || structured.title || structured.Headline || structured.Titel || "",
         subtitle: structured.subline || structured.subtitle || structured.Subline || structured.Untertitel || "",
-        description: structured.bodyText || structured.articleText || structured.body || structured.text || structured.Beitragstext || structured.Beschreibung || ""
+        description: structured.bodyText || structured.articleText || structured.body || structured.text || structured.beitragstext || structured.Beitragstext || structured.Beschreibung || ""
       }
     : {};
   const text = String(value || "").replace(/\r/g, "").trim();
@@ -4866,7 +4882,7 @@ function parseStructuredEventText(value = "", structured = null) {
     .replace(/^\*([^*]+)\*\s*:?\s*$/, "$1:")
     .replace(/^_([^_]+)_\s*:?\s*$/, "$1:");
   const labels = [
-    ["title", /^(headline|titel|title|ueberschrift|überschrift|Ã¼berschrift)\s*:/i],
+    ["title", /^(headline|titel|title|ueberschrift|überschrift)\s*:/i],
     ["subtitle", /^(subline|untertitel|subtitle|teaser)\s*:/i],
     ["description", /^(beitragstext|beitrag|artikeltext|langtext|text|beschreibung|body)\s*:/i],
     ["keywords", /^(keywords|keyword|schlagworte|stichworte)\s*:/i]
@@ -4898,15 +4914,22 @@ function parseStructuredEventText(value = "", structured = null) {
 }
 
 function applyStructuredEventText(button, sourceField, rawValue = "", structured = null) {
-  const form = sourceField?.closest?.(".event-base-form");
-  if (!form || button?.dataset?.aiEntityType !== "event") return false;
+  const form = sourceField?.closest?.("form");
+  if (!form) return false;
   const parsed = parseStructuredEventTextRobust(rawValue, structured);
   const hasStructuredValue = Boolean(parsed.title || parsed.subtitle || parsed.description);
   if (!hasStructuredValue) return false;
-  if (parsed.title && form.elements.title) form.elements.title.value = parsed.title;
-  if (parsed.subtitle && form.elements.subtitle) form.elements.subtitle.value = parsed.subtitle;
-  if (parsed.description && form.elements.description) form.elements.description.value = parsed.description;
-  [form.elements.title, form.elements.subtitle, form.elements.description].filter(Boolean).forEach((field) => {
+  const isEventBaseForm = form.classList.contains("event-base-form") && button?.dataset?.aiEntityType === "event";
+  const isTopicEditorForm = form.id === "event-topic-editor-form" || button?.dataset?.aiEntityType === "topics";
+  const isArticleEditorForm = Boolean(form.dataset.module === "editorialContent" || form.dataset.module === "topics" || form.querySelector('[name="bodyText"], [name="longDescription"]'));
+  if (!isEventBaseForm && !isTopicEditorForm && !isArticleEditorForm) return false;
+  const titleField = form.elements.title || form.elements.titel;
+  const subtitleField = form.elements.subline || form.elements.subtitle;
+  const bodyField = form.elements.text || form.elements.bodyText || form.elements.longDescription || form.elements.langtext || form.elements.description;
+  if (parsed.title && titleField) titleField.value = parsed.title;
+  if (parsed.subtitle && subtitleField) subtitleField.value = parsed.subtitle;
+  if (parsed.description && bodyField) bodyField.value = parsed.description;
+  [titleField, subtitleField, bodyField].filter(Boolean).forEach((field) => {
     field.dispatchEvent(new Event("input", { bubbles: true }));
     field.dispatchEvent(new Event("change", { bubbles: true }));
   });
@@ -6480,6 +6503,10 @@ async function saveEventTopicSpeakerForm(form) {
   const existingEvent = await getOne("events", form.dataset.eventId);
   const speakerId = form.dataset.speakerId || `speakers-${crypto.randomUUID()}`;
   const existingSpeaker = form.dataset.speakerId ? await getOne("speakers", speakerId) : { id: speakerId, status: "published", visibility: "public", createdAt: new Date().toISOString() };
+  const firstName = String(form.elements.speakerFirstName?.value || "").trim();
+  const lastName = String(form.elements.speakerLastName?.value || "").trim();
+  const fallbackName = String(form.elements.name?.value || existingSpeaker.name || "").trim();
+  const speakerName = [firstName, lastName].filter(Boolean).join(" ").trim() || fallbackName;
   const topicIdsForSpeaker = new Set(existingSpeaker.topicIds || []);
   topicIdsForSpeaker.add(form.dataset.topicId);
   const eventIdsForSpeaker = new Set(existingSpeaker.eventIds || []);
@@ -6501,9 +6528,14 @@ async function saveEventTopicSpeakerForm(form) {
   await upsert("speakers", {
     ...existingSpeaker,
     id: speakerId,
-    name: form.elements.name.value,
-    company: form.elements.company.value,
-    position: form.elements.position.value,
+    firstName,
+    lastName,
+    name: speakerName,
+    company: form.elements.speakerCompany?.value ?? form.elements.company?.value ?? existingSpeaker.company ?? "",
+    website: form.elements.speakerWebsite?.value ?? existingSpeaker.website ?? existingSpeaker.url ?? "",
+    email: form.elements.speakerEmail?.value ?? existingSpeaker.email ?? existingSpeaker.mail ?? "",
+    phone: form.elements.speakerPhone?.value ?? existingSpeaker.phone ?? existingSpeaker.mobile ?? "",
+    position: form.elements.position?.value ?? existingSpeaker.position ?? "",
     ...imageUpdate,
     topicId: existingSpeaker.topicId || form.dataset.topicId,
     topicIds: Array.from(topicIdsForSpeaker),
@@ -11815,11 +11847,11 @@ function wireActions() {
   };
   if (registrationForm && notificationDeviceStatus) {
     if (!("Notification" in window) || !("serviceWorker" in navigator)) {
-      setNotificationDeviceStatus("Push nicht verfuegbar. Erinnerung per E-Mail.", "fallback");
+      setNotificationDeviceStatus("Browser-Push ist auf diesem Geraet nicht verfuegbar. Sie erhalten die Erinnerung per E-Mail.", "fallback");
     } else if (Notification.permission === "granted") {
       setNotificationDeviceStatus("Push erlaubt. Beim Absenden wird dieses Geraet verknuepft.", "ready");
     } else if (Notification.permission === "denied") {
-      setNotificationDeviceStatus("Push blockiert. Erinnerung per E-Mail.", "fallback");
+      setNotificationDeviceStatus("Browser-Push ist blockiert. Sie erhalten die Erinnerung per E-Mail.", "fallback");
     }
   }
   registrationForm?.addEventListener("submit", async (event) => {
@@ -11852,21 +11884,21 @@ function wireActions() {
             setNotificationDeviceStatus("Push aktiv auf diesem Geraet.", "active");
           } else if (pushResult?.status === "missing-vapid-key") {
             pushHint = " Browser-Benachrichtigungen sind noch nicht konfiguriert; die Erinnerung erfolgt per E-Mail.";
-            setNotificationDeviceStatus("Push-Schluessel fehlt. Erinnerung per E-Mail.", "fallback");
+            setNotificationDeviceStatus("Browser-Push ist noch nicht eingerichtet. Sie erhalten die Erinnerung per E-Mail.", "fallback");
           } else if (["denied", "default"].includes(pushResult?.status)) {
-            pushHint = " Browser-Benachrichtigungen wurden nicht aktiviert; die Erinnerung erfolgt per E-Mail.";
-            setNotificationDeviceStatus("Push nicht erlaubt. Erinnerung per E-Mail.", "fallback");
+            pushHint = " Die Erinnerung erfolgt per E-Mail.";
+            setNotificationDeviceStatus("Browser-Push wurde nicht erlaubt. Sie erhalten die Erinnerung per E-Mail.", "fallback");
           } else {
-            setNotificationDeviceStatus("Push nicht aktiv. Erinnerung per E-Mail.", "fallback");
+            setNotificationDeviceStatus("Browser-Push ist nicht aktiv. Sie erhalten die Erinnerung per E-Mail.", "fallback");
           }
         } catch {
           pushHint = " Browser-Benachrichtigungen konnten nicht aktiviert werden; die Erinnerung erfolgt per E-Mail.";
-          setNotificationDeviceStatus("Push konnte nicht aktiviert werden. Erinnerung per E-Mail.", "fallback");
+          setNotificationDeviceStatus("Browser-Push konnte nicht aktiviert werden. Sie erhalten die Erinnerung per E-Mail.", "fallback");
         }
       } else {
         setNotificationDeviceStatus("Erinnerung nicht gewuenscht.", "neutral");
       }
-      result.innerHTML = `<div class="alert alert--success">Vielen Dank. Bitte pruefen Sie Ihre E-Mail und bestaetigen Sie die Anmeldung ueber den zugesandten Link.${escapeHtml(pushHint)}</div>`;
+      result.innerHTML = `<div class="alert alert--success">Danke, Ihre Anmeldung wurde gesendet. Bitte pruefen Sie Ihre E-Mail und bestaetigen Sie die Anmeldung ueber den zugesandten Link.${escapeHtml(pushHint)}</div>`;
       if (submitButton) submitButton.textContent = "Anmeldung gesendet";
     } catch (error) {
       result.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message)}</div>`;
@@ -11890,38 +11922,54 @@ function wireActions() {
     const titleInput = eventNotificationForm.querySelector("[data-notification-title]");
     const textInput = eventNotificationForm.querySelector("[data-notification-shorttext]");
     const linkInput = eventNotificationForm.querySelector("[data-notification-link]");
-    const testToggle = eventNotificationForm.querySelector("[data-notification-test-toggle]");
+    const linkToggle = eventNotificationForm.querySelector("[data-notification-link-toggle]");
     const testField = eventNotificationForm.querySelector("[data-notification-test-field]");
     const recipientGroup = eventNotificationForm.querySelector("[data-notification-recipient-group]");
     const includeMembers = eventNotificationForm.querySelector("[data-notification-include-members]");
     const includeContacts = eventNotificationForm.querySelector("[data-notification-include-contacts]");
+    const testOnlyInput = eventNotificationForm.querySelector("[data-notification-test-only]");
+    const notificationResult = eventNotificationForm.querySelector("#event-notification-result");
+    const notificationErrorText = (error) => {
+      const message = String(error?.message || error || "").trim();
+      if (/^internal$/i.test(message) || error?.code === "functions/internal") {
+        return "Versandvorschau konnte gerade nicht vorbereitet werden. Bitte Seite neu laden und erneut versuchen.";
+      }
+      return message || "Versand konnte nicht vorbereitet werden.";
+    };
     const syncNotificationMode = () => {
       const isMemberMessage = kindSelect?.value === "member_message";
+      const isTestPerson = recipientGroup?.value === "test_person";
       if (eventField) eventField.hidden = isMemberMessage;
       if (eventSelect) eventSelect.required = !isMemberMessage;
       if (scheduledField) scheduledField.hidden = sendMode?.value !== "scheduled";
       if (offsetField) offsetField.hidden = isMemberMessage || sendMode?.value !== "auto_before_event";
       if (sendMode?.value === "auto_before_event" && isMemberMessage) sendMode.value = "now";
-      if (testField) testField.hidden = !testToggle?.checked;
-      if (includeMembers) includeMembers.value = String(recipientGroup?.value !== "contacts");
-      if (includeContacts) includeContacts.value = String(!["members", "test_group"].includes(recipientGroup?.value || ""));
+      if (testField) testField.hidden = !isTestPerson;
+      const testRecipientInput = testField?.querySelector("[name='testRecipients']");
+      if (testRecipientInput) testRecipientInput.required = isTestPerson;
+      if (testOnlyInput) testOnlyInput.value = String(isTestPerson);
+      if (includeMembers) includeMembers.value = String(!["contacts", "test_person"].includes(recipientGroup?.value || ""));
+      if (includeContacts) includeContacts.value = String(!["members", "test_group", "test_person"].includes(recipientGroup?.value || ""));
+      if (linkInput) linkInput.disabled = linkToggle?.checked === false;
+    };
+    const setDefaultNotificationLink = () => {
+      if (!linkInput) return;
+      const selected = eventSelect?.selectedOptions?.[0];
+      linkInput.value = kindSelect?.value === "member_message"
+        ? "https://prodigitaltv-da47b.web.app/members"
+        : selected?.dataset.eventLink || "";
     };
     const syncNotificationPreview = () => {
-      const selected = eventSelect?.selectedOptions?.[0];
-      if (kindSelect?.value === "member_message") {
-        linkInput.value = "#/members";
-      } else if (selected) {
-        linkInput.value = selected.dataset.eventLink || "";
-      }
       if (!preview) return;
-      preview.innerHTML = `<p class="eyebrow">Live-Vorschau</p><h3>${escapeHtml(titleInput.value || "Event-Benachrichtigung")}</h3><p>${escapeHtml(textInput.value || "")}</p>${linkInput.value ? `<a href="${escapeHtml(linkInput.value)}">Zur Veranstaltung</a>` : ""}`;
+      const previewLink = linkToggle?.checked === false ? "" : linkInput?.value || "";
+      preview.innerHTML = `<p class="eyebrow">Live-Vorschau</p><h3>${escapeHtml(titleInput.value || "Event-Benachrichtigung")}</h3><p>${escapeHtml(textInput.value || "")}</p>${previewLink ? `<a href="${escapeHtml(previewLink)}">Link oeffnen</a>` : ""}`;
     };
     eventSelect?.addEventListener("change", () => {
       const selected = eventSelect.selectedOptions?.[0];
       const eventTitle = selected?.dataset.eventTitle || "Veranstaltung";
       titleInput.value = `Einladung: ${eventTitle}`;
       textInput.value = `Aktuelle Informationen zur Veranstaltung ${eventTitle}.`;
-      linkInput.value = selected?.dataset.eventLink || "";
+      setDefaultNotificationLink();
       syncNotificationPreview();
     });
     kindSelect?.addEventListener("change", () => {
@@ -11929,35 +11977,82 @@ function wireActions() {
         titleInput.value = titleInput.value || "Nachricht von PROdigitalTV";
         textInput.value = textInput.value || "Aktuelle Information fuer PROdigitalTV-Mitglieder.";
       }
+      setDefaultNotificationLink();
       syncNotificationMode();
       syncNotificationPreview();
     });
     sendMode?.addEventListener("change", syncNotificationMode);
-    testToggle?.addEventListener("change", syncNotificationMode);
     recipientGroup?.addEventListener("change", syncNotificationMode);
+    linkToggle?.addEventListener("change", () => {
+      syncNotificationMode();
+      syncNotificationPreview();
+    });
     eventNotificationForm.querySelectorAll("input, textarea, select").forEach((field) => field.addEventListener("input", syncNotificationPreview));
     syncNotificationMode();
+    if (linkInput && !linkInput.value) setDefaultNotificationLink();
     syncNotificationPreview();
+    let confirmedPayload = null;
+    notificationResult?.addEventListener("click", async (event) => {
+      const sendButton = event.target.closest("[data-confirm-notification-send]");
+      const cancelButton = event.target.closest("[data-cancel-notification-send]");
+      if (cancelButton) {
+        confirmedPayload = null;
+        notificationResult.innerHTML = "";
+        return;
+      }
+      if (!sendButton || !confirmedPayload) return;
+      const submitButton = eventNotificationForm.querySelector("button[type='submit']");
+      const originalLabel = submitButton?.textContent || "";
+      try {
+        sendButton.disabled = true;
+        if (submitButton) {
+          submitButton.disabled = true;
+          submitButton.textContent = "Sende ...";
+        }
+        const response = await createEventNotification(confirmedPayload);
+        notificationResult.innerHTML = response.scheduled
+          ? `<div class="alert alert--success">Benachrichtigung wurde geplant.</div>`
+          : `<div class="alert alert--success">Versand wurde fuer ${Number(response.targetCount || 0)} Empfaenger angestossen. E-Mail in Warteschlange: ${Number(response.queuedMailCount || 0)}, Push gesendet: ${Number(response.pushedCount || 0)}.</div>`;
+        confirmedPayload = null;
+        if (submitButton) {
+          submitButton.classList.add("button--success");
+          submitButton.textContent = "Gesendet";
+          window.setTimeout(() => {
+            submitButton.classList.remove("button--success");
+            submitButton.textContent = originalLabel;
+          }, 5000);
+        }
+      } catch (error) {
+        notificationResult.innerHTML = `<div class="alert alert--error">${escapeHtml(notificationErrorText(error))}</div>`;
+      } finally {
+        if (submitButton) {
+          submitButton.disabled = false;
+          if (!submitButton.classList.contains("button--success")) submitButton.textContent = originalLabel;
+        }
+      }
+    });
     eventNotificationForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const result = eventNotificationForm.querySelector("#event-notification-result");
       const button = eventNotificationForm.querySelector("button[type='submit']");
       const originalLabel = button?.textContent || "";
       try {
         if (button) {
           button.disabled = true;
-          button.textContent = "Erstelle ...";
+          button.textContent = "Bereite vor ...";
         }
-        const response = await createEventNotification(formObject(eventNotificationForm));
-        if (result) result.innerHTML = response.scheduled
-          ? `<div class="alert alert--success">Benachrichtigung wurde geplant.</div>`
-          : `<div class="alert alert--success">Benachrichtigung wurde fuer ${Number(response.targetCount || 0)} Empfaenger vorbereitet. E-Mail: ${Number(response.queuedMailCount || 0)}, Push: ${Number(response.pushedCount || 0)}.</div>`;
+        const payload = formObject(eventNotificationForm);
+        payload.testOnly = recipientGroup?.value === "test_person";
+        if (!payload.testOnly) payload.testRecipients = "";
+        const previewResponse = await previewEventNotification(payload);
+        confirmedPayload = payload;
+        if (notificationResult) notificationResult.innerHTML = `<div class="alert alert--warning"><strong>${Number(previewResponse.mailCount || previewResponse.targetCount || 0)} Mails vorbereitet.</strong><div class="actions" style="margin-top:12px"><button class="button button--primary button--small" type="button" data-confirm-notification-send>Senden</button><button class="button button--secondary button--small" type="button" data-cancel-notification-send>Abbrechen</button></div></div>`;
       } catch (error) {
-        if (result) result.innerHTML = `<div class="alert alert--error">${escapeHtml(error.message || String(error))}</div>`;
+        confirmedPayload = null;
+        if (notificationResult) notificationResult.innerHTML = `<div class="alert alert--error">${escapeHtml(notificationErrorText(error))}</div>`;
       } finally {
         if (button) {
           button.disabled = false;
-          button.textContent = originalLabel;
+          if (!button.classList.contains("button--success")) button.textContent = originalLabel;
         }
       }
     });
@@ -12186,7 +12281,7 @@ function wireActions() {
     await upsert("editorialContent", withContentVersionMetadata("editorialContent", existingArticle || {}, article));
     await upsert("events", {
       ...sourceEvent,
-      lifecyclePhase: sourceEvent.lifecyclePhase === "archived" ? "archive_published" : (sourceEvent.lifecyclePhase || "archive_published"),
+      lifecyclePhase: "archived",
       retrospectiveTitle: title,
       retrospectiveArticleId: articleId,
       updatedAt: now
@@ -12355,6 +12450,9 @@ function wireActions() {
       if (Object.prototype.hasOwnProperty.call(values, "hostId")) {
         values.sponsorIds = values.hostId ? [values.hostId] : [];
       }
+      if (Object.prototype.hasOwnProperty.call(values, "lifecyclePhase")) {
+        values.lifecyclePhase = normalizeLifecyclePhase(values.lifecyclePhase);
+      }
       if (Object.prototype.hasOwnProperty.call(values, "primaryHostId")) {
         values.primaryHostId = values.primaryHostId || "prodigitaltv";
         values.primaryHostName = values.primaryHostId === "prodigitaltv" ? "PROdigitalTV" : values.primaryHostName || "";
@@ -12469,12 +12567,27 @@ function wireActions() {
     const form = event.currentTarget;
     const existingEvent = await getOne("events", form.dataset.eventId);
     const topicId = form.dataset.topicId || `topics-${crypto.randomUUID()}`;
-    const existingTopic = form.dataset.topicId ? await getOne("topics", topicId) : { id: topicId, status: "active", visibility: "public", createdAt: new Date().toISOString() };
-    if (!form.dataset.topicId && (existingEvent.topicIds || []).length >= 6) {
+    const existingTopic = await getOne("topics", topicId).catch(() => null) || { id: topicId, status: "active", visibility: "public", createdAt: new Date().toISOString() };
+    const isNewTopicForEvent = !(existingEvent.topicIds || []).includes(topicId);
+    if (isNewTopicForEvent && (existingEvent.topicIds || []).length >= 6) {
       form.querySelector("#event-topic-editor-result").innerHTML = `<div class="alert alert--error">Maximal 6 Vortraege pro Medienfruehstueck sind moeglich.</div>`;
       return;
     }
     const topicIds = Array.from(new Set([...(existingEvent.topicIds || []), topicId]));
+    const speakerFirstName = String(form.elements.speakerFirstName?.value || "").trim();
+    const speakerLastName = String(form.elements.speakerLastName?.value || "").trim();
+    const speakerName = [speakerFirstName, speakerLastName].filter(Boolean).join(" ").trim();
+    if (!speakerName) {
+      form.querySelector("#event-topic-editor-result").innerHTML = `<div class="alert alert--error">Bitte Vorname und Nachname des Referenten eintragen.</div>`;
+      return;
+    }
+    const speakerId = form.dataset.speakerId || `speakers-${crypto.randomUUID()}`;
+    const existingSpeaker = form.dataset.speakerId ? await getOne("speakers", speakerId).catch(() => null) : null;
+    const topicIdsForSpeaker = new Set(existingSpeaker?.topicIds || []);
+    topicIdsForSpeaker.add(topicId);
+    const eventIdsForSpeaker = new Set(existingSpeaker?.eventIds || []);
+    eventIdsForSpeaker.add(form.dataset.eventId);
+    const eventSpeakerIds = Array.from(new Set([...(existingEvent.speakerIds || []), speakerId]));
     const image = imageFileFromDropzone(form, "topicImage", topicId);
     const imageUpdate = {};
     if (form.elements.removeTopicImage?.value === "1") {
@@ -12491,20 +12604,47 @@ function wireActions() {
       ...existingTopic,
       id: topicId,
       title: form.elements.title.value,
-      shortDescription: form.elements.text.value,
+      shortDescription: form.elements.subline?.value || form.elements.text.value,
       longDescription: form.elements.text.value,
       ...imageUpdate,
+      subtitle: form.elements.subline?.value || "",
+      subline: form.elements.subline?.value || "",
+      description: form.elements.text.value,
+      downloadId: form.elements.downloadId?.value || "",
+      documentId: form.elements.downloadId?.value || "",
+      presentationId: form.elements.downloadId?.value || "",
+      galleryId: form.elements.galleryId?.value || "",
       updatedAt: new Date().toISOString()
     });
-    await upsert("events", { ...existingEvent, topicIds, updatedAt: new Date().toISOString() });
-    form.querySelector("#event-topic-editor-result").innerHTML = `<div class="alert alert--success">Vortrag wurde gespeichert.</div>`;
+    await upsert("speakers", {
+      ...(existingSpeaker || { id: speakerId, status: "published", visibility: "public", createdAt: new Date().toISOString() }),
+      id: speakerId,
+      firstName: speakerFirstName,
+      lastName: speakerLastName,
+      name: speakerName,
+      company: form.elements.speakerCompany?.value || "",
+      website: form.elements.speakerWebsite?.value || "",
+      email: form.elements.speakerEmail?.value || "",
+      phone: form.elements.speakerPhone?.value || "",
+      topicId: existingSpeaker?.topicId || topicId,
+      topicIds: Array.from(topicIdsForSpeaker),
+      eventIds: Array.from(eventIdsForSpeaker),
+      updatedAt: new Date().toISOString()
+    });
+    await upsert("events", { ...existingEvent, topicIds, speakerIds: eventSpeakerIds, updatedAt: new Date().toISOString() });
+    form.dataset.speakerId = speakerId;
+    form.querySelector("#event-topic-editor-result").innerHTML = `<div class="alert alert--success">Referent und Vortrag wurden gespeichert.</div>`;
     const imageStatus = form.querySelector("[data-image-status]");
     if (imageStatus) imageStatus.textContent = imageUpdate.imageUrl ? "Bild wurde gespeichert." : imageUpdate.imageUrl === "" ? "Bild wurde gelöscht." : imageStatus.textContent;
     if (Object.prototype.hasOwnProperty.call(imageUpdate, "imageUrl")) {
       updateDropzoneSavedImage(form, imageUpdate.imageUrl);
       updateTopicThumbInList(topicId, imageUpdate.imageUrl);
     }
-    if (!form.dataset.topicId) go(`cms/event/${form.dataset.eventId}?tab=topics&mode=edit&topic=${topicId}`);
+    if (form.dataset.topicMode === "new") {
+      go(`cms/event/${form.dataset.eventId}?tab=topics`);
+    } else {
+      go(`cms/event/${form.dataset.eventId}?tab=topics&mode=edit&topic=${topicId}`);
+    }
   });
 
   document.querySelector("#event-topic-assign-form")?.addEventListener("submit", async (event) => {
@@ -13985,6 +14125,8 @@ function wireActions() {
     applyMemberSearch();
   }
 
+  bindPeopleManagementControls();
+
   document.querySelectorAll("[data-setup-action]").forEach((button) => button.addEventListener("click", async () => {
     const output = document.querySelector("#setup-result");
     const actions = { connection: checkFirebaseConnection, structure: checkFirestoreStructure, initialize: initializeDatabase };
@@ -13999,6 +14141,316 @@ function wireActions() {
   }));
 }
 
+function peopleImportNormalizeEmail(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function peopleImportStableId(email) {
+  let hash = 0;
+  for (let index = 0; index < email.length; index += 1) hash = ((hash << 5) - hash + email.charCodeAt(index)) | 0;
+  return `contact-${Math.abs(hash).toString(36)}-${email.replace(/[^a-z0-9]+/g, "-").slice(0, 32)}`;
+}
+
+function peopleImportParseCsv(text) {
+  const firstLine = String(text || "").split(/\r?\n/).find((line) => line.trim()) || "";
+  const delimiter = [";", "\t", ","].sort((a, b) => firstLine.split(b).length - firstLine.split(a).length)[0];
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  const source = String(text || "").replace(/^\uFEFF/, "");
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      cell += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === delimiter && !quoted) {
+      row.push(cell.trim());
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(cell.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+  if (rows.length < 2) return [];
+  const headers = rows[0].map((header) => String(header || "").trim().toLowerCase().replace(/[^a-z0-9äöüß]+/gi, ""));
+  const value = (record, names) => {
+    const indexes = names.map((name) => headers.indexOf(name)).filter((index) => index >= 0);
+    const match = indexes.find((index) => record[index] !== undefined && String(record[index]).trim());
+    return match === undefined ? "" : String(record[match] || "").trim();
+  };
+  return rows.slice(1).map((record) => ({
+    firstName: value(record, ["vorname", "firstname", "first"]),
+    lastName: value(record, ["nachname", "lastname", "last", "name"]),
+    company: value(record, ["firma", "company", "unternehmen", "organisation", "organization"]),
+    position: value(record, ["position", "funktion", "jobtitle", "rolle"]),
+    email: value(record, ["email", "emailadresse", "emailaddress", "mail", "emailadresse"]),
+    mobile: value(record, ["mobilnummer", "mobil", "mobile", "telefon", "phone"]),
+    type: value(record, ["typ", "type", "art"]),
+    newsletter: value(record, ["newsletter", "newslettererlaubt", "newsletterallowed"])
+  })).filter((record) => peopleImportNormalizeEmail(record.email));
+}
+
+function peopleImportBoolean(value) {
+  return ["1", "ja", "yes", "true", "x", "erlaubt"].includes(String(value || "").trim().toLowerCase());
+}
+
+function peopleImportMessage(input, message, success = false) {
+  const result = document.querySelector("#people-import-result");
+  if (result) result.innerHTML = `<div class="alert ${success ?"alert--success" : "alert--error"}">${escapeHtml(message)}</div>`;
+  input.value = "";
+}
+
+function peopleImportStoreMessage(message, success = false) {
+  try {
+    sessionStorage.setItem("pdtv-people-import-message", JSON.stringify({ message, success }));
+  } catch (error) {
+    console.warn("People import message could not be stored", error);
+  }
+}
+
+async function handlePeopleImport(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  if (!/\.(csv|txt|tsv)$/i.test(file.name)) {
+    peopleImportMessage(input, "Bitte die Excel-Datei als CSV speichern und diese CSV importieren.");
+    return;
+  }
+  const result = document.querySelector("#people-import-result");
+  if (result) result.innerHTML = `<div class="alert">Import laeuft ...</div>`;
+  try {
+    const rows = peopleImportParseCsv(await file.text());
+    if (!rows.length) throw new Error("Keine gueltigen Zeilen mit E-Mail-Adresse gefunden.");
+    const contacts = await list("contacts");
+    const existingByEmail = new Map(contacts.map((contact) => [peopleImportNormalizeEmail(contact.email), contact]).filter(([email]) => email));
+    let created = 0;
+    let updated = 0;
+    for (const row of rows) {
+      const email = peopleImportNormalizeEmail(row.email);
+      const existing = existingByEmail.get(email);
+      const typeValue = String(row.type || "").toLowerCase().includes("mitglied") ? "member" : "contact";
+      const payload = {
+        ...(existing || {}),
+        id: existing?.id || peopleImportStableId(email),
+        firstName: row.firstName || existing?.firstName || "",
+        lastName: row.lastName || existing?.lastName || "",
+        company: row.company || existing?.company || "",
+        position: row.position || existing?.position || "",
+        email,
+        mobile: row.mobile || existing?.mobile || existing?.phone || "",
+        phone: row.mobile || existing?.phone || existing?.mobile || "",
+        type: existing?.type === "member" ? "member" : typeValue,
+        newsletterAllowed: row.newsletter ? peopleImportBoolean(row.newsletter) : Boolean(existing?.newsletterAllowed || existing?.newsletterConsent),
+        source: existing?.source || "excel_import",
+        sourceType: "excel_import",
+        lastImportedAt: new Date().toISOString()
+      };
+      await upsert("contacts", payload);
+      existing ? updated += 1 : created += 1;
+      existingByEmail.set(email, payload);
+    }
+    const message = `${created} neue Mailing-Adressen angelegt, ${updated} Mailing-Adressen aktualisiert. In Firebase gespeichert.`;
+    peopleImportStoreMessage(message, true);
+    peopleImportMessage(input, message, true);
+    await render();
+  } catch (error) {
+    peopleImportMessage(input, `Import konnte nicht abgeschlossen werden: ${error.message || String(error)}`);
+  }
+}
+
+function peopleEditEscapeHtml(value = "") {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  }[char]));
+}
+
+async function savePeopleEditForm(form, { stayInPlace = false } = {}) {
+  const contactId = form.dataset.contactId;
+  const email = peopleImportNormalizeEmail(form.email?.value);
+  if (!contactId || !email) {
+    alert("Bitte eine gueltige E-Mail-Adresse eintragen.");
+    return false;
+  }
+  const firstName = String(form.firstName?.value || "").trim();
+  const lastName = String(form.lastName?.value || "").trim();
+  const payload = {
+    id: contactId,
+    firstName,
+    lastName,
+    name: [firstName, lastName].filter(Boolean).join(" ").trim() || email,
+    company: String(form.company?.value || "").trim(),
+    position: String(form.position?.value || "").trim(),
+    email,
+    mobile: String(form.mobile?.value || "").trim(),
+    phone: String(form.mobile?.value || "").trim(),
+    type: form.type?.value === "member" ? "member" : "contact",
+    newsletterAllowed: Boolean(form.newsletterAllowed?.checked),
+    source: "cms",
+    updatedAt: new Date().toISOString()
+  };
+  const button = form.querySelector("button[type='submit']");
+  if (button) button.disabled = true;
+  try {
+    await upsert("contacts", payload);
+    peopleImportStoreMessage("Mailing-Adresse gespeichert.", true);
+    if (!stayInPlace) {
+      window.location.hash = `#/cms/people?email=${encodeURIComponent(email)}`;
+    }
+    await render();
+    return true;
+  } catch (error) {
+    if (button) button.disabled = false;
+    alert(`Mailing-Adresse konnte nicht gespeichert werden: ${error.message || String(error)}`);
+    return false;
+  }
+}
+
+function openPeopleEditLayer(button) {
+  const type = button.dataset.type === "member" ? "member" : "contact";
+  const newsletterChecked = button.dataset.newsletter === "yes" ? "checked" : "";
+  const layer = document.createElement("div");
+  layer.className = "ai-dialog-backdrop";
+  layer.dataset.peopleEditLayer = "true";
+  layer.innerHTML = `
+    <div class="ai-dialog" role="dialog" aria-modal="true" aria-label="Mailing-Adresse bearbeiten">
+      <div class="actions" style="justify-content:space-between;align-items:flex-start">
+        <div>
+          <p class="eyebrow">Mailing-Adresse</p>
+          <h2>Eintrag bearbeiten</h2>
+        </div>
+        <button class="button button--secondary button--small" type="button" data-people-edit-close>Schliessen</button>
+      </div>
+      <form class="form-grid" data-people-edit-form data-contact-id="${peopleEditEscapeHtml(button.dataset.contactId || "")}">
+        <label>Vorname<input name="firstName" value="${peopleEditEscapeHtml(button.dataset.firstName || "")}"></label>
+        <label>Nachname<input name="lastName" value="${peopleEditEscapeHtml(button.dataset.lastName || "")}"></label>
+        <label>Firma<input name="company" value="${peopleEditEscapeHtml(button.dataset.company || "")}"></label>
+        <label>Position<input name="position" value="${peopleEditEscapeHtml(button.dataset.position || "")}"></label>
+        <label>E-Mail<input name="email" type="email" value="${peopleEditEscapeHtml(button.dataset.email || "")}" required></label>
+        <label>Mobilnummer<input name="mobile" value="${peopleEditEscapeHtml(button.dataset.mobile || "")}"></label>
+        <label>Typ<select name="type"><option value="contact" ${type === "contact" ? "selected" : ""}>Kontakt</option><option value="member" ${type === "member" ? "selected" : ""}>Mitglied</option></select></label>
+        <label class="check-row"><input type="checkbox" name="newsletterAllowed" ${newsletterChecked}> Newsletter erlaubt</label>
+        <div class="actions">
+          <button class="button button--primary" type="submit">Mailing-Adresse speichern</button>
+          <button class="button button--secondary" type="button" data-people-edit-close>Abbrechen</button>
+        </div>
+      </form>
+    </div>`;
+  const closeLayer = () => layer.remove();
+  layer.addEventListener("click", (event) => {
+    if (event.target === layer || event.target.closest("[data-people-edit-close]")) {
+      closeLayer();
+    }
+  });
+  layer.querySelector("[data-people-edit-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const saved = await savePeopleEditForm(event.currentTarget, { stayInPlace: true });
+    if (saved) closeLayer();
+  });
+  document.body.appendChild(layer);
+  layer.querySelector("input[name='firstName']")?.focus();
+}
+
+function bindPeopleManagementControls() {
+  const peopleSearch = document.querySelector("[data-people-search]");
+  const peopleTypeFilter = document.querySelector("[data-people-type-filter]");
+  const peoplePushFilter = document.querySelector("[data-people-push-filter]");
+  if (peopleSearch || peopleTypeFilter || peoplePushFilter) {
+    const applyPeopleFilters = () => {
+      const term = String(peopleSearch?.value || "").trim().toLowerCase();
+      const type = peopleTypeFilter?.value || "all";
+      const push = peoplePushFilter?.value || "all";
+      const rows = Array.from(document.querySelectorAll("[data-people-row]"));
+      let visibleCount = 0;
+      rows.forEach((row) => {
+        const name = String(row.dataset.name || "").toLowerCase();
+        const searchMatch = !term || name.includes(term);
+        const typeMatch = type === "all" || row.dataset.type === type;
+        const pushMatch = push === "all" || row.dataset.push === push;
+        const match = searchMatch && typeMatch && pushMatch;
+        row.hidden = !match;
+        if (match) visibleCount += 1;
+      });
+      document.querySelectorAll("[data-people-empty]").forEach((empty) => {
+        empty.hidden = visibleCount > 0;
+      });
+    };
+    peopleSearch?.addEventListener("input", applyPeopleFilters);
+    peopleTypeFilter?.addEventListener("change", applyPeopleFilters);
+    peoplePushFilter?.addEventListener("change", applyPeopleFilters);
+    applyPeopleFilters();
+  }
+
+  document.querySelector("[data-people-import-file]")?.addEventListener("change", (event) => {
+    handlePeopleImport(event.currentTarget);
+  });
+
+  document.querySelector("[data-people-edit-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await savePeopleEditForm(event.currentTarget);
+  });
+
+  document.querySelectorAll("[data-people-edit-open]").forEach((button) => {
+    button.addEventListener("click", () => openPeopleEditLayer(button));
+  });
+
+  document.querySelectorAll("[data-people-toggle-active]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const contactId = button.dataset.peopleToggleActive;
+      if (!contactId) return;
+      const currentlyDisabled = button.dataset.peopleDisabled === "yes";
+      button.disabled = true;
+      try {
+        await upsert("contacts", {
+          id: contactId,
+          mailingDisabled: !currentlyDisabled,
+          updatedAt: new Date().toISOString()
+        });
+        peopleImportStoreMessage(!currentlyDisabled ? "Mailing-Adresse temporaer ausgeschaltet." : "Mailing-Adresse wieder aktiviert.", true);
+        await render();
+      } catch (error) {
+        button.disabled = false;
+        alert(`Mailing-Adresse konnte nicht aktualisiert werden: ${error.message || String(error)}`);
+      }
+    });
+  });
+  document.querySelectorAll("[data-people-delete]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const targets = String(button.dataset.peopleDelete || "")
+        .split("|")
+        .map((item) => item.split(":"))
+        .filter(([collection, id]) => collection === "contacts" && id);
+      if (!targets.length) return;
+      const name = button.dataset.peopleName || "diese Mailing-Adresse";
+      if (!window.confirm(`${name} wirklich aus den Mailing-Adressen loeschen? Anmeldungen und Mailhistorie bleiben erhalten.`)) return;
+      button.disabled = true;
+      try {
+        await Promise.all(targets.map(([collection, id]) => remove(collection, id)));
+        peopleImportStoreMessage("Mailing-Adresse geloescht.", true);
+        if (location.hash.includes("/cms/people?email=")) {
+          window.location.hash = "#/cms/people";
+        }
+        await render();
+      } catch (error) {
+        button.disabled = false;
+        alert(`Mailing-Adresse konnte nicht geloescht werden: ${error.message || String(error)}`);
+      }
+    });
+  });
+}
 async function clearPreviewCaches() {
   if ("serviceWorker" in navigator) {
     await navigator.serviceWorker.getRegistrations?.()
@@ -14027,7 +14479,7 @@ async function resetInstalledAppCachesIfRequested() {
 
 async function refreshInstalledAppShellIfNeeded() {
   if (["localhost", "127.0.0.1"].includes(location.hostname) || location.protocol === "file:") return false;
-  const version = "965";
+  const version = "993";
   const key = "prodigitaltv-live-shell-version";
   try {
     if (localStorage.getItem(key) === version) return false;

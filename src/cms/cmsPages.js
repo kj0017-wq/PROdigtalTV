@@ -1,11 +1,11 @@
 import { cmsShell, cmsTitle } from "./cmsLayout.js?v=471";
 import { list, getOne } from "../firebase/dataService.js?v=504";
 import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=471";
-import { accessLabels, lifecycleLabels } from "../data/platformConstants.js";
+import { accessLabels, lifecycleLabels, normalizeLifecyclePhase } from "../data/platformConstants.js";
 import { escapeHtml, formatDate, formatDateTime, formatShortDate } from "../utils/format.js";
 
 function localCmsAccessBypass() {
-  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+  return false;
 }
 
 function protect(content, adminOnly = false) {
@@ -960,12 +960,13 @@ function eventDateValue(event = {}) {
 }
 
 function normalizeCmsEventRecord(event = {}) {
+  const lifecyclePhase = normalizeLifecyclePhase(event.lifecyclePhase || event.lifecycle_phase || event.phase || "planning");
   return {
     ...event,
     title: eventTitleValue(event),
     date: eventDateValue(event),
     accessType: event.accessType || event.access_type || event.access || "public",
-    lifecyclePhase: event.lifecyclePhase || event.lifecycle_phase || event.phase || "planning",
+    lifecyclePhase,
     status: event.status || event.state || "draft"
   };
 }
@@ -973,7 +974,7 @@ function normalizeCmsEventRecord(event = {}) {
 function isPastCmsEvent(event) {
   const date = eventDateValue(event);
   if (date && date >= todayString()) return false;
-  if (["post_processing", "archive_published"].includes(event.lifecyclePhase)) return true;
+  if (normalizeLifecyclePhase(event.lifecyclePhase) === "archived") return true;
   if (event.expiresAt && new Date(event.expiresAt).getTime() <= Date.now()) return true;
   return Boolean(date && date < todayString());
 }
@@ -1122,7 +1123,7 @@ function cmsEventRegistrationIsOpen(event = {}) {
     || (event.accessType === "public" && event.allowPublicRegistration === true)
     || (event.accessType === "members_only" && event.allowMemberRegistration === true)
     || event.preStatus === "invitation_published"
-    || event.lifecyclePhase === "registration_open";
+    || normalizeLifecyclePhase(event.lifecyclePhase) === "registration_open";
 }
 
 function defaultGlobalEventRegistrationMailText(variant = "confirmation") {
@@ -1229,7 +1230,7 @@ function eventFollowUpTable(events = [], mediaAssets = [], allEditorial = []) {
     <td><div class="topic-thumb topic-thumb--table editorial-thumb--table event-thumb--table">${eventThumb(event, mediaAssets, "#/cms/followup")}</div></td>
     <td><a class="link editorial-title-link" href="#/cms/event/${event.id}?tab=post" title="${escapeHtml(event.title || "-")}">${escapeHtml(shortText(event.title || "-", 70))}</a>${event.subtitle ?`<small>${escapeHtml(shortText(event.subtitle, 95))}</small>` : ""}</td>
     <td>${escapeHtml(formatDate(event.date))}</td>
-    <td>${status(event.lifecyclePhase === "archive_published" ?"published" : event.status || event.lifecyclePhase || "draft")}</td>
+    <td>${status(normalizeLifecyclePhase(event.lifecyclePhase) === "archived" ?"published" : event.status || event.lifecyclePhase || "draft")}</td>
     <td>${retrospectiveArticle ?audioListCell("editorialContent", retrospectiveArticle) : `<small class="muted">Rückblick-Beitrag fehlt</small>`}</td>
     <td>${editorialMediaFlags(retrospectiveArticle || event)}</td>
     <td>${eventFollowUpActionButtons(event)}</td>
@@ -1365,14 +1366,23 @@ function eventTopicSpeakerActions(event, topic, topicSpeakers) {
     ${speakerAvatar(speaker)}
     <div><strong>${escapeHtml(speaker.name || "")}</strong><small>${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" - "))}</small></div>
     <div class="speaker-action-card__actions">
+      <a class="button button--secondary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}&speaker=${speaker.id}">Bearbeiten</a>
       <button type="button" class="button button--secondary button--small" data-remove-event-topic-speaker="${speaker.id}" data-event-id="${event.id}" data-topic-id="${topic.id}">Loeschen</button>
     </div>
   </div>`).join("")}</div>`;
 }
 
-function topicEditorPanel(event, topics, speakers, mode, selectedTopicId, selectedSpeakerId) {
+function speakerNameParts(speaker = {}) {
+  const firstName = speaker.firstName || speaker.givenName || "";
+  const lastName = speaker.lastName || speaker.familyName || "";
+  if (firstName || lastName) return { firstName, lastName };
+  const parts = String(speaker.name || "").trim().split(/\s+/).filter(Boolean);
+  return { firstName: parts.slice(0, -1).join(" "), lastName: parts.slice(-1).join(" ") };
+}
+
+function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [], mediaAssets = [], mode, selectedTopicId, selectedSpeakerId) {
   if (!mode) return "";
-  const selectedTopic = mode === "new" ?{ id: "", title: "", shortDescription: "", imageUrl: "" } : topics.find((topic) => topic.id === selectedTopicId);
+  const selectedTopic = mode === "new" ?{ id: "", title: "", subtitle: "", subline: "", shortDescription: "", longDescription: "", imageUrl: "" } : topics.find((topic) => topic.id === selectedTopicId);
   if (mode === "assign") return "";
   if (mode === "remove") {
     const assignedTopics = topics.filter((topic) => (event.topicIds || []).includes(topic.id));
@@ -1383,12 +1393,21 @@ function topicEditorPanel(event, topics, speakers, mode, selectedTopicId, select
   if (mode === "referent" && selectedTopic) {
     const topicSpeakers = topicSpeakersForEvent(selectedTopic, event, speakers);
     const selectedSpeaker = speakers.find((speaker) => speaker.id === selectedSpeakerId) || { id: "", name: "", company: "", position: "", photoUrl: "" };
+    const speakerParts = speakerNameParts(selectedSpeaker);
     return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">Referent</p><h2>${selectedSpeaker.id ?"Referent bearbeiten" : "Referent anlegen"}</h2></div><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${selectedTopic.id}">Vortrag bearbeiten</a></div>
       <form id="event-topic-speaker-form" data-event-id="${event.id}" data-topic-id="${selectedTopic.id}" data-speaker-id="${selectedSpeaker.id || ""}" class="form-grid is-save-aware">
-        <div class="field"><label>Name</label><input name="name" value="${escapeHtml(selectedSpeaker.name || "")}" required></div>
-        <div class="field"><label>Firma</label><input name="company" value="${escapeHtml(selectedSpeaker.company || "")}"></div>
-        <div class="field"><label>Position</label><input name="position" value="${escapeHtml(selectedSpeaker.position || "")}"></div>
-        <div class="field"><label>Thumb optional</label>${imageDropzone({ inputName: "speakerImage", removeName: "removeSpeakerImage", imageUrl: selectedSpeaker.photoUrl || "", label: "Referentenfoto" })}</div>
+        <section class="panel" style="background:var(--pdt-bg)">
+          <h3>Referent</h3>
+          <div class="form-grid--two">
+            <div class="field"><label>Vorname</label><input name="speakerFirstName" value="${escapeHtml(speakerParts.firstName || "")}" required></div>
+            <div class="field"><label>Nachname</label><input name="speakerLastName" value="${escapeHtml(speakerParts.lastName || "")}" required></div>
+            <div class="field"><label>Firma</label><input name="speakerCompany" value="${escapeHtml(selectedSpeaker.company || "")}"></div>
+            <div class="field"><label>Webseite</label><input name="speakerWebsite" type="url" value="${escapeHtml(selectedSpeaker.website || selectedSpeaker.url || "")}"></div>
+            <div class="field"><label>Mailadresse</label><input name="speakerEmail" type="email" value="${escapeHtml(selectedSpeaker.email || selectedSpeaker.mail || "")}"></div>
+            <div class="field"><label>Telefonnummer</label><input name="speakerPhone" type="tel" value="${escapeHtml(selectedSpeaker.phone || selectedSpeaker.mobile || "")}"></div>
+          </div>
+        </section>
+        <div class="field"><label>Referentenfoto optional</label>${imageDropzone({ inputName: "speakerImage", removeName: "removeSpeakerImage", imageUrl: selectedSpeaker.photoUrl || "", label: "Referentenfoto" })}</div>
         <div class="actions"><button class="button button--secondary" type="button" onclick="location.hash='#/cms/event/${event.id}?tab=topics&mode=edit&topic=${selectedTopic.id}'">Abbrechen</button><button class="button button--primary">Speichern</button></div>
         <div id="event-topic-speaker-result"></div>
       </form>
@@ -1398,16 +1417,45 @@ function topicEditorPanel(event, topics, speakers, mode, selectedTopicId, select
   if (!selectedTopic && mode !== "new") return "";
   const topicSpeakers = selectedTopic?.id ?topicSpeakersForEvent(selectedTopic, event, speakers) : [];
   const firstTopicSpeaker = topicSpeakers[0];
+  const speakerForForm = speakers.find((speaker) => speaker.id === selectedSpeakerId) || firstTopicSpeaker || {};
+  const speakerParts = speakerNameParts(speakerForForm);
   const topicHeadActions = selectedTopic.id
     ?`<div class="topic-panel-actions">${firstTopicSpeaker ?`<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}&speaker=${firstTopicSpeaker.id}">Referent bearbeiten</a>` : `<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}">Referent hinzufuegen</a>`}<button class="button button--secondary button--small" type="button" data-copy-talk-to-topic="${selectedTopic.id}" data-event-id="${event.id}">Vortrag als Thema kopieren</button><a class="link-button" href="#/cms/event/${event.id}?tab=topics">Schliessen</a></div>`
     : `<a class="link-button" href="#/cms/event/${event.id}?tab=topics">Schliessen</a>`;
-  const topicEntityId = selectedTopic.id || "";
+  const topicEntityId = selectedTopic.id || `topics-${crypto.randomUUID()}`;
+  const topicAsset = recordMediaAsset(selectedTopic, mediaAssets, "topics", "imageUrl");
+  const galleryOptions = [`<option value="">Keine Galerie zugeordnet</option>`, ...galleries
+    .filter((gallery) => gallery.status !== "archived")
+    .sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "de"))
+    .map((gallery) => `<option value="${escapeHtml(gallery.id)}" ${selectedTopic.galleryId === gallery.id ?"selected" : ""}>${escapeHtml(gallery.title || gallery.id)} (${(gallery.images || []).length} Bilder)</option>`)].join("");
+  const documentOptions = [`<option value="">Keine PowerPoint / kein Dokument</option>`, ...downloads
+    .filter((document) => !["archived", "deleted"].includes(String(document.status || "").toLowerCase()))
+    .sort((a, b) => String(a.title || a.fileName || "").localeCompare(String(b.title || b.fileName || ""), "de"))
+    .map((document) => `<option value="${escapeHtml(document.id)}" ${(selectedTopic.downloadId || selectedTopic.documentId || selectedTopic.presentationId) === document.id ?"selected" : ""}>${escapeHtml(document.title || document.fileName || document.id)}</option>`)].join("");
   return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">${mode === "new" ?"Neu" : "Vortrag bearbeiten"}</p><h2>${mode === "new" ?"Neuer Vortrag" : escapeHtml(selectedTopic.title || "")}</h2></div>${topicHeadActions}</div>
-    <form id="event-topic-editor-form" data-event-id="${event.id}" data-topic-id="${selectedTopic.id || ""}" class="form-grid">
-      <div class="field"><label>Ueberschrift</label><input name="title" value="${escapeHtml(selectedTopic.title || "")}" required>${aiFieldActions([{ action: "improveText", target: "title", label: "Ueberschrift mit ChatGPT", entityType: "topics", entityId: topicEntityId, fieldName: "title" }])}</div>
-      <div class="field"><label>Text</label><textarea name="text" required>${escapeHtml(selectedTopic.longDescription || selectedTopic.shortDescription || "")}</textarea>${aiFieldActions([{ action: "generateTopicDescription", target: "text", label: "Text mit ChatGPT", entityType: "topics", entityId: topicEntityId, fieldName: "longDescription" }])}</div>
-      <div class="field"><label>Thumb optional</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: selectedTopic.imageUrl || "", label: "Vortragsbild" })}</div>
-      ${selectedTopic.id ?"" : `<p class="muted">Referenten koennen nach dem Speichern des neuen Vortrags hinzugefuegt werden.</p>`}
+    <form id="event-topic-editor-form" data-event-id="${event.id}" data-topic-id="${topicEntityId}" data-topic-mode="${mode}" data-speaker-id="${speakerForForm.id || ""}" class="form-grid">
+      <section class="panel" style="background:var(--pdt-bg)">
+        <h3>1. Referent</h3>
+        <div class="form-grid--two">
+          <div class="field"><label>Vorname</label><input name="speakerFirstName" value="${escapeHtml(speakerParts.firstName || "")}" required></div>
+          <div class="field"><label>Nachname</label><input name="speakerLastName" value="${escapeHtml(speakerParts.lastName || "")}" required></div>
+          <div class="field"><label>Firma</label><input name="speakerCompany" value="${escapeHtml(speakerForForm.company || "")}"></div>
+          <div class="field"><label>Webseite</label><input name="speakerWebsite" type="url" value="${escapeHtml(speakerForForm.website || speakerForForm.url || "")}"></div>
+          <div class="field"><label>Mailadresse</label><input name="speakerEmail" type="email" value="${escapeHtml(speakerForForm.email || speakerForForm.mail || "")}"></div>
+          <div class="field"><label>Telefonnummer</label><input name="speakerPhone" type="tel" value="${escapeHtml(speakerForForm.phone || speakerForForm.mobile || "")}"></div>
+        </div>
+      </section>
+      <section class="panel">
+        <h3>2. Vortrag</h3>
+        <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(selectedTopic.title || "")}" required>${aiFieldActions([{ action: "improveText", target: "title", label: "Titel mit ChatGPT", entityType: "topics", entityId: topicEntityId, fieldName: "title" }])}</div>
+        <div class="field"><label>Subline</label><input name="subline" value="${escapeHtml(selectedTopic.subline || selectedTopic.subtitle || "")}"></div>
+        <div class="field"><label>Beschreibung</label><textarea name="text" required>${escapeHtml(selectedTopic.longDescription || selectedTopic.description || selectedTopic.shortDescription || "")}</textarea>${aiFieldActions([{ action: "generateTopicDescription", target: "text", label: "Beitragstext mit KI erzeugen", entityType: "topics", entityId: topicEntityId, fieldName: "longDescription" }])}</div>
+        <div class="field"><label>Bild zum Vortrag optional</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: selectedTopic.imageUrl || "", label: "Vortragsbild" })}${linkedMediaActions({ collection: "topics", id: topicEntityId, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topicEntityId}`, label: "Bild", assetId: topicAsset?.id || "" })}<p class="muted">Optional direkt hochladen oder aus der Mediathek zuordnen.</p></div>
+        <div class="form-grid--two">
+          <div class="field"><label>PowerPoint optional</label><select name="downloadId">${documentOptions}</select><p class="muted">PowerPoint/PDF aus der Dokumentenverwaltung zuordnen.</p></div>
+          <div class="field"><label>Galerie optional</label><select name="galleryId">${galleryOptions}</select><p class="muted">Galerie aus der Galerieverwaltung zuordnen.</p></div>
+        </div>
+      </section>
       ${eventTopicSpeakerActions(event, selectedTopic, topicSpeakers)}
       <div class="actions"><a class="button button--secondary" href="#/cms/event/${event.id}?tab=topics">Abbrechen</a><button class="button button--primary">Speichern</button></div>
       <div id="event-topic-editor-result"></div>
@@ -1419,16 +1467,25 @@ function topicAssignPanel(event, topics, mode) {
   if (mode !== "assign") return "";
   const assigned = new Set(event.topicIds || []);
   const candidates = topics.filter((topic) => !assigned.has(topic.id));
-  return `<div class="topic-inline-panel"><div class="topic-panel-head"><h2>Vortrag zuordnen</h2><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics">Schliessen</a></div>
+  const folderLabel = (topic = {}) => topic.folder || topic.folderName || topic.ordner || topic.category || topic.rubrik || "Ohne Ordner";
+  const folders = Array.from(candidates.reduce((map, topic) => {
+    const label = folderLabel(topic);
+    if (!map.has(label)) map.set(label, []);
+    map.get(label).push(topic);
+    return map;
+  }, new Map()).entries()).sort(([a], [b]) => String(a).localeCompare(String(b), "de"));
+  return `<div class="topic-inline-panel"><div class="topic-panel-head"><h2>Aus Ordner zuordnen</h2><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics">Schliessen</a></div>
     <form id="event-topic-assign-form" data-event-id="${event.id}" class="form-grid">
-      <div class="selection-grid">${candidates.length ?candidates.map((topic) => `<label class="selection-item"><input type="radio" name="topicId" value="${topic.id}" required><span><strong>${escapeHtml(topic.title || "")}</strong><small>${escapeHtml(shortText(topic.shortDescription || topic.longDescription || ""))}</small></span></label>`).join("") : `<div class="alert">Alle vorhandenen Vortraege sind bereits zugeordnet.</div>`}</div>
+      ${folders.length ?folders.map(([folder, folderTopics]) => `<section class="panel" style="background:var(--pdt-bg)"><h3>${escapeHtml(folder)}</h3><div class="selection-grid">${folderTopics
+        .sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "de"))
+        .map((topic) => `<label class="selection-item"><input type="radio" name="topicId" value="${topic.id}" required><span><strong>${escapeHtml(topic.title || "")}</strong><small>${escapeHtml(shortText(topic.shortDescription || topic.longDescription || ""))}</small></span></label>`).join("")}</div></section>`).join("") : `<div class="alert">Alle vorhandenen Vortraege aus den Ordnern sind bereits zugeordnet.</div>`}
       <div class="actions"><button class="button button--primary" ${candidates.length ?"" : "disabled"}>Zuordnen</button></div>
       <div id="event-topic-assign-result"></div>
     </form>
   </div>`;
 }
 
-function eventTopicsEditor(event, topics, speakers, allEvents, query = new URLSearchParams()) {
+function eventTopicsEditor(event, topics, speakers, allEvents, galleries = [], downloads = [], mediaAssets = [], query = new URLSearchParams()) {
   const assignedTopicIds = new Set(event.topicIds || []);
   const assignedTopics = (event.topicIds || []).map((topicId) => topics.find((topic) => topic.id === topicId)).filter(Boolean);
   const topicLimitReached = assignedTopics.length >= 6;
@@ -1436,7 +1493,7 @@ function eventTopicsEditor(event, topics, speakers, allEvents, query = new URLSe
   const mode = topicLimitReached && ["new", "assign"].includes(requestedMode) ?"" : requestedMode;
   const selectedTopicId = query.get("topic") || "";
   const selectedSpeakerId = query.get("speaker") || "";
-  const detailPanel = mode && mode !== "assign" ?topicEditorPanel(event, topics, speakers, mode, selectedTopicId, selectedSpeakerId) : "";
+  const detailPanel = mode && mode !== "assign" ?topicEditorPanel(event, topics, speakers, galleries, downloads, mediaAssets, mode, selectedTopicId, selectedSpeakerId) : "";
   const assignPanel = topicAssignPanel(event, topics, mode);
   const newHref = topicLimitReached && mode !== "new" ?`#/cms/event/${event.id}?tab=topics` : mode === "new" ?`#/cms/event/${event.id}?tab=topics` : `#/cms/event/${event.id}?tab=topics&mode=new`;
   const newClass = mode === "new" ?"button button--primary button--small" : `button button--secondary button--small${topicLimitReached ?" disabled" : ""}`;
@@ -1448,7 +1505,7 @@ function eventTopicsEditor(event, topics, speakers, allEvents, query = new URLSe
     <section class="topic-list-panel">
       <div class="topic-actionbar">
         <a class="${newClass}" href="${newHref}">+ Neu</a>
-        <a class="${assignClass}" href="${assignHref}">+ Zuordnen</a>
+        <a class="${assignClass}" href="${assignHref}">+ Aus Ordner</a>
         <a class="${removeClass}" href="${removeHref}">Loeschen</a>
       </div>
       <p class="muted">Pro Medienfruehstueck sind maximal 6 Vortraege vorgesehen. Jeder Vortrag besteht aus Thema, Beschreibung und Referent.</p>
@@ -1458,15 +1515,16 @@ function eventTopicsEditor(event, topics, speakers, allEvents, query = new URLSe
       <h2>Bereits zugeordnet</h2>
       <div class="assigned-topic-list">${assignedTopics.length ?assignedTopics.map((topic) => {
         const topicSpeakers = topicSpeakersForEvent(topic, event, speakers);
-        const excerpt = shortText(topic.longDescription || topic.shortDescription || "");
         return `<div class="assigned-topic-card ${selectedTopicId === topic.id ?"active" : ""}" draggable="true" data-topic-drag-id="${topic.id}" data-event-id="${event.id}">
           <button type="button" class="drag-handle" aria-label="Vortrag verschieben">::</button>
-          <a class="assigned-topic-card__link" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}">
-          <div class="topic-thumb">${topicThumb(topic)}</div>
-          <div class="assigned-topic-card__body"><h3>${escapeHtml(topic.title || "")}</h3><p>${escapeHtml(excerpt)}</p></div>
+          <a class="topic-thumb assigned-topic-card__thumb-link" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}" aria-label="Beitrag bearbeiten">${topicThumb(topic)}</a>
+          <a class="assigned-topic-card__title" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}" title="${escapeHtml(topic.title || "")}">${escapeHtml(topic.title || "")}</a>
           <div class="topic-speaker-badges">${topicSpeakers.length ?topicSpeakers.map((speaker) => `<span class="speaker-badge">${speakerAvatar(speaker, "speaker-badge__avatar")}<span>${escapeHtml(speaker.name || "")}</span></span>`).join("") : `<small>Keine Referenten</small>`}</div>
-          <b>&gt;</b>
-          </a>
+          <div class="assigned-topic-card__actions table-actions table-actions--icons">
+            <a class="icon-button icon-button--visible" href="#/topic/${topic.id}" title="Anzeigen" aria-label="Anzeigen">${iconImage("eye")}</a>
+            <a class="icon-button icon-button--edit" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}" title="Beitrag bearbeiten" aria-label="Beitrag bearbeiten">${iconImage("edit")}</a>
+            <button class="icon-button icon-button--danger" type="button" data-unassign-event-topic="${topic.id}" data-event-id="${event.id}" title="Zuordnung entfernen" aria-label="Zuordnung entfernen">${iconImage("trash")}</button>
+          </div>
         </div>`;
       }).join("") : `<div class="empty">Noch keine Vortraege zugeordnet. Starte mit Neu oder Zuordnen.</div>`}</div>
       <p class="muted">${assignedTopics.length} von 6 Vortraegen</p>
@@ -1499,7 +1557,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     id: `event-${crypto.randomUUID()}`, title: "", subtitle: "", date: "2026-08-01", startTime: "10:00", endTime: "13:00", locationName: "", address: "", postalCode: "", city: "", description: "", eventType: "Panel", accessType: "public", status: "draft", lifecyclePhase: "planning", registrationEnabled: false, maxParticipants: 50, expiresAt: "", phone: "", topicIds: [], speakerIds: [], sponsorIds: []
   } : await getOne("events", id);
   if (!event) return eventsAdminPage();
-  const [topics, speakers, sponsors, registrations, media, settings, allEvents, galleries, allEditorial, mediaAssets, audioProviders, videoLibrary] = await Promise.all([list("topics"), list("speakers"), list("sponsors"), list("registrations"), list("eventMedia"), list("settings"), list("events"), list("galleries"), list("editorialContent"), list("media_assets").catch(() => []), getOne("settings", "audioProviders").catch(() => null), list("media_videos").catch(() => [])]);
+  const [topics, speakers, sponsors, registrations, media, settings, allEvents, galleries, allEditorial, mediaAssets, audioProviders, videoLibrary, downloads] = await Promise.all([list("topics"), list("speakers"), list("sponsors"), list("registrations"), list("eventMedia"), list("settings"), list("events"), list("galleries"), list("editorialContent"), list("media_assets").catch(() => []), getOne("settings", "audioProviders").catch(() => null), list("media_videos").catch(() => []), list("downloads").catch(() => [])]);
   const eventTypes = settingValue(settings, "eventTypes", ["Medienfruehstueck", "Summit", "Roundtable", "Panel", "Webinar", "Konferenz", "Workshop"]);
   const availableGalleries = galleries
     .filter((gallery) => gallery.status !== "archived")
@@ -1585,7 +1643,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
         .replace(`<div class="field"><label>Lifecycle</label><select name="lifecyclePhase">${Object.entries(lifecycleLabels).map(([key, value]) => `<option value="${key}" ${key === event.lifecyclePhase ?"selected" : ""}>${value}</option>`).join("")}</select></div>`, "");
     }
   } else if (tab === "topics") {
-    content = eventTopicsEditor(event, topics, speakers, allEvents, query);
+    content = eventTopicsEditor(event, topics, speakers, allEvents, galleries, downloads, mediaAssets, query);
   } else if (tab === "__old_topics") {
     content = `<h2>Zugeordnete Themen</h2><div class="filters">${topics.map((topic) => `<span class="filter ${event.topicIds.includes(topic.id) ?"active" : ""}">${escapeHtml(topic.title)}</span>`).join("")}</div><p>Themenspezifische Beschreibung und Sortierung koennen hier redaktionell erweitert werden.</p><div class="table-wrap" style="margin-top:22px"><table class="table"><thead><tr><th>Thema</th><th>Referenten</th></tr></thead><tbody>${topics.filter((topic) => event.topicIds.includes(topic.id)).map((topic) => { const topicSpeakers = speakers.filter((speaker) => speaker.topicId === topic.id || (event.speakerIds || []).includes(speaker.id)); return `<tr><td>${escapeHtml(topic.title)}</td><td>${topicSpeakers.length ?topicSpeakers.map((speaker) => `<div class="person"><div>${speaker.photoUrl ?`<img src="${escapeHtml(speaker.photoUrl)}" alt="">` : ""}</div><div><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" · "))}</small>${speaker.shortBio ?`<p>${escapeHtml(speaker.shortBio)}</p>` : ""}</div></div>`).join("") : "Noch kein Referent zugeordnet."}</td></tr>`; }).join("")}</tbody></table></div>`;
   } else if (tab === "speakers") {
@@ -1725,7 +1783,8 @@ export async function eventNotificationsPage() {
     .filter((event) => !["archived", "deleted", "inactive", "draft"].includes(String(event.status || "").toLowerCase()) && !isPastCmsEvent(event))
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const firstEvent = activeEvents[0] || {};
-  const eventLink = firstEvent.id ? `/?v=943#/event/${firstEvent.id}` : "";
+  const publicBaseUrl = "https://prodigitaltv-da47b.web.app";
+  const eventLink = firstEvent.id ? `${publicBaseUrl}/event/${firstEvent.id}?v=943` : "";
   const rows = notifications
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
     .slice(0, 20)
@@ -1749,9 +1808,9 @@ export async function eventNotificationsPage() {
           <div class="field"><label>Art</label><select name="notificationKind" data-notification-kind><option value="event">Event-Benachrichtigung</option><option value="member_message">Mitglieder-Nachricht</option></select></div>
           <div class="field"><label>Versand</label><select name="sendMode" data-notification-send-mode><option value="now">Sofort</option><option value="scheduled">Geplant</option><option value="auto_before_event">Automatisch vor Veranstaltung</option></select></div>
         </div>
-        <div class="field" data-notification-event-field><label>Veranstaltung</label><select name="eventId" data-notification-event-select required>${activeEvents.map((event) => `<option value="${escapeHtml(event.id)}" data-event-title="${escapeHtml(event.title || "")}" data-event-link="/?v=943#/event/${escapeHtml(event.id)}">${escapeHtml(event.title || event.id)}</option>`).join("")}</select>${activeEvents.length ? "" : `<p class="muted">Keine aktive zukuenftige Veranstaltung vorhanden.</p>`}</div>
+        <div class="field" data-notification-event-field><label>Veranstaltung</label><select name="eventId" data-notification-event-select required>${activeEvents.map((event) => `<option value="${escapeHtml(event.id)}" data-event-title="${escapeHtml(event.title || "")}" data-event-link="${publicBaseUrl}/event/${escapeHtml(event.id)}?v=943">${escapeHtml(event.title || event.id)}</option>`).join("")}</select>${activeEvents.length ? "" : `<p class="muted">Keine aktive zukuenftige Veranstaltung vorhanden.</p>`}</div>
         <div class="form-grid--two">
-          <div class="field"><label>Empfaenger</label><select name="recipientGroup" data-notification-recipient-group><option value="members_contacts">Mitglieder und Kontakte</option><option value="members">Nur Mitglieder</option><option value="contacts">Nur Kontakte</option><option value="test_group">Testgruppe</option></select></div>
+          <div class="field"><label>Empfaenger</label><select name="recipientGroup" data-notification-recipient-group><option value="members_contacts">Mitglieder und Kontakte</option><option value="members">Nur Mitglieder</option><option value="contacts">Nur Kontakte</option><option value="test_group">Testgruppe</option><option value="test_person">Testpersonen</option></select></div>
           <div class="field"><label>Anmeldestatus</label><select name="registrationStatus"><option value="all">Alle</option><option value="unregistered">Noch nicht angemeldet</option><option value="registered">Bereits angemeldet</option></select></div>
         </div>
         <input type="hidden" name="includeMembers" value="true" data-notification-include-members>
@@ -1762,10 +1821,12 @@ export async function eventNotificationsPage() {
         </div>
         <div class="field"><label>Titel</label><input name="title" data-notification-title value="${escapeHtml(firstEvent.title ? `Einladung: ${firstEvent.title}` : "Einladung zur Veranstaltung")}" required></div>
         <div class="field"><label>Kurztext</label><textarea name="shortText" rows="4" data-notification-shorttext>${escapeHtml(firstEvent.title ? `Aktuelle Informationen zur Veranstaltung ${firstEvent.title}.` : "Aktuelle Informationen zur PROdigitalTV-Veranstaltung.")}</textarea></div>
-        <input type="hidden" name="link" data-notification-link value="${escapeHtml(eventLink)}">
-        <div class="registration-section registration-section--compact">
-          <label class="checkbox"><input type="checkbox" name="testOnly" data-notification-test-toggle> Testversand an ausgewaehlte Personen</label>
-          <div class="field" data-notification-test-field hidden><label>Testpersonen</label><textarea name="testRecipients" rows="3" placeholder="E-Mail-Adressen, getrennt durch Komma oder neue Zeile"></textarea><p class="muted">Im Testmodus wird nur an diese Adressen gesendet. Zielgruppen und Anmeldestatus bleiben unberuehrt.</p></div>
+        <section class="panel" style="background:var(--pdt-bg)">
+          <label class="checkbox"><input type="checkbox" name="linkEnabled" data-notification-link-toggle checked> Link mitsenden</label>
+          <div class="field"><label>Link optional</label><input name="link" data-notification-link value="${escapeHtml(eventLink)}" placeholder="https://... oder leer lassen"></div>
+        </section>
+        <div class="registration-section registration-section--compact" data-notification-test-field hidden>
+          <div class="field"><label>Testpersonen</label><textarea name="testRecipients" rows="3" placeholder="E-Mail-Adressen, getrennt durch Komma oder neue Zeile"></textarea><p class="muted">Im Testmodus wird nur an diese Adressen gesendet. Zielgruppen und Anmeldestatus bleiben unberuehrt.</p></div>
         </div>
         <div class="event-notification-preview" data-notification-preview>
           <p class="eyebrow">Live-Vorschau</p>
@@ -1773,7 +1834,7 @@ export async function eventNotificationsPage() {
           <p>${escapeHtml(firstEvent.title ? `Aktuelle Informationen zur Veranstaltung ${firstEvent.title}.` : "Aktuelle Informationen zur PROdigitalTV-Veranstaltung.")}</p>
           <a href="${escapeHtml(eventLink)}">Zur Veranstaltung</a>
         </div>
-        <div class="actions"><button class="button button--primary">Benachrichtigung erstellen</button><div id="event-notification-result"></div></div>
+        <div class="actions"><button class="button button--primary">Versand starten</button><div id="event-notification-result"></div></div>
       </form>
     </section>
     <section class="panel">
@@ -1790,6 +1851,10 @@ export async function eventNotificationsPage() {
       <h2>Letzte Benachrichtigungen</h2>
       <div class="table-wrap"><table class="table"><thead><tr><th>Titel</th><th>Event</th><th>Status</th><th>Empfaenger</th><th>E-Mail</th></tr></thead><tbody>${rows || `<tr><td colspan="5">Noch keine Benachrichtigungen erstellt.</td></tr>`}</tbody></table></div>
     </section>`));
+}
+
+export async function memberAreaAdminPage() {
+  return moduleListPage("editorialContent", "member-area");
 }
 
 export async function mailAdminPage() {

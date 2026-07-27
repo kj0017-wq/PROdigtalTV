@@ -1,5 +1,7 @@
 ﻿import { getFirebaseServices, getFirestoreServices, firebaseEnabled, realDataMode } from "./firebaseClient.js?v=3";
 
+import { normalizeLifecyclePhase } from "../data/platformConstants.js";
+
 const PUBLIC_LIST_CACHE_MS = 45000;
 const PUBLIC_SESSION_CACHE_MS = 180000;
 const PUBLIC_READ_TIMEOUT_MS = 9000;
@@ -211,12 +213,13 @@ function eventDateValue(event = {}) {
 }
 
 function normalizePublicEvent(event = {}) {
+  const lifecyclePhase = normalizeLifecyclePhase(event.lifecyclePhase || event.lifecycle_phase || event.phase || "planning");
   return {
     ...event,
     title: eventTitleValue(event),
     date: eventDateValue(event),
     accessType: event.accessType || event.access_type || event.access || "public",
-    lifecyclePhase: event.lifecyclePhase || event.lifecycle_phase || event.phase || "planning",
+    lifecyclePhase,
     status: event.status || event.state || "draft"
   };
 }
@@ -360,7 +363,7 @@ function isEventVisible(event) {
   if (!hasLiveEventIdentity(event)) return false;
   const status = liveStatus(event, "active");
   const visibility = liveVisibility(event, "public");
-  const lifecycle = normalizePublicState(event.lifecyclePhase || event.lifecycle || "");
+  const lifecycle = normalizeLifecyclePhase(event.lifecyclePhase || event.lifecycle || "");
   const registrationStatus = normalizePublicState(event.registrationStatus || event.registration_state || event.registrationState || event.registration || "");
   const registrationOpen = event.registrationEnabled === true
     || event.allowPublicRegistration === true
@@ -368,7 +371,7 @@ function isEventVisible(event) {
   if (["inactive", "cancelled", "deleted", "hidden", "private"].includes(status)) return false;
   if (["internal", "private", "hidden"].includes(visibility)) return false;
   if (status === "draft" && event.visible !== true) return false;
-  if (["archive_published", "post_processing", "archived"].includes(lifecycle)) return true;
+  if (lifecycle === "archived") return true;
   if (registrationOpen) return true;
   return ["", "active", "published", "approved", "aktiv", "veroeffentlicht", "veröffentlicht", "online", "open", "offen", "geoeffnet", "geöffnet", "registration_open"].includes(status) || event.visible === true;
 }

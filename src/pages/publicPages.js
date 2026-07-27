@@ -1,7 +1,7 @@
 import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, getOne } from "../firebase/dataService.js?v=516";
 import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=471";
 import { publicShell, logo } from "../components/layout.js?v=7";
-import { eventCard, topicCard } from "../components/cards.js?v=5";
+import { eventCard, topicCard } from "../components/cards.js?v=6";
 import { accessLabels, lifecycleLabels } from "../data/platformConstants.js?v=1";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
 import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=1";
@@ -1557,7 +1557,7 @@ export async function registrationPage(id) {
       <div class="field"><label for="message">Bemerkung</label><textarea id="message" name="message" rows="3"></textarea></div>
       <div class="registration-consents">
       <label class="checkbox"><input type="checkbox" name="notifyForThisEvent"> Ich moechte an diese Veranstaltung und zukuenftige PROdigitalTV-Veranstaltungen erinnert werden.</label>
-      <div class="notification-device-status" data-notification-device-status>Benachrichtigung: noch nicht aktiviert. Falls Browser-Push auf diesem Geraet nicht moeglich ist, erfolgt die Erinnerung per E-Mail.</div>
+      <div class="notification-device-status" data-notification-device-status>Erinnerung noch nicht aktiviert. Wenn Browser-Push auf diesem Geraet nicht moeglich ist, erhalten Sie die Erinnerung per E-Mail.</div>
       <label class="checkbox checkbox--required registration-consent-info"><input type="checkbox" name="privacyMediaConsent" required><span>Datenschutz akzeptiert und Foto-/Video-Hinweis zur Veranstaltung zur Kenntnis genommen *</span><button class="consent-info-button" type="button" aria-label="Erklaerung zu Datenschutz und Foto-/Video-Hinweis" title="Erklaerung">i</button><small>Ihre Daten werden zur Organisation der Veranstaltung verarbeitet. Bei PROdigitalTV-Veranstaltungen koennen Foto- und Videoaufnahmen entstehen, die fuer Dokumentation und Oeffentlichkeitsarbeit genutzt werden.</small></label>
       </div></fieldset>
       <div class="registration-submit"><button class="button button--primary" type="submit">Anmeldung absenden</button><div id="form-result"></div></div>
