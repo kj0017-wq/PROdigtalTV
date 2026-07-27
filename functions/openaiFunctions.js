@@ -9,6 +9,7 @@ const region = "europe-west3";
 const openAiApiKey = defineSecret("OPENAI_API_KEY");
 
 const SYSTEM_PROMPT = "Du schreibst fuer PROdigitalTV, ein professionelles Branchennetzwerk der digitalen Medienwirtschaft. Die Sprache ist deutsch, serioes, klar, hochwertig und B2B-orientiert. Texte sollen praezise, gut lesbar und nicht uebertrieben werblich sein. Erfinde keine Fakten. Schreibe sichtbare Texte wie normale redaktionelle Beitraege fuer Leserinnen und Leser. Keine Meta-Hinweise, keine Arbeitsanweisungen, keine Hinweise auf Pruefung, Freischaltung, CMS, Redaktion oder technische/organisatorische Aufgaben.";
+const PRODIGITALTV_IMAGE_STYLE = "Ultra photorealistic, premium editorial photography for the digital media industry, real camera optics, believable materials, natural daylight when plausible, authentic locations, technical details, architecture, event atmosphere, media infrastructure, editorial still life or documentary moments. Vary subject, lens, distance, angle, color, light and scene strongly from image to image. Do not default to business people, handshakes, smiling office teams, generic conference stock photos or synthetic AI-looking compositions. If people appear, they must be incidental, unstaged, non-identifiable and credible. Bright optimistic color grading, vivid but natural accent colors, warm daylight highlights, high-end magazine quality, professional DSLR photography, natural reflections, modern European media environment, no gloomy low-key lighting unless explicitly requested, no dark underexposed mood, no logos, no watermarks, no incidental readable text, no UI, no screenshots, no television station logos, no company branding, no illustration, no comic style, no poster art, no painted look, no cartoon faces, no synthetic glossy AI faces, no 3D render appearance, no fantasy elements, no oversaturated colors, 16:9.";
 
 const ACTIONS = {
   improveText: { label: "Text verbessern", mode: "text", instruction: "Verbessere den Text redaktionell, ohne Fakten zu erfinden." },
@@ -228,17 +229,64 @@ async function callOpenAi(action, payload, settings) {
 
 function buildImagePrompt(payload = {}) {
   const context = payload.context || {};
-  const manualPrompt = String(payload.prompt || "").trim();
-  const title = context.title || payload.title || "";
-  const subtitle = context.subtitle || "";
-  const text = context.sourceText || context.longDescription || context.bodyText || context.introText || context.shortDescription || "";
+  const safeText = (value = "", enabled = false) => {
+    const textValue = String(value || "")
+      .replace(/^#+\s*/gm, "")
+      .replace(/[“”„"`]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!enabled) return textValue;
+    return textValue
+      .replace(/\bBBC\b/g, "ein grosses oeffentlich-rechtliches Medienhaus")
+      .replace(/\bARD\b|\bZDF\b/g, "ein oeffentlich-rechtlicher Sender")
+      .replace(/\bNetflix\b|\bDisney\b|\bAmazon\b|\bApple\b|\bGoogle\b|\bMeta\b/g, "ein internationales Medien- oder Technologieunternehmen")
+      .replace(/\bWarner Bros\.?\b|\bParamount\b|\bSky\b|\bRTL\b|\bProSieben\b|\bSat\.?1\b/g, "ein Medienunternehmen");
+  };
+  const isTextFreeEditorialImage = ["news", "topics"].includes(context.targetArea);
+  const manualPrompt = safeText(payload.prompt || "", isTextFreeEditorialImage);
+  const title = safeText(context.title || payload.title || "", isTextFreeEditorialImage);
+  const subtitle = safeText(context.subtitle || "", isTextFreeEditorialImage);
+  const text = safeText(context.sourceText || context.longDescription || context.bodyText || context.introText || context.shortDescription || "", isTextFreeEditorialImage);
   const source = [title, subtitle, text].filter(Boolean).join("\n\n");
+  const eventCoverPrompt = (() => {
+    const area = String(context.targetArea || "").toLowerCase();
+    const module = String(context.module || "").toLowerCase();
+    const wantsCollage = context.generationMode === "collage" || context.motifType === "collage";
+    const combined = [context.id, context.recordId, title, subtitle, context.category, text, context.status, context.lifecycleStatus].filter(Boolean).join(" ").toLowerCase();
+    const isRetrospective = area === "rueckblick" || /rueckblick|rückblick|nachbericht|archiv|archive|beendet|event-archive/.test(combined) || context.isRetrospective;
+    const isEventImage = module === "events" || ["event", "medienfruehstueck", "von_den_besten", "versammlung", "rueckblick"].includes(area) || /event|veranstaltung|medienfruehstueck|medienfrühstück|konferenz|networking/.test(combined);
+    if (!isEventImage && !isRetrospective) return "";
+    return [
+      "Spezialprompt fuer Eventbilder und Rueckblicke:",
+      "Erstelle ein hochwertiges, fotorealistisches Titelbild fuer einen Beitrag von PROdigitalTV.",
+      `Bildart: ${isRetrospective ? "VERANSTALTUNGSRUECKBLICK" : "VERANSTALTUNGSANKUENDIGUNG"}.`,
+      `Veranstaltung: ${title || "PROdigitalTV Veranstaltung"}.`,
+      subtitle ? `Anlass/Thema: ${subtitle}.` : "",
+      context.locationName || context.city ? `Ort: ${[context.city, context.locationName].filter(Boolean).join(" / ")}.` : "",
+      context.date ? `Datum: ${context.date}.` : "",
+      context.hostName || context.partnerName ? `Gastgeber/Partner: ${context.hostName || context.partnerName}.` : "",
+      "Gestaltung: hochwertiges Einladungscover beziehungsweise redaktionelles Veranstaltungs-Cover, serioes, modern, warm, exklusiv, journalistisch glaubwuerdig.",
+      wantsCollage
+        ? "Collage-Modus: harmonische Kombination mehrerer fotorealistischer Motive; links Location, Veranstaltungsraum oder charakteristischer Stadt-/Architekturort; rechts atmosphaerisches Detailmotiv wie Fruehstueck, gedeckte Tische, Buehne, Mikrofon, Networking, Architektur oder Veranstaltungssituation."
+        : "Foto-Modus: ein einzelnes starkes fotorealistisches Motiv mit klarer Szene und glaubwuerdiger Kameraoptik. Keine Collage, keine Layout-Grafik, keine geteilten Bildfelder.",
+      "In der Mitte eine ruhige, helle, leicht transparente Flaeche fuer spaetere Ueberschrift, Veranstaltungsinformationen und Logo vorsehen. Weiche Uebergaenge, keine harten Collagekanten, klare visuelle Hierarchie.",
+      "Farbwelt: Cremeweiss, Beige, warmes Grau, dezente Goldtoene und einzelne PROdigitalTV-Akzente; natuerliches Licht, realistische Materialien, hochwertige Innenarchitektur.",
+      isRetrospective
+        ? (wantsCollage
+          ? "Rueckblickmodus: Erzeuge eine weiche Mehrbild-Collage aus 3 bis 5 fotorealistischen Eindruecken: Location oder Stadt, Veranstaltungsraum, Referent/Buehne, Gaeste/Networking und hochwertiges Detailmotiv. Wenn echte Originalfotos oder Referenzbilder bereitgestellt wurden, diese als authentische Grundlage nutzen. Keine Personen ergaenzen, die nicht auf den bereitgestellten Bildern vorhanden sind. Die Collage soll journalistisch, ruhig und hochwertig wirken, mit fliessenden Uebergaengen statt harter Kachelkanten."
+          : "Rueckblickmodus: Zeige ein einzelnes authentisch wirkendes, fotorealistisches Rueckblick-Motiv mit Veranstaltungsatmosphaere. Keine Collage, keine Kacheloptik, keine Poster-Grafik.")
+        : "Ankuendigungsmodus: vorbereitete, einladende Veranstaltungssituation zeigen. Der Raum darf weitgehend leer sein; gedeckte Tische, Namenskarten, Fruehstuecksarrangement, Buehne, Bildschirm oder dezente Menschen im Hintergrund sind moeglich.",
+      "Textregel: Keine Namen, Orte, Termine, Partner oder Aussagen erfinden. Wenn fehlerfreie Texterzeugung im Bild nicht gewaehrleistet ist, den zentralen Textbereich frei lassen, damit Texte spaeter im CMS daruebergelegt werden koennen.",
+      "Format: breites Querformat 16:9, wichtige Bildelemente nicht an die Aussenraender setzen, in der Mitte genug Platz fuer responsiven Text-Layer lassen.",
+      "Nicht erwuenscht: Comic-Optik, Illustration, KI-Aesthetik, unrealistische Raeume oder Stadtansichten, erfundene Logos, falsche Firmennamen, Fantasietexte, ueberfuellte Collage, aggressive Farben, dunkle Club-/Partyatmosphaere, kuenstliche Stockfoto-Gruppen."
+    ].filter(Boolean).join("\n");
+  })();
   const styleCatalog = {
     photorealistic: {
-      direction: "Strictly photorealistic editorial image, like a real full-frame camera photograph with believable materials, natural light and authentic media-industry atmosphere.",
+      direction: "Strictly photorealistic editorial image, like a real full-frame camera photograph with believable materials, bright natural light, lively but credible colors and authentic media-industry atmosphere.",
       composition: "Clear photographic depth, real-world scene, grounded lens perspective, credible camera optics, not illustration, not painting, not synthetic stock-like CGI.",
-      palette: "Color palette may be realistic and situation-driven, not forced into brand colors.",
-      freedom: "Vary setting, camera distance and mood boldly as long as the image stays credible as photography."
+      palette: "Use a bright, fresh, optimistic palette with natural skin tones, daylight whites, glass reflections and controlled colorful accents; avoid dark blue-heavy or underexposed looks.",
+      freedom: "Vary setting, camera distance, color and mood boldly as long as the image stays credible as photography."
     },
     editorial_magazine: {
       direction: "High-end editorial magazine visual language with crafted composition, restrained elegance and clear visual hierarchy.",
@@ -333,7 +381,8 @@ function buildImagePrompt(payload = {}) {
   };
   const styleMeta = context.stylePreset && styleCatalog[context.stylePreset] ? styleCatalog[context.stylePreset] : styleCatalog.free_style;
   const areaCatalog = {
-    news: "Bereich/Anlass: News. Aktuelle redaktionelle Bildlogik, klare journalistische Relevanz, Website-Teaser-tauglich, nicht boulevardesk.",
+    news: "Bereich/Anlass: Thema/Redaktionsbeitrag. Erzeuge wie bei Themen ein eigenstaendiges, echtes fotorealistisches Redaktionsfoto aus Headline, Subline und Beitragstext: spezifisch zum Inhalt, ruhig, hochwertig, hell, glaubwuerdig, medienwirtschaftlich relevant. Wichtig: Das Ergebnis muss ein Foto sein, kein Poster, keine Grafik, kein Keyvisual mit Schrift. Keine sichtbaren Buchstaben, keine Woerter, keine Logos, keine UI-Symbole, keine Symbolgrafik, keine generischen Business-Menschen.",
+    topics: "Bereich/Anlass: Thema/Redaktionsbeitrag. Erzeuge ein eigenstaendiges, echtes fotorealistisches Redaktionsfoto aus Headline, Subline und Beitragstext: spezifisch zum Inhalt, ruhig, hochwertig, hell, glaubwuerdig, medienwirtschaftlich relevant. Wichtig: Das Ergebnis muss ein Foto sein, kein Poster, keine Grafik, kein Keyvisual mit Schrift. Keine sichtbaren Buchstaben, keine Woerter, keine Logos, keine UI-Symbole, keine Symbolgrafik, keine generischen Business-Menschen.",
     press: "Bereich/Anlass: Presse/Mitteilung. Glaubwuerdige PR-/Kommunikationsoptik, institutionelle Klarheit, professioneller Ankuendigungscharakter.",
     medienfruehstueck: "Bereich/Anlass: Medienfruehstueck. Business-Fruehstueck, Networking, Morgenlicht, Tischkultur, hochwertige Event-Atmosphaere.",
     von_den_besten: "Bereich/Anlass: Von den Besten. Dialog, Lernen von Expertinnen und Experten, Premium-Gespraech, Wissenstransfer, menschlicher Austausch ohne Promi-Imitation.",
@@ -350,9 +399,10 @@ function buildImagePrompt(payload = {}) {
   const imageEffect = context.imageEffect ? `Bildwirkung: ${context.imageEffect}.` : "";
   const textArea = context.textArea && context.textArea !== "none" ? `Textflaeche: ${context.textArea} frei halten.` : "";
   const textOverlay = context.textOverlay
-    ? `Text-Overlay/Covertext: Setze diesen Text exakt und gut lesbar im Bild: "${String(context.textOverlay).slice(0, 180)}". Nutze hochwertige Typografie, viel Weissraum und keine zusaetzlichen Fantasiewoerter.`
+    ? `Text-Overlay/Covertext: Setze ausschliesslich diesen Text exakt im Bild: "${String(context.textOverlay).slice(0, 180)}". Der Text muss auf Thumbnail-Groesse klar lesbar sein: grosse Schrift, hoher Kontrast, ruhiger Hintergrund, keine Verzerrung, keine Fantasiebuchstaben, keine Rechtschreibfehler, keine zusaetzlichen Woerter. Wenn der Text nicht sicher lesbar umgesetzt werden kann, Bild lieber ohne Textflaeche erzeugen.`
     : "";
   const targetArea = context.targetArea && areaCatalog[context.targetArea] ? areaCatalog[context.targetArea] : "";
+  const wantsCollage = context.generationMode === "collage" || context.motifType === "collage";
   const customStyle = context.style ? `Eigene Stilreferenz der Redaktion: ${String(context.style).slice(0, 700)}. Diese Referenz hat Vorrang vor Standardmustern.` : "";
   const colorWorld = context.colorWorld ? `Gewuenschte Farbwelt: ${String(context.colorWorld).slice(0, 300)}.` : "";
   const referenceRole = String(payload.referenceImageRole || "").toLowerCase();
@@ -378,14 +428,21 @@ function buildImagePrompt(payload = {}) {
     textArea,
     textOverlay,
     targetArea,
-    manualPrompt ? `Manueller Bildprompt der Redaktion, vorrangig umsetzen: ${manualPrompt.slice(0, 1200)}` : "",
+    wantsCollage
+      ? "Gewaehlter Modus: Collage. Erzeuge eine hochwertige fotorealistische Bildcollage mit 3 bis 5 zusammenpassenden Motiven, weichen Uebergaengen, einheitlicher Lichtstimmung und ohne harte Kachelkanten. Keine Schrift, keine Logos, keine Poster-Grafik."
+      : "Gewaehlter Modus: Foto. Erzeuge ein einzelnes echtes fotorealistisches Redaktionsfoto. Keine Collage, keine geteilten Bildfelder, keine Grafik, keine Schrift.",
+    eventCoverPrompt,
+    isTextFreeEditorialImage ? "News- und Themenbilder: Das Ergebnis muss ein reines Foto ohne eingeblendete Schrift sein. Keine Plakate, keine Texttafeln, keine lesbaren oder unlesbaren Buchstaben, keine Logos, keine Markenzeichen, keine Infografik, keine Symbol-Icons. Titel, Headline, Subline und Text aus dem CMS sind nur inhaltlicher Kontext und duerfen niemals als Schrift im Bild erscheinen. Fuer Vielfalt ausdruecklich verschiedene Motivfamilien nutzen: leere Raeume, technische Details, Stadt/Architektur, Backstage, Recherche-Stillleben, Kabel/Netzwerk, Licht/Reflexionen, Produktionsspuren, anonyme Orte oder abstrakte reale Materialien. Keine Wiederholung der immer gleichen Studio-, Laptop-, Konferenz- oder Businessmenschen-Motive." : "",
+    manualPrompt ? `${isTextFreeEditorialImage ? "Inhaltlicher Kontext der Redaktion, nicht als Bildtext darstellen" : "Manueller Bildprompt der Redaktion, vorrangig umsetzen"}: ${manualPrompt.slice(0, 1200)}` : "",
     source ? `Inhaltliche Grundlage aus dem CMS, nur als Kontext nutzen: ${source.slice(0, 1200)}` : "",
     isFreeStyle
       ? "Wichtig: Kein Rueckfall in generische Business-Collage, Navy/Weiss/Rot-Standardpalette, Glas-Screen-Komposition oder austauschbare Medienwirtschaft-Symbolik."
       : "Wichtig: PROdigitalTV-Farben nur einsetzen, wenn sie zur gewaehlten Stilwelt passen; kein automatischer Rot-Blau-Standardlook.",
     context.textOverlay
-      ? "Keine echten Logos, keine Marken, keine identifizierbaren realen Personen, keine irrefuehrenden Fakten. Keine weiteren Texte ausser dem angegebenen Covertext."
-      : "Keine echten Logos, keine lesbaren Texte, keine Marken, keine identifizierbaren realen Personen, keine irrefuehrenden Fakten."
+      ? "Keine echten Logos, keine Marken, keine identifizierbaren realen Personen, keine irrefuehrenden Fakten. Keine weiteren Texte ausser dem angegebenen Covertext. Der Covertext muss lesbar und korrekt sein; unlesbarer oder fehlerhafter Text ist schlechter als gar kein Text."
+      : "Keine echten Logos, keine lesbaren Texte, keine Marken, keine identifizierbaren realen Personen, keine irrefuehrenden Fakten.",
+    "Bei Rueckblicken: Das Bild darf nicht als echtes Veranstaltungsfoto missverstanden werden, sondern bleibt ein KI-generiertes redaktionelles Titelmotiv.",
+    PRODIGITALTV_IMAGE_STYLE
   ].filter(Boolean).join("\n\n");
 }
 

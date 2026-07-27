@@ -6,7 +6,10 @@ export function eventCard(event, archive = false, partners = []) {
   const date = eventDateBox(event.date);
   const host = partners.find((partner) => partner.id === event.hostId);
   const eventSponsors = partners.filter((partner) => event.sponsorIds?.includes(partner.id));
-  const promotedPartners = [host, ...eventSponsors].filter(Boolean);
+  const promotedPartners = [host, ...eventSponsors]
+    .filter(Boolean)
+    .filter((partner, index, list) => list.findIndex((entry) => entry.id === partner.id) === index);
+  const hasDistinctSponsors = eventSponsors.some((partner) => partner.id !== host?.id);
   const imageUrl = stableImageUrl(event.imageDisplayUrl || event.imageUrl || "", "event");
   const storedTicket = event.storedTicket || null;
   const summary = event.subtitle || event.shortDescription || event.description || "";
@@ -25,9 +28,9 @@ export function eventCard(event, archive = false, partners = []) {
       <div class="event-meta"><span>${formatDate(event.date)}${event.startTime ? ` - ${event.startTime} Uhr` : ""}</span></div>
       <div class="event-showcase">
         <div class="event-showcase__fact"><small>Veranstaltungsort</small><strong>${escapeHtml(event.locationName)}</strong><span>${escapeHtml(event.city)}</span></div>
-        ${promotedPartners.length ? `<div class="event-showcase__fact event-showcase__fact--partner"><small>${eventSponsors.length ? "Gastgeber / Sponsor" : "Gastgeber"}</small><strong>${escapeHtml(promotedPartners.map((partner) => partner.name).join(" - "))}</strong></div>` : ""}
+        ${promotedPartners.length ? `<div class="event-showcase__fact event-showcase__fact--partner"><small>${hasDistinctSponsors ? "Gastgeber / Sponsor" : "Gastgeber"}</small><strong>${escapeHtml(promotedPartners.map((partner) => partner.name).join(" - "))}</strong></div>` : ""}
       </div>
-      ${archive ? "" : `<a class="link event-card__cta" href="#/event/${event.id}">Eventdetails ansehen -></a>`}
+      ${archive ? "" : `<a class="event-card__cta" href="#/event/${event.id}">Zur Veranstaltung</a>`}
     </div>
   </article>`;
 }

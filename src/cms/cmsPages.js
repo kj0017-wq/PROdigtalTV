@@ -1301,7 +1301,7 @@ function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altF
   const editHref = assetId ?`#/cms/media/edit?id=${encodeURIComponent(assetId)}&${params.toString()}` : "";
   return `<div class="linked-media-actions">
     <a class="button button--secondary button--small" href="${editHref || `#/cms/media/library?${params.toString()}`}">${escapeHtml(label)} ${assetId ?"bearbeiten" : "aus Mediathek waehlen"}</a>
-    <a class="button button--secondary button--small" href="#/cms/media/ai?${params.toString()}">${escapeHtml(label)} erstellen</a>
+    <a class="button button--secondary button--small" href="#/cms/media/ai?${params.toString()}">KI-Bild erstellen</a>
   </div>`;
 }
 
@@ -1311,7 +1311,7 @@ function eventImageEditor(event = {}, mediaAssets = [], returnTo = "") {
   return `<div class="field"><label>Eventbild / Thumb</label>
     ${imageDropzone({ inputName: "eventImage", removeName: "removeEventImage", imageUrl, label: "Eventbild", defaultSize: "1200x675" })}
     ${linkedMediaActions({ collection: "events", id: event.id, field: "imageUrl", altField: "thumbnail_alt", returnTo, label: "Bild", assetId: asset?.id || "" })}
-    <p class="muted">Bild aus der Mediathek waehlen, Thumb erstellen oder optional direkt eine neue Datei hochladen.</p>
+    <p class="muted">Bild aus der Mediathek waehlen, KI-Bild erstellen oder optional direkt eine neue Datei hochladen.</p>
   </div>`;
 }
 

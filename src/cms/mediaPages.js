@@ -667,7 +667,7 @@ function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altF
   });
   return `<div class="linked-media-actions">
     <a class="button button--secondary button--small" href="#/cms/media/library?${params.toString()}">Thumb aus Mediathek waehlen</a>
-    <a class="button button--secondary button--small" href="#/cms/media/ai?${params.toString()}">Thumb erstellen</a>
+    <a class="button button--secondary button--small" href="#/cms/media/ai?${params.toString()}">KI-Bild erstellen</a>
   </div>`;
 }
 
@@ -735,7 +735,7 @@ function mediaTypeOptions(selected = "upload") {
 function mediaCreateChoice(active = "upload") {
   return `<div class="media-create-choice" aria-label="Bild erstellen">
     <a class="${active === "upload" ? "active" : ""}" href="#/cms/media/upload"><strong>Bild hochladen</strong><span>Lokale Datei speichern und weiterbearbeiten</span></a>
-    <a class="${active === "ai" ? "active" : ""}" href="#/cms/media/ai"><strong>KI generieren</strong><span>Prompt anlegen und als Bildentwurf bearbeiten</span></a>
+    <a class="${active === "ai" ? "active" : ""}" href="#/cms/media/ai"><strong>KI-Bild erstellen</strong><span>Aus vorhandenen CMS-Daten ein Bildmotiv vorbereiten</span></a>
   </div>`;
 }
 
@@ -1227,7 +1227,7 @@ function uploadPage() {
 }
 
 function aiTargetContext(record = null) {
-  if (!record) return { title: "", sourceText: "", prompt: "" };
+  if (!record) return { title: "", sourceText: "", prompt: "", idea: "Neutrales fotorealistisches PROdigitalTV-Motiv", contentType: "Freies Medienbild", suggestedArea: "general" };
   const keywords = Array.isArray(record.tags)
     ? record.tags.join(", ")
     : Array.isArray(record.keywords)
@@ -1237,6 +1237,71 @@ function aiTargetContext(record = null) {
   const subline = record.subtitle || record.subline || record.kurztext || record.introText || "";
   const body = record.bodyText || record.articleText || record.longDescription || record.langtext || record.description || "";
   const category = record.category || record.bereich || record.page || "";
+  const recordId = record.id || record.eventId || record.event_id || record.slug || "";
+  const statusText = [
+    record.status,
+    record.lifecycle,
+    record.lifecycleStatus,
+    record.eventStatus,
+    record.phase,
+    record.mode,
+    record.section
+  ].filter(Boolean).join(" ");
+  const dateValue = String(record.date || record.eventDate || record.startDate || "").slice(0, 10);
+  const isPastEventRecord = Boolean(/^\d{4}-\d{2}-\d{2}$/.test(dateValue) && dateValue < new Date().toISOString().slice(0, 10));
+  const hasRetrospectiveSignal = Boolean(
+    record.isRetrospective
+    || record.retrospectiveArticleId
+    || record.retrospective_article_id
+    || record.archiveArticleId
+    || record.galleryId
+    || record.afterMovieUrl
+  );
+  const searchText = [recordId, title, subline, body, category, keywords, record.eventSeries, record.seriesTitle, statusText].join(" ").toLowerCase();
+  const suggestedArea = /rueckblick|r.ckblick|nachbericht|archiv|archive|beendet|event-archive/.test(searchText) || hasRetrospectiveSignal || isPastEventRecord ? "rueckblick"
+    : /medienfruehstueck|medienfr.hst.ck|fruehstueck|fr.hst.ck/.test(searchText) ? "medienfruehstueck"
+      : /von den besten|besten lernen/.test(searchText) ? "von_den_besten"
+        : /mitglied|netzwerk/.test(searchText) ? "member"
+          : /presse|mitteilung/.test(searchText) ? "press"
+            : record.date || record.eventId || record.event_id ? "event"
+              : "news";
+  const contentType = record.eventSeries || record.seriesTitle ? "Veranstaltungsreihe"
+    : record.speakerId || record.speakerName || record.referent || record.referentName ? "Vortrag / Referent"
+      : suggestedArea === "rueckblick" ? "Rueckblick"
+        : suggestedArea === "event" || record.date ? "Veranstaltung"
+          : record.name && !record.headline && !record.title ? "Profil / Organisation"
+            : record.page === "topics" || record.section === "topics" ? "Thema"
+              : "Redaktioneller Beitrag";
+  const topicHint = /streaming|broadcast|tv|produktion|studio|video|livestream/.test(searchText)
+    ? "Medienproduktion, Streaming oder digitale Infrastruktur"
+    : /ki|kuenstliche|k.nstliche|daten|automation|technologie/.test(searchText)
+      ? "KI, Technologie und digitale Medienarbeit"
+      : /politik|regulierung|recht|urheber|plattform/.test(searchText)
+        ? "Medienpolitik, Regulierung oder Fachpanel"
+        : /vermarktung|werbung|geschaeft|gesch.ft|strategie/.test(searchText)
+          ? "Vermarktung, Strategie und Business-Austausch"
+          : /vortrag|referent|speaker|buehne|b.hne/.test(searchText)
+            ? "Vortrag, Referent oder Konferenzsituation"
+            : /fruehstueck|fr.hst.ck|kaffee/.test(searchText)
+              ? "Business-Networking und helle Konferenzumgebung"
+              : /event|veranstaltung|konferenz|netzwerk/.test(searchText)
+                ? "Networking, Konferenz oder Veranstaltung"
+                : "Premium Business- und Medienbranchen-Motiv";
+  const safeImageContext = (value = "") => String(value)
+    .replace(/^#+\s*/gm, "")
+    .replace(/\bBBC\b/g, "ein grosses oeffentlich-rechtliches Medienhaus")
+    .replace(/\bARD\b|\bZDF\b/g, "ein oeffentlich-rechtlicher Sender")
+    .replace(/\bNetflix\b|\bDisney\b|\bAmazon\b|\bApple\b|\bGoogle\b|\bMeta\b/g, "ein internationales Medien- oder Technologieunternehmen")
+    .replace(/[“”„"]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const cleanIdeaTitle = safeImageContext(title || subline);
+  const safeTitle = safeImageContext(title);
+  const safeSubline = safeImageContext(subline);
+  const safeBody = safeImageContext(body);
+  const idea = cleanIdeaTitle
+    ? `Individuelles Redaktionsfoto zu "${cleanIdeaTitle.slice(0, 110)}"${topicHint ? ` - Kontext: ${topicHint}` : ""}`
+    : `${topicHint} mit heller moderner Architektur`;
   const sourceText = [
     title ? `Headline: ${title}` : "",
     subline ? `Subline: ${subline}` : "",
@@ -1244,16 +1309,72 @@ function aiTargetContext(record = null) {
     keywords ? `Keywords: ${keywords}` : "",
     body ? `Text: ${String(body).replace(/\s+/g, " ").slice(0, 1800)}` : ""
   ].filter(Boolean).join("\n");
+  const generatedPrompt = [
+    idea,
+    suggestedArea === "rueckblick"
+      ? "Rueckblick-Kontext: Erzeuge ein hochwertiges, fotorealistisches Redaktionsbild mit authentischer Veranstaltungsatmosphaere. Collage nur verwenden, wenn der Collage-Modus ausdruecklich gewaehlt wird."
+      : "",
+    safeTitle ? `Inhaltlicher Kontext, nicht als Text im Bild darstellen: ${safeTitle}` : "",
+    safeSubline ? `Weiterer Kontext, nicht als Text im Bild darstellen: ${safeSubline}` : "",
+    safeBody ? `Beitragstext als inhaltliche Grundlage: ${safeBody.slice(0, 1400)}` : "",
+    category ? `Kategorie / Thema: ${category}` : "",
+    keywords ? `Schlagwoerter: ${keywords}` : "",
+    "Erzeuge daraus ein eigenstaendiges echtes fotorealistisches Redaktionsfoto fuer PROdigitalTV: hell, freundlich, farbenfroher als bisher, mit Tageslicht, frischen natuerlichen Akzentfarben und hochwertiger Business-Fotografie. Keine dunkle Low-Key-Optik. Keine Fakten, Personen, Firmen oder Logos erfinden. Kein Poster, keine Grafik, keine Texttafel, keine sichtbaren Buchstaben oder Woerter im Bild."
+  ].filter(Boolean).join("\n\n");
   return {
     title,
     sourceText,
-    prompt: record.thumbnail_prompt || record.thumbnailPrompt || ""
+    prompt: generatedPrompt,
+    storedPrompt: record.thumbnail_prompt || record.thumbnailPrompt || "",
+    idea,
+    contentType,
+    suggestedArea
   };
 }
 
 function aiPage(query = new URLSearchParams(), targetRecord = null) {
   const hasTarget = Boolean(query.get("targetCollection") && query.get("targetId"));
   const targetContext = aiTargetContext(targetRecord);
+  const hasDescription = String(targetContext.sourceText || "").replace(String(targetContext.title || ""), "").trim().length > 24;
+  const missingRequired = hasTarget && !(String(targetContext.title || "").trim() && hasDescription);
+  return `<section class="panel media-work-panel media-ai-work-panel media-ai-work-panel--compact">
+    <form id="media-ai-form" class="form-grid" data-media-ai-form ${mediaContextAttrs(query)}>
+      <div class="media-form-head"><div><p class="eyebrow">KI-Bildgenerator</p><h2>KI-Bild erstellen</h2><p class="muted">${hasTarget ? "Die vorhandenen Editor-Daten werden automatisch verwendet. Gespeichert wird erst nach deiner Bestaetigung." : "Ohne verknuepften Datensatz bitte mindestens Titel und Beschreibung angeben."}</p></div></div>
+      <div class="media-ai-pipeline" data-media-ai-pipeline hidden aria-live="polite"></div>
+      <div class="media-ai-top-preview" data-media-ai-top-preview hidden></div>
+      ${missingRequired ? `<div class="alert alert--warning">Fuer die Bildgenerierung fehlen noch Titel oder Beschreibung.</div>` : ""}
+      <div class="media-ai-brief">
+        <div><span>Inhaltstyp</span><strong data-media-ai-content-type>${escapeHtml(targetContext.contentType)}</strong></div>
+        <div><span>Bildformat</span><strong>16:9 Hero</strong><small>1536 x 864 Zielausschnitt, WebP</small></div>
+        <div><span>Bildidee</span><strong data-media-ai-idea>${escapeHtml(targetContext.idea)}</strong></div>
+      </div>
+      ${hasTarget
+        ? `<input type="hidden" name="title" value="${escapeHtml(targetContext.title)}">
+          <input type="hidden" name="source_text" value="${escapeHtml(targetContext.sourceText)}">`
+        : `<div class="form-grid--two">
+          <div class="field"><label>Titel</label><input name="title" required placeholder="Titel fuer das KI-Bild"></div>
+          <div class="field"><label>Beschreibung</label><textarea name="source_text" required placeholder="Kurz beschreiben, worum es im Bild gehen soll."></textarea></div>
+        </div>`}
+      <input type="hidden" name="target_area" value="${escapeHtml(targetContext.suggestedArea || "general")}">
+      <input type="hidden" name="style_preset" value="photorealistic">
+      <input type="hidden" name="color_world" value="hell, farbenfroh, natuerliche Tageslichtfarben, moderne Architektur, frische Business-Akzente, keine dunkle Low-Key-Optik">
+      <input type="hidden" name="motif_type" value="mixed">
+      <input type="hidden" name="image_effect" value="premium">
+      <input type="hidden" name="text_area" value="none">
+      <input type="hidden" name="generation_mode" value="photo">
+      <input type="hidden" name="aspect_ratio" value="16x9">
+      <div class="media-ai-prompt-grid">
+        <div class="field"><label>Automatisch erzeugter Prompt</label><textarea name="generated_prompt" data-media-ai-prompt>${escapeHtml(targetContext.prompt || targetContext.idea)}</textarea></div>
+        <div class="field"><label>Optionales Ergaenzungsfeld</label><textarea name="style" placeholder="Nur konkrete Zusatzwuensche, keine neuen Fakten.">${escapeHtml(hasTarget ? "" : targetContext.sourceText)}</textarea></div>
+      </div>
+      <div class="actions">
+        <button class="button button--primary" data-media-ai-mode="photo" ${missingRequired ? "disabled" : ""}>Foto generieren</button>
+        <button class="button button--secondary" data-media-ai-mode="collage" ${missingRequired ? "disabled" : ""}>Collage generieren</button>
+        <a class="button button--secondary" href="${escapeHtml(query.get("returnTo") || "#/cms/media/library")}">Abbrechen</a>
+      </div>
+      <div id="media-ai-result" class="media-ai-result" aria-live="polite"></div>
+    </form>
+  </section>`;
   return `<section class="panel media-work-panel media-ai-work-panel">
     <form id="media-ai-form" class="form-grid" data-media-ai-form ${mediaContextAttrs(query)}>
       <div class="media-form-head"><div><p class="eyebrow">KI-Grafik</p><h2>${hasTarget ? "KI-Thumb zum Beitrag erstellen" : "KI-Grafik erstellen"}</h2><p class="muted">${hasTarget ? "Das Bild wird als Mediathek-Asset gespeichert, mit dem redaktionellen Beitrag verknuepft und danach geht es zurueck in den Editor." : "Das Bild wird als Mediathek-Asset gespeichert und kann danach bearbeitet werden."}</p></div></div>
@@ -1274,6 +1395,7 @@ function aiPage(query = new URLSearchParams(), targetRecord = null) {
         <div class="field"><label>Eigene Stilwelt / Referenzen</label><input name="style" placeholder="z. B. analoger Scan-Look, jap. Magazinlayout, Neon-Noir, rohe Pressefotografie, 70er TV-Grafik"></div>
       </div>
       <input type="hidden" name="aspect_ratio" value="16x9">
+      <input type="hidden" name="generation_mode" value="photo">
       <div class="field media-ai-reference-field" data-media-ai-reference-dropzone>
         <label>Referenzbild hochladen und analysieren</label>
         <input name="reference_image" type="file" accept="image/jpeg,image/png,image/webp">
@@ -1291,7 +1413,10 @@ function aiPage(query = new URLSearchParams(), targetRecord = null) {
         <div class="field"><label>Kontext aus Editor</label><textarea name="source_text" placeholder="Headline, Thema, Keywords oder kurzer Artikeltext">${escapeHtml(targetContext.sourceText)}</textarea></div>
         <div class="field"><label>Kreativ-Prompt optional</label><textarea name="generated_prompt" placeholder="Optional: z. B. Video-Cover, mehr Business-Fruehstueck, weniger Personen, Textbereich links frei ...">${escapeHtml(targetContext.prompt)}</textarea></div>
       </div>
-      <button class="button button--primary">${hasTarget ? "KI-Thumb erstellen und verknuepfen" : "KI-Grafik erstellen"}</button>
+      <div class="actions">
+        <button class="button button--primary" data-media-ai-mode="photo">${hasTarget ? "Foto erstellen und verknuepfen" : "Foto erstellen"}</button>
+        <button class="button button--secondary" data-media-ai-mode="collage">Collage erstellen</button>
+      </div>
       <div id="media-ai-result" class="media-ai-result" aria-live="polite"></div>
     </form>
   </section>`;

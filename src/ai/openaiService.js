@@ -594,12 +594,7 @@ function localThumbSvg(payload = {}) {
 export async function generateCmsThumbCollage(payload = {}) {
   const firebase = await getFirebaseServices();
   if (!firebase) {
-    return {
-      imageDataUrl: localThumbSvg(payload),
-      mimeType: "image/svg+xml",
-      fileName: `${payload.entityId || "cms-thumb"}-ki-collage.svg`,
-      prompt: payload.prompt || "Lokale Vorschau-Collage. Für echte KI bitte Firebase Function mit OPENAI_API_KEY nutzen."
-    };
+    throw new Error("KI-Bild konnte nicht erzeugt werden: Firebase ist lokal nicht verbunden. Bitte Anmeldung, Projektkonfiguration oder Cloud Function pruefen.");
   }
   try {
     const callable = firebase.functionsLib.httpsCallable(firebase.functions, "generateCmsThumbCollage");
@@ -607,12 +602,7 @@ export async function generateCmsThumbCollage(payload = {}) {
     return result.data;
   } catch (error) {
     if (["functions/not-found", "functions/unavailable", "functions/internal", "functions/deadline-exceeded"].includes(error?.code)) {
-      return {
-        imageDataUrl: localThumbSvg(payload),
-        mimeType: "image/svg+xml",
-        fileName: `${payload.entityId || "cms-thumb"}-ki-collage.svg`,
-        prompt: payload.prompt || "Lokale Vorschau-Collage. Die Firebase Function ist nicht erreichbar."
-      };
+      throw new Error(`KI-Bild konnte nicht erzeugt werden: Cloud Function generateCmsThumbCollage ist nicht erreichbar (${error.code}). ${error.message || ""}`.trim());
     }
     throw error;
   }

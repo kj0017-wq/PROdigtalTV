@@ -1,7 +1,7 @@
 import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, getOne } from "../firebase/dataService.js?v=516";
 import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=471";
 import { publicShell, logo } from "../components/layout.js?v=7";
-import { eventCard, topicCard } from "../components/cards.js?v=6";
+import { eventCard, topicCard } from "../components/cards.js?v=7";
 import { accessLabels, lifecycleLabels } from "../data/platformConstants.js?v=1";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
 import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=1";
@@ -966,6 +966,19 @@ function newsDateValue(item = {}) {
   return String(item.publishDate || item.validFrom || item.updatedAt || item.createdAt || "");
 }
 
+function newestContentValue(item = {}) {
+  const value = item.publishDate || item.validFrom || item.date || item.updatedAt || item.updated_at || item.createdAt || item.created_at || "";
+  if (value && typeof value.toDate === "function") return value.toDate().toISOString();
+  if (value && typeof value === "object" && Number.isFinite(value.seconds)) return new Date(value.seconds * 1000).toISOString();
+  return String(value || "");
+}
+
+function newestContentFirst(a = {}, b = {}) {
+  const dateCompare = newestContentValue(b).localeCompare(newestContentValue(a));
+  if (dateCompare) return dateCompare;
+  return String(b.id || "").localeCompare(String(a.id || ""));
+}
+
 function dedupeNewsItems(items = []) {
   const byKey = new Map();
   items
@@ -1005,10 +1018,7 @@ function isAiGeneratedArticle(item = {}) {
 }
 
 function editorialPrioritySort(a = {}, b = {}) {
-  const manualA = isAiGeneratedArticle(a) ? 0 : 1;
-  const manualB = isAiGeneratedArticle(b) ? 0 : 1;
-  if (manualA !== manualB) return manualB - manualA;
-  return String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || ""));
+  return newestContentFirst(a, b);
 }
 
 function isAudioAvailableStatus(status = "") {
@@ -1315,7 +1325,7 @@ function mobileLeanStart() {
   return Boolean(window.matchMedia?.("(max-width: 760px)").matches);
 }
 
-export async function homePage() {
+async function legacyHomePage() {
   const [events, rawMembers, editorial] = await Promise.all([
     listPublicEvents(),
     publicManagedMembers(),
@@ -1326,7 +1336,7 @@ export async function homePage() {
   const next = upcoming[0];
   const mediaAssets = next ? await listPublicEventMediaAssets([next]) : [];
   const latestNewsItems = publicNewsItems(editorial)
-    .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")))
+    .sort(newestContentFirst)
     .slice(0, 6);
   const logoMembers = members.filter((member) => member.logoDisplayUrl || member.logoUrl);
   const featuredMembers = shuffledItems(logoMembers.length >= 3 ? logoMembers : members).slice(0, 3);
@@ -1421,6 +1431,192 @@ export async function homePage() {
     <section class="section home-final-cta"><div class="container home-final-cta__inner"><div><h2>Gemeinsam für die Medienzukunft.</h2><p>Vernetzen, informieren und die digitale Zukunft gestalten.</p></div><a class="button button--primary" href="#/join">Mitglied werden</a></div></section>
   `);
 }
+
+function homeDateValue(item = {}) {
+  return String(item.date || item.publishDate || item.validFrom || item.updatedAt || item.createdAt || "");
+}
+
+function homeImageUrl(item = {}, type = "news") {
+  return stableImageUrl(item.imageDisplayUrl || item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || item.logoUrl || item.photoUrl || "", type);
+}
+
+function homeTeaser(item = {}, length = 170) {
+  return teaserText(item.subtitle || item.subline || item.shortDescription || item.shortText || item.teaserText || item.introText || item.description || item.bodyText || item.longDescription || "", length);
+}
+
+function homeVisibleRecord(item = {}) {
+  const status = String(item.status || "published").toLowerCase();
+  const visibility = String(item.visibility || item.sichtbarkeit || "public").toLowerCase();
+  return !["draft", "inactive", "archived", "deleted", "hidden"].includes(status)
+    && !["internal", "private", "hidden"].includes(visibility)
+    && item.visible !== false
+    && item.isLive !== false;
+}
+
+function homeRetrospectiveItems(events = [], editorial = []) {
+  const pastEvents = events
+    .filter((event) => isPastEvent(event) && homeVisibleRecord(event))
+    .map((event) => ({ ...event, homeType: "event-retrospective", href: "#/archive", dateKey: homeDateValue(event) }));
+  const articles = editorial
+    .filter(isRetrospectiveArticle)
+    .map((item) => ({ ...item, homeType: "article-retrospective", href: `#/retrospective/${item.id}`, dateKey: homeDateValue(item) }));
+  return [...pastEvents, ...articles].sort((a, b) => String(b.dateKey).localeCompare(String(a.dateKey)));
+}
+
+function homeEventSeries(events = []) {
+  const series = new Map();
+  events.filter(homeVisibleRecord).forEach((event) => {
+    const title = String(event.eventSeries || event.seriesTitle || event.series || event.eventType || "").trim();
+    if (!title) return;
+    const key = title.toLowerCase();
+    const existing = series.get(key) || { title, description: "", latestDate: "", eventIds: [] };
+    existing.description = existing.description || event.seriesDescription || event.eventSeriesDescription || event.shortDescription || event.subtitle || event.description || "";
+    existing.latestDate = [existing.latestDate, event.date || event.updatedAt || ""].sort().pop() || "";
+    existing.eventIds = [...new Set([...existing.eventIds, event.id].filter(Boolean))];
+    series.set(key, existing);
+  });
+  return Array.from(series.values()).sort((a, b) => String(b.latestDate).localeCompare(String(a.latestDate))).slice(0, 3);
+}
+
+function homeTalkItems(events = [], topics = [], speakers = []) {
+  const topicById = new Map(topics.filter(homeVisibleRecord).map((topic) => [topic.id, topic]));
+  const items = [];
+  events
+    .filter(homeVisibleRecord)
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
+    .forEach((event) => {
+      (event.topicIds || []).forEach((topicId) => {
+        const topic = topicById.get(topicId);
+        if (!topic || items.some((item) => item.topic.id === topic.id)) return;
+        const topicSpeaker = speakers.find((speaker) => {
+          const topicLinked = speaker.topicId === topic.id || (speaker.topicIds || []).includes(topic.id);
+          const eventLinked = (speaker.eventIds || []).includes(event.id) || (event.speakerIds || []).includes(speaker.id);
+          return homeVisibleRecord(speaker) && (topicLinked || eventLinked);
+        });
+        items.push({ topic, event, speaker: topicSpeaker || null });
+      });
+    });
+  return items.slice(0, 4);
+}
+
+function homeSection(title, eyebrow, body, action = "") {
+  if (!body) return "";
+  return `<section class="pdtv-home-section"><div class="container">
+    <div class="pdtv-home-section__head"><div><p class="eyebrow">${escapeHtml(eyebrow)}</p><h2>${escapeHtml(title)}</h2></div>${action}</div>
+    ${body}
+  </div></section>`;
+}
+
+function homeHeroMarkup({ next, nextImageUrl, retrospective, series }) {
+  if (next) {
+    const image = nextImageUrl || homeImageUrl(next, "event");
+    return `<section class="pdtv-home-hero pdtv-home-hero--event">
+      ${image ? `<figure class="pdtv-home-hero__media"><img src="${escapeHtml(image)}" alt="${escapeHtml(next.title || "Event")}" loading="eager" decoding="async" fetchpriority="high"></figure>` : ""}
+      <div class="pdtv-home-hero__content">
+        <p class="eyebrow">Kommendes Event</p>
+        <h1>${escapeHtml(next.title || "PROdigitalTV Event")}</h1>
+        <p>${escapeHtml(homeTeaser(next, 210) || [formatDate(next.date), next.city].filter(Boolean).join(" - "))}</p>
+        <div class="pdtv-home-hero__meta">${[formatDate(next.date), next.startTime ? `${next.startTime} Uhr` : "", next.city].filter(Boolean).map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+        <div class="pdtv-home-actions"><a class="button button--primary" href="#/event/${escapeHtml(next.id)}">Event ansehen</a>${eventRegistrationIsOpen(next) ? `<a class="button button--secondary" href="#/register/${escapeHtml(next.id)}">Anmelden</a>` : ""}</div>
+      </div>
+    </section>`;
+  }
+  if (retrospective) {
+    const image = homeImageUrl(retrospective, "event");
+    return `<section class="pdtv-home-hero pdtv-home-hero--retrospective">
+      ${image ? `<figure class="pdtv-home-hero__media"><img src="${escapeHtml(image)}" alt="${escapeHtml(retrospective.title || "Rueckblick")}" loading="eager" decoding="async" fetchpriority="high"></figure>` : ""}
+      <div class="pdtv-home-hero__content">
+        <p class="eyebrow">Aktueller Rückblick</p>
+        <h1>${escapeHtml(retrospective.title || "Rückblick")}</h1>
+        ${homeTeaser(retrospective, 220) ? `<p>${escapeHtml(homeTeaser(retrospective, 220))}</p>` : ""}
+        <div class="pdtv-home-actions"><a class="button button--primary" href="${escapeHtml(retrospective.href || "#/archive")}">Rückblick ansehen</a></div>
+      </div>
+    </section>`;
+  }
+  if (series) {
+    return `<section class="pdtv-home-hero pdtv-home-hero--series">
+      <div class="pdtv-home-hero__content">
+        <p class="eyebrow">Veranstaltungsreihe</p>
+        <h1>${escapeHtml(series.title)}</h1>
+        ${series.description ? `<p>${escapeHtml(teaserText(series.description, 220))}</p>` : ""}
+        <div class="pdtv-home-actions"><a class="button button--primary" href="#/events">Alle Veranstaltungen</a></div>
+      </div>
+    </section>`;
+  }
+  return `<section class="pdtv-home-hero pdtv-home-hero--neutral">
+    <div class="pdtv-home-hero__content">
+      <p class="eyebrow">PROdigitalTV</p>
+      <h1>Digitales Mediennetzwerk mit Haltung.</h1>
+      <p>Willkommen bei PROdigitalTV. Aktuelle Inhalte erscheinen hier, sobald sie im CMS veröffentlicht sind.</p>
+      <div class="pdtv-home-actions"><a class="button button--primary" href="#/events">Events</a><a class="button button--secondary" href="#/topics">Themen</a></div>
+    </div>
+  </section>`;
+}
+
+export async function homePage() {
+  const [events, editorial, topics, speakers] = await Promise.all([
+    listPublicEvents().catch(() => []),
+    listPublicContent("editorialContent").catch(() => []),
+    listPublicContent("topics").catch(() => []),
+    listPublicContent("speakers").catch(() => [])
+  ]);
+  const upcoming = events.filter(upcomingEventIsVisible).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+  const next = upcoming[0] || null;
+  const mediaAssets = next ? await listPublicEventMediaAssets([next]).catch(() => []) : [];
+  const nextImageUrl = next ? upcomingEventImageUrl(next, mediaAssets, { fallback: false }) : "";
+  const retrospective = homeRetrospectiveItems(events, editorial)[0] || null;
+  const seriesItems = homeEventSeries(events);
+  const latestNewsItems = publicNewsItems(editorial)
+    .sort(newestContentFirst)
+    .slice(0, 3);
+  const visibleTopics = topics
+    .filter((topic) => homeVisibleRecord(topic) && homeImageUrl(topic, "topic"))
+    .sort(newestContentFirst)
+    .slice(0, 6);
+  const talks = homeTalkItems(events, topics, speakers);
+  const visibleSpeakers = speakers
+    .filter((speaker) => homeVisibleRecord(speaker) && (speaker.name || speaker.firstName || speaker.lastName))
+    .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
+    .slice(0, 6);
+
+  const newsBody = latestNewsItems.length ? `<div class="pdtv-home-news-grid">${latestNewsItems.map((item) => {
+    const image = homeImageUrl({ ...item, imageUrl: newsThumbUrl(item) }, "news");
+    const audio = availableAudioUrl(item.audioUrl || item.audioNaturalUrl || item.audioAccessibleUrl || "", item.audioStatus || item.audioNaturalStatus || item.audioAccessibleStatus || "");
+    return `<a class="pdtv-home-news-card" href="#/news/${escapeHtml(item.id)}">
+      ${image ? `<figure><img src="${escapeHtml(image)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${liveImageAttrs("news")}></figure>` : ""}
+      <div><p class="eyebrow">${escapeHtml(item.category || "News")}${audio ? " - Audio" : ""}</p><h3>${escapeHtml(item.title || "News")}</h3>${homeTeaser(item, 160) ? `<p>${escapeHtml(homeTeaser(item, 160))}</p>` : ""}<span>Beitrag öffnen</span></div>
+    </a>`;
+  }).join("")}</div>` : `<div class="pdtv-home-empty">Aktuell sind keine News veröffentlicht.</div>`;
+
+  const topicsBody = visibleTopics.length ? `<div class="pdtv-home-topic-grid">${visibleTopics.map((topic) => `<a class="pdtv-home-topic-card" href="#/topic/${escapeHtml(topic.id)}">
+    <img src="${escapeHtml(homeImageUrl(topic, "topic"))}" alt="${escapeHtml(topic.title || "Thema")}" loading="lazy" decoding="async" ${liveImageAttrs("topic")}><span>${escapeHtml(topic.title || "Thema")}</span>
+  </a>`).join("")}</div>` : "";
+
+  const talksBody = talks.length ? `<div class="pdtv-home-talk-grid">${talks.map(({ topic, event, speaker }) => `<article class="pdtv-home-talk-card">
+    <p class="eyebrow">${escapeHtml(event.eventType || event.title || "Veranstaltung")}</p>
+    <h3>${escapeHtml(topic.title || "Vortrag")}</h3>
+    ${speaker ? `<p>${escapeHtml(speaker.name || [speaker.firstName, speaker.lastName].filter(Boolean).join(" "))}${speaker.company ? ` - ${escapeHtml(speaker.company)}` : ""}</p>` : ""}
+    <a class="button button--secondary button--small" href="#/event/${escapeHtml(event.id)}">Vortrag öffnen</a>
+  </article>`).join("")}</div>` : "";
+
+  const speakersBody = visibleSpeakers.length ? `<div class="pdtv-home-speaker-grid">${visibleSpeakers.map((speaker) => {
+    const name = speaker.name || [speaker.firstName, speaker.lastName].filter(Boolean).join(" ");
+    const photo = homeImageUrl({ ...speaker, imageUrl: speaker.photoUrl || speaker.imageUrl }, "member");
+    return `<article class="pdtv-home-speaker-card">${photo ? `<img src="${escapeHtml(photo)}" alt="${escapeHtml(name)}" loading="lazy" decoding="async" ${liveImageAttrs("member")}>` : `<span>${escapeHtml(initials(name || "Referent"))}</span>`}<div><h3>${escapeHtml(name)}</h3>${speaker.company ? `<p>${escapeHtml(speaker.company)}</p>` : ""}<a class="button button--secondary button--small" href="#/speakers">Profil</a></div></article>`;
+  }).join("")}</div>` : "";
+
+  const seriesBody = seriesItems.length ? `<div class="pdtv-home-series-grid">${seriesItems.map((series) => `<article class="pdtv-home-series-card"><h3>${escapeHtml(series.title)}</h3>${series.description ? `<p>${escapeHtml(teaserText(series.description, 170))}</p>` : ""}<a class="button button--secondary button--small" href="#/events">Alle Veranstaltungen</a></article>`).join("")}</div>` : "";
+
+  return publicShell("home", `<main class="pdtv-home">
+    <div class="container">${homeHeroMarkup({ next, nextImageUrl, retrospective, series: seriesItems[0] || null })}</div>
+    ${homeSection("Aktuelle News", "News", newsBody, `<a class="link" href="#/news">Alle News</a>`)}
+    ${homeSection("Themen", "Dossiers", topicsBody, `<a class="link" href="#/topics">Alle Themen</a>`)}
+    ${homeSection("Aktuelle Vorträge", "Agenda", talksBody)}
+    ${homeSection("Aktuelle Referenten", "Köpfe", speakersBody)}
+    ${homeSection("Veranstaltungsreihen", "Formate", seriesBody)}
+  </main>`);
+}
+
 export async function eventsPage() {
   const [events, sponsors] = await Promise.all([
     listPublicEvents(isMember()).catch(() => []),
@@ -1575,14 +1771,14 @@ export async function notificationUnsubscribePage(hash = "") {
 }
 
 export async function topicsPage() {
-  const topics = await listPublicContent("topics");
+  const topics = (await listPublicContent("topics")).sort(newestContentFirst);
   return publicShell("topics", `${subhero("Themen", "Die Agenda der digitalen Medienwirtschaft.", "PROdigitalTV buendelt relevante Fragestellungen und bringt sie in konkreten Events zur Diskussion.")}
     <section class="section"><div class="container"><div class="card-grid card-grid--three editorial-list editorial-list--topics">${topics.map(topicCard).join("")}</div></div></section>`);
 }
 
 export async function newsPage(query = new URLSearchParams()) {
   const cmsNews = publicNewsItems(await listPublicContent("editorialContent"));
-  const news = cmsNews.sort(editorialPrioritySort);
+  const news = cmsNews.sort(newestContentFirst);
   const selectedCategory = String(query?.get?.("category") || "").trim();
   const categoryHref = (category) => `#/news?category=${encodeURIComponent(category || "News")}`;
   const newsCategories = (item = {}) => {

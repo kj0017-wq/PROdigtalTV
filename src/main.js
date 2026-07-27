@@ -10,17 +10,17 @@ const mediaProxyFunctionUrl = "https://europe-west3-prodigitaltv-da47b.cloudfunc
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=681");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=667");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=683");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=668");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=493");
-const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=103");
+const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=115");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=13");
 const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=7");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=13");
 const firebaseClientService = () => lazy.firebaseClientService ||= import("./firebase/firebaseClient.js?v=1");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
 const csvService = () => lazy.csvService ||= import("./utils/csv.js");
-const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=326");
+const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=328");
 const ttsService = () => lazy.ttsService ||= import("./ai/ttsService.js?v=2");
 const audioService = () => lazy.audioService ||= import("./ai/audioService.js");
 const aiSourceCatalogService = () => lazy.aiSourceCatalog ||= import("./data/aiSourceCatalog.js");
@@ -2717,6 +2717,107 @@ function mediaAiStyleCatalog() {
   };
 }
 
+const mediaAiCreativeDirections = [
+  "Fotorealistisches Close-up von Streaming-Hardware, Kabeln, Lichtsignalen und echten Materialdetails, keine Menschen im Vordergrund.",
+  "Helle Architekturaufnahme eines modernen Medien- oder Konferenzortes mit Glas, Tageslicht und klarer Raumtiefe, ohne gestellte Business-Personen.",
+  "Dokumentarisches Detailfoto von Kamera, Objektiv, Monitor und Regieplatz mit glaubwuerdiger Arbeitssituation, keine Stockfoto-Posen.",
+  "Abstrakt-realistische Licht- und Signalspuren in einem echten technischen Raum, fotografisch, atmosphaerisch, nicht wie CGI.",
+  "Editoriales Stillleben aus Medienbranche: Mikrofon, Notizen, Badge, Laptopkante, Kaffee, Lichtreflexe, sehr natuerlich fotografiert.",
+  "Weitwinklige leere Buehne kurz vor einem Vortrag, Projektionslicht, Stuehle, Tageslicht, Erwartung statt Menschenmenge.",
+  "Makrofotografie von Oberflaechen, Glas, Metall, LED-Punkten und Broadcast-Technik als hochwertiges Themenmotiv.",
+  "Urbanes Medienviertel oder moderner Office-Campus bei Tageslicht, glaubwuerdige Architektur statt Personenportraet.",
+  "Helle Netzwerk-Situation nur als unscharfer Hintergrund, Fokus auf Raum, Licht, Tische und Arbeitsmaterialien.",
+  "Fotorealistisches Daten- und Infrastrukturmotiv: Serverraum, Glasfaser, Racks oder Netzwerktechnik, sauber und farbiger als Standard.",
+  "Redaktioneller Desk von oben: echte Dokumente, Tablet, Audio-Recorder, Kamera-Zubehoer, kein lesbarer Text, kein Logo.",
+  "Dynamische Perspektive entlang einer Kameraschiene, Studiolicht oder Rigging, nah und materiell, keine generischen Gesichter.",
+  "Hochwertige Konferenzarchitektur mit Lichtinseln, Schatten, Reflexionen und klarer Tiefe, menschenarm oder menschenfrei.",
+  "Fotorealistisches Symbolbild fuer digitale Plattformen mit realen Geraeten, Displays ohne lesbaren Text und natuerlicher Umgebung.",
+  "Backstage-Moment einer Medienveranstaltung: Technikcases, Kabelwege, Licht, offene Tuer, echte Atmosphaere, keine Showpose.",
+  "Minimalistisches Premium-Foto mit einem starken Objekt aus Medien/Streaming und viel hellem Weissraum.",
+  "Farbige Tageslichtaufnahme mit Reflexionen auf Glas, Monitoren und technischen Oberflaechen, modern und lebendig.",
+  "Ungestellte Reportage-Szene aus der zweiten Reihe: Publikum oder Austausch nur angedeutet, Fokus auf Kontext und Atmosphaere.",
+  "Fotorealistische Detailaufnahme von Audio-, Video- oder Streaming-Bedienelementen, mit natuerlichen Gebrauchsspuren.",
+  "Eigenstaendige metaphorische Realfotografie: Licht, Verbindung, Bewegung und Medieninfrastruktur als glaubwuerdige reale Szene.",
+  "Nahaufnahme eines leeren Newsrooms am fruehen Morgen: Stuehle, Papier, Licht, Monitore ohne Text, keine Menschen.",
+  "Aussenaufnahme eines anonymen Mediengebaeudes im Regen oder nach Sonnenaufgang, Spiegelungen, urbane Stimmung, keine Logos.",
+  "Fotografisches Stillleben eines zerknitterten Programmplans ohne lesbare Schrift, Schere, Stift und Studio-Licht als Spar- oder Umbau-Metapher.",
+  "Realistische Detailaufnahme einer Hand an einem Mischpult oder Schnittplatz, nur Ausschnitt, keine erkennbare Person, keine Marken.",
+  "Leere Sitzreihe in einem Vorfuehrraum oder Kinosaal mit Projektionslicht, als Medien- und Publikumsmotiv.",
+  "Nahes Foto von Kopfhörern, Audiorekorder und Kabeln auf hellem Tisch, journalistisch, ungestellt, ohne Text.",
+  "Fotorealistisches Motiv aus Archivregalen, Filmrollen, Speichermedien oder Serverplatten, warmes Seitenlicht.",
+  "Stadtmotiv mit Sendeturm, Dachantennen oder Glasfassaden im Hintergrund, modern, real, nicht ikonisch ueberzeichnet.",
+  "Studioflur oder Produktionsgang mit Licht aus halb offener Tuer, atmosphaerisch, menschenfrei.",
+  "Detail eines abgeschalteten Monitors in einem hellen Schnittplatz, Reflexionen statt lesbarer Inhalte.",
+  "Objektfoto eines Tablets oder Smartphones mit leerem neutralem Screen, umgeben von realen Produktionsmaterialien.",
+  "Fotorealistische Szene mit Transportkoffern, Kamerastativ und Kabeln vor einer Location, unterwegs statt Buero.",
+  "Makroaufnahme von Glasfasersteckern, Routerports oder Patchkabeln mit farbigen Lichtakzenten, sehr materiell.",
+  "Editoriales Foto einer Pinnwand mit unscharfen, nicht lesbaren Notizen und neutralen Bildausschnitten, Recherche-Atmosphaere.",
+  "Helle Kantinen- oder Pausensituation eines Medienhauses ohne erkennbare Logos, als Blick hinter die Kulissen.",
+  "Fensterblick aus einem hohen Gebaeude auf Stadt und Medieninfrastruktur, ruhig, weit, keine Personen.",
+  "Dokumentarische Aufnahme eines Regiestuhls, Mikrofonstaenders oder leeren Interviewsets, reduzierte Stimmung.",
+  "Foto eines Konferenzraums nach Ende eines Treffens: Tassen, Stuehle, Licht, echte Spuren, keine Menschen.",
+  "Abstrakte Realfotografie von Schatten, Kabeln und Lichtlinien auf hellem Boden, minimalistisch und glaubwuerdig.",
+  "Close-up eines Kameradisplays ohne lesbaren Inhalt, Fokus auf Rahmen, Knöpfe, Handwerk und Licht.",
+  "Realistische Szene aus einer Bibliothek oder einem Recherchebereich mit Medienfachliteratur ohne lesbare Titel.",
+  "Hochwertiges Foto von Satellitenschuessel, Antenne oder Dachtechnik bei Tageslicht, technisch aber freundlich.",
+  "Editoriales Objektfoto mit kaputtem oder geloestem Kabelbinder, Kabeln und Ordnungssystem, als Umbau-Metapher.",
+  "Reportagefoto eines Eingangbereichs einer anonymen Produktionslocation, Besucherbadge ohne Text, Licht und Bewegung.",
+  "Sehr reduzierte Nahaufnahme von rotem Aufnahmelicht, Mikrofonarm und unscharfem Raum, ohne Schrift.",
+  "Fotorealistischer Blick in einen hellen Besprechungsraum mit leerem Whiteboard ohne Text und technischer Ausstattung.",
+  "Echte Materialstudie: Papier, Glas, Metall, Schatten, Netzwerkstecker und Kamera-Akku als moderne Medienwirtschaft.",
+  "Atmosphaerische Abendaufnahme eines leeren Studios mit warmen Arbeitslichtern, nicht dunkel, nicht dramatisch uebertrieben.",
+  "Detailfoto einer Zeitungs- oder Magazinproduktion ohne lesbare Zeilen, Papierlauf, Druckstruktur, redaktionelle Haptik.",
+  "Ruhige, helle Szene eines Arbeitsplatzes im Umbruch: leerer Schreibtisch, Karton, Kabel, Bildschirm ohne Text."
+];
+
+function mediaAiDirectionIndex(seed = "", variantNumber = 1) {
+  const text = `${seed || ""}:${variantNumber || 1}`;
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash) % mediaAiCreativeDirections.length;
+}
+
+function mediaAiCreativeDirection(context = {}, variantNumber = 1) {
+  const seed = [context.visualSeed, context.title, context.subtitle, context.category, context.bodyText].filter(Boolean).join(" ");
+  return mediaAiCreativeDirections[mediaAiDirectionIndex(seed, variantNumber)];
+}
+
+function mediaAiEventCoverPrompt(context = {}) {
+  const area = String(context.targetArea || "").toLowerCase();
+  const module = String(context.module || "").toLowerCase();
+  const wantsCollage = context.generationMode === "collage" || context.motifType === "collage";
+  const text = [context.id, context.recordId, context.title, context.subtitle, context.category, context.bodyText, context.shortDescription, context.sourceText, context.status, context.lifecycleStatus].filter(Boolean).join(" ").toLowerCase();
+  const isRetrospective = area === "rueckblick" || /rueckblick|rückblick|nachbericht|archiv|archive|beendet|event-archive/.test(text) || context.isRetrospective;
+  const isEventImage = module === "events" || ["event", "medienfruehstueck", "von_den_besten", "versammlung", "rueckblick"].includes(area) || /event|veranstaltung|medienfruehstueck|medienfrühstück|konferenz|networking/.test(text);
+  if (!isEventImage && !isRetrospective) return "";
+  return [
+    "Spezialprompt fuer Eventbilder und Rueckblicke:",
+    "Erstelle ein hochwertiges, fotorealistisches Titelbild fuer einen Beitrag von PROdigitalTV.",
+    `Bildart: ${isRetrospective ? "VERANSTALTUNGSRUECKBLICK" : "VERANSTALTUNGSANKUENDIGUNG"}.`,
+    `Veranstaltung: ${context.title || "PROdigitalTV Veranstaltung"}.`,
+    context.subtitle ? `Anlass/Thema: ${context.subtitle}.` : "",
+    context.locationName || context.city ? `Ort: ${[context.city, context.locationName].filter(Boolean).join(" / ")}.` : "",
+    context.date ? `Datum: ${context.date}.` : "",
+    context.hostName || context.partnerName ? `Gastgeber/Partner: ${context.hostName || context.partnerName}.` : "",
+    "Gestaltung: hochwertiges Einladungscover beziehungsweise redaktionelles Veranstaltungs-Cover, serioes, modern, warm, exklusiv, journalistisch glaubwuerdig.",
+    wantsCollage
+      ? "Collage-Modus: harmonische Kombination mehrerer fotorealistischer Motive; links Location, Veranstaltungsraum oder charakteristischer Stadt-/Architekturort; rechts atmosphaerisches Detailmotiv wie Fruehstueck, gedeckte Tische, Buehne, Mikrofon, Networking, Architektur oder Veranstaltungssituation."
+      : "Foto-Modus: ein einzelnes starkes fotorealistisches Motiv mit klarer Szene und glaubwuerdiger Kameraoptik. Keine Collage, keine Layout-Grafik, keine geteilten Bildfelder.",
+    "In der Mitte eine ruhige, helle, leicht transparente Flaeche fuer spaetere Ueberschrift, Veranstaltungsinformationen und Logo vorsehen. Weiche Uebergaenge, keine harten Collagekanten, klare visuelle Hierarchie.",
+    "Farbwelt: Cremeweiss, Beige, warmes Grau, dezente Goldtoene und einzelne PROdigitalTV-Akzente; natuerliches Licht, realistische Materialien, hochwertige Innenarchitektur.",
+    isRetrospective
+      ? (wantsCollage
+        ? "Rueckblickmodus: Erzeuge eine weiche Mehrbild-Collage aus 3 bis 5 fotorealistischen Eindruecken: Location oder Stadt, Veranstaltungsraum, Referent/Buehne, Gaeste/Networking und hochwertiges Detailmotiv. Wenn echte Originalfotos oder Referenzbilder bereitgestellt wurden, diese als authentische Grundlage nutzen. Keine Personen ergaenzen, die nicht auf den bereitgestellten Bildern vorhanden sind. Die Collage soll journalistisch, ruhig und hochwertig wirken, mit fliessenden Uebergaengen statt harter Kachelkanten."
+        : "Rueckblickmodus: Zeige ein einzelnes authentisch wirkendes, fotorealistisches Rueckblick-Motiv mit Veranstaltungsatmosphaere. Keine Collage, keine Kacheloptik, keine Poster-Grafik.")
+      : "Ankuendigungsmodus: vorbereitete, einladende Veranstaltungssituation zeigen. Der Raum darf weitgehend leer sein; gedeckte Tische, Namenskarten, Fruehstuecksarrangement, Buehne, Bildschirm oder dezente Menschen im Hintergrund sind moeglich.",
+    "Textregel: Keine Namen, Orte, Termine, Partner oder Aussagen erfinden. Wenn fehlerfreie Texterzeugung im Bild nicht gewaehrleistet ist, den zentralen Textbereich frei lassen, damit Texte spaeter im CMS daruebergelegt werden koennen.",
+    "Format: breites Querformat 16:9, wichtige Bildelemente nicht an die Aussenraender setzen, in der Mitte genug Platz fuer responsiven Text-Layer lassen.",
+    "Nicht erwuenscht: Comic-Optik, Illustration, KI-Aesthetik, unrealistische Raeume oder Stadtansichten, erfundene Logos, falsche Firmennamen, Fantasietexte, ueberfuellte Collage, aggressive Farben, dunkle Club-/Partyatmosphaere, kuenstliche Stockfoto-Gruppen."
+  ].filter(Boolean).join("\n");
+}
+
 function imageGenerationContextFromRecord(record = {}, module = "editorialContent") {
   return {
     title: record.title || record.titel || record.headline || record.name || "",
@@ -2724,17 +2825,42 @@ function imageGenerationContextFromRecord(record = {}, module = "editorialConten
     bodyText: record.bodyText || record.articleText || record.longDescription || record.langtext || record.description || "",
     shortDescription: record.shortDescription || record.introText || record.teaserText || record.kurztext || "",
     category: record.category || record.bereich || record.page || "",
+    id: record.id || record.eventId || record.event_id || record.slug || "",
+    recordId: record.id || record.eventId || record.event_id || record.slug || "",
+    status: record.status || record.eventStatus || record.phase || "",
+    lifecycleStatus: record.lifecycleStatus || record.lifecycle || "",
+    isRetrospective: Boolean(record.isRetrospective || record.retrospectiveArticleId || record.retrospective_article_id || record.archiveArticleId || record.galleryId),
+    date: record.date || record.eventDate || record.startDate || "",
+    city: record.city || record.ort || "",
+    locationName: record.locationName || record.location || record.venue || "",
+    hostName: record.hostName || record.partnerName || record.sponsorName || "",
     module
   };
 }
 
+function mediaAiPromptSafeText(value = "", enabled = false) {
+  const text = String(value || "")
+    .replace(/^#+\s*/gm, "")
+    .replace(/[“”„"`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!enabled) return text;
+  return text
+    .replace(/\bBBC\b/g, "ein grosses oeffentlich-rechtliches Medienhaus")
+    .replace(/\bARD\b|\bZDF\b/g, "ein oeffentlich-rechtlicher Sender")
+    .replace(/\bNetflix\b|\bDisney\b|\bAmazon\b|\bApple\b|\bGoogle\b|\bMeta\b/g, "ein internationales Medien- oder Technologieunternehmen")
+    .replace(/\bWarner Bros\.?\b|\bParamount\b|\bSky\b|\bRTL\b|\bProSieben\b|\bSat\.?1\b/g, "ein Medienunternehmen");
+}
+
 function creativeThumbPrompt(context = {}, userPrompt = "", variantNumber = 1) {
-  const title = context.title || "PROdigitalTV Redaktion";
-  const category = context.category ? `Rubrik: ${context.category}.` : "";
-  const subtitle = context.subtitle ? `Subline: ${context.subtitle}.` : "";
-  const bodyHint = context.bodyText ? `Inhaltlicher Kontext: ${String(context.bodyText).replace(/\s+/g, " ").slice(0, 520)}.` : "";
+  const isTextFreeEditorialImage = ["news", "topics"].includes(context.targetArea);
+  const title = mediaAiPromptSafeText(context.title || "PROdigitalTV Redaktion", isTextFreeEditorialImage);
+  const category = context.category ? `Rubrik: ${mediaAiPromptSafeText(context.category, isTextFreeEditorialImage)}.` : "";
+  const subtitle = context.subtitle ? `Subline: ${mediaAiPromptSafeText(context.subtitle, isTextFreeEditorialImage)}.` : "";
+  const bodyHint = context.bodyText ? `Inhaltlicher Kontext: ${mediaAiPromptSafeText(context.bodyText, isTextFreeEditorialImage).slice(0, 520)}.` : "";
   const areaCatalog = {
-    news: "Bereich/Anlass: News. Aktuelle redaktionelle Bildlogik, klare journalistische Relevanz, Website-Teaser-tauglich, nicht boulevardesk.",
+    news: "Bereich/Anlass: Thema/Redaktionsbeitrag. Erzeuge wie bei Themen ein eigenstaendiges, echtes fotorealistisches Redaktionsfoto aus Headline, Subline und Beitragstext: spezifisch zum Inhalt, ruhig, hochwertig, hell, glaubwuerdig, medienwirtschaftlich relevant. Wichtig: Das Ergebnis muss ein Foto sein, kein Poster, keine Grafik, kein Keyvisual mit Schrift. Keine sichtbaren Buchstaben, keine Woerter, keine Logos, keine UI-Symbole, keine Symbolgrafik, keine generischen Business-Menschen.",
+    topics: "Bereich/Anlass: Thema/Redaktionsbeitrag. Erzeuge ein eigenstaendiges, echtes fotorealistisches Redaktionsfoto aus Headline, Subline und Beitragstext: spezifisch zum Inhalt, ruhig, hochwertig, hell, glaubwuerdig, medienwirtschaftlich relevant. Wichtig: Das Ergebnis muss ein Foto sein, kein Poster, keine Grafik, kein Keyvisual mit Schrift. Keine sichtbaren Buchstaben, keine Woerter, keine Logos, keine UI-Symbole, keine Symbolgrafik, keine generischen Business-Menschen.",
     press: "Bereich/Anlass: Presse/Mitteilung. Glaubwuerdige PR-/Kommunikationsoptik, institutionelle Klarheit, professioneller Ankuendigungscharakter.",
     medienfruehstueck: "Bereich/Anlass: Medienfruehstueck. Business-Fruehstueck, Networking, Morgenlicht, Tischkultur, hochwertige Event-Atmosphaere.",
     von_den_besten: "Bereich/Anlass: Von den Besten. Dialog, Lernen von Expertinnen und Experten, Premium-Gespraech, Wissenstransfer, menschlicher Austausch ohne Promi-Imitation.",
@@ -2755,12 +2881,27 @@ function creativeThumbPrompt(context = {}, userPrompt = "", variantNumber = 1) {
   const imageEffect = context.imageEffect ? `Bildwirkung: ${context.imageEffect}.` : "";
   const textArea = context.textArea && context.textArea !== "none" ? `Textflaeche: ${context.textArea} frei halten.` : "";
   const textOverlay = context.textOverlay
-    ? `Text-Overlay/Covertext: Setze diesen Text exakt und gut lesbar im Bild: "${String(context.textOverlay).slice(0, 180)}". Nutze hochwertige Typografie, viel Weissraum und keine zusaetzlichen Fantasiewoerter.`
+    ? `Text-Overlay/Covertext: Setze ausschliesslich diesen Text exakt im Bild: "${String(context.textOverlay).slice(0, 180)}". Der Text muss auf Thumbnail-Groesse klar lesbar sein: grosse Schrift, hoher Kontrast, ruhiger Hintergrund, keine Verzerrung, keine Fantasiebuchstaben, keine Rechtschreibfehler, keine zusaetzlichen Woerter. Wenn der Text nicht sicher lesbar umgesetzt werden kann, Bild lieber ohne Textflaeche erzeugen.`
     : "";
+  const wantsCollage = context.generationMode === "collage" || context.motifType === "collage";
+  const generationModeInstruction = wantsCollage
+    ? "Gewaehlter Modus: Collage. Erzeuge eine hochwertige fotorealistische Bildcollage mit 3 bis 5 zusammenpassenden Motiven, weichen Uebergaengen, einheitlicher Lichtstimmung und ohne harte Kachelkanten. Keine Schrift, keine Logos, keine Poster-Grafik."
+    : "Gewaehlter Modus: Foto. Erzeuge ein einzelnes echtes fotorealistisches Redaktionsfoto. Keine Collage, keine geteilten Bildfelder, keine Grafik, keine Schrift.";
   const targetArea = context.targetArea && areaCatalog[context.targetArea] ? areaCatalog[context.targetArea] : "";
   const baseIdea = context.stylePreset === "free_style"
     ? "Bildidee: entwickle eine eigenstaendige visuelle Welt, die sich klar vom Standard-Redaktionslook unterscheidet und den Prompt ernst nimmt."
     : "Bildidee: finde eine eigenstaendige visuelle Idee statt einer austauschbaren Standard-Thumbnail-Loesung.";
+  const eventCoverPrompt = mediaAiEventCoverPrompt(context);
+  const creativeDirection = mediaAiCreativeDirection(context, variantNumber);
+  const editorialContextTitle = isTextFreeEditorialImage
+    ? `Inhaltlicher Kontext fuer das Foto, nicht als Schrift im Bild darstellen: ${title}.`
+    : `Erzeuge Variante ${variantNumber} als eigenstaendiges, kreatives redaktionelles Thumbnail fuer den Beitrag "${title}".`;
+  const editorialUserPrompt = isTextFreeEditorialImage && userPrompt
+    ? mediaAiPromptSafeText(userPrompt, true)
+        .replace(/Headline des Beitrags:/g, "Inhaltlicher Kontext, nicht als Text im Bild darstellen:")
+        .replace(/Subline des Beitrags:/g, "Weiterer Kontext, nicht als Text im Bild darstellen:")
+        .replace(/Titelmotiv/g, "Redaktionsfoto")
+    : userPrompt;
   const antiGeneric = context.stylePreset === "free_style"
     ? "Wichtig: kein Rueckfall in generische Business-, Stockfoto- oder Default-Editorial-Bilder. Lieber mutig, spezifisch und unverwechselbar."
     : "Wichtig: nicht generisch, keine austauschbare Stockfoto-Optik, keine schematische Standard-Business-Komposition.";
@@ -2768,8 +2909,8 @@ function creativeThumbPrompt(context = {}, userPrompt = "", variantNumber = 1) {
     ? ""
     : "PROdigitalTV-Farbakzente nur einsetzen, wenn sie stilistisch wirklich passen; nicht in jedem Bild denselben Rot-Blau-Reflex wiederholen.";
   return [
-    userPrompt,
-    `Erzeuge Variante ${variantNumber} als eigenstaendiges, kreatives redaktionelles Thumbnail fuer den Beitrag "${title}".`,
+    editorialUserPrompt,
+    editorialContextTitle,
     subtitle,
     category,
     bodyHint,
@@ -2783,18 +2924,45 @@ function creativeThumbPrompt(context = {}, userPrompt = "", variantNumber = 1) {
     imageEffect,
     textArea,
     textOverlay,
+    generationModeInstruction,
     targetArea,
+    eventCoverPrompt,
     baseIdea,
+    `Automatische Motivrichtung fuer Vielfalt: ${creativeDirection}`,
+    "Variiere Motiv, Kamerawinkel, Distanz, Licht, Material und Fokus radikal. Nicht jedes Bild soll Menschen zeigen; bevorzugt auch Orte, Objekte, Infrastruktur, Recherchematerial, Architektur, Backstage, Oberflaechen, leere Raeume oder metaphorische Realfotografie. Keine Wiederholung der immer gleichen Studio-, Laptop-, Konferenz- oder Businessmenschen-Motive.",
+    "Strikte Bildsprache: echte Fotografie, keine Illustration, keine comicartige Optik, keine Poster-Grafik, keine gemalten Flaechen, keine kuenstlich glatten KI-Gesichter, keine surrealen Masken oder verformten Menschen.",
+    isTextFreeEditorialImage ? "News- und Themenbilder: Das Ergebnis muss ein reines Foto ohne eingeblendete Schrift sein. Keine Plakate, keine Texttafeln, keine lesbaren oder unlesbaren Buchstaben, keine Logos, keine Markenzeichen, keine Infografik, keine Symbol-Icons. Den Artikeltitel niemals ins Bild schreiben. Fuer Vielfalt ausdruecklich verschiedene Motivfamilien nutzen: leere Raeume, technische Details, Stadt/Architektur, Backstage, Recherche-Stillleben, Kabel/Netzwerk, Licht/Reflexionen, Produktionsspuren, anonyme Orte oder abstrakte reale Materialien." : "",
     antiGeneric,
     brandConstraint,
     "Der thematische Bezug zu digitaler Medienwirtschaft, Streaming, TV, Plattformen, Redaktion, Technologie oder Netzwerk soll spuÌˆrbar sein, darf aber metaphorisch, abstrakt oder unerwartet geloest werden.",
-    "Einschraenkungen: keine echten Logos, keine identifizierbaren realen Personen, keine Textfehler im Bild, keine Comic-Optik, keine irrefuehrenden Fakten.",
+    context.textOverlay
+      ? "Einschraenkungen: keine echten Logos, keine identifizierbaren realen Personen, keine Textfehler im Covertext, keine weiteren Texte, keine Comic-Optik, keine irrefuehrenden Fakten."
+      : "Einschraenkungen: keine echten Logos, keine identifizierbaren realen Personen, keine lesbaren Texte, keine Textfehler im Bild, keine Comic-Optik, keine irrefuehrenden Fakten.",
     "Format: 16:9, geeignet als Website-Thumbnail und Artikelkopf."
   ].filter(Boolean).join("\n");
 }
 
 function generatedThumbTitle(context = {}, variantNumber = 1) {
-  return `${context.title || "PROdigitalTV Thumb"} - KI-Variante ${variantNumber}`;
+  return `KI ${context.title || "PROdigitalTV Bild"} - Variante ${variantNumber}`;
+}
+
+function generatedImageAltText(context = {}) {
+  const text = [
+    context.title || "",
+    context.subtitle || "",
+    context.category || "",
+    context.motifType || ""
+  ].join(" ").toLowerCase();
+  const value = /streaming|broadcast|studio|produktion|video|tv/.test(text)
+    ? "Medienfachleute arbeiten in einer modernen Produktionsumgebung mit professioneller Videotechnik."
+    : /ki|daten|technologie|automation/.test(text)
+      ? "Medienfachleute besprechen digitale Produktionsprozesse in einem modernen Arbeitsumfeld."
+      : /politik|regulierung|recht|plattform/.test(text)
+        ? "Fachleute diskutieren Medienfragen in einem hellen modernen Konferenzraum."
+        : /event|konferenz|vortrag|referent|fruehstueck/.test(text)
+          ? "Teilnehmende tauschen sich bei einer professionellen Medienveranstaltung aus."
+          : "Medienfachleute besprechen Branchenthemen in einer modernen Business-Umgebung.";
+  return value.slice(0, 140);
 }
 
 function mediaPresetSummary(type = "upload") {
@@ -3941,10 +4109,11 @@ async function saveGeneratedThumbMediaAsset(form, file, { dataUrl = "", prompt =
   }
   const now = new Date().toISOString();
   const description = [
-    `KI-Thumbnail-Variante ${variantNumber} fuer ${context.title || targetContext.targetId}.`,
+    `KI-generiertes Titelmotiv fuer ${context.title || targetContext.targetId}.`,
     context.subtitle || "",
     context.category ? `Rubrik: ${context.category}` : ""
   ].filter(Boolean).join(" ");
+  const altText = generatedImageAltText(context);
   let asset;
   try {
     asset = await upsert("media_assets", {
@@ -3976,17 +4145,22 @@ async function saveGeneratedThumbMediaAsset(form, file, { dataUrl = "", prompt =
     image_format: mediaFormatLabel(optimizedUploads.web.file),
     original_filename: file.name,
     source_type: "ai",
-    source_note: `KI-Thumbnail-Variante ${variantNumber}`,
+    source_note: "PROdigitalTV KI-Bildgenerator",
+    source: "PROdigitalTV KI-Bildgenerator",
+    ai_generated: true,
+    aiGenerated: true,
     generated_prompt: prompt,
     prompt,
+    prompt_version: "pdtv-image-v2",
+    image_model: "OpenAI Image",
     ai_style_preset: context.stylePreset || "",
     ai_style_text: context.style || "",
     ai_motif_type: context.motifType || "",
     ai_image_effect: context.imageEffect || "",
     ai_text_area: context.textArea || "",
     ai_created_at: now,
-    alt_text: context.title || title,
-    thumbnail_alt: context.title || title,
+    alt_text: altText,
+    thumbnail_alt: altText,
     thumbnail_description: description,
     description,
     tags: mediaKeywordsFromDescription(`${description} ${prompt}`, context.category || mediaType),
@@ -4943,11 +5117,11 @@ function progressMarkup(label, width = 45) {
 const mediaAiProgressSteps = [
   ["context", "Kontext"],
   ["prompt", "Prompt"],
-  ["generate", "KI-Grafik"],
-  ["save", "Speichern"],
-  ["variants", "Varianten"],
-  ["link", "Verknuepfen"]
+  ["generate", "Bild"],
+  ["preview", "Vorschau"],
+  ["save", "Uebernehmen"]
 ];
+const pendingMediaAiPreviews = new Map();
 
 function mediaAiProgressMarkup(activeStep, label, width = 20, detail = "") {
   const activeIndex = Math.max(0, mediaAiProgressSteps.findIndex(([key]) => key === activeStep));
@@ -4985,17 +5159,18 @@ function clearMediaAiProgress(form) {
 
 function mediaAiReviewMarkup(asset = {}, mediaContext = {}, imageUrl = "") {
   const title = asset.title || "KI-Grafik";
-  const previewUrl = imageUrl || mediaAssetUrl(asset);
+  const previewUrl = imageUrl || asset.previewDataUrl || mediaAssetUrl(asset);
   return `<div class="media-ai-review" data-media-ai-review data-media-ai-asset-id="${escapeHtml(asset.id || "")}">
     <div class="media-ai-review__image">${previewUrl ? `<img src="${escapeHtml(previewUrl)}" alt="${escapeHtml(title)}">` : `<span>Vorschau nicht verfuegbar</span>`}</div>
     <div class="media-ai-review__body">
-      <p class="eyebrow">KI-Grafik erzeugt</p>
+      <p class="eyebrow">KI-Bild Vorschau</p>
       <h3>${escapeHtml(title)}</h3>
-      <p>Bitte pruefen: Erst nach der Freigabe wird das Bild ${mediaContext?.targetId ? "mit dem Beitrag verknuepft und im Bildeditor geoeffnet" : "im Bildeditor geoeffnet"}.</p>
+      <p>Bitte pruefen: Erst nach deiner Bestaetigung wird das Bild in der Mediathek gespeichert${mediaContext?.targetId ? " und mit dem aktuellen Beitrag verknuepft" : ""}.</p>
       <div class="actions">
-        <button class="button button--primary" type="button" data-media-ai-approve="${escapeHtml(asset.id || "")}">Freigeben und bearbeiten</button>
+        <button class="button button--primary" type="button" data-media-ai-approve="${escapeHtml(asset.id || "")}">Bild uebernehmen</button>
+        <button class="button button--secondary" type="submit">Neu generieren</button>
+        <button class="button button--secondary" type="button" data-media-ai-edit-prompt>Prompt bearbeiten</button>
         <button class="button button--secondary" type="button" data-media-ai-discard="${escapeHtml(asset.id || "")}">Verwerfen</button>
-        <button class="button button--secondary" type="submit">Neu erstellen</button>
       </div>
     </div>
   </div>`;
@@ -5003,39 +5178,94 @@ function mediaAiReviewMarkup(asset = {}, mediaContext = {}, imageUrl = "") {
 
 function wireMediaAiReviewActions(form, asset, mediaContext = {}) {
   const result = form?.querySelector("#media-ai-result");
-  result?.querySelector("[data-media-ai-approve]")?.addEventListener("click", async (event) => {
+  const topPreview = form?.querySelector("[data-media-ai-top-preview]");
+  const reviewRoots = Array.from(new Set([topPreview, result].filter(Boolean)));
+  const allApproveButtons = () => reviewRoots.flatMap((root) => Array.from(root.querySelectorAll("[data-media-ai-approve]")));
+  reviewRoots.forEach((root) => root.querySelector("[data-media-ai-approve]")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
-    button.disabled = true;
-    button.textContent = "Freigabe wird gespeichert ...";
+    const activeRoot = button.closest("[data-media-ai-review]")?.parentElement || root;
+    const pending = pendingMediaAiPreviews.get(asset.id) || asset;
+    allApproveButtons().forEach((item) => {
+      item.disabled = true;
+      item.classList.remove("button--primary");
+      item.classList.add("button--success");
+      item.textContent = "Uebernehmen ...";
+    });
     try {
+      setMediaAiProgress(form, "save", "Bild wird in der Mediathek gespeichert ...", 68, "Erst jetzt werden Storage-Dateien und Mediathek-Datensatz angelegt.");
+      const savedAsset = pending.file
+        ? await saveGeneratedThumbMediaAsset(form, pending.file, {
+            dataUrl: pending.previewDataUrl || "",
+            prompt: pending.prompt || "",
+            result,
+            variantNumber: pending.variantNumber || 1,
+            contextOverride: pending.contextOverride || null,
+            targetContextOverride: mediaContext.targetCollection && mediaContext.targetId ? mediaContext : null,
+            attachToTarget: false
+          })
+        : asset;
+      setMediaAiProgress(form, "save", "Webvarianten werden vorbereitet ...", 82, "Die bestehende Mediathek-Logik erzeugt die passenden Varianten.");
+      await generateAssetVariants(savedAsset, { mode: "all", result }).catch(() => {});
       if (mediaContext.targetCollection && mediaContext.targetId) {
-        await attachMediaAssetToTarget(asset, mediaContext);
+        await attachMediaAssetToTarget(savedAsset, mediaContext);
       }
       await upsert("media_assets", {
-        ...asset,
+        ...savedAsset,
         review_status: "approved",
         ai_review_status: "approved",
         updated_at: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
-      window.location.hash = mediaEditHash(asset.id, form);
+      if (pending.generationLog) {
+        await upsert("ai_image_generations", {
+          id: `ai-image-generation-${crypto.randomUUID()}`,
+          media_asset_id: savedAsset.id,
+          prompt_id: "",
+          negative_prompt: "",
+          generation_status: "saved",
+          review_status: "approved",
+          created_by: currentUser()?.email || currentUser()?.uid || "cms",
+          created_at: new Date().toISOString(),
+          ...pending.generationLog
+        }).catch(() => {});
+      }
+      pendingMediaAiPreviews.delete(asset.id);
+      allApproveButtons().forEach((item) => {
+        item.textContent = "Bild uebernommen";
+      });
+      const returnHash = mediaContext.returnTo ? mediaContext.returnTo.replace(/^#\/?/, "#/") : "";
+      window.location.hash = returnHash || mediaEditHash(savedAsset.id, form);
     } catch (error) {
-      if (result) result.innerHTML = `<div class="alert alert--error">Freigabe konnte nicht gespeichert werden: ${escapeHtml(error.message || String(error))}</div>${mediaAiReviewMarkup(asset, mediaContext)}`;
+      allApproveButtons().forEach((item) => {
+        item.classList.remove("button--success");
+        item.classList.add("button--primary");
+      });
+      activeRoot.innerHTML = `<div class="alert alert--error">Bild konnte nicht uebernommen werden: ${escapeHtml(error.message || String(error))}</div>${mediaAiReviewMarkup(asset, mediaContext)}`;
       wireMediaAiReviewActions(form, asset, mediaContext);
+    } finally {
+      clearMediaAiProgress(form);
     }
-  });
-  result?.querySelector("[data-media-ai-discard]")?.addEventListener("click", async (event) => {
+  }));
+  reviewRoots.forEach((root) => root.querySelector("[data-media-ai-edit-prompt]")?.addEventListener("click", () => {
+    form?.querySelector("[data-media-ai-prompt]")?.focus();
+    root.innerHTML = `<div class="alert">Prompt kann jetzt angepasst werden. Danach mit "Bild generieren" neu starten.</div>`;
+  }));
+  reviewRoots.forEach((root) => root.querySelector("[data-media-ai-discard]")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
     button.textContent = "Wird verworfen ...";
     try {
-      await deleteMediaAssetCascade(asset);
-      if (result) result.innerHTML = `<div class="alert alert--success">KI-Kandidat wurde verworfen. Du kannst direkt eine neue Grafik erzeugen.</div>`;
+      if (pendingMediaAiPreviews.has(asset.id)) {
+        pendingMediaAiPreviews.delete(asset.id);
+      } else {
+        await deleteMediaAssetCascade(asset);
+      }
+      root.innerHTML = `<div class="alert alert--success">KI-Kandidat wurde verworfen. Du kannst direkt eine neue Grafik erzeugen.</div>`;
     } catch (error) {
-      if (result) result.innerHTML = `<div class="alert alert--error">KI-Kandidat konnte nicht geloescht werden: ${escapeHtml(error.message || String(error))}</div>${mediaAiReviewMarkup(asset, mediaContext)}`;
+      root.innerHTML = `<div class="alert alert--error">KI-Kandidat konnte nicht geloescht werden: ${escapeHtml(error.message || String(error))}</div>${mediaAiReviewMarkup(asset, mediaContext)}`;
       wireMediaAiReviewActions(form, asset, mediaContext);
     }
-  });
+  }));
 }
 
 function setAudioGenerationProgress(scope, result, label, width = 45) {
@@ -7412,13 +7642,20 @@ function wireMediaAiDraft() {
     const form = event.currentTarget;
     const values = formObject(form);
     const result = form.querySelector("#media-ai-result");
-    const submitButton = form.querySelector('button[type="submit"], button:not([type])');
-    const originalLabel = submitButton?.textContent || "";
+    const submitButton = event.submitter?.matches?.("button") ? event.submitter : form.querySelector('button[type="submit"], button:not([type])');
+    const submitButtons = Array.from(form.querySelectorAll('button[type="submit"], button:not([type])'));
+    const originalLabels = new Map(submitButtons.map((button) => [button, button.textContent || ""]));
+    const generationMode = submitButton?.dataset.mediaAiMode || values.generation_mode || "photo";
+    values.generation_mode = generationMode;
+    if (form.elements.generation_mode) form.elements.generation_mode.value = generationMode;
     const mediaContext = mediaContextFromNode(form);
-    if (submitButton) {
-      submitButton.disabled = true;
-      submitButton.textContent = mediaContext.targetId ? "KI-Thumb wird erstellt ..." : "KI-Grafik wird erstellt ...";
+    const sourceCheck = String(values.source_text || values.style || "").replace(String(values.title || ""), "").trim();
+    if (!String(values.title || "").trim() || sourceCheck.length < 24) {
+      if (result) result.innerHTML = `<div class="alert alert--warning">Fuer die Bildgenerierung fehlen noch Titel oder Beschreibung.</div>`;
+      return;
     }
+    submitButtons.forEach((button) => { button.disabled = true; });
+    if (submitButton) submitButton.textContent = generationMode === "collage" ? "Collage wird erstellt ..." : "Foto wird erstellt ...";
     let step = "Vorbereitung";
     try {
       setMediaAiProgress(form, "context", "KI-Grafik wird vorbereitet ...", 12, "Formularwerte und Zielkontext werden gelesen.");
@@ -7442,19 +7679,22 @@ function wireMediaAiDraft() {
         : {
             title: values.title || "PROdigitalTV KI-Grafik",
             subtitle: "",
-            bodyText: values.source_text || "",
-            shortDescription: values.source_text || "",
+            bodyText: [values.source_text, values.style].filter(Boolean).join("\n\n"),
+            shortDescription: values.source_text || values.style || "",
             category: "",
             module: "media_assets"
-          };
+      };
       const variantNumber = Math.max(1, (Array.isArray(target?.thumbnail_variant_asset_ids) ? target.thumbnail_variant_asset_ids.length : 0) + 1);
-      setMediaAiProgress(form, "prompt", "Prompt und Stilwelt werden aufgebaut ...", 30, `${values.style_preset || "free_style"} / ${values.motif_type || "symbol"}`);
+      const visualSeed = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+      setMediaAiProgress(form, "prompt", "Prompt und Stilwelt werden aufgebaut ...", 30, `${generationMode === "collage" ? "Collage" : "Foto"} / ${values.style_preset || "free_style"} / ${values.motif_type || "symbol"}`);
       const prompt = creativeThumbPrompt({
         ...targetContext,
+        visualSeed,
         title: values.title || targetContext.title,
-        bodyText: [targetContext.bodyText, values.source_text].filter(Boolean).join("\n\n"),
+        bodyText: [targetContext.bodyText, values.source_text, values.style].filter(Boolean).join("\n\n"),
+        generationMode,
         stylePreset: values.style_preset || "",
-        motifType: values.motif_type || "",
+        motifType: generationMode === "collage" ? "collage" : values.motif_type || "",
         imageEffect: values.image_effect || "",
         textArea: values.text_area || "",
         textOverlay: values.text_overlay || "",
@@ -7469,14 +7709,16 @@ function wireMediaAiDraft() {
         context: {
           ...targetContext,
           sourceText: values.source_text || "",
+          generationMode,
           stylePreset: values.style_preset || "",
           style: values.style || "",
           colorWorld: values.color_world || "",
-          motifType: values.motif_type || "",
+          motifType: generationMode === "collage" ? "collage" : values.motif_type || "",
           imageEffect: values.image_effect || "",
           textArea: values.text_area || "",
           textOverlay: values.text_overlay || "",
           targetArea: values.target_area || "",
+          visualSeed,
           areaReferenceImageFileName: activeAreaReference?.original_filename || "",
           referenceImageFileName: referenceImage?.fileName || "",
           variantNumber
@@ -7490,72 +7732,63 @@ function wireMediaAiDraft() {
       setMediaAiProgress(form, "save", "KI-Bild wurde erzeugt und wird vorbereitet ...", 68, generated.fileName || "Originaldatei wird normalisiert.");
       step = "Bild normalisieren";
       const normalized = await generatedImageToOriginalFile(generated.imageDataUrl, generated.fileName || `${mediaContext.targetId || values.title || "ki-original"}-v${variantNumber}.webp`);
-      setMediaAiProgress(form, "save", "KI-Bild wird in der Mediathek gespeichert ...", 76, "Original, Metadaten und Vorschau werden angelegt.");
-      step = "Mediathek speichern";
-      const asset = await saveGeneratedThumbMediaAsset(form, normalized.file, {
-        dataUrl: normalized.dataUrl,
+      setMediaAiProgress(form, "preview", "Vorschau wird vorbereitet ...", 86, "Das Bild ist noch nicht in der Mediathek gespeichert.");
+      step = "Vorschau vorbereiten";
+      const previewId = `ai-preview-${crypto.randomUUID()}`;
+      const contextOverride = {
+        ...targetContext,
+        title: values.title || targetContext.title,
+        generationMode,
+        stylePreset: values.style_preset || "",
+        style: values.style || "",
+        motifType: generationMode === "collage" ? "collage" : values.motif_type || "",
+        imageEffect: values.image_effect || "",
+        textArea: values.text_area || "",
+        textOverlay: values.text_overlay || "",
+        targetArea: values.target_area || ""
+      };
+      const reviewAsset = {
+        id: previewId,
+        title: generatedThumbTitle(contextOverride, variantNumber),
+        previewDataUrl: normalized.dataUrl,
         prompt: generated.prompt || prompt,
-        result,
+        review_status: "preview"
+      };
+      pendingMediaAiPreviews.set(previewId, {
+        ...reviewAsset,
+        file: normalized.file,
+        previewDataUrl: normalized.dataUrl,
+        prompt: generated.prompt || prompt,
         variantNumber,
-        contextOverride: {
-          ...targetContext,
-          title: values.title || targetContext.title,
-          stylePreset: values.style_preset || "",
-          style: values.style || "",
-          motifType: values.motif_type || "",
-          imageEffect: values.image_effect || "",
-          textArea: values.text_area || "",
-          textOverlay: values.text_overlay || "",
-          targetArea: values.target_area || ""
-        },
-        targetContextOverride: mediaContext.targetCollection && mediaContext.targetId ? mediaContext : null,
-        attachToTarget: false
-      });
-      setMediaAiProgress(form, "variants", "Webvarianten werden erzeugt ...", 84, "Die Mediathek rendert die passenden Ausspielgroessen.");
-      step = "Webvarianten erzeugen";
-      await generateAssetVariants(asset, {
-        mode: "all",
-        result
-      });
-      setMediaAiProgress(form, "link", mediaContext.targetId ? "Bild wird verknuepft und protokolliert ..." : "KI-Erzeugung wird protokolliert ...", 94, mediaContext.targetId ? "Der Beitrag bekommt die neue Grafik als Bild." : "Das Asset bleibt als Hauptbild in der Mediathek.");
-      step = "KI-Generierung protokollieren";
-      await upsert("ai_image_generations", {
-        id: `ai-image-generation-${crypto.randomUUID()}`,
-        media_asset_id: asset.id,
-        prompt_id: "",
-        source_text: values.source_text || "",
-        generated_prompt: generated.prompt || prompt,
-        negative_prompt: "",
-        model_name: "OpenAI Image",
-        generation_status: "generated",
-        review_status: "pending_review",
-        style_preset: values.style_preset || "",
-        reference_image_name: referenceImage?.fileName || "",
-        reference_image_used: Boolean(referenceImage),
-        area_reference_image_name: activeAreaReference?.original_filename || "",
-        area_reference_image_used: Boolean(!referenceImage && activeAreaReference?.file_url),
-        motif_type: values.motif_type || "",
-        image_effect: values.image_effect || "",
-        text_area: values.text_area || "",
-        text_overlay: values.text_overlay || "",
-        target_area: values.target_area || "",
-        created_by: currentUser()?.email || currentUser()?.uid || "cms",
-        created_at: new Date().toISOString()
-      });
-      const reviewAsset = await upsert("media_assets", {
-        ...asset,
-        review_status: "pending_review",
-        ai_review_status: "pending_review",
-        updated_at: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        contextOverride,
+        sourceText: values.source_text || "",
+        generationLog: {
+          source_text: values.source_text || "",
+          generated_prompt: generated.prompt || prompt,
+          model_name: "OpenAI Image",
+          generation_mode: generationMode,
+          style_preset: values.style_preset || "",
+          motif_type: generationMode === "collage" ? "collage" : values.motif_type || "",
+          image_effect: values.image_effect || "",
+          text_area: values.text_area || "",
+          target_area: values.target_area || ""
+        }
       });
       const pipeline = form.querySelector("[data-media-ai-pipeline]");
       if (pipeline) {
-        pipeline.innerHTML = `<div class="media-ai-progress media-ai-progress--done">${progressMarkup("KI-Bild erzeugt. Bitte Ergebnis pruefen ...", 100)}<p>Die Grafik wartet jetzt auf Freigabe oder Verwerfen.</p></div>`;
+        pipeline.innerHTML = `<div class="media-ai-progress media-ai-progress--done">${progressMarkup("KI-Bild erzeugt. Bitte Ergebnis pruefen ...", 100)}<p>Die Vorschau ist noch nicht gespeichert. Erst "Bild uebernehmen" legt sie in der Mediathek ab.</p></div>`;
       }
       if (result) {
-        result.innerHTML = `<div class="alert alert--success">KI-Bild wurde erzeugt. Bitte vor dem Bildeditor freigeben oder verwerfen.</div>${mediaAiReviewMarkup(reviewAsset, mediaContext, normalized.dataUrl)}`;
-        wireMediaAiReviewActions(form, reviewAsset, mediaContext);
+        const previewMarkup = `<div class="alert alert--success">KI-Bild wurde erzeugt. Bitte uebernehmen, neu generieren, Prompt bearbeiten oder verwerfen.</div>${mediaAiReviewMarkup(reviewAsset, mediaContext, normalized.dataUrl)}`;
+        const topPreview = form.querySelector("[data-media-ai-top-preview]");
+        if (topPreview) {
+          topPreview.hidden = false;
+          topPreview.innerHTML = previewMarkup;
+          topPreview.scrollIntoView({ behavior: "smooth", block: "start" });
+          wireMediaAiReviewActions(form, reviewAsset, mediaContext);
+        }
+        result.innerHTML = topPreview ? "" : previewMarkup;
+        if (!topPreview) wireMediaAiReviewActions(form, reviewAsset, mediaContext);
       }
     } catch (error) {
       const code = error?.code ? ` (${error.code})` : "";
@@ -7567,10 +7800,10 @@ function wireMediaAiDraft() {
       if (result) result.innerHTML = `<div class="alert alert--error">KI-Thumb konnte nicht erstellt werden: ${escapeHtml(step)}${escapeHtml(code)} - ${escapeHtml(error.message || String(error))}</div>`;
     } finally {
       clearMediaAiProgress(form);
-      if (submitButton) {
-        submitButton.disabled = false;
-        submitButton.textContent = originalLabel;
-      }
+      submitButtons.forEach((button) => {
+        button.disabled = false;
+        button.textContent = originalLabels.get(button) || button.textContent;
+      });
     }
   });
 }
