@@ -1282,6 +1282,14 @@ p { color: var(--pdt-muted); }
   object-fit: cover;
   object-position: center;
 }
+.pdtv-home-hero--event .pdtv-home-hero__media,
+.pdtv-home-hero--retrospective .pdtv-home-hero__media {
+  background: #f3f6fa;
+}
+.pdtv-home-hero--event .pdtv-home-hero__media img,
+.pdtv-home-hero--retrospective .pdtv-home-hero__media img {
+  object-fit: contain;
+}
 .pdtv-home-hero__content {
   display: flex;
   flex-direction: column;
