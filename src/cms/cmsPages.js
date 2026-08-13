@@ -1353,9 +1353,12 @@ function memberLogoThumb(item = {}, mediaAssets = [], section = "all") {
 
 function topicSpeakersForEvent(topic, event, speakers) {
   const eventSpeakerIds = new Set(event.speakerIds || []);
+  const topicSpeakerIds = new Set(topic.speakerIds || [topic.speakerId].filter(Boolean));
   return speakers.filter((speaker) => {
     const belongsToEvent = eventSpeakerIds.has(speaker.id) || (speaker.eventIds || []).includes(event.id);
-    const belongsToTopic = speaker.topicId === topic.id || (speaker.topicIds || []).includes(topic.id);
+    const belongsToTopic = topicSpeakerIds.size
+      ? topicSpeakerIds.has(speaker.id)
+      : speaker.topicId === topic.id || (speaker.topicIds || []).includes(topic.id);
     return belongsToEvent && belongsToTopic;
   });
 }
@@ -1420,7 +1423,7 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
   const speakerForForm = speakers.find((speaker) => speaker.id === selectedSpeakerId) || firstTopicSpeaker || {};
   const speakerParts = speakerNameParts(speakerForForm);
   const topicHeadActions = selectedTopic.id
-    ?`<div class="topic-panel-actions">${firstTopicSpeaker ?`<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}&speaker=${firstTopicSpeaker.id}">Referent bearbeiten</a>` : `<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}">Referent hinzufuegen</a>`}<button class="button button--secondary button--small" type="button" data-copy-talk-to-topic="${selectedTopic.id}" data-event-id="${event.id}">Vortrag als Thema kopieren</button><a class="link-button" href="#/cms/event/${event.id}?tab=topics">Schliessen</a></div>`
+    ?`<div class="topic-panel-actions">${firstTopicSpeaker ?`<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}&speaker=${firstTopicSpeaker.id}">Referent bearbeiten</a>` : `<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}">Referent hinzufuegen</a>`}<button class="button button--secondary button--small" type="button" data-copy-talk-to-topic="${selectedTopic.id}" data-event-id="${event.id}">Themenartikel erzeugen</button><a class="link-button" href="#/cms/event/${event.id}?tab=topics">Schliessen</a></div>`
     : `<a class="link-button" href="#/cms/event/${event.id}?tab=topics">Schliessen</a>`;
   const topicEntityId = selectedTopic.id || `topics-${crypto.randomUUID()}`;
   const topicAsset = recordMediaAsset(selectedTopic, mediaAssets, "topics", "imageUrl");
