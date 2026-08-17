@@ -1253,8 +1253,20 @@ function galleryThumb(gallery) {
     : `<span>Galerie</span>`;
 }
 
-function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", defaultSize = "240x180", aiCollage = false }) {
-  return `<div class="image-dropzone" data-image-dropzone>
+function mediaLibraryHref({ collection = "", id = "", field = "imageUrl", altField = "thumbnail_alt", returnTo = "" } = {}) {
+  if (!collection || !id) return "";
+  const params = new URLSearchParams({
+    targetCollection: collection,
+    targetId: id,
+    targetField: field,
+    targetAltField: altField,
+    returnTo
+  });
+  return `#/cms/media/library?${params.toString()}`;
+}
+
+function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", defaultSize = "240x180", aiCollage = false, simple = false, mediaHref = "" }) {
+  return `<div class="image-dropzone ${simple ?"image-dropzone--simple" : ""}" data-image-dropzone ${simple ?"data-simple-image-dropzone" : ""}>
     <input type="hidden" name="${removeName}" value="">
     <input type="hidden" name="${inputName}DataUrl" value="">
     <input type="hidden" name="${inputName}FileName" value="">
@@ -1272,6 +1284,13 @@ function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", d
     </div>
     </div>
     <button type="button" class="image-dropzone__remove" data-image-remove aria-label="Bild-Verknuepfung loesen" title="Bild-Verknuepfung loesen" ${imageUrl ?"" : "hidden"}>${iconImage("trash")}</button>
+    ${simple ?`<div class="simple-image-actions" data-simple-image-actions hidden>
+      <label class="button button--primary button--small" data-simple-image-upload-label>Upload<input type="file" data-simple-image-upload accept="image/*" hidden></label>
+      ${mediaHref ?`<a class="button button--secondary button--small" href="${escapeHtml(mediaHref)}" data-simple-image-media>Aus Mediathek laden</a>` : ""}
+      <button type="button" class="button button--primary button--small" data-simple-image-apply hidden>Uebernehmen</button>
+      <button type="button" class="button button--secondary button--small" data-simple-image-delete ${imageUrl ?"" : "disabled"}>Loeschen</button>
+      <button type="button" class="button button--secondary button--small" data-simple-image-cancel>Abbrechen</button>
+    </div>` : ""}
     <div class="image-dropzone__tools" data-image-tools hidden>
       <label>Zoom <input type="range" min="0.5" max="3" step="0.01" value="1" data-image-zoom></label>
       <label>Aufloesung <select data-image-size>
@@ -1291,13 +1310,7 @@ function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", d
 
 function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altField = "thumbnail_alt", returnTo = "", label = "Thumb", assetId = "" } = {}) {
   if (!collection || !id) return "";
-  const params = new URLSearchParams({
-    targetCollection: collection,
-    targetId: id,
-    targetField: field,
-    targetAltField: altField,
-    returnTo
-  });
+  const params = new URLSearchParams({ targetCollection: collection, targetId: id, targetField: field, targetAltField: altField, returnTo });
   const editHref = assetId ?`#/cms/media/edit?id=${encodeURIComponent(assetId)}&${params.toString()}` : "";
   return `<div class="linked-media-actions">
     <a class="button button--secondary button--small" href="${editHref || `#/cms/media/library?${params.toString()}`}">${escapeHtml(label)} ${assetId ?"bearbeiten" : "aus Mediathek waehlen"}</a>
@@ -1306,12 +1319,9 @@ function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altF
 }
 
 function eventImageEditor(event = {}, mediaAssets = [], returnTo = "") {
-  const asset = recordMediaAsset(event, mediaAssets, "events", "imageUrl");
   const imageUrl = eventImageUrl(event, mediaAssets);
   return `<div class="field"><label>Eventbild / Thumb</label>
-    ${imageDropzone({ inputName: "eventImage", removeName: "removeEventImage", imageUrl, label: "Eventbild", defaultSize: "1200x675" })}
-    ${linkedMediaActions({ collection: "events", id: event.id, field: "imageUrl", altField: "thumbnail_alt", returnTo, label: "Bild", assetId: asset?.id || "" })}
-    <p class="muted">Bild aus der Mediathek waehlen, KI-Bild erstellen oder optional direkt eine neue Datei hochladen.</p>
+    ${imageDropzone({ inputName: "eventImage", removeName: "removeEventImage", imageUrl, label: "Eventbild", defaultSize: "1200x675", simple: true, mediaHref: mediaLibraryHref({ collection: "events", id: event.id, field: "imageUrl", altField: "thumbnail_alt", returnTo }) })}
   </div>`;
 }
 
@@ -1363,6 +1373,50 @@ function topicSpeakersForEvent(topic, event, speakers) {
   });
 }
 
+function normalizeCompanyKey(value = "") {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/&/g, "und")
+    .replace(/\b(gmbh|ag|kg|ohg|ug|mbh|inc|ltd|llc|company|gruppe|group|rechtsanwaelte|rechtsanwalte)\b/g, "")
+    .replace(/[^a-z0-9]+/g, "")
+    .trim();
+}
+
+function companyLogoForSpeakers(topic = {}, topicSpeakers = [], sponsors = [], members = [], mediaAssets = []) {
+  const topicLogoUrl = topic.companyLogoUrl || topic.logoUrl || topic.company_logo_url || "";
+  if (topicLogoUrl) return { company: topic.companyName || topic.company || topicSpeakers[0]?.company || "", logoUrl: topicLogoUrl };
+  const speakerLogo = topicSpeakers.find((speaker) => speaker.companyLogoUrl || speaker.logoUrl || speaker.company_logo_url);
+  if (speakerLogo) return { company: speakerLogo.company || "", logoUrl: speakerLogo.companyLogoUrl || speakerLogo.logoUrl || speakerLogo.company_logo_url || "" };
+  const companies = Array.from(new Set(topicSpeakers.map((speaker) => speaker.company || speaker.organization || speaker.organisation || "").filter(Boolean)));
+  const company = companies[0] || "";
+  if (!company) return { company: "", logoUrl: "" };
+  const companyKey = normalizeCompanyKey(company);
+  const sponsor = sponsors.find((item) => normalizeCompanyKey(item.name || item.company || item.title) === companyKey)
+    || sponsors.find((item) => companyKey && (normalizeCompanyKey(item.name || item.company || item.title).includes(companyKey) || companyKey.includes(normalizeCompanyKey(item.name || item.company || item.title))));
+  if (sponsor) {
+    const asset = recordMediaAsset(sponsor, mediaAssets, "sponsors", "logoUrl");
+    const logoUrl = mediaAssetUrl(asset || {}) || sponsor.logoUrl || sponsor.logo_url || sponsor.imageUrl || sponsor.image_url || sponsor.assetUrl || "";
+    if (logoUrl) return { company: sponsor.name || company, logoUrl };
+  }
+  const member = members.find((item) => normalizeCompanyKey(item.name || item.company || item.title) === companyKey)
+    || members.find((item) => companyKey && (normalizeCompanyKey(item.name || item.company || item.title).includes(companyKey) || companyKey.includes(normalizeCompanyKey(item.name || item.company || item.title))));
+  if (member) {
+    const logoUrl = memberLogoUrl(member, mediaAssets);
+    if (logoUrl) return { company: member.name || company, logoUrl };
+  }
+  return { company, logoUrl: "" };
+}
+
+function companyLogoMarkup(companyInfo = {}) {
+  const company = companyInfo.company || "";
+  if (!company) return `<div class="assigned-topic-card__company-logo assigned-topic-card__company-logo--empty" title="Kein Unternehmen hinterlegt"><span>--</span></div>`;
+  const initialsText = company.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+  const fallback = `<span ${companyInfo.logoUrl ?"hidden" : ""}>${escapeHtml(initialsText || company.slice(0, 2).toUpperCase())}</span>`;
+  return `<div class="assigned-topic-card__company-logo" title="${escapeHtml(company)}">${companyInfo.logoUrl ?`<img src="${escapeHtml(companyInfo.logoUrl)}" alt="" onerror="this.hidden=true;this.nextElementSibling.hidden=false">` : ""}${fallback}</div>`;
+}
+
 function eventTopicSpeakerActions(event, topic, topicSpeakers) {
   if (!topicSpeakers.length) return "";
   return `<div class="topic-speaker-stack"><h3>Referenten dieses Vortrags</h3>${topicSpeakers.map((speaker) => `<div class="speaker-action-card">
@@ -1405,12 +1459,18 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
             <div class="field"><label>Vorname</label><input name="speakerFirstName" value="${escapeHtml(speakerParts.firstName || "")}" required></div>
             <div class="field"><label>Nachname</label><input name="speakerLastName" value="${escapeHtml(speakerParts.lastName || "")}" required></div>
             <div class="field"><label>Firma</label><input name="speakerCompany" value="${escapeHtml(selectedSpeaker.company || "")}"></div>
+            <div class="field"><label>Position</label><input name="speakerPosition" value="${escapeHtml(selectedSpeaker.position || "")}"></div>
             <div class="field"><label>Webseite</label><input name="speakerWebsite" type="url" value="${escapeHtml(selectedSpeaker.website || selectedSpeaker.url || "")}"></div>
             <div class="field"><label>Mailadresse</label><input name="speakerEmail" type="email" value="${escapeHtml(selectedSpeaker.email || selectedSpeaker.mail || "")}"></div>
             <div class="field"><label>Telefonnummer</label><input name="speakerPhone" type="tel" value="${escapeHtml(selectedSpeaker.phone || selectedSpeaker.mobile || "")}"></div>
           </div>
         </section>
-        <div class="field"><label>Referentenfoto optional</label>${imageDropzone({ inputName: "speakerImage", removeName: "removeSpeakerImage", imageUrl: selectedSpeaker.photoUrl || "", label: "Referentenfoto" })}</div>
+        <div class="field"><label>Kurzvita</label><textarea name="speakerShortBio" rows="4">${escapeHtml(selectedSpeaker.shortBio || selectedSpeaker.bio || "")}</textarea></div>
+        <div class="field"><label>Ausfuehrliche Vita</label><textarea name="speakerLongBio" rows="8">${escapeHtml(selectedSpeaker.longBio || selectedSpeaker.vita || selectedSpeaker.biography || "")}</textarea></div>
+        <div class="form-grid--two">
+          <div class="field"><label>Unternehmenslogo</label>${imageDropzone({ inputName: "speakerCompanyLogo", removeName: "removeSpeakerCompanyLogo", imageUrl: selectedSpeaker.companyLogoUrl || selectedSpeaker.logoUrl || "", label: "Unternehmenslogo", defaultSize: "480x240", simple: true })}</div>
+          <div class="field"><label>Referentenfoto</label>${imageDropzone({ inputName: "speakerImage", removeName: "removeSpeakerImage", imageUrl: selectedSpeaker.photoUrl || "", label: "Referentenfoto", simple: true, mediaHref: selectedSpeaker.id ?mediaLibraryHref({ collection: "speakers", id: selectedSpeaker.id, field: "photoUrl", altField: "altText", returnTo: `#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}&speaker=${selectedSpeaker.id}` }) : "" })}</div>
+        </div>
         <div class="actions"><button class="button button--secondary" type="button" onclick="location.hash='#/cms/event/${event.id}?tab=topics&mode=edit&topic=${selectedTopic.id}'">Abbrechen</button><button class="button button--primary">Speichern</button></div>
         <div id="event-topic-speaker-result"></div>
       </form>
@@ -1443,17 +1503,23 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
           <div class="field"><label>Vorname</label><input name="speakerFirstName" value="${escapeHtml(speakerParts.firstName || "")}" required></div>
           <div class="field"><label>Nachname</label><input name="speakerLastName" value="${escapeHtml(speakerParts.lastName || "")}" required></div>
           <div class="field"><label>Firma</label><input name="speakerCompany" value="${escapeHtml(speakerForForm.company || "")}"></div>
+          <div class="field"><label>Position</label><input name="speakerPosition" value="${escapeHtml(speakerForForm.position || "")}"></div>
           <div class="field"><label>Webseite</label><input name="speakerWebsite" type="url" value="${escapeHtml(speakerForForm.website || speakerForForm.url || "")}"></div>
           <div class="field"><label>Mailadresse</label><input name="speakerEmail" type="email" value="${escapeHtml(speakerForForm.email || speakerForForm.mail || "")}"></div>
           <div class="field"><label>Telefonnummer</label><input name="speakerPhone" type="tel" value="${escapeHtml(speakerForForm.phone || speakerForForm.mobile || "")}"></div>
         </div>
+        <div class="field"><label>Kurzvita</label><textarea name="speakerShortBio" rows="4">${escapeHtml(speakerForForm.shortBio || speakerForForm.bio || "")}</textarea></div>
+        <div class="field"><label>Ausfuehrliche Vita</label><textarea name="speakerLongBio" rows="7">${escapeHtml(speakerForForm.longBio || speakerForForm.vita || speakerForForm.biography || "")}</textarea></div>
       </section>
       <section class="panel">
         <h3>2. Vortrag</h3>
         <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(selectedTopic.title || "")}" required>${aiFieldActions([{ action: "improveText", target: "title", label: "Titel mit ChatGPT", entityType: "topics", entityId: topicEntityId, fieldName: "title" }])}</div>
         <div class="field"><label>Subline</label><input name="subline" value="${escapeHtml(selectedTopic.subline || selectedTopic.subtitle || "")}"></div>
         <div class="field"><label>Beschreibung</label><textarea name="text" required>${escapeHtml(selectedTopic.longDescription || selectedTopic.description || selectedTopic.shortDescription || "")}</textarea>${aiFieldActions([{ action: "generateTopicDescription", target: "text", label: "Beitragstext mit KI erzeugen", entityType: "topics", entityId: topicEntityId, fieldName: "longDescription" }])}</div>
-        <div class="field"><label>Bild zum Vortrag optional</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: selectedTopic.imageUrl || "", label: "Vortragsbild" })}${linkedMediaActions({ collection: "topics", id: topicEntityId, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topicEntityId}`, label: "Bild", assetId: topicAsset?.id || "" })}<p class="muted">Optional direkt hochladen oder aus der Mediathek zuordnen.</p></div>
+        <div class="form-grid--two">
+          <div class="field"><label>Unternehmenslogo</label>${imageDropzone({ inputName: "topicCompanyLogo", removeName: "removeTopicCompanyLogo", imageUrl: selectedTopic.companyLogoUrl || selectedTopic.logoUrl || "", label: "Unternehmenslogo", defaultSize: "480x240", simple: true })}</div>
+          <div class="field"><label>Vortragsbild</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: selectedTopic.imageUrl || "", label: "Vortragsbild", simple: true, mediaHref: selectedTopic.id ?mediaLibraryHref({ collection: "topics", id: topicEntityId, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topicEntityId}` }) : "" })}</div>
+        </div>
         <div class="form-grid--two">
           <div class="field"><label>PowerPoint optional</label><select name="downloadId">${documentOptions}</select><p class="muted">PowerPoint/PDF aus der Dokumentenverwaltung zuordnen.</p></div>
           <div class="field"><label>Galerie optional</label><select name="galleryId">${galleryOptions}</select><p class="muted">Galerie aus der Galerieverwaltung zuordnen.</p></div>
@@ -1488,7 +1554,7 @@ function topicAssignPanel(event, topics, mode) {
   </div>`;
 }
 
-function eventTopicsEditor(event, topics, speakers, allEvents, galleries = [], downloads = [], mediaAssets = [], query = new URLSearchParams()) {
+function eventTopicsEditor(event, topics, speakers, allEvents, galleries = [], downloads = [], mediaAssets = [], query = new URLSearchParams(), sponsors = [], members = []) {
   const assignedTopicIds = new Set(event.topicIds || []);
   const assignedTopics = (event.topicIds || []).map((topicId) => topics.find((topic) => topic.id === topicId)).filter(Boolean);
   const topicLimitReached = assignedTopics.length >= 6;
@@ -1515,22 +1581,34 @@ function eventTopicsEditor(event, topics, speakers, allEvents, galleries = [], d
       ${topicLimitReached ?`<div class="alert">Maximal 6 Vortraege sind erreicht. Bitte zuerst einen Vortrag entfernen, bevor ein neuer hinzugefuegt wird.</div>` : ""}
       ${assignPanel}
       ${detailPanel}
-      <h2>Bereits zugeordnet</h2>
-      <div class="assigned-topic-list">${assignedTopics.length ?assignedTopics.map((topic) => {
+      <div class="assigned-topic-list-head">
+        <div>
+          <h2>Referenten und Vortraege</h2>
+          <p class="muted">Reihenfolge per Griff verschieben. Titel oder Stift oeffnen die Bearbeitung.</p>
+        </div>
+        <strong>${assignedTopics.length} / 6</strong>
+      </div>
+      <div class="assigned-topic-list">${assignedTopics.length ?assignedTopics.map((topic, index) => {
         const topicSpeakers = topicSpeakersForEvent(topic, event, speakers);
+        const summary = topic.subline || topic.subtitle || topic.shortDescription || topic.description || topic.longDescription || "";
+        const companyInfo = companyLogoForSpeakers(topic, topicSpeakers, sponsors, members, mediaAssets);
         return `<div class="assigned-topic-card ${selectedTopicId === topic.id ?"active" : ""}" draggable="true" data-topic-drag-id="${topic.id}" data-event-id="${event.id}">
           <button type="button" class="drag-handle" aria-label="Vortrag verschieben">::</button>
-          <a class="topic-thumb assigned-topic-card__thumb-link" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}" aria-label="Beitrag bearbeiten">${topicThumb(topic)}</a>
-          <a class="assigned-topic-card__title" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}" title="${escapeHtml(topic.title || "")}">${escapeHtml(topic.title || "")}</a>
-          <div class="topic-speaker-badges">${topicSpeakers.length ?topicSpeakers.map((speaker) => `<span class="speaker-badge">${speakerAvatar(speaker, "speaker-badge__avatar")}<span>${escapeHtml(speaker.name || "")}</span></span>`).join("") : `<small>Keine Referenten</small>`}</div>
+          <div class="assigned-topic-card__index">${index + 1}</div>
+          ${companyLogoMarkup(companyInfo)}
+          <a class="topic-thumb assigned-topic-card__thumb-link" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}" aria-label="Vortrag bearbeiten">${topicThumb(topic)}</a>
+          <div class="assigned-topic-card__body">
+            <a class="assigned-topic-card__title" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}" title="${escapeHtml(topic.title || "")}">${escapeHtml(topic.title || "")}</a>
+            ${summary ?`<p>${escapeHtml(shortText(summary, 180))}</p>` : `<p class="muted">Noch keine Kurzbeschreibung hinterlegt.</p>`}
+            <div class="topic-speaker-badges">${topicSpeakers.length ?topicSpeakers.map((speaker) => `<a class="speaker-badge" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}&speaker=${speaker.id}" title="${escapeHtml([speaker.name, speaker.company, speaker.position].filter(Boolean).join(" - "))}">${speakerAvatar(speaker, "speaker-badge__avatar")}<span><strong>${escapeHtml(speaker.name || "")}</strong><small>${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" - ") || "Referent")}</small></span></a>`).join("") : `<a class="speaker-badge speaker-badge--empty" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}">Referent hinzufuegen</a>`}</div>
+          </div>
           <div class="assigned-topic-card__actions table-actions table-actions--icons">
             <a class="icon-button icon-button--visible" href="#/topic/${topic.id}" title="Anzeigen" aria-label="Anzeigen">${iconImage("eye")}</a>
-            <a class="icon-button icon-button--edit" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}" title="Beitrag bearbeiten" aria-label="Beitrag bearbeiten">${iconImage("edit")}</a>
+            <a class="icon-button icon-button--edit" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}" title="Vortrag bearbeiten" aria-label="Vortrag bearbeiten">${iconImage("edit")}</a>
             <button class="icon-button icon-button--danger" type="button" data-unassign-event-topic="${topic.id}" data-event-id="${event.id}" title="Zuordnung entfernen" aria-label="Zuordnung entfernen">${iconImage("trash")}</button>
           </div>
         </div>`;
       }).join("") : `<div class="empty">Noch keine Vortraege zugeordnet. Starte mit Neu oder Zuordnen.</div>`}</div>
-      <p class="muted">${assignedTopics.length} von 6 Vortraegen</p>
     </section>
   </div>`;
 }
@@ -1560,7 +1638,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     id: `event-${crypto.randomUUID()}`, title: "", subtitle: "", date: "2026-08-01", startTime: "10:00", endTime: "13:00", locationName: "", address: "", postalCode: "", city: "", description: "", eventType: "Panel", accessType: "public", status: "draft", lifecyclePhase: "planning", registrationEnabled: false, maxParticipants: 50, expiresAt: "", phone: "", topicIds: [], speakerIds: [], sponsorIds: []
   } : await getOne("events", id);
   if (!event) return eventsAdminPage();
-  const [topics, speakers, sponsors, registrations, media, settings, allEvents, galleries, allEditorial, mediaAssets, audioProviders, videoLibrary, downloads] = await Promise.all([list("topics"), list("speakers"), list("sponsors"), list("registrations"), list("eventMedia"), list("settings"), list("events"), list("galleries"), list("editorialContent"), list("media_assets").catch(() => []), getOne("settings", "audioProviders").catch(() => null), list("media_videos").catch(() => []), list("downloads").catch(() => [])]);
+  const [topics, speakers, sponsors, registrations, media, settings, allEvents, galleries, allEditorial, mediaAssets, audioProviders, videoLibrary, downloads, members] = await Promise.all([list("topics"), list("speakers"), list("sponsors"), list("registrations"), list("eventMedia"), list("settings"), list("events"), list("galleries"), list("editorialContent"), list("media_assets").catch(() => []), getOne("settings", "audioProviders").catch(() => null), list("media_videos").catch(() => []), list("downloads").catch(() => []), list("members").catch(() => [])]);
   const eventTypes = settingValue(settings, "eventTypes", ["Medienfruehstueck", "Summit", "Roundtable", "Panel", "Webinar", "Konferenz", "Workshop"]);
   const availableGalleries = galleries
     .filter((gallery) => gallery.status !== "archived")
@@ -1646,7 +1724,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
         .replace(`<div class="field"><label>Lifecycle</label><select name="lifecyclePhase">${Object.entries(lifecycleLabels).map(([key, value]) => `<option value="${key}" ${key === event.lifecyclePhase ?"selected" : ""}>${value}</option>`).join("")}</select></div>`, "");
     }
   } else if (tab === "topics") {
-    content = eventTopicsEditor(event, topics, speakers, allEvents, galleries, downloads, mediaAssets, query);
+    content = eventTopicsEditor(event, topics, speakers, allEvents, galleries, downloads, mediaAssets, query, sponsors, members);
   } else if (tab === "__old_topics") {
     content = `<h2>Zugeordnete Themen</h2><div class="filters">${topics.map((topic) => `<span class="filter ${event.topicIds.includes(topic.id) ?"active" : ""}">${escapeHtml(topic.title)}</span>`).join("")}</div><p>Themenspezifische Beschreibung und Sortierung koennen hier redaktionell erweitert werden.</p><div class="table-wrap" style="margin-top:22px"><table class="table"><thead><tr><th>Thema</th><th>Referenten</th></tr></thead><tbody>${topics.filter((topic) => event.topicIds.includes(topic.id)).map((topic) => { const topicSpeakers = speakers.filter((speaker) => speaker.topicId === topic.id || (event.speakerIds || []).includes(speaker.id)); return `<tr><td>${escapeHtml(topic.title)}</td><td>${topicSpeakers.length ?topicSpeakers.map((speaker) => `<div class="person"><div>${speaker.photoUrl ?`<img src="${escapeHtml(speaker.photoUrl)}" alt="">` : ""}</div><div><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" · "))}</small>${speaker.shortBio ?`<p>${escapeHtml(speaker.shortBio)}</p>` : ""}</div></div>`).join("") : "Noch kein Referent zugeordnet."}</td></tr>`; }).join("")}</tbody></table></div>`;
   } else if (tab === "speakers") {
@@ -3874,7 +3952,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
   if (module === "users" && !hasCmsAccess(true)) return denied(true);
   const definitions = {
     topics: { title: "Redaktionelles Thema", fields: [["title", "Thema"], ["shortDescription", "Kurze Beschreibung"]] },
-    speakers: { title: "Referent", fields: [["name", "Referent Name"], ["company", "Firma"]] },
+    speakers: { title: "Referent", fields: [["name", "Referent Name"], ["company", "Firma"], ["position", "Position"], ["website", "Website"], ["email", "E-Mail"], ["phone", "Telefon"], ["shortBio", "Kurzvita"], ["longBio", "Ausfuehrliche Vita"]] },
     sponsors: { title: "Sponsor / Gastgeber", fields: [["name", "Name"], ["role", "Sponsor / Gastgeber"], ["address", "Adresse"], ["website", "Webseite"]] },
     members: { title: "Mitglied", fields: [["membershipType", "Mitgliedstyp"], ["name", "Firma / Name"], ["description", "Beschreibung"], ["website", "Website"], ["street", "Strasse"], ["houseNumber", "Hausnummer"], ["postalCode", "PLZ"], ["city", "Ort"], ["country", "Land"]] },
     membershipApplications: { title: "Mitgliedsantrag", fields: [["company", "Unternehmen / Name"], ["legalForm", "Rechtsform"], ["street", "Strasse"], ["city", "PLZ / Ort"], ["country", "Land"], ["website", "Website"], ["firstName", "Vorname"], ["lastName", "Nachname"], ["position", "Position"], ["email", "E-Mail"], ["phone", "Telefon"], ["membershipType", "Mitgliedschaft: company oder individual"], ["companyDescription", "Kurzbeschreibung"], ["message", "Nachricht"], ["status", "Status"], ["submittedAt", "Eingegangen"]] },

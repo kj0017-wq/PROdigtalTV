@@ -261,7 +261,7 @@ async function viewForRoute(current) {
   const {
     homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
     newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage,
-    downloadsPage, joinPage, loginPage, memberPortalPage, memberArticleDetailPage, legalPage,
+    downloadsPage, joinPage, loginPage, memberPortalPage, memberArticleDetailPage, legalPage, speakersPage, speakerDetailPage,
     notFoundPage, webappQrPage, ticketLinkPage, eventCheckinPage, eventCheckinScreenPage, registrationCancelPage,
     notificationUnsubscribePage
   } = await publicPages();
@@ -284,6 +284,8 @@ async function viewForRoute(current) {
   if (current.path === "ueber-uns") return aboutPage();
   if (current.path === "about") return aboutPage();
   if (current.path === "board") return boardPage();
+  if (current.path === "speakers") return speakersPage();
+  if (current.path === "speaker") return speakerDetailPage(current.id);
   if (current.path === "members") return membersPage();
   if (current.path === "join" && current.id) return internalDetailPage("mitglied_werden", current.id);
   if (current.path === "mitglied-werden" && current.id) return internalDetailPage("mitglied_werden", current.id);
@@ -347,6 +349,12 @@ async function goOrRefresh(path) {
   } else {
     go(path);
   }
+}
+
+function confirmDatasetDelete(label = "Diesen Datensatz") {
+  const title = String(label || "Diesen Datensatz").trim();
+  return window.confirm(`${title} wirklich loeschen?`)
+    && window.confirm(`Bitte noch einmal bestaetigen: ${title} wird als ganzer Datensatz geloescht.`);
 }
 
 function mobileUrlForCurrentRoute() {
@@ -3373,6 +3381,36 @@ function mediaStoragePathFromDownloadUrl(url = "") {
   }
 }
 
+function mediaStoragePathCandidates(source = "", asset = {}) {
+  const sourceText = String(source || "").trim();
+  const fromUrl = mediaStoragePathFromDownloadUrl(sourceText);
+  const candidates = [];
+  const add = (value) => {
+    const clean = String(value || "").trim().replace(/^\/+/, "");
+    if (clean && !candidates.includes(clean)) candidates.push(clean);
+  };
+  add(fromUrl);
+  if (sourceText && sourceText === asset.file_path_web_url) {
+    add(asset.storage_path_web);
+    add(asset.file_path_web);
+  }
+  if (sourceText && sourceText === asset.file_path_thumb_url) {
+    add(asset.storage_path_thumb);
+    add(asset.file_path_thumb);
+  }
+  if (sourceText && sourceText === asset.file_path_original_url) {
+    add(asset.storage_path_original);
+    add(asset.file_path_original);
+  }
+  add(asset.storage_path_original);
+  add(asset.file_path_original);
+  add(asset.storage_path_web);
+  add(asset.file_path_web);
+  add(asset.storage_path_thumb);
+  add(asset.file_path_thumb);
+  return candidates;
+}
+
 function mediaSourceCanRenderSafely(source = "") {
   const value = String(source || "").trim();
   if (!value) return false;
@@ -3388,15 +3426,7 @@ function mediaSourceCanRenderSafely(source = "") {
 
 function mediaProxyUrl(source = "", asset = {}) {
   const url = String(source || "").trim();
-  const storagePath = [
-    asset.storage_path_original,
-    asset.storage_path_web,
-    asset.storage_path_thumb,
-    asset.file_path_original,
-    asset.file_path_web,
-    asset.file_path_thumb,
-    mediaStoragePathFromDownloadUrl(url)
-  ].find(Boolean);
+  const storagePath = mediaStoragePathCandidates(url, asset)[0] || "";
   try {
     if (storagePath) return `${mediaProxyFunctionUrl}?path=${encodeURIComponent(String(storagePath).replace(/^\/+/, ""))}`;
     if (/^https?:\/\//i.test(url)) return `${mediaProxyFunctionUrl}?url=${encodeURIComponent(url)}`;
@@ -3436,18 +3466,11 @@ async function mediaDownloadObjectUrl(source = "") {
 }
 
 async function mediaBlobObjectUrlForSource(source = "", asset = {}) {
-  const storagePath = [
-    asset.storage_path_original,
-    asset.storage_path_web,
-    asset.storage_path_thumb,
-    asset.file_path_original,
-    asset.file_path_web,
-    asset.file_path_thumb,
-    mediaStoragePathFromDownloadUrl(source)
-  ].find(Boolean);
+  const storagePaths = mediaStoragePathCandidates(source, asset);
   const firebase = await getFirebaseStorageServices().catch(() => null);
-  if (storagePath && firebase?.storageLib?.ref && (firebase?.storageLib?.getBlob || firebase?.storageLib?.getBytes)) {
-    try {
+  if (storagePaths.length && firebase?.storageLib?.ref && (firebase?.storageLib?.getBlob || firebase?.storageLib?.getBytes)) {
+    for (const storagePath of storagePaths) {
+      try {
       const reference = firebase.storageLib.ref(firebase.storage, String(storagePath).replace(/^\/+/, ""));
       let blob = null;
       if (firebase.storageLib.getBlob) {
@@ -3471,8 +3494,9 @@ async function mediaBlobObjectUrlForSource(source = "", asset = {}) {
           cleanup: () => URL.revokeObjectURL(objectUrl)
         };
       }
-    } catch {
-      // Fall through to direct download fallback when Storage blob access is unavailable.
+      } catch {
+        // Try the next known path before falling back to direct download.
+      }
     }
   }
   return await mediaDownloadObjectUrl(source);
@@ -5836,6 +5860,12 @@ function wireImageDropzones() {
     const cropButton = zone.querySelector("[data-image-crop]");
     const status = zone.querySelector("[data-image-status]");
     const emptyText = preview?.querySelector("span")?.textContent || "Bild per Drag-and-drop oder Klick hochladen";
+    const simpleActions = zone.querySelector("[data-simple-image-actions]");
+    const simpleUpload = zone.querySelector("[data-simple-image-upload]");
+    const simpleDelete = zone.querySelector("[data-simple-image-delete]");
+    const simpleCancel = zone.querySelector("[data-simple-image-cancel]");
+    const simpleApply = zone.querySelector("[data-simple-image-apply]");
+    const isSimpleDropzone = Boolean(simpleActions);
     zone.querySelectorAll("[data-image-mode]").forEach((button) => {
       button.addEventListener("click", () => {
         const mode = button.dataset.imageMode;
@@ -5851,6 +5881,14 @@ function wireImageDropzones() {
       return { width: width || 240, height: height || 180 };
     };
     const updateResolution = () => {
+      if (isSimpleDropzone) {
+        if (resolution) resolution.textContent = "";
+        if (preview) {
+          preview.style.width = "";
+          preview.style.height = "";
+        }
+        return;
+      }
       const size = selectedSize();
       if (resolution) resolution.textContent = `Ausgabeformat: ${size.width} x ${size.height} px.`;
       if (preview) {
@@ -5866,67 +5904,12 @@ function wireImageDropzones() {
       crop.img.style.height = "100%";
       crop.img.style.maxWidth = "100%";
       crop.img.style.maxHeight = "100%";
-      crop.img.style.objectFit = "contain";
+      crop.img.style.objectFit = zone.classList.contains("is-cropping-simple") ? "cover" : "contain";
       crop.img.style.transform = `translate(${crop.x}px, ${crop.y}px) scale(${crop.scale})`;
       crop.img.style.transformOrigin = "center";
     };
-    const showFile = (file, options = {}) => {
-      if (!file || !file.type.startsWith("image/")) return;
-      form?.classList.remove("is-saved");
-      const reader = new FileReader();
-      reader.addEventListener("load", () => {
-        crop.file = file;
-        crop.src = reader.result;
-        crop.x = 0;
-        crop.y = 0;
-        crop.scale = 1;
-        preview.innerHTML = `<img src="${reader.result}" alt="">`;
-        crop.img = preview.querySelector("img");
-        preview.classList.add("has-image");
-        if (removeButton) removeButton.hidden = false;
-        tools.hidden = false;
-        zoom.value = "1";
-        removeInput.value = "";
-        if (dataInput) dataInput.value = options.dataUrl || "";
-        if (fileNameInput) fileNameInput.value = options.fileName || "";
-        updateResolution();
-        status.textContent = options.statusText || "Neues Bild ausgewaehlt. Das gesamte Motiv ist sichtbar. Bei Bedarf zoomen/verschieben oder direkt speichern.";
-        renderCrop();
-      });
-      reader.readAsDataURL(file);
-    };
-    preview?.addEventListener("click", () => {
-      if (preview.classList.contains("has-image")) return;
-      input.click();
-    });
-    selectButton?.addEventListener("click", () => input.click());
-    input?.addEventListener("change", () => showFile(input.files?.[0]));
-    preview?.addEventListener("pointerdown", (event) => {
-      if (!crop.img) return;
-      crop.dragging = true;
-      crop.startX = event.clientX;
-      crop.startY = event.clientY;
-      crop.originX = crop.x;
-      crop.originY = crop.y;
-      preview.setPointerCapture(event.pointerId);
-    });
-    preview?.addEventListener("pointermove", (event) => {
-      if (!crop.dragging) return;
-      crop.x = crop.originX + event.clientX - crop.startX;
-      crop.y = crop.originY + event.clientY - crop.startY;
-      renderCrop();
-    });
-    preview?.addEventListener("pointerup", () => { crop.dragging = false; });
-    zoom?.addEventListener("input", () => {
-      crop.scale = Number(zoom.value || 1);
-      renderCrop();
-    });
-    sizeSelect?.addEventListener("change", () => {
-      form?.classList.remove("is-saved");
-      updateResolution();
-    });
-    cropButton?.addEventListener("click", async () => {
-      if (!crop.img || !crop.file) return;
+    const applyCropToInput = async () => {
+      if (!crop.img || !crop.file) return null;
       const size = selectedSize();
       const canvas = document.createElement("canvas");
       canvas.width = size.width;
@@ -5953,10 +5936,148 @@ function wireImageDropzones() {
       crop.x = 0;
       crop.y = 0;
       crop.scale = 1;
-      zoom.value = "1";
-      tools.hidden = true;
-      status.textContent = `Bild zugeschnitten (${size.width} x ${size.height} px). Bitte speichern.`;
+      if (zoom) zoom.value = "1";
       renderCrop();
+      return { file: croppedFile, size };
+    };
+    const showFile = (file, options = {}) => {
+      if (!file || !file.type.startsWith("image/")) return;
+      form?.classList.remove("is-saved");
+      const reader = new FileReader();
+      reader.addEventListener("load", () => {
+        crop.file = file;
+        crop.src = reader.result;
+        crop.x = 0;
+        crop.y = 0;
+        crop.scale = 1;
+        preview.innerHTML = `<img src="${reader.result}" alt="">`;
+        crop.img = preview.querySelector("img");
+        preview.classList.add("has-image");
+        if (removeButton) removeButton.hidden = false;
+        if (tools) tools.hidden = isSimpleDropzone;
+        if (zoom) zoom.value = "1";
+        removeInput.value = "";
+        if (dataInput) dataInput.value = options.dataUrl || "";
+        if (fileNameInput) fileNameInput.value = options.fileName || "";
+        updateResolution();
+        status.textContent = options.statusText || "Neues Bild ausgewaehlt. Das gesamte Motiv ist sichtbar. Bei Bedarf zoomen/verschieben oder direkt speichern.";
+        renderCrop();
+      });
+      reader.readAsDataURL(file);
+    };
+    preview?.addEventListener("click", () => {
+      if (zone.classList.contains("is-cropping-simple")) return;
+      if (simpleActions) {
+        simpleActions.hidden = false;
+        status.textContent = "Bildaktion waehlen: Upload, Loeschen oder Abbrechen.";
+        return;
+      }
+      if (preview.classList.contains("has-image")) return;
+      input.click();
+    });
+    selectButton?.addEventListener("click", () => input.click());
+    input?.addEventListener("change", () => showFile(input.files?.[0]));
+    simpleUpload?.addEventListener("change", async () => {
+      const file = simpleUpload.files?.[0];
+      if (!file) return;
+      crop.previous = {
+        html: preview.innerHTML,
+        hasImage: preview.classList.contains("has-image")
+      };
+      zone.classList.add("is-cropping-simple");
+      fileToInput(input, file);
+      showFile(file, { statusText: "Bild im Rahmen verschieben. Mit dem Mausrad kannst du leicht zoomen. Danach Uebernehmen klicken." });
+      await new Promise((resolve) => window.setTimeout(resolve, 120));
+      simpleActions.hidden = false;
+      if (simpleApply) simpleApply.hidden = false;
+      simpleUpload.value = "";
+    });
+    simpleApply?.addEventListener("click", async () => {
+      if (!crop.img || !crop.file) return;
+      simpleApply.disabled = true;
+      status.textContent = "Ausschnitt wird uebernommen ...";
+      const cropped = await applyCropToInput();
+      zone.classList.remove("is-cropping-simple");
+      if (simpleApply) simpleApply.hidden = true;
+      simpleActions.hidden = true;
+      if (cropped?.size) status.textContent = `Bild zugeschnitten (${cropped.size.width} x ${cropped.size.height} px). System speichert und ordnet automatisch zu ...`;
+      await autoSaveSimpleImageForm(form, status);
+      simpleApply.disabled = false;
+    });
+    simpleCancel?.addEventListener("click", () => {
+      if (zone.classList.contains("is-cropping-simple") && crop.previous) {
+        preview.innerHTML = crop.previous.html || `<span>${emptyText}</span>`;
+        preview.classList.toggle("has-image", Boolean(crop.previous.hasImage));
+        crop.img = preview.querySelector("img");
+        crop.file = null;
+        crop.src = "";
+        input.value = "";
+        if (dataInput) dataInput.value = "";
+        if (fileNameInput) fileNameInput.value = "";
+        zone.classList.remove("is-cropping-simple");
+        if (simpleApply) simpleApply.hidden = true;
+      }
+      simpleActions.hidden = true;
+      status.textContent = preview?.classList.contains("has-image") ? "Bild ist gespeichert." : "Kein Bild gespeichert.";
+    });
+    simpleDelete?.addEventListener("click", async () => {
+      if (simpleDelete.disabled) return;
+      form?.classList.remove("is-saved");
+      input.value = "";
+      removeInput.value = "1";
+      if (dataInput) dataInput.value = "";
+      if (fileNameInput) fileNameInput.value = "";
+      crop.file = null;
+      crop.src = "";
+      crop.img = null;
+      zone.classList.remove("is-cropping-simple");
+      if (simpleApply) simpleApply.hidden = true;
+      if (tools) tools.hidden = true;
+      preview.innerHTML = `<span>${emptyText}</span>`;
+      preview.classList.remove("has-image");
+      if (removeButton) removeButton.hidden = true;
+      simpleActions.hidden = true;
+      status.textContent = "Bild wird geloescht und Zuordnung wird gespeichert ...";
+      await autoSaveSimpleImageForm(form, status, "Bild wird geloescht ...");
+      simpleDelete.disabled = true;
+    });
+    preview?.addEventListener("pointerdown", (event) => {
+      if (!crop.img) return;
+      crop.dragging = true;
+      crop.startX = event.clientX;
+      crop.startY = event.clientY;
+      crop.originX = crop.x;
+      crop.originY = crop.y;
+      preview.setPointerCapture(event.pointerId);
+    });
+    preview?.addEventListener("pointermove", (event) => {
+      if (!crop.dragging) return;
+      crop.x = crop.originX + event.clientX - crop.startX;
+      crop.y = crop.originY + event.clientY - crop.startY;
+      renderCrop();
+    });
+    preview?.addEventListener("pointerup", () => { crop.dragging = false; });
+    zoom?.addEventListener("input", () => {
+      crop.scale = Number(zoom.value || 1);
+      renderCrop();
+    });
+    preview?.addEventListener("wheel", (event) => {
+      if (!zone.classList.contains("is-cropping-simple") || !crop.img) return;
+      event.preventDefault();
+      const direction = event.deltaY > 0 ? -1 : 1;
+      crop.scale = Math.max(1, Math.min(3, crop.scale + direction * 0.05));
+      if (zoom) zoom.value = String(crop.scale);
+      renderCrop();
+    }, { passive: false });
+    sizeSelect?.addEventListener("change", () => {
+      form?.classList.remove("is-saved");
+      updateResolution();
+    });
+    cropButton?.addEventListener("click", async () => {
+      const cropped = await applyCropToInput();
+      if (!cropped) return;
+      if (tools) tools.hidden = true;
+      status.textContent = `Bild zugeschnitten (${cropped.size.width} x ${cropped.size.height} px). Bitte speichern.`;
     });
     zone.addEventListener("dragover", (event) => {
       event.preventDefault();
@@ -5969,7 +6090,18 @@ function wireImageDropzones() {
       const file = event.dataTransfer?.files?.[0];
       if (!file) return;
       fileToInput(input, file);
-      showFile(file);
+      if (isSimpleDropzone) {
+        crop.previous = {
+          html: preview.innerHTML,
+          hasImage: preview.classList.contains("has-image")
+        };
+        zone.classList.add("is-cropping-simple");
+        showFile(file, { statusText: "Bild im Rahmen verschieben. Mit dem Mausrad kannst du leicht zoomen. Danach Uebernehmen klicken." });
+        simpleActions.hidden = false;
+        if (simpleApply) simpleApply.hidden = false;
+      } else {
+        showFile(file);
+      }
     });
     zone.querySelector("[data-ai-image-generate]")?.addEventListener("click", async (event) => {
       const button = event.currentTarget;
@@ -6027,6 +6159,10 @@ function wireImageDropzones() {
       }
     });
     removeButton?.addEventListener("click", () => {
+      if (simpleActions) {
+        simpleActions.hidden = false;
+        return;
+      }
       form?.classList.remove("is-saved");
       input.value = "";
       removeInput.value = "1";
@@ -6707,10 +6843,13 @@ function updateTopicThumbInList(topicId, imageUrl) {
   thumb.innerHTML = imageUrl ? `<img src="${imageUrl}" alt="">` : "<span>Bild</span>";
 }
 
-function updateDropzoneSavedImage(form, imageUrl) {
-  const preview = form.querySelector("[data-image-preview]");
-  const tools = form.querySelector("[data-image-tools]");
-  const input = form.querySelector("[data-image-dropzone] input[type='file']");
+function updateDropzoneSavedImage(form, imageUrl, inputName = "") {
+  const input = inputName
+    ? form.querySelector(`[data-image-dropzone] input[type='file'][name="${CSS.escape(inputName)}"]`)
+    : form.querySelector("[data-image-dropzone] input[type='file']");
+  const zone = input?.closest("[data-image-dropzone]") || form;
+  const preview = zone.querySelector("[data-image-preview]");
+  const tools = zone.querySelector("[data-image-tools]");
   const dataInput = form.querySelector(`[name="${input?.name}DataUrl"]`);
   const fileNameInput = form.querySelector(`[name="${input?.name}FileName"]`);
   if (!preview) return;
@@ -6721,12 +6860,41 @@ function updateDropzoneSavedImage(form, imageUrl) {
     preview.innerHTML = "<span>Bild per Drag-and-drop oder Klick hochladen</span>";
     preview.classList.remove("has-image");
   }
-  const removeButton = form.querySelector("[data-image-remove]");
+  const removeButton = zone.querySelector("[data-image-remove]");
   if (removeButton) removeButton.hidden = !imageUrl;
+  const simpleActions = zone.querySelector("[data-simple-image-actions]");
+  const simpleDelete = zone.querySelector("[data-simple-image-delete]");
+  if (simpleActions) simpleActions.hidden = true;
+  if (simpleDelete) simpleDelete.disabled = !imageUrl;
   if (input) input.value = "";
   if (dataInput) dataInput.value = "";
   if (fileNameInput) fileNameInput.value = "";
   if (tools) tools.hidden = true;
+}
+
+async function autoSaveSimpleImageForm(form, status, message = "Bild wird gespeichert ...") {
+  if (!form) return;
+  const submitButton = form.querySelector('button[type="submit"], button.button--primary');
+  if (status) status.textContent = message;
+  if (submitButton) submitButton.disabled = true;
+  try {
+    if (form.id === "event-topic-speaker-form") {
+      await saveEventTopicSpeakerForm(form);
+    } else if (form.id === "event-edit-form") {
+      await saveEventEditForm(form, { silent: true });
+    } else if (form.id === "event-topic-editor-form") {
+      form.requestSubmit?.();
+      return;
+    } else {
+      form.requestSubmit?.();
+      return;
+    }
+    if (status) status.textContent = "Bild wurde gespeichert und zugeordnet.";
+  } catch (error) {
+    if (status) status.textContent = `Bild konnte nicht gespeichert werden: ${error.message || String(error)}`;
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+  }
 }
 
 async function saveEventTopicSpeakerForm(form) {
@@ -6743,6 +6911,7 @@ async function saveEventTopicSpeakerForm(form) {
   eventIdsForSpeaker.add(form.dataset.eventId);
   const eventSpeakerIds = Array.from(new Set([...(existingEvent.speakerIds || []), speakerId]));
   const image = imageFileFromDropzone(form, "speakerImage", speakerId);
+  const companyLogo = imageFileFromDropzone(form, "speakerCompanyLogo", `${speakerId}-company-logo`);
   const imageUpdate = {};
   if (form.elements.removeSpeakerImage?.value === "1") {
     await deleteStoredAsset(existingSpeaker);
@@ -6755,6 +6924,17 @@ async function saveEventTopicSpeakerForm(form) {
     imageUpdate.photoUrl = asset.url;
     imageUpdate.assetStoragePath = asset.storagePath;
   }
+  if (form.elements.removeSpeakerCompanyLogo?.value === "1") {
+    await deleteStoredAsset({ storagePath: existingSpeaker.companyLogoStoragePath || existingSpeaker.logoStoragePath });
+    imageUpdate.companyLogoUrl = "";
+    imageUpdate.companyLogoStoragePath = "";
+  }
+  if (companyLogo) {
+    await deleteStoredAsset({ storagePath: existingSpeaker.companyLogoStoragePath || existingSpeaker.logoStoragePath });
+    const asset = await uploadEntityImage("speakers", `${speakerId}-company-logo`, companyLogo);
+    imageUpdate.companyLogoUrl = asset.url;
+    imageUpdate.companyLogoStoragePath = asset.storagePath;
+  }
   await upsert("speakers", {
     ...existingSpeaker,
     id: speakerId,
@@ -6765,7 +6945,10 @@ async function saveEventTopicSpeakerForm(form) {
     website: form.elements.speakerWebsite?.value ?? existingSpeaker.website ?? existingSpeaker.url ?? "",
     email: form.elements.speakerEmail?.value ?? existingSpeaker.email ?? existingSpeaker.mail ?? "",
     phone: form.elements.speakerPhone?.value ?? existingSpeaker.phone ?? existingSpeaker.mobile ?? "",
-    position: form.elements.position?.value ?? existingSpeaker.position ?? "",
+    position: form.elements.speakerPosition?.value ?? form.elements.position?.value ?? existingSpeaker.position ?? "",
+    shortBio: form.elements.speakerShortBio?.value ?? existingSpeaker.shortBio ?? "",
+    longBio: form.elements.speakerLongBio?.value ?? existingSpeaker.longBio ?? "",
+    vita: form.elements.speakerLongBio?.value ?? existingSpeaker.vita ?? "",
     ...imageUpdate,
     topicId: existingSpeaker.topicId || form.dataset.topicId,
     topicIds: Array.from(topicIdsForSpeaker),
@@ -6777,6 +6960,12 @@ async function saveEventTopicSpeakerForm(form) {
   form.querySelector("#event-topic-speaker-result").innerHTML = `<div class="alert alert--success">Referent wurde gespeichert.</div>`;
   const imageStatus = form.querySelector("[data-image-status]");
   if (imageStatus) imageStatus.textContent = imageUpdate.photoUrl ? "Bild wurde gespeichert." : imageUpdate.photoUrl === "" ? "Bild wurde gelöscht." : imageStatus.textContent;
+  if (Object.prototype.hasOwnProperty.call(imageUpdate, "photoUrl")) {
+    updateDropzoneSavedImage(form, imageUpdate.photoUrl, "speakerImage");
+  }
+  if (Object.prototype.hasOwnProperty.call(imageUpdate, "companyLogoUrl")) {
+    updateDropzoneSavedImage(form, imageUpdate.companyLogoUrl, "speakerCompanyLogo");
+  }
   form.classList.add("is-saved");
   if (!new URLSearchParams(location.hash.split("?")[1] || "").get("speaker")) {
     history.replaceState(null, "", `#/cms/event/${form.dataset.eventId}?tab=topics&mode=referent&topic=${form.dataset.topicId}&speaker=${speakerId}`);
@@ -12432,6 +12621,12 @@ function wireActions() {
   }));
 
   let draggedTopicCard = null;
+  const renumberAssignedTopicCards = () => {
+    document.querySelectorAll("[data-topic-drag-id]").forEach((item, index) => {
+      const indexNode = item.querySelector(".assigned-topic-card__index");
+      if (indexNode) indexNode.textContent = String(index + 1);
+    });
+  };
   document.querySelectorAll("[data-topic-drag-id]").forEach((card) => {
     card.addEventListener("dragstart", (event) => {
       draggedTopicCard = card;
@@ -12444,9 +12639,21 @@ function wireActions() {
       document.querySelectorAll("[data-topic-drag-id]").forEach((item) => item.classList.remove("is-drop-target"));
       const cards = Array.from(document.querySelectorAll("[data-topic-drag-id]"));
       const topicIds = cards.map((item) => item.dataset.topicDragId);
+      renumberAssignedTopicCards();
       const eventId = card.dataset.eventId;
       const existingEvent = await getOne("events", eventId);
       await upsert("events", { ...existingEvent, topicIds, updatedAt: new Date().toISOString() });
+      await Promise.all(topicIds.map(async (topicId, index) => {
+        const existingTopic = await getOne("topics", topicId);
+        if (!existingTopic) return null;
+        const sortOrder = index + 1;
+        return upsert("topics", {
+          ...existingTopic,
+          sortOrder,
+          eventSortOrder: sortOrder,
+          eventOrder: sortOrder
+        });
+      }));
       draggedTopicCard = null;
     });
     card.addEventListener("dragover", (event) => {
@@ -12822,8 +13029,10 @@ function wireActions() {
     eventIdsForSpeaker.add(form.dataset.eventId);
     const eventSpeakerIds = Array.from(new Set([...(existingEvent.speakerIds || []), speakerId]));
     const image = imageFileFromDropzone(form, "topicImage", topicId);
+    const companyLogo = imageFileFromDropzone(form, "topicCompanyLogo", `${topicId}-company-logo`);
     const imageUpdate = {};
     if (form.elements.removeTopicImage?.value === "1") {
+      await deleteStoredAsset({ storagePath: existingTopic.assetStoragePath });
       imageUpdate.imageUrl = "";
       imageUpdate.assetStoragePath = "";
     }
@@ -12832,6 +13041,17 @@ function wireActions() {
       const asset = await uploadEntityImage("topics", topicId, image);
       imageUpdate.imageUrl = asset.url;
       imageUpdate.assetStoragePath = asset.storagePath;
+    }
+    if (form.elements.removeTopicCompanyLogo?.value === "1") {
+      await deleteStoredAsset({ storagePath: existingTopic.companyLogoStoragePath || existingTopic.logoStoragePath });
+      imageUpdate.companyLogoUrl = "";
+      imageUpdate.companyLogoStoragePath = "";
+    }
+    if (companyLogo) {
+      await deleteStoredAsset({ storagePath: existingTopic.companyLogoStoragePath || existingTopic.logoStoragePath });
+      const asset = await uploadEntityImage("topics", `${topicId}-company-logo`, companyLogo);
+      imageUpdate.companyLogoUrl = asset.url;
+      imageUpdate.companyLogoStoragePath = asset.storagePath;
     }
     await upsert("topics", {
       ...existingTopic,
@@ -12856,9 +13076,13 @@ function wireActions() {
       lastName: speakerLastName,
       name: speakerName,
       company: form.elements.speakerCompany?.value || "",
+      position: form.elements.speakerPosition?.value || "",
       website: form.elements.speakerWebsite?.value || "",
       email: form.elements.speakerEmail?.value || "",
       phone: form.elements.speakerPhone?.value || "",
+      shortBio: form.elements.speakerShortBio?.value || "",
+      longBio: form.elements.speakerLongBio?.value || "",
+      vita: form.elements.speakerLongBio?.value || "",
       topicId: existingSpeaker?.topicId || topicId,
       topicIds: Array.from(topicIdsForSpeaker),
       eventIds: Array.from(eventIdsForSpeaker),
@@ -12870,8 +13094,11 @@ function wireActions() {
     const imageStatus = form.querySelector("[data-image-status]");
     if (imageStatus) imageStatus.textContent = imageUpdate.imageUrl ? "Bild wurde gespeichert." : imageUpdate.imageUrl === "" ? "Bild wurde gelöscht." : imageStatus.textContent;
     if (Object.prototype.hasOwnProperty.call(imageUpdate, "imageUrl")) {
-      updateDropzoneSavedImage(form, imageUpdate.imageUrl);
+      updateDropzoneSavedImage(form, imageUpdate.imageUrl, "topicImage");
       updateTopicThumbInList(topicId, imageUpdate.imageUrl);
+    }
+    if (Object.prototype.hasOwnProperty.call(imageUpdate, "companyLogoUrl")) {
+      updateDropzoneSavedImage(form, imageUpdate.companyLogoUrl, "topicCompanyLogo");
     }
     if (form.dataset.topicMode === "new") {
       go(`cms/event/${form.dataset.eventId}?tab=topics`);
@@ -12896,6 +13123,8 @@ function wireActions() {
 
   document.querySelectorAll("[data-unassign-event-topic]").forEach((button) => button.addEventListener("click", async () => {
     const existingEvent = await getOne("events", button.dataset.eventId);
+    const topic = await getOne("topics", button.dataset.unassignEventTopic).catch(() => null);
+    if (!window.confirm(`Vortrag "${topic?.title || button.dataset.unassignEventTopic}" aus diesem Event entfernen? Der Vortrag-Datensatz bleibt erhalten, ist aber hier nicht mehr zugeordnet.`)) return;
     const topicIds = (existingEvent.topicIds || []).filter((topicId) => topicId !== button.dataset.unassignEventTopic);
     const speakerIds = [];
     for (const speakerId of existingEvent.speakerIds || []) {
@@ -13952,7 +14181,7 @@ function wireActions() {
   }));
 
   document.querySelectorAll("[data-delete-event]").forEach((button) => button.addEventListener("click", async (event) => {
-    if (!window.confirm("Dieses Event wirklich loeschen? Zugeordnete Daten muessen separat geprueft werden.")) return;
+    if (!confirmDatasetDelete("Dieses Event")) return;
     await remove("events", event.currentTarget.dataset.deleteEvent);
     event.currentTarget.closest("tr")?.remove();
     await goOrRefresh(event.currentTarget.dataset.deleteReturn || "cms/events");
@@ -14149,7 +14378,7 @@ function wireActions() {
     deleteButton?.addEventListener("click", async () => {
       const ids = selectedIds();
       if (!ids.length) return;
-      if (!window.confirm(`${ids.length} ausgewaehlte ${label} wirklich loeschen?`)) return;
+      if (!confirmDatasetDelete(`${ids.length} ausgewaehlte ${label}`)) return;
       deleteButton.disabled = true;
       if (result) result.innerHTML = `<div class="alert">Ausgewaehlte ${escapeHtml(label)} werden geloescht ...</div>`;
       try {
@@ -14185,7 +14414,7 @@ function wireActions() {
       window.alert("CMS-Interna duerfen nicht geloescht werden.");
       return;
     }
-    if (!window.confirm(`${record?.name || record?.title || "Eintrag"} wirklich loeschen?`)) return;
+    if (!confirmDatasetDelete(record?.name || record?.title || "Eintrag")) return;
     await deleteStoredAsset(record);
     await remove(collection, button.dataset.recordId);
     button.closest("tr")?.remove();
@@ -14201,7 +14430,7 @@ function wireActions() {
       if (result) result.innerHTML = `<div class="alert">Kein Altbestand gefunden.</div>`;
       return;
     }
-    if (!window.confirm(`${ids.length} Altbestand-Eintraege wirklich loeschen?`)) return;
+    if (!confirmDatasetDelete(`${ids.length} Altbestand-Eintraege`)) return;
     button.disabled = true;
     if (result) result.innerHTML = `<div class="alert">Altbestand wird geloescht ...</div>`;
     try {
@@ -14308,7 +14537,7 @@ function wireActions() {
   document.querySelectorAll("[data-delete-registration]").forEach((button) => button.addEventListener("click", async () => {
     const registrationId = button.dataset.deleteRegistration;
     const row = button.closest("[data-registration-row]");
-    if (!registrationId || !window.confirm("Diese Buchung wirklich loeschen?")) return;
+    if (!registrationId || !confirmDatasetDelete("Diese Buchung")) return;
     button.disabled = true;
     try {
       await remove("registrations", registrationId);
@@ -14330,7 +14559,7 @@ function wireActions() {
     const ids = Array.from(document.querySelectorAll("[data-registration-select]:checked")).map((check) => check.value).filter(Boolean);
     const result = document.querySelector("#registration-bulk-result");
     if (!ids.length) return;
-    if (!window.confirm(`${ids.length} Buchung(en) wirklich loeschen?`)) return;
+    if (!confirmDatasetDelete(`${ids.length} Buchung(en)`)) return;
     button.disabled = true;
     if (result) result.innerHTML = `<div class="alert">Buchungen werden geloescht ...</div>`;
     try {
@@ -14674,7 +14903,7 @@ function bindPeopleManagementControls() {
         .filter(([collection, id]) => collection === "contacts" && id);
       if (!targets.length) return;
       const name = button.dataset.peopleName || "diese Mailing-Adresse";
-      if (!window.confirm(`${name} wirklich aus den Mailing-Adressen loeschen? Anmeldungen und Mailhistorie bleiben erhalten.`)) return;
+      if (!confirmDatasetDelete(`${name} aus den Mailing-Adressen`)) return;
       button.disabled = true;
       try {
         await Promise.all(targets.map(([collection, id]) => remove(collection, id)));

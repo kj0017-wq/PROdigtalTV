@@ -342,6 +342,34 @@ function speakerPortrait(speaker) {
     : `<span class="avatar">${initials(speaker.name)}</span>`;
 }
 
+function speakerName(speaker = {}) {
+  return speaker.name || [speaker.firstName, speaker.lastName].filter(Boolean).join(" ") || "Referent";
+}
+
+function speakerProfileHref(speaker = {}) {
+  return `#/speaker/${encodeURIComponent(speaker.id || speaker.slug || "")}`;
+}
+
+function publicSpeakerIsVisible(speaker = {}) {
+  const status = String(speaker.status || "published").toLowerCase();
+  const visibility = String(speaker.visibility || "public").toLowerCase();
+  return !["archived", "deleted", "hidden", "inactive"].includes(status)
+    && !["internal", "hidden"].includes(visibility)
+    && Boolean(speakerName(speaker));
+}
+
+function speakerTalkLinks(speaker = {}, topics = [], events = []) {
+  const topicIds = new Set([speaker.topicId, ...(speaker.topicIds || [])].filter(Boolean));
+  const eventIds = new Set(speaker.eventIds || []);
+  return topics
+    .filter((topic) => topicIds.has(topic.id) || (topic.speakerIds || []).includes(speaker.id))
+    .map((topic) => {
+      const event = events.find((item) => eventIds.has(item.id) && (item.topicIds || []).includes(topic.id))
+        || events.find((item) => (item.topicIds || []).includes(topic.id));
+      return { topic, event };
+    });
+}
+
 function archiveArticle(event, partners = []) {
   const host = partners.find((partner) => partner.id === event.hostId);
   const dateLabel = event.displayDate || formatDate(event.date);
@@ -454,10 +482,10 @@ function eventTalksMarkup(topics = [], speakers = [], event = {}) {
         <h3>${escapeHtml(topic.title || "Thema")}</h3>
         ${short ? `<p class="event-talk-card__short">${escapeHtml(short)}</p>` : ""}
         ${text ? `<p>${escapeHtml(text)}</p>` : ""}
-        <div class="event-talk-speakers">${topicSpeakers.length ? topicSpeakers.map((speaker) => `<div class="event-talk-speaker">
+        <div class="event-talk-speakers">${topicSpeakers.length ? topicSpeakers.map((speaker) => `<a class="event-talk-speaker" href="${speakerProfileHref(speaker)}">
           <div class="event-talk-speaker__portrait">${speakerPortrait(speaker)}</div>
-          <div><strong>${escapeHtml(speaker.name || "Referent")}</strong><small>${escapeHtml([speaker.position, speaker.company].filter(Boolean).join(" - "))}</small>${speaker.shortBio ? `<p>${escapeHtml(speaker.shortBio)}</p>` : ""}</div>
-        </div>`).join("") : `<span class="event-talk-speaker event-talk-speaker--empty">Referent wird ergaenzt.</span>`}</div>
+          <div><strong>${escapeHtml(speakerName(speaker))}</strong><small>${escapeHtml([speaker.position, speaker.company].filter(Boolean).join(" - "))}</small>${speaker.shortBio ? `<p>${escapeHtml(speaker.shortBio)}</p>` : ""}</div>
+        </a>`).join("") : `<span class="event-talk-speaker event-talk-speaker--empty">Referent wird ergaenzt.</span>`}</div>
       </div>
     </article>`;
   }).join("")}</div>
@@ -1539,6 +1567,45 @@ function homeTalkItems(events = [], topics = [], speakers = []) {
   return items.slice(0, 4);
 }
 
+function homeSpeakersOnePerTalk(events = [], topics = [], speakers = []) {
+  const topicById = new Map(topics.filter(homeVisibleRecord).map((topic) => [topic.id, topic]));
+  const speakerById = new Map(speakers.filter(homeVisibleRecord).map((speaker) => [speaker.id, speaker]));
+  const selected = [];
+  const usedSpeakerIds = new Set();
+  const addSpeaker = (speaker, topicKey = "") => {
+    if (!speaker?.id || usedSpeakerIds.has(speaker.id)) return;
+    selected.push({ speaker, topicKey: topicKey || speaker.id });
+    usedSpeakerIds.add(speaker.id);
+  };
+  events
+    .filter(homeVisibleRecord)
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
+    .forEach((event) => {
+      (event.topicIds || []).forEach((topicId) => {
+        if (selected.some((entry) => entry.topicKey === topicId)) return;
+        const topic = topicById.get(topicId);
+        if (!topic) return;
+        const topicSpeakerIds = new Set(topic.speakerIds || [topic.speakerId].filter(Boolean));
+        const speaker = speakers.find((candidate) => {
+          const topicLinked = topicSpeakerIds.size
+            ? topicSpeakerIds.has(candidate.id)
+            : candidate.topicId === topic.id || (candidate.topicIds || []).includes(topic.id);
+          const eventLinked = (candidate.eventIds || []).includes(event.id) || (event.speakerIds || []).includes(candidate.id);
+          return homeVisibleRecord(candidate) && topicLinked && eventLinked;
+        });
+        if (speaker) addSpeaker(speaker, topicId);
+      });
+    });
+  speakers
+    .filter((speaker) => homeVisibleRecord(speaker) && (speaker.name || speaker.firstName || speaker.lastName))
+    .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
+    .forEach((speaker) => {
+      const topicKey = [speaker.topicId, ...(speaker.topicIds || [])].find(Boolean) || speaker.id;
+      if (!selected.some((entry) => entry.topicKey === topicKey)) addSpeaker(speaker, topicKey);
+    });
+  return selected.map((entry) => entry.speaker).slice(0, 6);
+}
+
 function homeSection(title, eyebrow, body, action = "") {
   if (!body) return "";
   return `<section class="pdtv-home-section"><div class="container">
@@ -1616,10 +1683,7 @@ export async function homePage() {
     .filter((topic) => homeVisibleRecord(topic) && isStandaloneTopic(topic) && homeImageUrl(topic, "topic"))
     .sort(newestContentFirst)
     .slice(0, 6);
-  const visibleSpeakers = speakers
-    .filter((speaker) => homeVisibleRecord(speaker) && (speaker.name || speaker.firstName || speaker.lastName))
-    .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
-    .slice(0, 6);
+  const visibleSpeakers = homeSpeakersOnePerTalk(events, topics, speakers);
 
   const newsBody = latestNewsItems.length ? `<div class="pdtv-home-news-grid">${latestNewsItems.map((item) => {
     const image = homeImageUrl({ ...item, imageUrl: newsThumbUrl(item) }, "news");
@@ -1637,7 +1701,7 @@ export async function homePage() {
   const speakersBody = visibleSpeakers.length ? `<div class="pdtv-home-speaker-grid">${visibleSpeakers.map((speaker) => {
     const name = speaker.name || [speaker.firstName, speaker.lastName].filter(Boolean).join(" ");
     const photo = homeImageUrl({ ...speaker, imageUrl: speaker.photoUrl || speaker.imageUrl }, "member");
-    return `<article class="pdtv-home-speaker-card">${photo ? `<img src="${escapeHtml(photo)}" alt="${escapeHtml(name)}" loading="lazy" decoding="async" ${liveImageAttrs("member")}>` : `<span>${escapeHtml(initials(name || "Referent"))}</span>`}<div><h3>${escapeHtml(name)}</h3>${speaker.company ? `<p>${escapeHtml(speaker.company)}</p>` : ""}<a class="button button--secondary button--small" href="#/speakers">Profil</a></div></article>`;
+    return `<article class="pdtv-home-speaker-card">${photo ? `<img src="${escapeHtml(photo)}" alt="${escapeHtml(name)}" loading="lazy" decoding="async" ${liveImageAttrs("member")}>` : `<span>${escapeHtml(initials(name || "Referent"))}</span>`}<div><h3>${escapeHtml(name)}</h3>${speaker.company ? `<p>${escapeHtml(speaker.company)}</p>` : ""}<a class="button button--secondary button--small" href="${speakerProfileHref(speaker)}">Mehr</a></div></article>`;
   }).join("")}</div>` : "";
 
   const seriesBody = seriesItems.length ? `<div class="pdtv-home-series-grid">${seriesItems.map((series) => `<article class="pdtv-home-series-card"><h3>${escapeHtml(series.titel)}</h3>${series.kurztext ? `<p>${escapeHtml(series.kurztext)}</p>` : ""}${series.langtext ? `<p>${escapeHtml(teaserText(series.langtext, 210))}</p>` : ""}<a class="button button--secondary button--small" href="#/über-uns/${encodeURIComponent(series.slug)}">Artikel öffnen</a></article>`).join("")}</div>` : "";
@@ -1646,9 +1710,71 @@ export async function homePage() {
     <div class="container">${homeHeroMarkup({ next, nextImageUrl, retrospective, series: seriesItems[0] || null })}</div>
     ${homeSection("Aktuelle News", "News", newsBody, `<a class="link" href="#/news">Alle News</a>`)}
     ${homeSection("Themen", "Dossiers", topicsBody, `<a class="link" href="#/topics">Alle Themen</a>`)}
-    ${homeSection("Aktuelle Referenten", "Köpfe", speakersBody)}
+    ${homeSection("Aktuelle Referenten", "Köpfe", speakersBody, `<a class="link" href="#/speakers">Alle Referenten</a>`)}
     ${homeSection("Vortragsreihen", "Interna", seriesBody)}
   </main>`);
+}
+
+export async function speakersPage() {
+  const speakers = (await listPublicContent("speakers").catch(() => []))
+    .filter(publicSpeakerIsVisible)
+    .sort((a, b) => String(speakerName(a)).localeCompare(String(speakerName(b)), "de", { sensitivity: "base" }));
+  const cards = speakers.map((speaker) => {
+    const name = speakerName(speaker);
+    const role = [speaker.position, speaker.company].filter(Boolean).join(" - ");
+    const teaser = speaker.shortBio || speaker.bio || speaker.longBio || "";
+    return `<article class="speaker-directory-card">
+      <a class="speaker-directory-card__portrait" href="${speakerProfileHref(speaker)}">${speakerPortrait(speaker)}</a>
+      <div>
+        <p class="eyebrow">Referent</p>
+        <h2><a href="${speakerProfileHref(speaker)}">${escapeHtml(name)}</a></h2>
+        ${role ? `<p class="speaker-profile__position">${escapeHtml(role)}</p>` : ""}
+        ${teaser ? `<p>${escapeHtml(teaserText(teaser, 220))}</p>` : ""}
+        <a class="button button--secondary button--small" href="${speakerProfileHref(speaker)}">Mehr</a>
+      </div>
+    </article>`;
+  }).join("");
+  return publicShell("speakers", `${subhero("Referenten", "Profile und Vitas", "Menschen, Themen und Perspektiven aus den PROdigitalTV-Formaten.")}
+    <section class="section section--white"><div class="container speaker-directory-grid">
+      ${cards || `<div class="alert">Aktuell sind noch keine Referentenprofile veroeffentlicht.</div>`}
+    </div></section>`);
+}
+
+export async function speakerDetailPage(id) {
+  const [speakers, topics, events] = await Promise.all([
+    listPublicContent("speakers").catch(() => []),
+    listPublicContent("topics").catch(() => []),
+    listPublicEvents(true).catch(() => [])
+  ]);
+  const speaker = speakers.find((item) => [item.id, item.slug].filter(Boolean).includes(id));
+  if (!speaker || !publicSpeakerIsVisible(speaker)) return notFoundPage();
+  const name = speakerName(speaker);
+  const role = [speaker.position, speaker.company].filter(Boolean).join(" - ");
+  const intro = speaker.shortBio || speaker.bio || "";
+  const vita = speaker.longBio || speaker.vita || speaker.biography || "";
+  const talks = speakerTalkLinks(speaker, topics, events);
+  const talksHtml = talks.length ? `<div class="speaker-detail-talks">${talks.map(({ topic, event }) => `<a class="speaker-detail-talk" href="#/topic/${escapeHtml(topic.id)}">
+      <span>${escapeHtml(event?.displayDate || formatDate(event?.date || "") || "Vortrag")}</span>
+      <strong>${escapeHtml(topic.title || "Vortrag")}</strong>
+      ${event?.title ? `<small>${escapeHtml(event.title)}</small>` : ""}
+    </a>`).join("")}</div>` : `<div class="alert">Noch keine veroeffentlichten Vortraege zugeordnet.</div>`;
+  return publicShell("speakers", `${subhero("Referent", name, role || "PROdigitalTV Referentenprofil")}
+    <section class="section section--white"><div class="container speaker-detail">
+      <aside class="speaker-detail__portrait">${speakerPortrait(speaker)}</aside>
+      <article class="speaker-detail__body">
+        <a class="link" href="#/speakers">Zurueck zu allen Referenten</a>
+        <h1>${escapeHtml(name)}</h1>
+        ${role ? `<p class="speaker-profile__position">${escapeHtml(role)}</p>` : ""}
+        ${intro ? `<p class="speaker-profile__intro">${escapeHtml(intro)}</p>` : ""}
+        ${vita ? `<div class="editorial-text">${articleParagraphs(vita)}</div>` : ""}
+        <div class="speaker-detail__links">
+          ${speaker.website ? `<a class="button button--secondary button--small" href="${escapeHtml(/^https?:\/\//i.test(speaker.website) ? speaker.website : `https://${speaker.website}`)}" target="_blank" rel="noopener">Website</a>` : ""}
+          ${speaker.linkedIn ? `<a class="button button--secondary button--small" href="${escapeHtml(speaker.linkedIn)}" target="_blank" rel="noopener">LinkedIn</a>` : ""}
+        </div>
+        <h2>Vortraege und Themen</h2>
+        ${talksHtml}
+      </article>
+    </div></section>`);
 }
 
 export async function eventsPage() {
