@@ -36,9 +36,10 @@ export function eventCard(event, archive = false, partners = []) {
 }
 
 export function topicCard(topic) {
-  const imageUrl = topic.imageUrl || "";
+  const imageUrl = topic.cardImageUrl || topic.imageUrl || topic.companyLogoUrl || topic.logoUrl || topic.speakerPhotoUrl || "";
+  const imageType = topic.cardImageType || (topic.cardImageUrl ? "image" : topic.companyLogoUrl || topic.logoUrl ? "logo" : topic.speakerPhotoUrl ? "portrait" : "image");
   return `<a class="card topic-card" href="#/topic/${topic.id}">
-    ${imageUrl ? `<figure class="topic-card__image"><img src="${escapeHtml(imageUrl)}" alt="Themenbild ${escapeHtml(topic.title)}" loading="lazy" decoding="async" ${liveImageAttrs("topic")}></figure>` : `<span class="quick-card__icon">${escapeHtml(topic.icon)}</span>`}
+    ${imageUrl ? `<figure class="topic-card__image topic-card__image--${escapeHtml(imageType)}"><img src="${escapeHtml(stableImageUrl(imageUrl, imageType === "portrait" ? "member" : "topic"))}" alt="Themenbild ${escapeHtml(topic.title)}" loading="lazy" decoding="async" ${liveImageAttrs(imageType === "portrait" ? "member" : "topic")}></figure>` : `<span class="quick-card__icon">${escapeHtml(topic.icon)}</span>`}
     <h3>${escapeHtml(topic.title)}</h3><div class="topic-card__line"></div>
     <p>${escapeHtml(topic.shortDescription)}</p>
   </a>`;

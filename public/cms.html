@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#071a33">
     <meta name="description" content="PROdigitalTV CMS">
     <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/src/styles/main.css?v=963">
+    <link rel="stylesheet" href="/src/styles/main.css?v=992">
     <title>PROdigitalTV | CMS</title>
   </head>
   <body>
@@ -24,13 +24,29 @@
           app.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS Fehler</p><h1>Modul konnte nicht geladen werden</h1><p>${String(event.reason?.message || event.reason || "Unbekannter Fehler")}</p></div></section>`;
         }
       });
+      const cmsMobileBlocked = () =>
+        window.matchMedia?.("(max-width: 820px)")?.matches ||
+        window.innerWidth <= 920 ||
+        window.screen?.width <= 820;
+      if (cmsMobileBlocked()) {
+        window.__pdtvCmsMobileBlocked = true;
+        const app = document.getElementById("app");
+        if (app) {
+          app.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS</p><h1>CMS nur am Desktop</h1><p style="margin:14px 0 24px">Die mobile CMS-Version wird spaeter als reduzierte Oberflaeche umgesetzt.</p><a class="button button--primary" href="/website.html?v=1019" onclick="event.preventDefault(); window.location.href = '/website.html?v=1019';">Zur Website</a></div></section>`;
+        }
+      }
       if (!window.location.hash || window.location.hash === "#") {
         window.location.hash = "#/cms";
       } else if (!window.location.hash.replace(/^#\/?/, "").startsWith("cms")) {
         window.location.replace(`${window.location.origin}/${window.location.search}${window.location.hash}`);
       }
+      if (!window.__pdtvCmsMobileBlocked) {
+        const script = document.createElement("script");
+        script.type = "module";
+        script.src = "/src/main.js?v=1087";
+        document.body.appendChild(script);
+      }
     </script>
-    <script type="module" src="/src/main.js?v=1041"></script>
   </body>
 </html>
 

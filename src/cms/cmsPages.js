@@ -297,7 +297,7 @@ function memberDescriptionValue(item = {}) {
 }
 
 function mediaAssetUrl(asset = {}) {
-  return asset.file_path_thumb_url || asset.file_path_web_url || asset.file_path_original_url || asset.imageUrl || asset.assetUrl || "";
+  return asset.file_path_web_url || asset.file_path_original_url || asset.file_path_thumb_url || asset.imageUrl || asset.assetUrl || "";
 }
 
 function blockedMemberLogoUrl(item = {}, url = "") {
@@ -1057,10 +1057,32 @@ function speakerAvatar(speaker, className = "speaker-avatar") {
   return `<span class="${className}">${speaker.photoUrl ?`<img src="${escapeHtml(speaker.photoUrl)}" alt="">` : personInitials(speaker.name)}</span>`;
 }
 
-function topicThumb(topic) {
-  const url = topic.imageUrl || "";
+function topicImageUrl(topic = {}, mediaAssets = []) {
+  const asset = Array.isArray(mediaAssets) && mediaAssets.length
+    ?recordMediaAsset(topic, mediaAssets, "topics", "imageUrl")
+    : null;
+  return mediaAssetUrl(asset || {})
+    || topic.imageUrl
+    || topic.assetUrl
+    || topic.thumbnail_url
+    || topic.thumbnailUrl
+    || topic.file_path_web_url
+    || topic.file_path_original_url
+    || topic.file_path_thumb_url
+    || topic.web_url
+    || topic.original_url
+    || topic.thumb_url
+    || "";
+}
+
+function topicThumb(topic, mediaAssets = []) {
+  const asset = Array.isArray(mediaAssets) && mediaAssets.length
+    ?recordMediaAsset(topic, mediaAssets, "topics", "thumbnail_url")
+    : null;
+  const url = mediaAssetUrl(asset || {}) || topic.thumbnail_url || topic.thumbnailUrl || topicImageUrl(topic, mediaAssets);
   const content = url ?`<img src="${escapeHtml(url)}" alt="">` : `<span>Bild</span>`;
-  return `<a class="cms-thumb-action" href="${cmsThumbTarget("topics", topic, "", "imageUrl", "thumbnail_alt")}" title="${url ?"Thumb aus Mediathek waehlen" : "Thumb mit KI erstellen"}" aria-label="${url ?"Thumb aus Mediathek waehlen" : "Thumb mit KI erstellen"}">${content}</a>`;
+  const targetTopic = asset?.id ?{ ...topic, thumbnail_media_asset_id: asset.id } : topic;
+  return `<a class="cms-thumb-action" href="${cmsThumbTarget("topics", targetTopic, "", "thumbnail_url", "thumbnail_alt")}" title="${url ?"Listen-Thumb bearbeiten / croppen" : "Thumb mit KI erstellen"}" aria-label="${url ?"Listen-Thumb bearbeiten / croppen" : "Thumb mit KI erstellen"}">${content}</a>`;
 }
 
 function editorialThumbUrl(item = {}) {
@@ -1197,7 +1219,7 @@ function eventRegistrationTogglePanel(event = {}) {
       <div>
         <p class="eyebrow">Anmeldestatus</p>
         <h2>${isOpen ?"Anmeldung offen" : "Anmeldung geschlossen"}</h2>
-        <p class="muted">Hier wird die Anmeldung zentral mit einem Klick geoeffnet oder geschlossen. Die technischen Felder werden automatisch synchronisiert.</p>
+        <p class="muted">Ein Klick auf Aktiv veroeffentlicht das Event und oeffnet die passende Anmeldung. Beim Ausschalten wird nur die Anmeldung geschlossen; das Event bleibt sichtbar.</p>
       </div>
       <label class="cms-switch ${isOpen ?"is-active" : ""}">
         <input type="checkbox" data-event-registration-toggle="${escapeHtml(event.id || "")}" ${isOpen ?"checked" : ""}>
@@ -1266,7 +1288,9 @@ function mediaLibraryHref({ collection = "", id = "", field = "imageUrl", altFie
 }
 
 function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", defaultSize = "240x180", aiCollage = false, simple = false, mediaHref = "" }) {
-  return `<div class="image-dropzone ${simple ?"image-dropzone--simple" : ""}" data-image-dropzone ${simple ?"data-simple-image-dropzone" : ""}>
+  const [defaultWidth, defaultHeight] = String(defaultSize || "240x180").split("x").map((value) => Number(value) || 1);
+  const simpleStyle = simple ?` style="--image-dropzone-aspect:${defaultWidth} / ${defaultHeight}"` : "";
+  return `<div class="image-dropzone ${simple ?"image-dropzone--simple" : ""}" data-image-dropzone ${simple ?"data-simple-image-dropzone" : ""}${simpleStyle}>
     <input type="hidden" name="${removeName}" value="">
     <input type="hidden" name="${inputName}DataUrl" value="">
     <input type="hidden" name="${inputName}FileName" value="">
@@ -1294,7 +1318,7 @@ function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", d
     <div class="image-dropzone__tools" data-image-tools hidden>
       <label>Zoom <input type="range" min="0.5" max="3" step="0.01" value="1" data-image-zoom></label>
       <label>Aufloesung <select data-image-size>
-        ${[["240x180", "Thumb 240 x 180"], ["480x240", "Logo 480 x 240"], ["480x360", "Thumb 480 x 360"], ["1200x675", "Artikel 1200 x 675"], ["1600x900", "Hero 1600 x 900"]].map(([value, text]) => `<option value="${value}" ${value === defaultSize ?"selected" : ""}>${text}</option>`).join("")}
+        ${[["240x180", "Thumb 240 x 180"], ["480x360", "Thumb 480 x 360"], ["600x300", "Logo 600 x 300"], ["800x1000", "Referent 800 x 1000"], ["1200x675", "Vortragsbild 1200 x 675"]].map(([value, text]) => `<option value="${value}" ${value === defaultSize ?"selected" : ""}>${text}</option>`).join("")}
       </select></label>
       <button type="button" class="button button--secondary button--small" data-image-crop>Crop anwenden</button>
     </div>
@@ -1468,8 +1492,8 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
         <div class="field"><label>Kurzvita</label><textarea name="speakerShortBio" rows="4">${escapeHtml(selectedSpeaker.shortBio || selectedSpeaker.bio || "")}</textarea></div>
         <div class="field"><label>Ausfuehrliche Vita</label><textarea name="speakerLongBio" rows="8">${escapeHtml(selectedSpeaker.longBio || selectedSpeaker.vita || selectedSpeaker.biography || "")}</textarea></div>
         <div class="form-grid--two">
-          <div class="field"><label>Unternehmenslogo</label>${imageDropzone({ inputName: "speakerCompanyLogo", removeName: "removeSpeakerCompanyLogo", imageUrl: selectedSpeaker.companyLogoUrl || selectedSpeaker.logoUrl || "", label: "Unternehmenslogo", defaultSize: "480x240", simple: true })}</div>
-          <div class="field"><label>Referentenfoto</label>${imageDropzone({ inputName: "speakerImage", removeName: "removeSpeakerImage", imageUrl: selectedSpeaker.photoUrl || "", label: "Referentenfoto", simple: true, mediaHref: selectedSpeaker.id ?mediaLibraryHref({ collection: "speakers", id: selectedSpeaker.id, field: "photoUrl", altField: "altText", returnTo: `#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}&speaker=${selectedSpeaker.id}` }) : "" })}</div>
+          <div class="field"><label>Unternehmenslogo</label>${imageDropzone({ inputName: "speakerCompanyLogo", removeName: "removeSpeakerCompanyLogo", imageUrl: selectedSpeaker.companyLogoUrl || selectedSpeaker.logoUrl || "", label: "Unternehmenslogo", defaultSize: "600x300", simple: true })}</div>
+          <div class="field"><label>Referentenfoto</label>${imageDropzone({ inputName: "speakerImage", removeName: "removeSpeakerImage", imageUrl: selectedSpeaker.photoUrl || "", label: "Referentenfoto", defaultSize: "800x1000", simple: true, mediaHref: selectedSpeaker.id ?mediaLibraryHref({ collection: "speakers", id: selectedSpeaker.id, field: "photoUrl", altField: "altText", returnTo: `#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}&speaker=${selectedSpeaker.id}` }) : "" })}</div>
         </div>
         <div class="actions"><button class="button button--secondary" type="button" onclick="location.hash='#/cms/event/${event.id}?tab=topics&mode=edit&topic=${selectedTopic.id}'">Abbrechen</button><button class="button button--primary">Speichern</button></div>
         <div id="event-topic-speaker-result"></div>
@@ -1517,8 +1541,8 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
         <div class="field"><label>Subline</label><input name="subline" value="${escapeHtml(selectedTopic.subline || selectedTopic.subtitle || "")}"></div>
         <div class="field"><label>Beschreibung</label><textarea name="text" required>${escapeHtml(selectedTopic.longDescription || selectedTopic.description || selectedTopic.shortDescription || "")}</textarea>${aiFieldActions([{ action: "generateTopicDescription", target: "text", label: "Beitragstext mit KI erzeugen", entityType: "topics", entityId: topicEntityId, fieldName: "longDescription" }])}</div>
         <div class="form-grid--two">
-          <div class="field"><label>Unternehmenslogo</label>${imageDropzone({ inputName: "topicCompanyLogo", removeName: "removeTopicCompanyLogo", imageUrl: selectedTopic.companyLogoUrl || selectedTopic.logoUrl || "", label: "Unternehmenslogo", defaultSize: "480x240", simple: true })}</div>
-          <div class="field"><label>Vortragsbild</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: selectedTopic.imageUrl || "", label: "Vortragsbild", simple: true, mediaHref: selectedTopic.id ?mediaLibraryHref({ collection: "topics", id: topicEntityId, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topicEntityId}` }) : "" })}</div>
+          <div class="field"><label>Unternehmenslogo</label>${imageDropzone({ inputName: "topicCompanyLogo", removeName: "removeTopicCompanyLogo", imageUrl: selectedTopic.companyLogoUrl || selectedTopic.logoUrl || "", label: "Unternehmenslogo", defaultSize: "600x300", simple: true })}</div>
+          <div class="field"><label>Vortragsbild</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: topicImageUrl(selectedTopic, mediaAssets), label: "Vortragsbild", defaultSize: "1200x675", simple: true, mediaHref: selectedTopic.id ?mediaLibraryHref({ collection: "topics", id: topicEntityId, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topicEntityId}` }) : "" })}</div>
         </div>
         <div class="form-grid--two">
           <div class="field"><label>PowerPoint optional</label><select name="downloadId">${documentOptions}</select><p class="muted">PowerPoint/PDF aus der Dokumentenverwaltung zuordnen.</p></div>
@@ -1596,7 +1620,7 @@ function eventTopicsEditor(event, topics, speakers, allEvents, galleries = [], d
           <button type="button" class="drag-handle" aria-label="Vortrag verschieben">::</button>
           <div class="assigned-topic-card__index">${index + 1}</div>
           ${companyLogoMarkup(companyInfo)}
-          <a class="topic-thumb assigned-topic-card__thumb-link" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}" aria-label="Vortrag bearbeiten">${topicThumb(topic)}</a>
+          <div class="topic-thumb assigned-topic-card__thumb-link">${topicThumb(topic, mediaAssets)}</div>
           <div class="assigned-topic-card__body">
             <a class="assigned-topic-card__title" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}" title="${escapeHtml(topic.title || "")}">${escapeHtml(topic.title || "")}</a>
             ${summary ?`<p>${escapeHtml(shortText(summary, 180))}</p>` : `<p class="muted">Noch keine Kurzbeschreibung hinterlegt.</p>`}
@@ -1844,7 +1868,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
       <div class="table-wrap"><table class="table"><thead><tr><th>Datei</th><th>Typ</th><th>Sichtbarkeit</th><th>Freigabe</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((item) => `<tr><td>${escapeHtml(item.title)}</td><td>${item.mediaType}</td><td>${item.visibility}</td><td>${status(item.status)}</td><td><div class="table-actions"><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="approved">Aktiv</button><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="archived">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="eventMedia" data-record-id="${item.id}">Loeschen</button></div></td></tr>`).join("")}</tbody></table></div>`;
   }
   const activeSection = isPastCmsEvent(event) ?"cms/followup" : "cms/events";
-  return protect(cmsShell(activeSection, `${cmsTitle("Event bearbeiten", escapeHtml(event.title || "Neues Event"), `<a class="button button--secondary button--small" href="#/event/${event.id}">Vorschau</a>`)}<section class="panel">${eventTabs(event.id, tab)}${content}</section>`));
+  return protect(cmsShell(activeSection, `${cmsTitle("Event bearbeiten", escapeHtml(event.title || "Neues Event"), `<a class="button button--secondary button--small" href="#/event/${event.id}?preview=1">Vorschau</a>`)}<section class="panel">${eventTabs(event.id, tab)}${content}</section>`));
 }
 
 export async function registrationsPage() {
@@ -3683,7 +3707,7 @@ export async function moduleListPage(module, section = "all") {
       return Number(b.sortOrder || 0) - Number(a.sortOrder || 0);
     });
   const memberMediaAssets = module === "members" ?await list("media_assets").catch(() => []) : [];
-  const linkedMediaAssets = ["editorialContent", "boardMembers", "speakers", "sponsors"].includes(module) ?await list("media_assets").catch(() => []) : [];
+  const linkedMediaAssets = ["editorialContent", "topics", "boardMembers", "speakers", "sponsors"].includes(module) ?await list("media_assets").catch(() => []) : [];
   const active = editorialConfig?.active || { topics: "cms/topics", galleries: "cms/galleries", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", membershipApplications: "cms/membership-applications", memberDocuments: "cms/member-documents", memberDirectories: "cms/member-directories", users: "cms/users", boardMembers: "cms/board", editorialContent: "cms/editorial", mailQueue: "cms/mail", eventMedia: "cms/followup" }[module];
   const editable = !["mailQueue", "eventMedia"].includes(module);
   const manageable = module !== "mailQueue";
@@ -3694,7 +3718,7 @@ export async function moduleListPage(module, section = "all") {
   const createParams = editorialConfig?.createParams || "";
   const emptyText = editorialConfig ?`Noch keine Inhalte in ${escapeHtml(title)}.` : "Noch keine Eintraege vorhanden.";
   if (module === "topics") {
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${cmsBulkToolbar(records, { collection: "topics", label: "Themen" })}<div class="table-wrap"><table class="table table--editorial table--topics table--with-audio"><thead><tr><th class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-select-all ${records.length ?"" : "disabled"} aria-label="Alle Themen auswaehlen"></th><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "Thema")} auswaehlen"></td><td><div class="topic-thumb topic-thumb--table">${topicThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>Thema</td><td>${audioListCell("topics", item)}</td><td>${editorialMediaFlags(item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${cmsBulkToolbar(records, { collection: "topics", label: "Themen" })}<div class="table-wrap"><table class="table table--editorial table--topics table--with-audio"><thead><tr><th class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-select-all ${records.length ?"" : "disabled"} aria-label="Alle Themen auswaehlen"></th><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "Thema")} auswaehlen"></td><td><div class="topic-thumb topic-thumb--table">${topicThumb(item, linkedMediaAssets)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>Thema</td><td>${audioListCell("topics", item)}</td><td>${editorialMediaFlags(item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "galleries") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--galleries"><thead><tr><th>Bild</th><th>Titel</th><th>Bilder</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table gallery-thumb--table">${galleryThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a><small>${escapeHtml(shortText(item.description || "-", 90))}</small></td><td>${(item.images || []).length}</td><td>${galleryListStatus(item)}</td><td>${galleryActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="5">${emptyText}</td></tr>`}</tbody></table></div></section>`));
@@ -4242,7 +4266,7 @@ Ausgangstext:
             </section>
             <details class="editorial-tool-details">
               <summary><span>Medien</span><strong>Bild / Thumb</strong>${thumbState}</summary>
-              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: item.imageUrl || "", label: "Themenbild", defaultize: "1200x675", aiCollage: false })}${linkedMediaActions({ collection: "topics", id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=topics&id=${item.id}`, assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, "topics", "imageUrl")?.id || "" })}</div></div>
+              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: topicImageUrl(item, editMediaAssets), label: "Themenbild", defaultize: "1200x675", aiCollage: false })}${linkedMediaActions({ collection: "topics", id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=topics&id=${item.id}`, assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, "topics", "imageUrl")?.id || "" })}</div></div>
             </details>
             <details class="editorial-tool-details">
               <summary><span>Medien</span><strong>Galerie</strong>${galleryState}</summary>

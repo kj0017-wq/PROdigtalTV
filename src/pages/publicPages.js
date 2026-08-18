@@ -1,7 +1,7 @@
-import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, getOne } from "../firebase/dataService.js?v=516";
+import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=517";
 import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=471";
 import { publicShell, logo } from "../components/layout.js?v=7";
-import { eventCard, topicCard } from "../components/cards.js?v=7";
+import { eventCard, topicCard } from "../components/cards.js?v=10";
 import { accessLabels, lifecycleLabels } from "../data/platformConstants.js?v=1";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
 import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=1";
@@ -19,6 +19,39 @@ function articleHeader({ eyebrow = "", title = "", intro = "", logoUrl = "", log
       ${intro ? `<p>${escapeHtml(intro)}</p>` : ""}
     </div>
     ${logoUrl ? `<figure class="article-header__logo"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(logoAlt || title)}" ${liveImageAttrs("topic")}></figure>` : ""}
+  </header>`;
+}
+
+function topicVisualHeader({ topic = {}, speakers = [], title = "", intro = "", mediaAssets = [] } = {}) {
+  const imageUrl = stableImageUrl(publicTopicImageUrl(topic, mediaAssets), "topic");
+  const logoSpeaker = speakers.find((speaker) => speaker.companyLogoUrl || speaker.logoUrl || speaker.company_logo_url) || {};
+  const logoUrl = topic.companyLogoUrl || topic.logoUrl || topic.company_logo_url || logoSpeaker.companyLogoUrl || logoSpeaker.logoUrl || logoSpeaker.company_logo_url || "";
+  const visibleSpeakers = speakers.filter(publicSpeakerIsVisible).slice(0, 3);
+  const visual = imageUrl
+    ? `<figure class="topic-detail-hero__image"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(topic.thumbnail_alt || `Themenmotiv ${title}`)}" loading="eager" decoding="async" ${liveImageAttrs("topic")}></figure>`
+    : `<div class="topic-detail-hero__speaker-wall">${visibleSpeakers.length ? visibleSpeakers.map((speaker) => `<a class="topic-detail-hero__speaker" href="${speakerProfileHref(speaker)}">${speakerPortrait(speaker)}<span>${escapeHtml(speakerName(speaker))}</span></a>`).join("") : `<span class="topic-detail-hero__placeholder">${escapeHtml(initials(title || "Thema"))}</span>`}</div>`;
+  const mobileSpeakerStrip = visibleSpeakers.length
+    ? `<div class="topic-detail-hero__mobile-speakers">${visibleSpeakers.map((speaker) => `<a href="${speakerProfileHref(speaker)}" title="${escapeHtml(speakerName(speaker))}">${speakerPortrait(speaker)}<span>${escapeHtml(speakerName(speaker))}</span></a>`).join("")}</div>`
+    : "";
+  const mobileMedia = imageUrl
+    ? `<div class="topic-detail-hero__mobile-media"><figure><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(topic.thumbnail_alt || `Themenmotiv ${title}`)}" loading="eager" decoding="async" ${liveImageAttrs("topic")}></figure>${mobileSpeakerStrip}</div>`
+    : (logoUrl || mobileSpeakerStrip)
+      ? `<div class="topic-detail-hero__mobile-media topic-detail-hero__mobile-media--identity">${logoUrl ? `<figure class="topic-detail-hero__mobile-logo"><img src="${escapeHtml(logoUrl)}" alt="Logo" loading="eager" decoding="async" ${liveImageAttrs("sponsor")}></figure>` : ""}${mobileSpeakerStrip}</div>`
+      : "";
+  return `<header class="topic-detail-hero ${imageUrl ? "topic-detail-hero--with-image" : "topic-detail-hero--no-image"}">
+    <div class="topic-detail-hero__visual">
+      ${visual}
+      ${(logoUrl || visibleSpeakers.length) ? `<div class="topic-detail-hero__people">
+        ${logoUrl ? `<div class="topic-detail-hero__logo"><img src="${escapeHtml(logoUrl)}" alt="Logo" loading="eager" decoding="async" ${liveImageAttrs("sponsor")}></div>` : ""}
+        ${visibleSpeakers.length ? `<div class="topic-detail-hero__avatars">${visibleSpeakers.map((speaker) => `<a href="${speakerProfileHref(speaker)}" title="${escapeHtml(speakerName(speaker))}">${speakerPortrait(speaker)}</a>`).join("")}</div>` : ""}
+      </div>` : ""}
+    </div>
+    <div class="topic-detail-hero__copy">
+      ${mobileMedia}
+      <p class="eyebrow">Unsere Themen</p>
+      <h1>${escapeHtml(title)}</h1>
+      ${intro ? `<p>${escapeHtml(intro)}</p>` : ""}
+    </div>
   </header>`;
 }
 
@@ -56,8 +89,8 @@ function versionedAssetUrl(url = "", record = {}) {
 
 function mediaAssetUrl(asset = {}) {
   const url = asset.file_path_web_url || asset.filePathWebUrl || asset.webUrl
-    || asset.file_path_thumb_url || asset.filePathThumbUrl || asset.thumbUrl || asset.thumb_url
     || asset.file_path_original_url || asset.filePathOriginalUrl || asset.originalUrl
+    || asset.file_path_thumb_url || asset.filePathThumbUrl || asset.thumbUrl || asset.thumb_url
     || asset.downloadUrl || asset.downloadURL || asset.url
     || asset.thumbnail_url || asset.thumbnailUrl
     || asset.imageUrl || asset.assetUrl || "";
@@ -73,6 +106,136 @@ function mediaAssetUrls(asset = {}) {
     asset.thumbnail_url, asset.thumbnailUrl,
     asset.imageUrl, asset.assetUrl
   ].filter(Boolean);
+}
+
+function topicDirectImageUrl(topic = {}) {
+  return topic.imageUrl
+    || topic.assetUrl
+    || topic.file_path_web_url
+    || topic.filePathWebUrl
+    || topic.webUrl
+    || topic.web_url
+    || topic.file_path_original_url
+    || topic.filePathOriginalUrl
+    || topic.originalUrl
+    || topic.original_url
+    || topic.file_path_thumb_url
+    || topic.filePathThumbUrl
+    || topic.thumbUrl
+    || topic.thumb_url
+    || "";
+}
+
+function topicDirectThumbnailUrl(topic = {}) {
+  return topic.thumbnail_url
+    || topic.thumbnailUrl
+    || topic.cardImageUrl
+    || topic.imageUrl
+    || topic.assetUrl
+    || topic.file_path_thumb_url
+    || topic.filePathThumbUrl
+    || topic.thumbUrl
+    || topic.thumb_url
+    || "";
+}
+
+function mediaAssetResolutionScore(asset = {}) {
+  const pairs = [
+    [asset.file_path_web_width || asset.web_width || asset.webWidth || asset.width, asset.file_path_web_height || asset.web_height || asset.webHeight || asset.height],
+    [asset.file_path_original_width || asset.original_width || asset.originalWidth || asset.image_width || asset.imageWidth, asset.file_path_original_height || asset.original_height || asset.originalHeight || asset.image_height || asset.imageHeight],
+    [asset.file_path_thumb_width || asset.thumb_width || asset.thumbWidth, asset.file_path_thumb_height || asset.thumb_height || asset.thumbHeight]
+  ];
+  return pairs.reduce((best, [width, height]) => Math.max(best, Number(width || 0) * Number(height || 0)), 0);
+}
+
+function publicTopicMediaAsset(topic = {}, mediaAssets = [], purpose = "article") {
+  const wantsThumb = purpose === "thumb";
+  const recordUrl = wantsThumb ? topicDirectThumbnailUrl(topic) : topicDirectImageUrl(topic);
+  const directIds = wantsThumb
+    ? [topic.thumbnail_media_asset_id, topic.thumbnailMediaAssetId].filter(Boolean)
+    : [topic.article_media_asset_id, topic.articleMediaAssetId, topic.mediaAssetId, topic.media_asset_id, topic.assetId].filter(Boolean);
+  const fieldMatches = (value = "") => {
+    const normalized = String(value || "imageUrl").toLowerCase().replace(/[_-]/g, "");
+    return wantsThumb
+      ? ["thumbnailurl", "thumbnail", "thumb"].includes(normalized)
+      : ["imageurl", "image", "asseturl", "articleimageurl", "article"].includes(normalized);
+  };
+  const variantScore = (asset = {}) => {
+    const key = String(asset.variant_key || asset.variantKey || asset.usage_preset || "").toLowerCase();
+    if (wantsThumb) {
+      if (key === "thumbnail") return "9";
+      if (key === "square") return "7";
+      if (/thumb/.test(key)) return "6";
+      return "0";
+    }
+    if (key === "article_xl") return "9";
+    if (key === "news_desktop") return "8";
+    if (key === "social_share") return "6";
+    if (key === "thumbnail" || key === "square") return "0";
+    return "4";
+  };
+  return mediaAssets
+    .filter((asset) => {
+      const urls = mediaAssetUrls(asset);
+      const targetCollection = asset.target_collection || asset.targetCollection;
+      const targetId = asset.target_id || asset.targetId;
+      const targetField = asset.target_field || asset.targetField;
+      const linkedCollection = asset.linked_collection || asset.linkedCollection;
+      const linkedId = asset.linked_record_id || asset.linkedRecordId || asset.linked_id || asset.linkedId;
+      const linkedField = asset.linked_field || asset.linkedField;
+      return directIds.includes(asset.id)
+        || targetCollection === "topics" && targetId === topic.id && fieldMatches(targetField)
+        || linkedCollection === "topics" && linkedId === topic.id && fieldMatches(linkedField)
+        || (recordUrl && urls.includes(recordUrl));
+    })
+    .filter((asset) => mediaAssetUrl(asset))
+    .sort((a, b) => {
+      const rank = (asset = {}) => {
+        const targetMatch = (asset.target_collection || asset.targetCollection) === "topics" && (asset.target_id || asset.targetId) === topic.id && fieldMatches(asset.target_field || asset.targetField);
+        const linkedMatch = (asset.linked_collection || asset.linkedCollection) === "topics" && (asset.linked_record_id || asset.linkedRecordId || asset.linked_id || asset.linkedId) === topic.id && fieldMatches(asset.linked_field || asset.linkedField);
+        return [
+          variantScore(asset),
+          directIds.includes(asset.id) ? "5" : "0",
+          targetMatch ? "4" : "0",
+          linkedMatch ? "3" : "0",
+          asset.source_type === "edited" ? "2" : "0",
+          asset.status === "active" ? "2" : "1"
+        ].join("|");
+      };
+      return rank(b).localeCompare(rank(a))
+        || mediaAssetResolutionScore(b) - mediaAssetResolutionScore(a)
+        || String(b.updated_at || b.updatedAt || b.created_at || b.createdAt || b.id || "").localeCompare(String(a.updated_at || a.updatedAt || a.created_at || a.createdAt || a.id || ""));
+    })[0];
+}
+
+function publicTopicImageUrl(topic = {}, mediaAssets = []) {
+  return mediaAssetUrl(publicTopicMediaAsset(topic, mediaAssets, "article") || {}) || topicDirectImageUrl(topic);
+}
+
+function publicTopicThumbnailUrl(topic = {}, mediaAssets = []) {
+  return topicDirectThumbnailUrl(topic) || mediaAssetUrl(publicTopicMediaAsset(topic, mediaAssets, "thumb") || {});
+}
+
+function publicTopicImageLooksLikeLogo(topic = {}, asset = {}, url = "") {
+  const mediaType = String(asset.media_type || asset.usage_preset || asset.variant_key || "").toLowerCase();
+  const field = String(asset.target_field || asset.targetField || asset.linked_field || asset.linkedField || "").toLowerCase();
+  const text = [
+    url,
+    asset.title,
+    asset.slug,
+    asset.original_filename,
+    asset.filename_original,
+    asset.filename_web,
+    topic.title,
+    topic.company,
+    topic.companyName,
+    topic.companyLogoUrl,
+    topic.logoUrl
+  ].filter(Boolean).join(" ").toLowerCase();
+  return mediaType.includes("logo")
+    || field.includes("logo")
+    || /\blogo\b/.test(text)
+    || /\bgema\b/.test(text);
 }
 
 function eventMediaImageUrl(medium = {}) {
@@ -362,7 +525,7 @@ function speakerTalkLinks(speaker = {}, topics = [], events = []) {
   const topicIds = new Set([speaker.topicId, ...(speaker.topicIds || [])].filter(Boolean));
   const eventIds = new Set(speaker.eventIds || []);
   return topics
-    .filter((topic) => topicIds.has(topic.id) || (topic.speakerIds || []).includes(speaker.id))
+    .filter((topic) => topicIsReleasedAfterEvent(topic, events) && (topicIds.has(topic.id) || (topic.speakerIds || []).includes(speaker.id)))
     .map((topic) => {
       const event = events.find((item) => eventIds.has(item.id) && (item.topicIds || []).includes(topic.id))
         || events.find((item) => (item.topicIds || []).includes(topic.id));
@@ -782,7 +945,7 @@ function rubricRotator(items, renderItem, emptyHtml = "") {
 function aboutStickyContent(events = [], board = [], members = [], topics = []) {
   const upcomingEvents = events.filter(upcomingEventIsVisible).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const eventSlides = upcomingEvents.length ? upcomingEvents.slice(0, 5) : events.slice(0, 5);
-  const topicSlides = topics.slice(0, 6);
+  const topicSlides = topics.filter((topic) => topicIsReleasedAfterEvent(topic, events)).slice(0, 6);
   const boardSlides = chunkItems(board.slice(0, 8), 2);
   const memberSlides = chunkItems(members.filter((member) => member.featured || member.logoUrl).slice(0, 15), 3);
   const renderEvent = (event) => `<a class="internal-sticky-event" href="#/event/${event.id}">
@@ -872,8 +1035,15 @@ function internalOverviewPage(bereich) {
 
 export async function internalDetailPage(bereich, slug) {
   const meta = internalPageMeta[bereich];
+  const decodedSlug = (() => {
+    try {
+      return decodeURIComponent(slug || "");
+    } catch {
+      return slug || "";
+    }
+  })();
   const blocks = await internalBlocks(bereich);
-  const block = blocks.find((item) => item.slug === slug);
+  const block = blocks.find((item) => item.slug === decodedSlug || encodeURIComponent(item.slug) === slug);
   if (!block) return notFoundPage();
   const cta = block.button_text ? `<div class="actions" style="margin-top:24px"><a class="button button--primary" href="${escapeHtml(block.button_ziel || `#/${meta.route}`)}">${escapeHtml(block.button_text)}</a></div>` : "";
   return publicShell(meta.active, `${subhero(meta.eyebrow, block.titel, block.kurztext)}
@@ -1359,6 +1529,66 @@ function upcomingEventIsVisible(event = {}) {
   return true;
 }
 
+function publicEventAllowsTopicRelease(event = {}) {
+  const status = String(event.status || "published").toLowerCase();
+  const visibility = String(event.visibility || event.sichtbarkeit || "public").toLowerCase();
+  return !["deleted", "cancelled", "canceled", "draft", "inactive", "inaktiv"].includes(status)
+    && !["internal", "private", "hidden"].includes(visibility)
+    && event.visible !== false
+    && event.isLive !== false;
+}
+
+function eventDateMillis(value) {
+  if (!value) return NaN;
+  if (typeof value.toDate === "function") return value.toDate().getTime();
+  if (typeof value === "object" && Number.isFinite(value.seconds)) return value.seconds * 1000;
+  if (typeof value === "object" && Number.isFinite(value._seconds)) return value._seconds * 1000;
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function eventEndMillis(event = {}) {
+  const direct = eventDateMillis(event.endDate || event.endsAt || event.endAt || event.end_date || event.endedAt);
+  if (Number.isFinite(direct)) return direct;
+  const date = String(event.date || event.startDate || event.eventDate || event.datum || "").slice(0, 10);
+  if (!date) return NaN;
+  const endTime = String(event.endTime || event.end_time || event.startTime || event.time || "23:59").trim();
+  const time = /^\d{1,2}:\d{2}/.test(endTime) ? endTime.slice(0, 5) : "23:59";
+  const parsed = Date.parse(`${date}T${time}:00`);
+  return Number.isFinite(parsed) ? parsed : eventDateMillis(date);
+}
+
+function eventHasEnded(event = {}) {
+  if (isPastEvent(event)) return true;
+  const endMillis = eventEndMillis(event);
+  return Number.isFinite(endMillis) && endMillis <= Date.now();
+}
+
+function topicEventIds(topic = {}) {
+  return new Set([
+    topic.eventId,
+    topic.event_id,
+    topic.linkedEventId,
+    topic.linked_event_id,
+    ...(topic.eventIds || []),
+    ...(topic.event_ids || [])
+  ].filter(Boolean));
+}
+
+function topicLinkedEvents(topic = {}, events = []) {
+  const ids = topicEventIds(topic);
+  return events.filter((event) => {
+    if (!event?.id) return false;
+    return ids.has(event.id) || (event.topicIds || []).includes(topic.id) || (event.topic_ids || []).includes(topic.id);
+  });
+}
+
+function topicIsReleasedAfterEvent(topic = {}, events = []) {
+  if (!homeVisibleRecord(topic)) return false;
+  return topicLinkedEvents(topic, events)
+    .some((event) => publicEventAllowsTopicRelease(event) && eventHasEnded(event));
+}
+
 function eventRegistrationIsOpen(event = {}) {
   const registrationState = String(event.registrationStatus || event.registration_state || event.registrationState || "").toLowerCase();
   return Boolean(event.registrationEnabled)
@@ -1537,14 +1767,14 @@ function homeFormatSeries(blocks = []) {
     .filter((block) => block.typ === "eventformat")
     .filter((block) => {
       const key = normalizeTopicType(`${block.slug || ""} ${block.titel || ""}`);
-      return key.includes("medienfruehstuecke") || key.includes("vondenbestenlernen");
+      return key.includes("medienfruehstueck") || key.includes("medienfruehstuecke") || key.includes("vondenbestenlernen");
     })
     .sort((a, b) => Number(a.sortierung || 0) - Number(b.sortierung || 0))
     .slice(0, 2);
 }
 
 function homeTalkItems(events = [], topics = [], speakers = []) {
-  const topicById = new Map(topics.filter(homeVisibleRecord).map((topic) => [topic.id, topic]));
+  const topicById = new Map(topics.filter((topic) => topicIsReleasedAfterEvent(topic, events)).map((topic) => [topic.id, topic]));
   const items = [];
   events
     .filter(homeVisibleRecord)
@@ -1568,7 +1798,7 @@ function homeTalkItems(events = [], topics = [], speakers = []) {
 }
 
 function homeSpeakersOnePerTalk(events = [], topics = [], speakers = []) {
-  const topicById = new Map(topics.filter(homeVisibleRecord).map((topic) => [topic.id, topic]));
+  const topicById = new Map(topics.filter((topic) => topicIsReleasedAfterEvent(topic, events)).map((topic) => [topic.id, topic]));
   const speakerById = new Map(speakers.filter(homeVisibleRecord).map((speaker) => [speaker.id, speaker]));
   const selected = [];
   const usedSpeakerIds = new Set();
@@ -1663,16 +1893,20 @@ function homeHeroMarkup({ next, nextImageUrl, retrospective, series }) {
 }
 
 export async function homePage() {
+  const withHomeTimeout = (promise, fallback = [], ms = 24000) => Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallback), ms))
+  ]);
   const [events, editorial, topics, speakers, aboutBlocks] = await Promise.all([
-    listPublicEvents().catch(() => []),
-    listPublicContent("editorialContent").catch(() => []),
-    listPublicContent("topics").catch(() => []),
-    listPublicContent("speakers").catch(() => []),
-    internalBlocks("ueber_uns").catch(() => [])
+    withHomeTimeout(listPublicEvents().catch(() => [])),
+    withHomeTimeout(listPublicContent("editorialContent").catch(() => [])),
+    withHomeTimeout(listPublicContent("topics").catch(() => [])),
+    withHomeTimeout(listPublicContent("speakers").catch(() => [])),
+    withHomeTimeout(internalBlocks("ueber_uns").catch(() => []))
   ]);
   const upcoming = events.filter(upcomingEventIsVisible).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const next = upcoming[0] || null;
-  const mediaAssets = next ? await listPublicEventMediaAssets([next]).catch(() => []) : [];
+  const mediaAssets = next ? await withHomeTimeout(listPublicEventMediaAssets([next]).catch(() => []), [], 8000) : [];
   const nextImageUrl = next ? upcomingEventImageUrl(next, mediaAssets, { fallback: false }) : "";
   const retrospective = homeRetrospectiveItems(events, editorial)[0] || null;
   const seriesItems = homeFormatSeries(aboutBlocks);
@@ -1680,7 +1914,7 @@ export async function homePage() {
     .sort(newestContentFirst)
     .slice(0, 3);
   const visibleTopics = topics
-    .filter((topic) => homeVisibleRecord(topic) && isStandaloneTopic(topic) && homeImageUrl(topic, "topic"))
+    .filter((topic) => topicIsReleasedAfterEvent(topic, events) && isStandaloneTopic(topic) && homeImageUrl(topic, "topic"))
     .sort(newestContentFirst)
     .slice(0, 6);
   const visibleSpeakers = homeSpeakersOnePerTalk(events, topics, speakers);
@@ -1704,7 +1938,12 @@ export async function homePage() {
     return `<article class="pdtv-home-speaker-card">${photo ? `<img src="${escapeHtml(photo)}" alt="${escapeHtml(name)}" loading="lazy" decoding="async" ${liveImageAttrs("member")}>` : `<span>${escapeHtml(initials(name || "Referent"))}</span>`}<div><h3>${escapeHtml(name)}</h3>${speaker.company ? `<p>${escapeHtml(speaker.company)}</p>` : ""}<a class="button button--secondary button--small" href="${speakerProfileHref(speaker)}">Mehr</a></div></article>`;
   }).join("")}</div>` : "";
 
-  const seriesBody = seriesItems.length ? `<div class="pdtv-home-series-grid">${seriesItems.map((series) => `<article class="pdtv-home-series-card"><h3>${escapeHtml(series.titel)}</h3>${series.kurztext ? `<p>${escapeHtml(series.kurztext)}</p>` : ""}${series.langtext ? `<p>${escapeHtml(teaserText(series.langtext, 210))}</p>` : ""}<a class="button button--secondary button--small" href="#/über-uns/${encodeURIComponent(series.slug)}">Artikel öffnen</a></article>`).join("")}</div>` : "";
+  const seriesBody = seriesItems.length ? `<div class="pdtv-home-series-grid">${seriesItems.map((series) => {
+    const imageUrl = stableImageUrl(series.imageUrl || series.thumbnailUrl || series.assetUrl || "", "event");
+    return `<article class="pdtv-home-series-card${imageUrl ? " pdtv-home-series-card--with-bg" : ""}"${imageUrl ? ` style="--series-bg: url('${escapeHtml(imageUrl)}')"` : ""}>
+      <div class="pdtv-home-series-card__copy"><h3>${escapeHtml(series.titel)}</h3>${series.kurztext ? `<p>${escapeHtml(series.kurztext)}</p>` : ""}${series.langtext ? `<p>${escapeHtml(teaserText(series.langtext, 210))}</p>` : ""}<a class="button button--secondary button--small" href="#/ueber-uns/${encodeURIComponent(series.slug)}">Artikel öffnen</a></div>
+    </article>`;
+  }).join("")}</div>` : "";
 
   return publicShell("home", `<main class="pdtv-home">
     <div class="container">${homeHeroMarkup({ next, nextImageUrl, retrospective, series: seriesItems[0] || null })}</div>
@@ -1810,7 +2049,8 @@ async function getPublicRouteEvent(id, includeMemberEvents = false) {
   }
 }
 
-export async function eventDetailPage(id) {
+export async function eventDetailPage(id, query = new URLSearchParams()) {
+  const previewMode = query?.get?.("preview") === "1" && isAdmin();
   let event;
   try {
     event = await getPublicRouteEvent(id, isMember());
@@ -1818,7 +2058,7 @@ export async function eventDetailPage(id) {
     return publicShell("events", `${subhero("Geschuetzter Bereich", "Login erforderlich", "Dieses Event ist nur für berechtigte Personen sichtbar.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
   }
   if (!event) return notFoundPage();
-  if (!isPastEvent(event) && !upcomingEventIsVisible(event)) return notFoundPage();
+  if (!previewMode && !isPastEvent(event) && !upcomingEventIsVisible(event)) return notFoundPage();
   const [speakers, sponsors, topics, galleries, mediaAssets] = await Promise.all([
     listPublicContent("speakers").catch(() => []),
     listPublicContent("sponsors").catch(() => []),
@@ -1854,9 +2094,11 @@ export async function eventDetailPage(id) {
     ? `<div class="event-registration-cta"><a class="button button--primary" href="#/register/${escapeHtml(event.id)}">Zum Event anmelden</a></div>`
     : `<div class="alert event-registration-cta">${event.accessType === "invitation_only" ? "Teilnahme nur auf Einladung." : "Anmeldung derzeit nicht verfuegbar."}</div>`;
   const eventInfoBlock = restricted ? "" : `<section class="venue-stage event-info-stage"><div class="event-info-stage__facts"><p class="eyebrow">Daten</p><div class="event-info-facts"><div class="event-info-fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>${event.startTime ? `<div class="event-info-fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}<div class="event-info-fact"><label>Status</label><strong>${escapeHtml(eventRegistrationStatusLabel(event))}</strong></div></div></div><div class="venue-stage__place"><p class="eyebrow">Adresse</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`;
+  const previewNotice = previewMode ? `<div class="alert alert--warning">CMS-Vorschau: Dieses Event ist noch nicht zwingend öffentlich sichtbar.</div>` : "";
   return publicShell("events", `${subhero(event.eventType, event.title, event.subtitle)}
     <section class="section event-detail-section"><div class="container detail-grid event-detail-grid">
       <article class="detail-main">
+        ${previewNotice}
         <figure class="event-detail-image"><img src="${escapeHtml(stableImageUrl(eventImageUrl, "event"))}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy" ${liveImageAttrs("event")}></figure>
         ${ticketStatusCard}
         ${restricted ? `<div class="alert alert--warning">Details und Anmeldung dieses Mitglieder-Events stehen nach dem Login zur Verfuegung.</div>` : ""}
@@ -1931,9 +2173,39 @@ export async function notificationUnsubscribePage(hash = "") {
 }
 
 export async function topicsPage() {
-  const topics = (await listPublicContent("topics")).sort(newestContentFirst);
+  const [topicsRaw, speakers, mediaAssets, events] = await Promise.all([
+    listPublicContent("topics"),
+    listPublicContent("speakers").catch(() => []),
+    listPublicMediaAssets().catch(() => []),
+    listPublicEvents().catch(() => [])
+  ]);
+  const speakerForTopic = (topic = {}) => speakers.find((speaker) => {
+    const topicSpeakerIds = new Set(topic.speakerIds || [topic.speakerId].filter(Boolean));
+    return topicSpeakerIds.has(speaker.id) || speaker.topicId === topic.id || (speaker.topicIds || []).includes(topic.id);
+  }) || {};
+  const topics = topicsRaw.filter((topic) => topicIsReleasedAfterEvent(topic, events)).map((topic) => {
+    const speaker = speakerForTopic(topic);
+    const topicAsset = publicTopicMediaAsset(topic, mediaAssets, "thumb");
+    const ownImage = publicTopicThumbnailUrl(topic, mediaAssets);
+    const ownImageType = publicTopicImageLooksLikeLogo(topic, topicAsset || {}, ownImage) ? "logo" : "image";
+    const logoUrl = topic.companyLogoUrl || topic.logoUrl || topic.company_logo_url || speaker.companyLogoUrl || speaker.logoUrl || speaker.company_logo_url || "";
+    const speakerPhoto = speaker.photoUrl || speaker.imageUrl || "";
+    return {
+      ...topic,
+      cardImageUrl: ownImage || logoUrl || speakerPhoto || "",
+      cardImageType: ownImage ? ownImageType : logoUrl ? "logo" : speakerPhoto ? "portrait" : ""
+    };
+  }).sort(newestContentFirst);
+  const initialVisible = 9;
+  const topicCards = topics.map((topic, index) => {
+    const hidden = index >= initialVisible;
+    return `<div class="topic-load-item" data-topic-load-item ${hidden ? "hidden" : ""}>${topicCard(topic)}</div>`;
+  }).join("");
+  const loadMore = topics.length > initialVisible
+    ? `<div class="topic-load-more"><button class="button button--secondary" type="button" data-topic-load-more data-topic-load-step="6">Mehr Themen laden</button><small data-topic-load-count>${Math.min(initialVisible, topics.length)} von ${topics.length} Themen sichtbar</small></div>`
+    : "";
   return publicShell("topics", `${subhero("Themen", "Die Agenda der digitalen Medienwirtschaft.", "PROdigitalTV buendelt relevante Fragestellungen und bringt sie in konkreten Events zur Diskussion.")}
-    <section class="section"><div class="container"><div class="card-grid card-grid--three editorial-list editorial-list--topics">${topics.map(topicCard).join("")}</div></div></section>`);
+    <section class="section"><div class="container"><div class="card-grid card-grid--three editorial-list editorial-list--topics" data-topic-load-list>${topicCards}</div>${loadMore}</div></section>`);
 }
 
 export async function newsPage(query = new URLSearchParams()) {
@@ -2060,10 +2332,27 @@ export async function newsDetailPage(id) {
 }
 
 export async function topicDetailPage(id) {
-  const [topic, events, sponsors, galleries, allTopics] = await Promise.all([getOne("topics", id), listPublicEvents(), listPublicContent("sponsors"), listPublicContent("galleries"), listPublicContent("topics")]);
+  const [topic, events, sponsors, galleries, allTopics, speakers, mediaAssets] = await Promise.all([getOne("topics", id), listPublicEvents(), listPublicContent("sponsors"), listPublicContent("galleries"), listPublicContent("topics"), listPublicContent("speakers"), listPublicMediaAssets().catch(() => [])]);
   if (!topic) return notFoundPage();
-  const linked = events.filter((event) => (event.topicIds || []).includes(id) && upcomingEventIsVisible(event));
-  const relatedTopics = allTopics.filter((entry) => entry.id !== topic.id).slice(0, 4);
+  if (!topicIsReleasedAfterEvent(topic, events)) return notFoundPage();
+  const linked = topicLinkedEvents(topic, events).filter(publicEventAllowsTopicRelease).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  const heroSpeakers = speakers.filter((speaker) => {
+    const topicSpeakerIds = new Set(topic.speakerIds || [topic.speakerId].filter(Boolean));
+    return topicSpeakerIds.has(speaker.id) || speaker.topicId === topic.id || (speaker.topicIds || []).includes(topic.id);
+  });
+  const relatedTopics = allTopics
+    .filter((entry) => entry.id !== topic.id && topicIsReleasedAfterEvent(entry, events))
+    .slice(0, 8)
+    .map((entry) => {
+      const topicAsset = publicTopicMediaAsset(entry, mediaAssets, "thumb");
+      const ownImage = publicTopicThumbnailUrl(entry, mediaAssets);
+      const ownImageType = publicTopicImageLooksLikeLogo(entry, topicAsset || {}, ownImage) ? "logo" : "image";
+      return {
+        ...entry,
+        cardImageUrl: ownImage || entry.cardImageUrl || "",
+        cardImageType: ownImage ? ownImageType : entry.cardImageType || ""
+      };
+    });
   const topicIntro = "Einordnung, Hintergruende und Praxisbezug zu zentralen Begriffen der digitalen Medienwirtschaft.";
   const topicText = topic.longDescription || topic.bodyText || topic.shortDescription || "";
   const topicAudioText = [topic.subtitle, topic.longDescription, topic.bodyText, topic.shortDescription].filter(Boolean).join("\n\n");
@@ -2077,15 +2366,15 @@ export async function topicDetailPage(id) {
     ? `<section class="section section--white"><div class="container topic-article">${ttsReader({ rubric: "Thema", title: topic.title || "", text: topicAudioText || topicText, inlineOffsetText: topic.subtitle || "", audio: topic.audio || {}, audioProvider: topic.audioProvider || "", audioUrl: topic.audioUrl || "", audioAccessibleUrl: topic.audioAccessibleUrl || "", audioNaturalUrl: topic.audioNaturalUrl || "", timingUrl: topic.timingUrl || "", audioStatus: topic.audioStatus || "", audioAccessibleStatus: topic.audioAccessibleStatus || "", audioNaturalStatus: topic.audioNaturalStatus || "" })}${topicVisibleText}</div></section>`
     : "";
   const relatedTopicsBlock = relatedTopics.length
-    ? `<section class="section section--white section--related-topics"><div class="container"><div class="section-head"><div><p class="eyebrow">Weitere Themen</p><h2>Mehr aus der Rubrik</h2></div></div><div class="card-grid card-grid--four">${relatedTopics.map(topicCard).join("")}</div></div></section>`
+    ? `<section class="section section--white section--related-topics"><div class="container"><div class="section-head"><div><p class="eyebrow">Weitere Themen</p><h2>Mehr aus der Rubrik</h2></div></div><div class="card-grid card-grid--four editorial-list editorial-list--topics">${relatedTopics.map(topicCard).join("")}</div></div></section>`
     : "";
-  return publicShell("topics", `<section class="section section--article-head"><div class="container">
-      ${articleHeader({
-        eyebrow: "Unsere Themen",
+  return publicShell("topics", `<section class="section section--article-head section--topic-detail-hero"><div class="container">
+      ${topicVisualHeader({
+        topic,
+        speakers: heroSpeakers,
         title: topic.title || "",
         intro: topicIntro,
-        logoUrl: stableImageUrl(topic.imageUrl, "topic"),
-        logoAlt: `Themenmotiv ${topic.title || "Thema"}`
+        mediaAssets
       })}
     </div></section>
     ${leadMedia ? `<section class="section section--flush"><div class="container">${leadMedia}</div></section>` : ""}

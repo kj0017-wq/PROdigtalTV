@@ -817,6 +817,8 @@ exports.adminCreateEventRegistration = onCall({ region }, async (request) => {
   const lockRef = db.collection("registrationLocks").doc(registrationLockId(eventRecord.id, input.email));
   const headers = request.rawRequest?.headers || {};
   const isMemberByEmail = await emailBelongsToMember(input.email);
+  const confirmationToken = randomBytes(32).toString("hex");
+  const confirmationExpiresAt = Timestamp.fromMillis(Date.now() + 48 * 60 * 60 * 1000);
   const registration = {
     id: registrationRef.id,
     eventId: eventRecord.id,
@@ -826,14 +828,16 @@ exports.adminCreateEventRegistration = onCall({ region }, async (request) => {
     ...input,
     isMember: isMemberByEmail,
     privacyAccepted: Boolean(input.privacyAccepted),
-    emailConfirmed: true,
-    status: "confirmed",
-    mailStatus: "manual_admin",
+    emailConfirmed: false,
+    status: "pending_email_confirmation",
+    mailStatus: "queued",
+    confirmationTokenHash: hashToken(confirmationToken),
+    confirmationExpiresAt,
+    confirmationMailQueuedAt: now,
     source: "cms_admin",
     createdIp: clientIp(request),
     createdUserAgent: stripTags(headers["user-agent"] || ""),
     createdBy: profile.email || request.auth.uid,
-    confirmedAt: now,
     createdAt: now,
     updatedAt: now
   };
@@ -859,6 +863,16 @@ exports.adminCreateEventRegistration = onCall({ region }, async (request) => {
     }, { merge: true });
   });
   await upsertContactFromRegistration(registration, eventRecord, now);
+  await queueMail({
+    type: "registration_confirmation",
+    to: registration.email,
+    subject: `Bitte bestaetigen Sie Ihre Anmeldung: ${eventRecord.title}`,
+    template: "registration_confirmation",
+    eventId: registration.eventId,
+    registrationId: registrationRef.id,
+    confirmationUrl: registrationConfirmationUrl(confirmationToken),
+    tokenExpiresAt: confirmationExpiresAt
+  });
   return {
     ...registration,
     createdAt: new Date().toISOString(),

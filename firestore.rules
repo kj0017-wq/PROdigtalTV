@@ -97,6 +97,14 @@ service cloud.firestore {
       return (resource.data.status == "published" || resource.data.status == "aktiv")
         && (resource.data.visibility == "public" || resource.data.sichtbarkeit == "oeffentlich");
     }
+    function publicMemberEventTeaser() {
+      return resource.data.accessType == "members_only"
+        && (
+          resource.data.status == "active"
+          || resource.data.status == "published"
+          || resource.data.status == "aktiv"
+        );
+    }
     function registrationEvent() {
       return get(/databases/$(database)/documents/events/$(request.resource.data.eventId)).data;
     }
@@ -123,6 +131,7 @@ service cloud.firestore {
 
     match /events/{eventId} {
       allow read: if publicPublished()
+        || publicMemberEventTeaser()
         || (member() && resource.data.accessType == "members_only")
         || editor();
       allow create, update, delete: if editor();

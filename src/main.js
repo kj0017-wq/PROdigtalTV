@@ -1,4 +1,4 @@
-import { route, onRouteChange, go } from "./utils/router.js";
+import { route, onRouteChange, go } from "./utils/router.js?v=2";
 import { currentUser, canUseCms, isAdmin, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=471";
 import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=517";
 import { escapeHtml, formatDate } from "./utils/format.js";
@@ -10,10 +10,10 @@ const mediaProxyFunctionUrl = "https://europe-west3-prodigitaltv-da47b.cloudfunc
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=683");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=668");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=708");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=677");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=493");
-const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=115");
+const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=116");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=13");
 const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=7");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=13");
@@ -81,7 +81,10 @@ function applyTheme(theme = storedTheme()) {
 }
 
 function mobileCmsDisabled() {
-  return window.matchMedia?.("(max-width: 820px)")?.matches;
+  if (window.__pdtvCmsMobileBlocked) return true;
+  return window.matchMedia?.("(max-width: 820px)")?.matches
+    || window.innerWidth <= 920
+    || window.screen?.width <= 820;
 }
 
 function mobileCmsPlaceholder() {
@@ -89,7 +92,7 @@ function mobileCmsPlaceholder() {
     <p class="eyebrow">CMS</p>
     <h1>CMS nur am Desktop</h1>
     <p style="margin:14px 0 24px">Die mobile CMS-Version wird spaeter als reduzierte Oberflaeche umgesetzt.</p>
-    <a class="button button--primary" href="#/home">Zur Website</a>
+    <a class="button button--primary" href="/website.html?v=1019">Zur Website</a>
   </div></section>`;
 }
 
@@ -267,7 +270,7 @@ async function viewForRoute(current) {
   } = await publicPages();
   if (current.path === "home") return homePage();
   if (current.path === "events") return eventsPage();
-  if (current.path === "event") return eventDetailPage(current.id);
+  if (current.path === "event") return eventDetailPage(current.id, current.query);
   if (["register", "registration", "anmeldung", "anmelden"].includes(current.path) && current.id !== "cancel") return current.id ? registrationPage(current.id) : eventsPage();
   if (current.path === "ticket" && current.id === "link") return ticketLinkPage(current.section);
   if (current.path === "registration" && current.id === "cancel") return registrationCancelPage(current.section);
@@ -317,10 +320,18 @@ async function render() {
     currentRoute = route();
     if (redirectPublicRouteOutOfCms(currentRoute)) return;
     if (root && !root.innerHTML) {
-      root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS</p><h1>Lade Inhalte ...</h1></div></section>`;
+      const loadingEyebrow = currentRoute.path === "cms" ? "CMS" : "PROdigitalTV";
+      const loadingTitle = currentRoute.path === "cms" ? "Lade Inhalte ..." : "Website laedt ...";
+      root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">${loadingEyebrow}</p><h1>${loadingTitle}</h1></div></section>`;
     }
     const viewPromise = viewForRoute(currentRoute);
-    root.innerHTML = await viewPromise;
+    const isCmsRoute = currentRoute?.path === "cms";
+    root.innerHTML = isCmsRoute
+      ? await Promise.race([
+          viewPromise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error("CMS-Ladevorgang hat zu lange gedauert. Bitte neu anmelden oder am Desktop oeffnen.")), 9000))
+        ])
+      : await viewPromise;
     wireActions();
     initCheckinScreenWatcher();
     updateMobileQrCode();
@@ -336,6 +347,10 @@ async function render() {
     if (isCmsRoute && isPermissionError) {
       await logout().catch(() => {});
       root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Zugriff geschuetzt</p><h1>CMS-Login erforderlich</h1><p style="margin:14px 0 24px">Die Firebase-Sitzung ist abgelaufen oder hat keine CMS-Rechte. Bitte neu anmelden.</p><div class="actions"><a class="button button--primary" href="#/login">Anmelden</a></div></div></section>`;
+      return;
+    }
+    if (isCmsRoute) {
+      root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS</p><h1>CMS konnte nicht geladen werden</h1><p style="margin:14px 0 24px">${escapeHtml(message)}</p><div class="actions"><a class="button button--primary" href="#/login">Neu anmelden</a><a class="button button--secondary" href="/?resetApp=1#/home">Website öffnen</a></div></div></section>`;
       return;
     }
     root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Seite konnte nicht geladen werden</p><h1>Bitte neu laden</h1><p style="margin:14px 0 24px">${escapeHtml(message)}</p><button class="button button--primary" type="button" onclick="window.location.reload()">Neu laden</button></div></section>`;
@@ -1874,6 +1889,21 @@ function imageFileFromDropzone(form, inputName, entityId) {
   return dataUrlToFile(dataUrl, fileName);
 }
 
+function ensureSimpleImageCropsApplied(form, resultSelector = "") {
+  const pendingZone = form?.querySelector?.("[data-image-dropzone][data-crop-pending='1']");
+  if (!pendingZone) return true;
+  const status = pendingZone.querySelector("[data-image-status]");
+  const message = "Bitte den Bildausschnitt zuerst mit Uebernehmen bestaetigen. Danach wird gespeichert.";
+  if (status) status.textContent = message;
+  const result = resultSelector ? form.querySelector(resultSelector) : null;
+  if (result) result.innerHTML = `<div class="alert alert--error">${message}</div>`;
+  pendingZone.scrollIntoView({ behavior: "smooth", block: "center" });
+  pendingZone.classList.add("is-cropping-simple");
+  pendingZone.querySelector("[data-simple-image-actions]")?.removeAttribute("hidden");
+  pendingZone.querySelector("[data-simple-image-apply]")?.removeAttribute("hidden");
+  return false;
+}
+
 function findAiSource(button) {
   const form = button.closest("form") || document;
   const target = button.dataset.aiTarget;
@@ -2514,7 +2544,7 @@ const mediaUsagePresets = {
   ai: { aspect: "16x9", width: 1600, height: 900, portal: "Redaktionelle Grafik", mobile: "Responsive 16:9" },
   news: { aspect: "16x9", width: 1600, height: 900, portal: "News-Teaser und Artikelkopf", mobile: "Mobile News-Teaser 16:9" },
   event: { aspect: "16x9", width: 1600, height: 900, portal: "Event-Teaser und Detailkopf", mobile: "Mobile Eventkarte 16:9" },
-  article: { aspect: "16x9", width: 1600, height: 900, portal: "Artikel / Redaktion", mobile: "Mobile Artikelkarte 16:9" },
+  article: { aspect: "16x9", width: 2400, height: 1350, portal: "Artikel / Redaktion hochaufloesend", mobile: "Mobile Artikelkarte 16:9" },
   topic: { aspect: "16x9", width: 1600, height: 900, portal: "Themenkarte / Themenkopf", mobile: "Mobile Themenkarte 16:9" },
   board: { aspect: "4x5", width: 1200, height: 1500, portal: "Vorstandsprofil", mobile: "Mobile Profilkarte 4:5" },
   member: { aspect: "logo", width: 1530, height: 600, portal: "Mitgliederkarte / Logo 2.55:1", mobile: "Mobile Mitgliederkarte 2.55:1" },
@@ -2524,6 +2554,7 @@ const mediaUsagePresets = {
 };
 
 const MEDIA_VARIANT_DEFINITIONS = Object.freeze({
+  article_xl: { key: "article_xl", label: "Artikel XL", width: 2400, height: 1350, aspect: "16x9", format: "image/webp", quality: .9, usage: "article_header_xl", storageSuffix: "article-xl" },
   news_desktop: { key: "news_desktop", label: "News Desktop", width: 1200, height: 675, aspect: "16x9", format: "image/webp", quality: .86, usage: "news_header", storageSuffix: "news-desktop" },
   news_mobile: { key: "news_mobile", label: "News Mobile", width: 800, height: 1000, aspect: "4x5", format: "image/webp", quality: .86, usage: "news_mobile", storageSuffix: "news-mobile" },
   hero_desktop: { key: "hero_desktop", label: "Hero Desktop", width: 1920, height: 800, aspect: "12x5", format: "image/webp", quality: .88, usage: "hero", storageSuffix: "hero-desktop" },
@@ -2568,6 +2599,7 @@ function mediaDefaultVariantKey(asset = {}) {
   if (["board", "person"].includes(type)) return "news_mobile";
   if (type === "thumb") return "square";
   if (type === "event") return "event_header";
+  if (type === "article") return "article_xl";
   return "news_desktop";
 }
 
@@ -2620,7 +2652,9 @@ function mediaVariantOutputFileName(asset = {}, variantKey = "") {
 function mediaVariantOutputPath(asset = {}, variantKey = "") {
   const variant = mediaVariantDefinition(variantKey, asset);
   const basePath = String(asset.file_path_original || asset.file_path_web || asset.file_path_thumb || "").trim();
-  const baseDir = basePath ? basePath.replace(/\/[^/]*$/, "") : mediaStoragePath("placeholder.webp", normalizedMediaType(asset.media_type || "upload"), asset.media_code || "").replace(/\/[^/]*$/, "");
+  const baseDir = basePath && basePath.startsWith("images/")
+    ? basePath.replace(/\/[^/]*$/, "")
+    : mediaStoragePath("placeholder.webp", normalizedMediaType(asset.media_type || "upload"), asset.media_code || "").replace(/\/[^/]*$/, "");
   return `${baseDir}/${mediaVariantOutputFileName(asset, variant.key)}`;
 }
 
@@ -5881,15 +5915,17 @@ function wireImageDropzones() {
       return { width: width || 240, height: height || 180 };
     };
     const updateResolution = () => {
+      const size = selectedSize();
       if (isSimpleDropzone) {
         if (resolution) resolution.textContent = "";
         if (preview) {
           preview.style.width = "";
-          preview.style.height = "";
+          preview.style.height = "auto";
+          preview.style.minHeight = "";
+          preview.style.aspectRatio = `${size.width} / ${size.height}`;
         }
         return;
       }
-      const size = selectedSize();
       if (resolution) resolution.textContent = `Ausgabeformat: ${size.width} x ${size.height} px.`;
       if (preview) {
         const availableWidth = Math.max(240, Math.min(640, (zone.clientWidth || 720) - 28));
@@ -5900,11 +5936,35 @@ function wireImageDropzones() {
     };
     const renderCrop = () => {
       if (!crop.img) return;
+      if (zone.classList.contains("is-cropping-simple")) {
+        if (!crop.img.naturalWidth || !crop.img.naturalHeight) {
+          crop.img.addEventListener("load", renderCrop, { once: true });
+          return;
+        }
+        const previewRect = preview.getBoundingClientRect();
+        const baseScale = Math.max(previewRect.width / crop.img.naturalWidth, previewRect.height / crop.img.naturalHeight);
+        const width = crop.img.naturalWidth * baseScale * crop.scale;
+        const height = crop.img.naturalHeight * baseScale * crop.scale;
+        crop.img.style.position = "absolute";
+        crop.img.style.left = "50%";
+        crop.img.style.top = "50%";
+        crop.img.style.width = `${width}px`;
+        crop.img.style.height = `${height}px`;
+        crop.img.style.maxWidth = "none";
+        crop.img.style.maxHeight = "none";
+        crop.img.style.objectFit = "fill";
+        crop.img.style.transform = `translate(calc(-50% + ${crop.x}px), calc(-50% + ${crop.y}px))`;
+        crop.img.style.transformOrigin = "center";
+        return;
+      }
+      crop.img.style.position = "";
+      crop.img.style.left = "";
+      crop.img.style.top = "";
       crop.img.style.width = "100%";
       crop.img.style.height = "100%";
       crop.img.style.maxWidth = "100%";
       crop.img.style.maxHeight = "100%";
-      crop.img.style.objectFit = zone.classList.contains("is-cropping-simple") ? "cover" : "contain";
+      crop.img.style.objectFit = "contain";
       crop.img.style.transform = `translate(${crop.x}px, ${crop.y}px) scale(${crop.scale})`;
       crop.img.style.transformOrigin = "center";
     };
@@ -5924,15 +5984,19 @@ function wireImageDropzones() {
       const offsetX = crop.x * (canvas.width / Math.max(1, previewRect.width));
       const offsetY = crop.y * (canvas.height / Math.max(1, previewRect.height));
       ctx.drawImage(crop.img, (canvas.width - width) / 2 + offsetX, (canvas.height - height) / 2 + offsetY, width, height);
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", .9));
-      const croppedFile = new File([blob], crop.file.name.replace(/\.[^.]+$/, "") + `-${size.width}x${size.height}.jpg`, { type: "image/jpeg" });
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", .86));
+      if (!blob) throw new Error("WebP-Zuschnitt konnte nicht erzeugt werden.");
+      const croppedFile = new File([blob], crop.file.name.replace(/\.[^.]+$/, "") + `-${size.width}x${size.height}.webp`, { type: "image/webp" });
       fileToInput(input, croppedFile);
       crop.file = croppedFile;
-      crop.src = canvas.toDataURL("image/jpeg", .9);
+      crop.src = canvas.toDataURL("image/webp", .86);
       if (dataInput) dataInput.value = crop.src;
       if (fileNameInput) fileNameInput.value = croppedFile.name;
       preview.innerHTML = `<img src="${crop.src}" alt="">`;
       crop.img = preview.querySelector("img");
+      crop.img.style.position = "";
+      crop.img.style.left = "";
+      crop.img.style.top = "";
       crop.x = 0;
       crop.y = 0;
       crop.scale = 1;
@@ -5985,6 +6049,8 @@ function wireImageDropzones() {
         hasImage: preview.classList.contains("has-image")
       };
       zone.classList.add("is-cropping-simple");
+      zone.dataset.cropPending = "1";
+      delete zone.dataset.cropApplied;
       fileToInput(input, file);
       showFile(file, { statusText: "Bild im Rahmen verschieben. Mit dem Mausrad kannst du leicht zoomen. Danach Uebernehmen klicken." });
       await new Promise((resolve) => window.setTimeout(resolve, 120));
@@ -5998,6 +6064,8 @@ function wireImageDropzones() {
       status.textContent = "Ausschnitt wird uebernommen ...";
       const cropped = await applyCropToInput();
       zone.classList.remove("is-cropping-simple");
+      delete zone.dataset.cropPending;
+      zone.dataset.cropApplied = "1";
       if (simpleApply) simpleApply.hidden = true;
       simpleActions.hidden = true;
       if (cropped?.size) status.textContent = `Bild zugeschnitten (${cropped.size.width} x ${cropped.size.height} px). System speichert und ordnet automatisch zu ...`;
@@ -6015,6 +6083,8 @@ function wireImageDropzones() {
         if (dataInput) dataInput.value = "";
         if (fileNameInput) fileNameInput.value = "";
         zone.classList.remove("is-cropping-simple");
+        delete zone.dataset.cropPending;
+        delete zone.dataset.cropApplied;
         if (simpleApply) simpleApply.hidden = true;
       }
       simpleActions.hidden = true;
@@ -6031,6 +6101,8 @@ function wireImageDropzones() {
       crop.src = "";
       crop.img = null;
       zone.classList.remove("is-cropping-simple");
+      delete zone.dataset.cropPending;
+      delete zone.dataset.cropApplied;
       if (simpleApply) simpleApply.hidden = true;
       if (tools) tools.hidden = true;
       preview.innerHTML = `<span>${emptyText}</span>`;
@@ -6096,6 +6168,8 @@ function wireImageDropzones() {
           hasImage: preview.classList.contains("has-image")
         };
         zone.classList.add("is-cropping-simple");
+        zone.dataset.cropPending = "1";
+        delete zone.dataset.cropApplied;
         showFile(file, { statusText: "Bild im Rahmen verschieben. Mit dem Mausrad kannst du leicht zoomen. Danach Uebernehmen klicken." });
         simpleActions.hidden = false;
         if (simpleApply) simpleApply.hidden = false;
@@ -6604,6 +6678,29 @@ function gallerySelectPayload(gallery = {}) {
   });
 }
 
+function wireTopicLoadMore() {
+  const button = document.querySelector("[data-topic-load-more]");
+  const list = document.querySelector("[data-topic-load-list]");
+  if (!button || !list || button.dataset.topicLoadWired === "1") return;
+  button.dataset.topicLoadWired = "1";
+  const count = document.querySelector("[data-topic-load-count]");
+  const items = () => Array.from(list.querySelectorAll("[data-topic-load-item]"));
+  const update = () => {
+    const allItems = items();
+    const visible = allItems.filter((item) => !item.hidden).length;
+    if (count) count.textContent = `${visible} von ${allItems.length} Themen sichtbar`;
+    if (visible >= allItems.length) button.closest(".topic-load-more")?.remove();
+  };
+  button.addEventListener("click", () => {
+    const step = Math.max(1, Number(button.dataset.topicLoadStep || 6));
+    items().filter((item) => item.hidden).slice(0, step).forEach((item) => {
+      item.hidden = false;
+    });
+    update();
+  });
+  update();
+}
+
 function renderEditorGalleryChoices(select) {
   const container = select?.closest(".editor-tool-section--gallery")?.querySelector("[data-editor-gallery-choices]");
   if (!select || !container) return;
@@ -6866,6 +6963,9 @@ function updateDropzoneSavedImage(form, imageUrl, inputName = "") {
   const simpleDelete = zone.querySelector("[data-simple-image-delete]");
   if (simpleActions) simpleActions.hidden = true;
   if (simpleDelete) simpleDelete.disabled = !imageUrl;
+  delete zone.dataset.cropPending;
+  delete zone.dataset.cropApplied;
+  zone.classList.remove("is-cropping-simple");
   if (input) input.value = "";
   if (dataInput) dataInput.value = "";
   if (fileNameInput) fileNameInput.value = "";
@@ -6898,9 +6998,11 @@ async function autoSaveSimpleImageForm(form, status, message = "Bild wird gespei
 }
 
 async function saveEventTopicSpeakerForm(form) {
+  if (!ensureSimpleImageCropsApplied(form, "#event-topic-speaker-result")) return false;
   const existingEvent = await getOne("events", form.dataset.eventId);
   const speakerId = form.dataset.speakerId || `speakers-${crypto.randomUUID()}`;
   const existingSpeaker = form.dataset.speakerId ? await getOne("speakers", speakerId) : { id: speakerId, status: "published", visibility: "public", createdAt: new Date().toISOString() };
+  const result = form.querySelector("#event-topic-speaker-result");
   const firstName = String(form.elements.speakerFirstName?.value || "").trim();
   const lastName = String(form.elements.speakerLastName?.value || "").trim();
   const fallbackName = String(form.elements.name?.value || existingSpeaker.name || "").trim();
@@ -6917,12 +7019,25 @@ async function saveEventTopicSpeakerForm(form) {
     await deleteStoredAsset(existingSpeaker);
     imageUpdate.photoUrl = "";
     imageUpdate.assetStoragePath = "";
+    imageUpdate.mediaAssetId = "";
+    imageUpdate.thumbnail_media_asset_id = "";
+    imageUpdate.thumbnailMediaAssetId = "";
+    imageUpdate.thumbnail_variant_asset_ids = [];
   }
   if (image) {
     await deleteStoredAsset(existingSpeaker);
-    const asset = await uploadEntityImage("speakers", speakerId, image);
-    imageUpdate.photoUrl = asset.url;
-    imageUpdate.assetStoragePath = asset.storagePath;
+    const renderedUpload = await uploadEntityImageWithRenderedVariants("speakers", speakerId, image, {
+      entity: { ...existingSpeaker, id: speakerId, name: speakerName },
+      field: "photoUrl",
+      mediaType: "person",
+      result
+    });
+    imageUpdate.photoUrl = renderedUpload.url;
+    imageUpdate.assetStoragePath = renderedUpload.storagePath;
+    imageUpdate.mediaAssetId = renderedUpload.mediaAssetId;
+    imageUpdate.thumbnail_media_asset_id = renderedUpload.selectedAssetId;
+    imageUpdate.thumbnailMediaAssetId = renderedUpload.selectedAssetId;
+    imageUpdate.thumbnail_variant_asset_ids = renderedUpload.variantAssetIds;
   }
   if (form.elements.removeSpeakerCompanyLogo?.value === "1") {
     await deleteStoredAsset({ storagePath: existingSpeaker.companyLogoStoragePath || existingSpeaker.logoStoragePath });
@@ -6931,9 +7046,16 @@ async function saveEventTopicSpeakerForm(form) {
   }
   if (companyLogo) {
     await deleteStoredAsset({ storagePath: existingSpeaker.companyLogoStoragePath || existingSpeaker.logoStoragePath });
-    const asset = await uploadEntityImage("speakers", `${speakerId}-company-logo`, companyLogo);
-    imageUpdate.companyLogoUrl = asset.url;
-    imageUpdate.companyLogoStoragePath = asset.storagePath;
+    const renderedUpload = await uploadEntityImageWithRenderedVariants("speakers", `${speakerId}-company-logo`, companyLogo, {
+      entity: { ...existingSpeaker, id: speakerId, name: speakerName },
+      field: "companyLogoUrl",
+      mediaType: "logo",
+      result
+    });
+    imageUpdate.companyLogoUrl = renderedUpload.url;
+    imageUpdate.companyLogoStoragePath = renderedUpload.storagePath;
+    imageUpdate.company_logo_media_asset_id = renderedUpload.mediaAssetId;
+    imageUpdate.companyLogoMediaAssetId = renderedUpload.selectedAssetId;
   }
   await upsert("speakers", {
     ...existingSpeaker,
@@ -6957,7 +7079,7 @@ async function saveEventTopicSpeakerForm(form) {
   });
   await upsert("events", { ...existingEvent, speakerIds: eventSpeakerIds, updatedAt: new Date().toISOString() });
   form.dataset.speakerId = speakerId;
-  form.querySelector("#event-topic-speaker-result").innerHTML = `<div class="alert alert--success">Referent wurde gespeichert.</div>`;
+  if (result) result.innerHTML = `<div class="alert alert--success">Referent wurde gespeichert.${image ? " Bildvarianten wurden automatisch gerendert und zugeordnet." : ""}</div>`;
   const imageStatus = form.querySelector("[data-image-status]");
   if (imageStatus) imageStatus.textContent = imageUpdate.photoUrl ? "Bild wurde gespeichert." : imageUpdate.photoUrl === "" ? "Bild wurde gelöscht." : imageStatus.textContent;
   if (Object.prototype.hasOwnProperty.call(imageUpdate, "photoUrl")) {
@@ -6966,10 +7088,15 @@ async function saveEventTopicSpeakerForm(form) {
   if (Object.prototype.hasOwnProperty.call(imageUpdate, "companyLogoUrl")) {
     updateDropzoneSavedImage(form, imageUpdate.companyLogoUrl, "speakerCompanyLogo");
   }
+  form.classList.remove("is-dirty");
   form.classList.add("is-saved");
+  form.dispatchEvent(new CustomEvent("cms-form-saved", {
+    detail: { id: speakerId, topicId: form.dataset.topicId, eventId: form.dataset.eventId }
+  }));
   if (!new URLSearchParams(location.hash.split("?")[1] || "").get("speaker")) {
     history.replaceState(null, "", `#/cms/event/${form.dataset.eventId}?tab=topics&mode=referent&topic=${form.dataset.topicId}&speaker=${speakerId}`);
   }
+  return true;
 }
 
 function wireCmsMenu() {
@@ -7226,9 +7353,9 @@ function usableMediaAssetUrl(value = "") {
 
 function mediaAssetUrl(asset = {}) {
   return [
-    asset.file_path_thumb_url,
     asset.file_path_web_url,
     asset.file_path_original_url,
+    asset.file_path_thumb_url,
     asset.imageUrl,
     asset.assetUrl,
     asset.fileUrl,
@@ -7239,10 +7366,10 @@ function mediaAssetUrl(asset = {}) {
     asset.file_url,
     asset.original_url,
     asset.web_url,
-    asset.thumb_url,
-    asset.file_path_thumb,
     asset.file_path_web,
-    asset.file_path_original
+    asset.file_path_original,
+    asset.thumb_url,
+    asset.file_path_thumb
   ].map(usableMediaAssetUrl).find(Boolean) || "";
 }
 
@@ -7534,18 +7661,28 @@ async function attachMediaAssetToTarget(asset = {}, context = {}) {
   if (!target) throw new Error("Zieldatensatz fuer das Thumb wurde nicht gefunden.");
   const url = mediaAssetUrl(asset);
   if (!url) throw new Error("Das Bild hat noch keine verwendbare URL.");
+  const targetField = context.targetField || "imageUrl";
+  const isThumbnailTarget = /thumbnail|thumb/i.test(targetField);
   const update = {
     ...target,
-    [context.targetField || "imageUrl"]: url,
-    mediaAssetId: asset.id,
-    thumbnail_media_asset_id: asset.id,
-    thumbnail_url: url,
-    thumbnailUrl: url,
-    assetUrl: url,
+    [targetField]: url,
     assetType: "image",
     updatedAt: new Date().toISOString()
   };
-  if (context.targetCollection === "events") {
+  if (isThumbnailTarget) {
+    update.thumbnail_media_asset_id = asset.id;
+    update.thumbnailMediaAssetId = asset.id;
+    update.thumbnail_url = url;
+    update.thumbnailUrl = url;
+  } else {
+    update.mediaAssetId = asset.id;
+    update.thumbnail_media_asset_id = asset.id;
+    update.thumbnailMediaAssetId = asset.id;
+    update.thumbnail_url = url;
+    update.thumbnailUrl = url;
+    update.assetUrl = url;
+  }
+  if (context.targetCollection === "events" && !isThumbnailTarget) {
     update.imageUrl = url;
     update.thumbnail_url = url;
     update.thumbnailUrl = url;
@@ -7626,11 +7763,84 @@ async function createMediaAssetFromEntityImage({ collection = "", entity = {}, f
     linked_title: entity.title || entity.name || entity.headline || entity.id,
     alt_text: entity.thumbnail_alt || entity.thumbnailAlt || entity.title || entity.name || entity.headline || file.name || "",
     description: entity.description || "",
+    visibility: entity.visibility || "public",
     created_by: currentUser()?.email || currentUser()?.uid || "cms",
     created_at: now,
     updated_at: now,
     status: "active"
   });
+}
+
+function autoVariantKeysForEntityUpload(collection = "", field = "imageUrl") {
+  const normalizedField = String(field || "imageUrl");
+  if (/logo/i.test(normalizedField)) return ["sponsor_logo", "thumbnail"];
+  if (collection === "topics") return ["article_xl", "news_desktop", "thumbnail", "social_share"];
+  if (collection === "speakers") return ["news_mobile", "thumbnail", "square"];
+  if (["members", "sponsors"].includes(collection)) return ["sponsor_logo", "thumbnail"];
+  return ["news_desktop", "thumbnail"];
+}
+
+function activeVariantForEntityUpload(collection = "", field = "imageUrl") {
+  if (/logo/i.test(field)) return "sponsor_logo";
+  if (collection === "topics") return "news_desktop";
+  if (collection === "speakers") return "news_mobile";
+  return "news_desktop";
+}
+
+async function uploadEntityImageWithRenderedVariants(collection, entityId, file, { entity = {}, field = "imageUrl", mediaType = "", result = null } = {}) {
+  const uploaded = await uploadEntityImage(collection, entityId, file);
+  const asset = await createMediaAssetFromEntityImage({
+    collection,
+    entity: { ...entity, id: entity.id || entityId },
+    file,
+    uploaded,
+    field,
+    mediaType: mediaType || mediaTypeForLinkedCollection(collection, entity)
+  });
+  if (!asset?.id) {
+    return {
+      url: uploaded?.url || "",
+      storagePath: uploaded?.storagePath || "",
+      mediaAssetId: "",
+      selectedAssetId: "",
+      variantAssetIds: []
+    };
+  }
+  const activeVariantKey = activeVariantForEntityUpload(collection, field);
+  const { rendered, errors } = await generateAssetVariants(asset, {
+    mode: "missing",
+    variantKeys: autoVariantKeysForEntityUpload(collection, field),
+    activeVariantKey,
+    sourceCandidates: [uploaded?.url].filter(Boolean),
+    result
+  }).catch((error) => ({ rendered: [], errors: [error.message || String(error)] }));
+  if (errors?.length) console.warn("Automatische Bildvarianten konnten nicht vollstaendig gerendert werden:", errors);
+  const activeRender = rendered.find((entry) => entry.variant?.key === activeVariantKey);
+  const displayAsset = activeRender?.derivedAsset || rendered[0]?.derivedAsset || asset;
+  const url = mediaAssetUrl(displayAsset) || uploaded?.url || "";
+  const variantsByKey = Object.fromEntries(rendered
+    .filter((entry) => entry.variant?.key && entry.derivedAsset?.id)
+    .map((entry) => [entry.variant.key, entry.derivedAsset]));
+  const variantUrls = Object.fromEntries(Object.entries(variantsByKey)
+    .map(([key, derivedAsset]) => [key, mediaAssetUrl(derivedAsset)])
+    .filter(([, variantUrl]) => Boolean(variantUrl)));
+  const variantAssetIdsByKey = Object.fromEntries(Object.entries(variantsByKey)
+    .map(([key, derivedAsset]) => [key, derivedAsset.id])
+    .filter(([, id]) => Boolean(id)));
+  const allVariantAssetIds = Array.from(new Set([
+    displayAsset.id,
+    ...rendered.map((entry) => entry.derivedAsset?.id),
+    asset.id
+  ].filter(Boolean)));
+  return {
+    url,
+    storagePath: uploaded?.storagePath || "",
+    mediaAssetId: asset.id,
+    selectedAssetId: displayAsset.id || asset.id,
+    variantUrls,
+    variantAssetIdsByKey,
+    variantAssetIds: allVariantAssetIds
+  };
 }
 
 async function createMediaAssetFromGalleryImage(gallery = {}, image = {}) {
@@ -8387,13 +8597,17 @@ async function renderVariantFromOriginalAsset(asset = {}, variantKey = "", cropD
   return { variant, cropState, derivedAsset, variantRecord };
 }
 
-async function generateAssetVariants(asset = {}, { mode = "missing", activeVariantKey = "", cropData = null, result = null, targetContext = null, sourceCandidates = [] } = {}) {
-  const variantKeys = activeVariantKey ? [activeVariantKey] : MEDIA_VARIANT_ORDER;
+async function generateAssetVariants(asset = {}, { mode = "missing", activeVariantKey = "", variantKeys = [], cropData = null, result = null, targetContext = null, sourceCandidates = [] } = {}) {
+  const requestedVariantKeys = Array.isArray(variantKeys) && variantKeys.length
+    ? variantKeys
+    : activeVariantKey
+      ? [activeVariantKey]
+      : MEDIA_VARIANT_ORDER;
   const existing = await ensureAssetVariantRecords(asset);
   const existingByKey = new Map(existing.map((record) => [String(record.variant_key || record.variant_type || "").toLowerCase(), record]));
   const rendered = [];
   const errors = [];
-  const plannedVariants = variantKeys
+  const plannedVariants = requestedVariantKeys
     .map((key) => ({ key, record: existingByKey.get(String(key).toLowerCase()) || null }))
     .filter(({ record }) => !(mode === "missing" && (record?.file_url || record?.derived_media_asset_id)));
   if (!plannedVariants.length) return { rendered, errors };
@@ -9576,6 +9790,7 @@ function wireActions() {
   wireImageDropzones();
   wireGalleryEditor();
   wireGalleryPlayers();
+  wireTopicLoadMore();
   wirePdfOverlays();
   wireVideoAttachmentEditor();
   wireArticleVideos();
@@ -13005,6 +13220,7 @@ function wireActions() {
   document.querySelector("#event-topic-editor-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
+    if (!ensureSimpleImageCropsApplied(form, "#event-topic-editor-result")) return;
     const existingEvent = await getOne("events", form.dataset.eventId);
     const topicId = form.dataset.topicId || `topics-${crypto.randomUUID()}`;
     const existingTopic = await getOne("topics", topicId).catch(() => null) || { id: topicId, status: "active", visibility: "public", createdAt: new Date().toISOString() };
@@ -13035,12 +13251,38 @@ function wireActions() {
       await deleteStoredAsset({ storagePath: existingTopic.assetStoragePath });
       imageUpdate.imageUrl = "";
       imageUpdate.assetStoragePath = "";
+      imageUpdate.mediaAssetId = "";
+      imageUpdate.thumbnail_media_asset_id = "";
+      imageUpdate.thumbnailMediaAssetId = "";
+      imageUpdate.thumbnail_variant_asset_ids = [];
     }
     if (image) {
       await deleteStoredAsset(existingTopic);
-      const asset = await uploadEntityImage("topics", topicId, image);
-      imageUpdate.imageUrl = asset.url;
-      imageUpdate.assetStoragePath = asset.storagePath;
+      const renderedUpload = await uploadEntityImageWithRenderedVariants("topics", topicId, image, {
+        entity: {
+          ...existingTopic,
+          id: topicId,
+          title: form.elements.title.value,
+          shortDescription: form.elements.subline?.value || form.elements.text.value,
+          longDescription: form.elements.text.value
+        },
+        field: "imageUrl",
+        mediaType: "topic",
+        result: form.querySelector("#event-topic-editor-result")
+      });
+      const articleUrl = renderedUpload.variantUrls?.article_xl || renderedUpload.variantUrls?.news_desktop || renderedUpload.url;
+      const thumbUrl = renderedUpload.variantUrls?.thumbnail || renderedUpload.variantUrls?.square || renderedUpload.url;
+      imageUpdate.imageUrl = articleUrl;
+      imageUpdate.thumbnail_url = thumbUrl;
+      imageUpdate.thumbnailUrl = thumbUrl;
+      imageUpdate.assetUrl = articleUrl;
+      imageUpdate.assetStoragePath = renderedUpload.storagePath;
+      imageUpdate.mediaAssetId = renderedUpload.mediaAssetId;
+      imageUpdate.article_media_asset_id = renderedUpload.variantAssetIdsByKey?.article_xl || renderedUpload.variantAssetIdsByKey?.news_desktop || renderedUpload.selectedAssetId;
+      imageUpdate.articleMediaAssetId = imageUpdate.article_media_asset_id;
+      imageUpdate.thumbnail_media_asset_id = renderedUpload.variantAssetIdsByKey?.thumbnail || renderedUpload.selectedAssetId;
+      imageUpdate.thumbnailMediaAssetId = imageUpdate.thumbnail_media_asset_id;
+      imageUpdate.thumbnail_variant_asset_ids = renderedUpload.variantAssetIds;
     }
     if (form.elements.removeTopicCompanyLogo?.value === "1") {
       await deleteStoredAsset({ storagePath: existingTopic.companyLogoStoragePath || existingTopic.logoStoragePath });
@@ -13049,9 +13291,20 @@ function wireActions() {
     }
     if (companyLogo) {
       await deleteStoredAsset({ storagePath: existingTopic.companyLogoStoragePath || existingTopic.logoStoragePath });
-      const asset = await uploadEntityImage("topics", `${topicId}-company-logo`, companyLogo);
-      imageUpdate.companyLogoUrl = asset.url;
-      imageUpdate.companyLogoStoragePath = asset.storagePath;
+      const renderedUpload = await uploadEntityImageWithRenderedVariants("topics", `${topicId}-company-logo`, companyLogo, {
+        entity: {
+          ...existingTopic,
+          id: topicId,
+          title: form.elements.title.value
+        },
+        field: "companyLogoUrl",
+        mediaType: "logo",
+        result: form.querySelector("#event-topic-editor-result")
+      });
+      imageUpdate.companyLogoUrl = renderedUpload.url;
+      imageUpdate.companyLogoStoragePath = renderedUpload.storagePath;
+      imageUpdate.company_logo_media_asset_id = renderedUpload.mediaAssetId;
+      imageUpdate.companyLogoMediaAssetId = renderedUpload.selectedAssetId;
     }
     await upsert("topics", {
       ...existingTopic,
@@ -13471,6 +13724,8 @@ function wireActions() {
       const image = imageFileFromDropzone(form, "assetFile", form.dataset.id);
       if (removeAssetRequested) {
         values.imageUrl = "";
+        values.thumbnail_url = "";
+        values.thumbnailUrl = "";
         values.documentUrl = "";
         values.assetUrl = "";
         values.assetFileName = "";
@@ -13478,14 +13733,35 @@ function wireActions() {
         values.logoUrl = "";
         values.photoUrl = "";
         values.assetStoragePath = "";
+        values.mediaAssetId = "";
+        values.thumbnail_media_asset_id = "";
+        values.thumbnailMediaAssetId = "";
+        values.thumbnail_variant_asset_ids = [];
       }
       if (image) {
         await deleteStoredAsset(existing);
-        const asset = await uploadEntityImage(form.dataset.module, form.dataset.id, image);
-        if (form.dataset.module === "topics") values.imageUrl = asset.url;
+        const shouldRenderEntityVariants = ["topics", "speakers"].includes(form.dataset.module);
+        const asset = shouldRenderEntityVariants
+          ? await uploadEntityImageWithRenderedVariants(form.dataset.module, form.dataset.id, image, {
+              entity: { ...existing, ...values, id: form.dataset.id },
+              field: form.dataset.module === "speakers" ? "photoUrl" : "imageUrl",
+              mediaType: form.dataset.module === "speakers" ? "person" : "topic",
+              result
+            })
+          : await uploadEntityImage(form.dataset.module, form.dataset.id, image);
+        const uploadedUrl = asset.url || asset.url === "" ? asset.url : asset.url;
+        const selectedUrl = shouldRenderEntityVariants ? asset.url : uploadedUrl;
+        if (form.dataset.module === "topics") {
+          const articleUrl = asset.variantUrls?.article_xl || asset.variantUrls?.news_desktop || selectedUrl;
+          const thumbUrl = asset.variantUrls?.thumbnail || asset.variantUrls?.square || selectedUrl;
+          values.imageUrl = articleUrl;
+          values.thumbnail_url = thumbUrl;
+          values.thumbnailUrl = thumbUrl;
+          values.assetUrl = articleUrl;
+        }
         if (form.dataset.module === "members") values.logoUrl = asset.url;
         if (form.dataset.module === "boardMembers") values.photoUrl = asset.url;
-        if (form.dataset.module === "speakers") values.photoUrl = asset.url;
+        if (form.dataset.module === "speakers") values.photoUrl = selectedUrl;
         if (form.dataset.module === "sponsors") values.logoUrl = asset.url;
         if (["memberDocuments", "memberDirectories"].includes(form.dataset.module)) {
           values.documentUrl = asset.url;
@@ -13507,6 +13783,14 @@ function wireActions() {
           }
         }
         values.assetStoragePath = asset.storagePath;
+        if (shouldRenderEntityVariants) {
+          values.mediaAssetId = asset.mediaAssetId;
+          values.article_media_asset_id = asset.variantAssetIdsByKey?.article_xl || asset.variantAssetIdsByKey?.news_desktop || asset.selectedAssetId;
+          values.articleMediaAssetId = values.article_media_asset_id;
+          values.thumbnail_media_asset_id = asset.variantAssetIdsByKey?.thumbnail || asset.selectedAssetId;
+          values.thumbnailMediaAssetId = values.thumbnail_media_asset_id;
+          values.thumbnail_variant_asset_ids = asset.variantAssetIds;
+        }
       }
       delete values.assetFile;
       delete values.assetFileDataUrl;
@@ -14019,12 +14303,38 @@ function wireActions() {
     if (form.elements.removeTopicImage?.value === "1") {
       imageUpdate.imageUrl = "";
       imageUpdate.assetStoragePath = "";
+      imageUpdate.mediaAssetId = "";
+      imageUpdate.thumbnail_media_asset_id = "";
+      imageUpdate.thumbnailMediaAssetId = "";
+      imageUpdate.thumbnail_variant_asset_ids = [];
     }
     if (image) {
       await deleteStoredAsset(topic);
-      const asset = await uploadEntityImage("topics", topicId, image);
-      imageUpdate.imageUrl = asset.url;
-      imageUpdate.assetStoragePath = asset.storagePath;
+      const renderedUpload = await uploadEntityImageWithRenderedVariants("topics", topicId, image, {
+        entity: {
+          ...topic,
+          id: topicId,
+          title: form.elements.title?.value || "",
+          shortDescription: form.elements.shortDescription?.value || "",
+          longDescription: form.elements.longDescription?.value || ""
+        },
+        field: "imageUrl",
+        mediaType: "topic",
+        result
+      });
+      const articleUrl = renderedUpload.variantUrls?.article_xl || renderedUpload.variantUrls?.news_desktop || renderedUpload.url;
+      const thumbUrl = renderedUpload.variantUrls?.thumbnail || renderedUpload.variantUrls?.square || renderedUpload.url;
+      imageUpdate.imageUrl = articleUrl;
+      imageUpdate.thumbnail_url = thumbUrl;
+      imageUpdate.thumbnailUrl = thumbUrl;
+      imageUpdate.assetUrl = articleUrl;
+      imageUpdate.assetStoragePath = renderedUpload.storagePath;
+      imageUpdate.mediaAssetId = renderedUpload.mediaAssetId;
+      imageUpdate.article_media_asset_id = renderedUpload.variantAssetIdsByKey?.article_xl || renderedUpload.variantAssetIdsByKey?.news_desktop || renderedUpload.selectedAssetId;
+      imageUpdate.articleMediaAssetId = imageUpdate.article_media_asset_id;
+      imageUpdate.thumbnail_media_asset_id = renderedUpload.variantAssetIdsByKey?.thumbnail || renderedUpload.selectedAssetId;
+      imageUpdate.thumbnailMediaAssetId = imageUpdate.thumbnail_media_asset_id;
+      imageUpdate.thumbnail_variant_asset_ids = renderedUpload.variantAssetIds;
     }
     const savedTopic = {
       ...topic,
@@ -14126,9 +14436,18 @@ function wireActions() {
     const id = `speakers-${crypto.randomUUID()}`;
     const image = form.querySelector('input[name="assetFile"]')?.files?.[0];
     if (image) {
-      const asset = await uploadEntityImage("speakers", id, image);
-      values.photoUrl = asset.url;
-      values.assetStoragePath = asset.storagePath;
+      const renderedUpload = await uploadEntityImageWithRenderedVariants("speakers", id, image, {
+        entity: { id, name: values.name || "", company: values.company || "", position: values.position || "" },
+        field: "photoUrl",
+        mediaType: "person",
+        result: form.querySelector("#topic-speaker-create-result")
+      });
+      values.photoUrl = renderedUpload.url;
+      values.assetStoragePath = renderedUpload.storagePath;
+      values.mediaAssetId = renderedUpload.mediaAssetId;
+      values.thumbnail_media_asset_id = renderedUpload.selectedAssetId;
+      values.thumbnailMediaAssetId = renderedUpload.selectedAssetId;
+      values.thumbnail_variant_asset_ids = renderedUpload.variantAssetIds;
     }
     delete values.assetFile;
     await upsert("speakers", {
@@ -14152,9 +14471,18 @@ function wireActions() {
     topicIds.add(form.dataset.topicId);
     const image = form.querySelector('input[name="assetFile"]')?.files?.[0];
     if (image) {
-      const asset = await uploadEntityImage("speakers", form.dataset.speakerId, image);
-      values.photoUrl = asset.url;
-      values.assetStoragePath = asset.storagePath;
+      const renderedUpload = await uploadEntityImageWithRenderedVariants("speakers", form.dataset.speakerId, image, {
+        entity: { ...existing, ...values, id: form.dataset.speakerId },
+        field: "photoUrl",
+        mediaType: "person",
+        result: form.querySelector(".topic-speaker-edit-result")
+      });
+      values.photoUrl = renderedUpload.url;
+      values.assetStoragePath = renderedUpload.storagePath;
+      values.mediaAssetId = renderedUpload.mediaAssetId;
+      values.thumbnail_media_asset_id = renderedUpload.selectedAssetId;
+      values.thumbnailMediaAssetId = renderedUpload.selectedAssetId;
+      values.thumbnail_variant_asset_ids = renderedUpload.variantAssetIds;
     }
     delete values.assetFile;
     await upsert("speakers", {
@@ -14464,16 +14792,24 @@ function wireActions() {
     try {
       const existing = await getOne("events", eventId);
       if (!existing) throw new Error("Event wurde nicht gefunden.");
+      const nextStatus = shouldOpen && ["draft", "inactive", "inaktiv", "hidden"].includes(String(existing.status || "").toLowerCase())
+        ? "active"
+        : existing.status || (shouldOpen ? "active" : "draft");
       await upsert("events", {
         ...existing,
+        status: nextStatus,
+        visible: shouldOpen ? true : existing.visible,
+        isLive: shouldOpen ? true : existing.isLive,
         registrationEnabled: shouldOpen,
+        registrationStatus: shouldOpen ? "open" : "closed",
+        registration_state: shouldOpen ? "open" : "closed",
         allowPublicRegistration: existing.accessType === "public" ? shouldOpen : false,
         allowMemberRegistration: existing.accessType === "members_only" ? shouldOpen : false,
         preStatus: shouldOpen ? "invitation_published" : "save_the_date",
         lifecyclePhase: shouldOpen ? "registration_open" : "registration_closed",
         updatedAt: new Date().toISOString()
       });
-      if (result) result.innerHTML = `<div class="alert alert--success">Anmeldung wurde ${shouldOpen ?"geoeffnet" : "geschlossen"}.</div>`;
+      if (result) result.innerHTML = `<div class="alert alert--success">${shouldOpen ?"Event wurde aktiviert und die Anmeldung geoeffnet." : "Anmeldung wurde geschlossen. Das Event bleibt sichtbar."}</div>`;
       await render();
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--error">Anmeldestatus konnte nicht geaendert werden: ${escapeHtml(error.message || String(error))}</div>`;
@@ -14501,7 +14837,7 @@ function wireActions() {
       delete values.isMember;
       values.privacyAccepted = Boolean(values.privacyAccepted);
       await createAdminRegistration(form.dataset.eventId, values);
-      if (result) result.innerHTML = `<div class="alert alert--success">Person wurde hinzugefuegt.</div>`;
+      if (result) result.innerHTML = `<div class="alert alert--success">Person wurde hinzugefuegt. Die Bestaetigungsmail wurde vorbereitet; die Person aktiviert die Anmeldung per Link.</div>`;
       window.setTimeout(render, 450);
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--error">Person konnte nicht hinzugefuegt werden: ${escapeHtml(error.message || String(error))}</div>`;
@@ -14920,17 +15256,21 @@ function bindPeopleManagementControls() {
   });
 }
 async function clearPreviewCaches() {
+  const withTimeout = (promise, ms = 1500) => Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(resolve, ms))
+  ]);
   if ("serviceWorker" in navigator) {
-    await navigator.serviceWorker.getRegistrations?.()
+    await withTimeout(navigator.serviceWorker.getRegistrations?.()
       .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
-      .catch(() => {});
+      .catch(() => {}));
   }
   if ("caches" in window) {
-    await caches.keys()
+    await withTimeout(caches.keys()
       .then((keys) => Promise.all(keys
         .filter((key) => key.startsWith("pdt-platform-") || key.startsWith("prodigitaltv-pwa-"))
         .map((key) => caches.delete(key))))
-      .catch(() => {});
+      .catch(() => {}));
   }
 }
 
@@ -14939,7 +15279,7 @@ async function resetInstalledAppCachesIfRequested() {
   if (!params.has("resetApp")) return false;
   await clearPreviewCaches();
   params.delete("resetApp");
-  params.set("v", "929");
+  params.set("v", "1018");
   const nextSearch = params.toString();
   location.replace(`${location.origin}${location.pathname}${nextSearch ? `?${nextSearch}` : ""}${location.hash || "#/home"}`);
   return true;
@@ -14947,7 +15287,7 @@ async function resetInstalledAppCachesIfRequested() {
 
 async function refreshInstalledAppShellIfNeeded() {
   if (["localhost", "127.0.0.1"].includes(location.hostname) || location.protocol === "file:") return false;
-  const version = "993";
+  const version = "1018";
   const key = "prodigitaltv-live-shell-version";
   try {
     if (localStorage.getItem(key) === version) return false;

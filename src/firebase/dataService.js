@@ -4,7 +4,7 @@ import { normalizeLifecyclePhase } from "../data/platformConstants.js";
 
 const PUBLIC_LIST_CACHE_MS = 45000;
 const PUBLIC_SESSION_CACHE_MS = 180000;
-const PUBLIC_READ_TIMEOUT_MS = 9000;
+const PUBLIC_READ_TIMEOUT_MS = 22000;
 const publicListCache = new Map();
 
 function cmsDataMode() {
@@ -62,12 +62,12 @@ function canUsePublicFallback() {
 }
 
 function getDocsLive(firebase, reference) {
-  const reader = firebase.firestore.getDocsFromServer || firebase.firestore.getDocs;
+  const reader = firebase.firestore.getDocs;
   return reader(reference);
 }
 
 function getDocLive(firebase, reference) {
-  const reader = firebase.firestore.getDocFromServer || firebase.firestore.getDoc;
+  const reader = firebase.firestore.getDoc;
   return reader(reference);
 }
 
@@ -326,6 +326,9 @@ export async function listPublicEvents(includeMemberEvents = false) {
     registrationStatusOpenEvents,
     germanRegistrationOpenEvents,
     registrationEnabledEvents,
+    activeMemberTeaserEvents,
+    publishedMemberTeaserEvents,
+    germanPublishedMemberTeaserEvents,
     allEvents
   ] = await Promise.all([
     cachedConstrainedList("events", [["status", "==", "published"], ["visibility", "==", "public"]]).catch(() => []),
@@ -335,6 +338,9 @@ export async function listPublicEvents(includeMemberEvents = false) {
     cachedConstrainedList("events", [["registration_state", "==", "open"]]).catch(() => []),
     cachedConstrainedList("events", [["registrationStatus", "==", "offen"]]).catch(() => []),
     cachedConstrainedList("events", [["registrationEnabled", "==", true]]).catch(() => []),
+    cachedConstrainedList("events", [["accessType", "==", "members_only"], ["status", "==", "active"]]).catch(() => []),
+    cachedConstrainedList("events", [["accessType", "==", "members_only"], ["status", "==", "published"]]).catch(() => []),
+    cachedConstrainedList("events", [["accessType", "==", "members_only"], ["status", "==", "aktiv"]]).catch(() => []),
     list("events").catch(() => [])
   ]);
   const mergedEvents = new Map();
@@ -346,6 +352,9 @@ export async function listPublicEvents(includeMemberEvents = false) {
     ...registrationStatusOpenEvents,
     ...germanRegistrationOpenEvents,
     ...registrationEnabledEvents,
+    ...activeMemberTeaserEvents,
+    ...publishedMemberTeaserEvents,
+    ...germanPublishedMemberTeaserEvents,
     ...allEvents
   ].forEach((event) => {
     if (!event?.id) return;

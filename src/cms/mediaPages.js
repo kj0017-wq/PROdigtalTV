@@ -41,7 +41,7 @@ const mediaUsagePresets = {
   ai: { label: "KI-Grafik", aspect: "16x9", width: 1600, height: 900, portal: "Redaktionelle Grafik", mobile: "Responsive 16:9" },
   news: { label: "News", aspect: "16x9", width: 1600, height: 900, portal: "News-Teaser und Artikelkopf", mobile: "Mobile News-Teaser 16:9" },
   event: { label: "Eventbild", aspect: "16x9", width: 1600, height: 900, portal: "Event-Teaser und Detailkopf", mobile: "Mobile Eventkarte 16:9" },
-  article: { label: "Artikelbild", aspect: "16x9", width: 1600, height: 900, portal: "Artikel / Redaktion", mobile: "Mobile Artikelkarte 16:9" },
+  article: { label: "Artikelbild", aspect: "16x9", width: 2400, height: 1350, portal: "Artikel / Redaktion hochaufloesend", mobile: "Mobile Artikelkarte 16:9" },
   topic: { label: "Themenbild", aspect: "16x9", width: 1600, height: 900, portal: "Themenkarte / Themenkopf", mobile: "Mobile Themenkarte 16:9" },
   board: { label: "Vorstand", aspect: "4x5", width: 1200, height: 1500, portal: "Vorstandsprofil", mobile: "Mobile Profilkarte 4:5" },
   member: { label: "Mitglied", aspect: "logo", width: 1530, height: 600, portal: "Mitgliederkarte / Logo 2.55:1", mobile: "Mobile Mitgliederkarte 2.55:1" },
@@ -51,6 +51,7 @@ const mediaUsagePresets = {
 };
 
 const mediaRenderVariants = [
+  ["article_xl", "Artikel XL", "2400 x 1350", "16:9"],
   ["news_desktop", "News Desktop", "1200 x 675", "16:9"],
   ["news_mobile", "News Mobile", "800 x 1000", "4:5"],
   ["hero_desktop", "Hero Desktop", "1920 x 800", "12:5"],
@@ -207,6 +208,16 @@ function mediaVariantOptions(selected = "news_desktop") {
   return mediaRenderVariants.map(([key, label, size, ratio]) => `<option value="${key}" ${key === selected ? "selected" : ""}>${escapeHtml(label)} · ${escapeHtml(size)} · ${escapeHtml(ratio)}</option>`).join("");
 }
 
+function mediaEditorDefaultVariantKey(asset = {}) {
+  const type = String(asset.media_type || asset.usage_preset || "upload").toLowerCase();
+  if (type === "article") return "article_xl";
+  if (type === "event") return "event_header";
+  if (type === "member" || type === "logo") return "sponsor_logo";
+  if (type === "person" || type === "board") return "news_mobile";
+  if (type === "thumb") return "square";
+  return "news_desktop";
+}
+
 function mediaAiSelectOptions(options = [], selected = "") {
   return options.map(([value, label]) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
 }
@@ -257,9 +268,9 @@ function usableMediaUrl(value = "") {
 
 function mediaUrlCandidates(asset = {}) {
   return [
-    asset.file_path_thumb_url,
     asset.file_path_web_url,
     asset.file_path_original_url,
+    asset.file_path_thumb_url,
     asset.imageUrl,
     asset.assetUrl,
     asset.fileUrl,
@@ -270,10 +281,10 @@ function mediaUrlCandidates(asset = {}) {
     asset.file_url,
     asset.original_url,
     asset.web_url,
-    asset.thumb_url,
-    asset.file_path_thumb,
     asset.file_path_web,
-    asset.file_path_original
+    asset.file_path_original,
+    asset.thumb_url,
+    asset.file_path_thumb
   ].map(usableMediaUrl).filter(Boolean);
 }
 
@@ -1444,7 +1455,7 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
         <div class="media-crop-tools">
           <div class="field media-editor-variant-select">
             <label>Webbild-Variante</label>
-            <select name="active_variant_key" data-media-active-variant>${mediaVariantOptions(asset.variant_key || "news_desktop")}</select>
+            <select name="active_variant_key" data-media-active-variant>${mediaVariantOptions(asset.variant_key || mediaEditorDefaultVariantKey(asset))}</select>
           </div>
           <div class="media-zoom-row">
             <button class="icon-button" type="button" data-media-zoom-step="-0.1" aria-label="Herauszoomen">-</button>
