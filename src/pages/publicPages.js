@@ -1,7 +1,7 @@
 import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=517";
 import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=471";
 import { publicShell, logo } from "../components/layout.js?v=7";
-import { eventCard, topicCard } from "../components/cards.js?v=10";
+import { eventCard, topicCard } from "../components/cards.js?v=12";
 import { accessLabels, lifecycleLabels } from "../data/platformConstants.js?v=1";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
 import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=1";
@@ -564,6 +564,10 @@ function archiveEditorialArticle(item, partners = []) {
 
 function articleParagraphs(text = "") {
   return text.split(/\n+/).filter(Boolean).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("");
+}
+
+function eventIntroText(event = {}) {
+  return String(event.description || event.publicTeaser || event.teaserText || event.shortDescription || event.introText || event.subtitle || "").trim();
 }
 
 function archiveEventImageUrl(event = {}, mediaAssets = []) {
@@ -1617,7 +1621,7 @@ async function legacyHomePage() {
   ]);
   const members = rawMembers;
   const upcoming = events.filter(upcomingEventIsVisible).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
-  const next = upcoming[0];
+  const next = upcoming.find(eventShowsOnHome);
   const mediaAssets = next ? await listPublicEventMediaAssets([next]) : [];
   const latestNewsItems = publicNewsItems(editorial)
     .sort(newestContentFirst)
@@ -1728,6 +1732,10 @@ function homeTeaser(item = {}, length = 170) {
   return teaserText(item.subtitle || item.subline || item.shortDescription || item.shortText || item.teaserText || item.introText || item.description || item.bodyText || item.longDescription || "", length);
 }
 
+function homeEventTeaser(event = {}, length = 170) {
+  return teaserText(eventIntroText(event), length);
+}
+
 function homeVisibleRecord(item = {}) {
   const status = String(item.status || "published").toLowerCase();
   const visibility = String(item.visibility || item.sichtbarkeit || "public").toLowerCase();
@@ -1735,6 +1743,10 @@ function homeVisibleRecord(item = {}) {
     && !["internal", "private", "hidden"].includes(visibility)
     && item.visible !== false
     && item.isLive !== false;
+}
+
+function eventShowsOnHome(event = {}) {
+  return event.showOnHome !== false;
 }
 
 function homeRetrospectiveItems(events = [], editorial = []) {
@@ -1767,7 +1779,8 @@ function homeFormatSeries(blocks = []) {
     .filter((block) => block.typ === "eventformat")
     .filter((block) => {
       const key = normalizeTopicType(`${block.slug || ""} ${block.titel || ""}`);
-      return key.includes("medienfruehstueck") || key.includes("medienfruehstuecke") || key.includes("vondenbestenlernen");
+      if (key.includes("vondenbestenlernen")) return block.showOnHome === true;
+      return key.includes("medienfruehstueck") || key.includes("medienfruehstuecke");
     })
     .sort((a, b) => Number(a.sortierung || 0) - Number(b.sortierung || 0))
     .slice(0, 2);
@@ -1852,7 +1865,7 @@ function homeHeroMarkup({ next, nextImageUrl, retrospective, series }) {
       <div class="pdtv-home-hero__content">
         <p class="eyebrow">Kommendes Event</p>
         <h1>${escapeHtml(next.title || "PROdigitalTV Event")}</h1>
-        <p>${escapeHtml(homeTeaser(next, 210) || [formatDate(next.date), next.city].filter(Boolean).join(" - "))}</p>
+        <p>${escapeHtml(homeEventTeaser(next, 210) || [formatDate(next.date), next.city].filter(Boolean).join(" - "))}</p>
         <div class="pdtv-home-hero__meta">${[formatDate(next.date), next.startTime ? `${next.startTime} Uhr` : "", next.city].filter(Boolean).map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
         <div class="pdtv-home-actions"><a class="button button--primary" href="#/event/${escapeHtml(next.id)}">Event ansehen</a>${eventRegistrationIsOpen(next) ? `<a class="button button--secondary" href="#/register/${escapeHtml(next.id)}">Anmelden</a>` : ""}</div>
       </div>
@@ -1905,7 +1918,7 @@ export async function homePage() {
     withHomeTimeout(internalBlocks("ueber_uns").catch(() => []))
   ]);
   const upcoming = events.filter(upcomingEventIsVisible).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
-  const next = upcoming[0] || null;
+  const next = upcoming.find(eventShowsOnHome) || null;
   const mediaAssets = next ? await withHomeTimeout(listPublicEventMediaAssets([next]).catch(() => []), [], 8000) : [];
   const nextImageUrl = next ? upcomingEventImageUrl(next, mediaAssets, { fallback: false }) : "";
   const retrospective = homeRetrospectiveItems(events, editorial)[0] || null;
@@ -2024,9 +2037,11 @@ export async function eventsPage() {
   const user = currentUser();
   const visible = events.filter((event) => event.accessType !== "invitation_only" || isMember(user) || event.showPublicTeaser);
   const rawUpcoming = visible.filter(upcomingEventIsVisible);
-  const mediaAssets = await listPublicEventMediaAssets(mobileLeanStart() ? rawUpcoming.slice(0, 6) : rawUpcoming).catch(() => []);
-  const ticketChecks = await Promise.all(rawUpcoming.map((event) => validateStoredTicket(event.id).catch(() => readStoredTicket(event.id))));
-  const upcoming = rawUpcoming.map((event, index) => ({ ...event, imageDisplayUrl: upcomingEventImageUrl(event, mediaAssets), storedTicket: ticketChecks[index] }));
+  const upcoming = rawUpcoming.map((event) => ({
+    ...event,
+    imageDisplayUrl: upcomingEventImageUrl(event, [], { fallback: false }),
+    storedTicket: readStoredTicket(event.id)
+  }));
   return publicShell("events", `${subhero("Veranstaltungen", "Events", "Kuratierte Formate für Wissenstransfer, Partnerschaften und relevante Branchenkontakte.")}
     <section class="section"><div class="container"><div class="filters"><button class="filter active">Kommende Events</button><button class="filter">Öffentlich</button><button class="filter">Mitglieder</button><a class="filter" href="#/archive">Rückblicke</a></div>
     ${upcoming.length ? `<div class="card-grid card-grid--three">${upcoming.map((event) => eventCard(event, false, sponsors)).join("")}</div>` : `<div class="alert">Aktuell sind keine neuen Termine veröffentlicht. Im Eventarchiv finden Sie die letzten PROdigitalTV-Veranstaltungen.</div>`}</div></section>`);
@@ -2051,6 +2066,16 @@ async function getPublicRouteEvent(id, includeMemberEvents = false) {
 
 export async function eventDetailPage(id, query = new URLSearchParams()) {
   const previewMode = query?.get?.("preview") === "1" && isAdmin();
+  const ticketToken = String(query?.get?.("ticket") || "").trim();
+  let ticketActivation = null;
+  if (ticketToken) {
+    try {
+      const linkedTicket = await linkTicketDevice(ticketToken);
+      if (!id || linkedTicket.eventId === id) ticketActivation = linkedTicket;
+    } catch {
+      ticketActivation = null;
+    }
+  }
   let event;
   try {
     event = await getPublicRouteEvent(id, isMember());
@@ -2067,7 +2092,8 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
     listPublicEventMediaAssets([event]).catch(() => [])
   ]);
   const registrationOpen = eventRegistrationIsOpen(event);
-  const restricted = event.accessType === "members_only" && !isMember() && !registrationOpen;
+  const storedTicket = ticketActivation || await validateStoredTicket(event.id).catch(() => readStoredTicket(event.id));
+  const restricted = event.accessType === "members_only" && !isMember() && !registrationOpen && !storedTicket;
   if (restricted && !event.showPublicTeaser) return publicShell("events", subhero("Geschuetzter Bereich", "Nur für Mitglieder", "Bitte melden Sie sich an, um dieses Event zu sehen."));
   const coHost = sponsors.find((sponsor) => sponsor.id === event.hostId) || null;
   const coHostLogo = coHost ? publicSponsorLogoUrl(coHost, mediaAssets) : "";
@@ -2076,7 +2102,6 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
     ? [...assignedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 24)
     : [];
   const registrationAllowed = registrationOpen;
-  const storedTicket = await validateStoredTicket(event.id).catch(() => readStoredTicket(event.id));
   const ticketStatusCard = storedTicket ? `<section class="mobile-ticket-card" aria-label="Gespeichertes Handy-Ticket">
     <div class="mobile-ticket-card__icon" aria-hidden="true"></div>
     <div class="mobile-ticket-card__body">
@@ -2087,7 +2112,7 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
     </div>
   </section>` : "";
   const eventImageUrl = eventDetailImageUrl(event, mediaAssets, [coHostLogo]);
-  const introText = event.description || event.shortDescription || event.subtitle || "";
+  const introText = eventIntroText(event);
   const longText = event.postEventummary || event.archiveText || event.longDescription || event.bodyText || event.articleText || "";
   const haseparateLongText = longText.trim() && longText.trim() !== introText.trim();
   const registrationCta = registrationAllowed
@@ -2102,7 +2127,7 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
         <figure class="event-detail-image"><img src="${escapeHtml(stableImageUrl(eventImageUrl, "event"))}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy" ${liveImageAttrs("event")}></figure>
         ${ticketStatusCard}
         ${restricted ? `<div class="alert alert--warning">Details und Anmeldung dieses Mitglieder-Events stehen nach dem Login zur Verfuegung.</div>` : ""}
-        <h2>Zum Event</h2>${introText ? `<p class="lead">${escapeHtml(introText)}</p>` : ""}
+        <h2>Zum Event</h2>${introText ? `<div class="lead editorial-text">${articleParagraphs(introText)}</div>` : ""}
         ${restricted ? "" : registrationCta}
         ${haseparateLongText ? `<h2>Rückblick</h2><div class="editorial-text">${articleParagraphs(longText)}</div>` : ""}
         ${eventTalksMarkup(topics, speakers, event)}

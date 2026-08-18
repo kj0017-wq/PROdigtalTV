@@ -439,11 +439,11 @@ function articleShortSummary(article = {}) {
 function articleRows(articles, options = {}) {
   if (options.compactArticles) {
     return articles.map((article) => `<tr>
-      <td><a class="link editorial-title-link" href="#/cms/ai-editorial/editor?id=${encodeURIComponent(article.id)}">${escapeHtml(article.headline || article.title || "-")}</a><small>${escapeHtml(articleShortSummary(article))}</small></td>
+      <td><a class="link editorial-title-link" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(article.id)}&section=news">${escapeHtml(article.headline || article.title || "-")}</a><small>${escapeHtml(articleShortSummary(article))}</small></td>
       <td><strong>${escapeHtml(articleSourceLabel(article))}</strong><small>${escapeHtml(articleOrigin(article).label)}</small></td>
       <td>${escapeHtml(article.category || "-")}</td>
       <td>${escapeHtml(formatShortDate(articleDisplayDate(article)))}</td>
-      <td><div class="actions ai-morning-row-actions"><a class="button button--secondary button--small" href="#/cms/ai-editorial/editor?id=${encodeURIComponent(article.id)}">Beitrag oeffnen</a><button class="icon-button icon-button--danger" type="button" data-delete-record="editorialContent" data-record-id="${escapeHtml(article.id)}" title="Entfernen" aria-label="Entfernen">${iconTrash}</button></div></td>
+      <td><div class="actions ai-morning-row-actions"><a class="button button--secondary button--small" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(article.id)}&section=news">News oeffnen</a><button class="icon-button icon-button--danger" type="button" data-delete-record="editorialContent" data-record-id="${escapeHtml(article.id)}" title="Entfernen" aria-label="Entfernen">${iconTrash}</button></div></td>
     </tr>`).join("");
   }
   if (options.compactMorning) {
@@ -456,7 +456,7 @@ function articleRows(articles, options = {}) {
     </tr>`).join("");
   }
   return articles.map((article) => `<tr>
-    <td><a class="link editorial-title-link" href="#/cms/ai-editorial/editor?id=${encodeURIComponent(article.id)}">${escapeHtml(article.headline || article.title || "-")}</a><small>${escapeHtml(cleanPressDisplayText(article.subline || article.subtitle || ""))}</small></td>
+    <td><a class="link editorial-title-link" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(article.id)}&section=news">${escapeHtml(article.headline || article.title || "-")}</a><small>${escapeHtml(cleanPressDisplayText(article.subline || article.subtitle || ""))}</small></td>
     <td>${badge(articleOrigin(article).label)}<small>${escapeHtml(articleOrigin(article).shortNote)}</small></td>
     <td>${escapeHtml(article.category || "-")}</td>
     <td>${badge(article.source_status || article.sourceStatus || "-")}</td>
@@ -540,12 +540,12 @@ function pressSourceStatusRows(items = []) {
 
 function isMorningBriefingItem(item = {}) {
   const marker = normalizeText([item.workflow, item.content_type, item.contentType, item.origin, item.source].join(" "));
-  return marker.includes("morning") || marker.includes("morgenbriefing");
+  return marker.includes("morning") || marker.includes("morgenbriefing") || marker.includes("weekly_industry") || marker.includes("branchen-news");
 }
 
 function isMorningBriefingArticle(item = {}) {
   const marker = normalizeText([item.content_type, item.contentType, item.editorialType, item.generation_origin, item.origin, item.category].join(" "));
-  return marker.includes("morning") || marker.includes("morgenbriefing");
+  return marker.includes("morning") || marker.includes("morgenbriefing") || marker.includes("weekly_industry") || marker.includes("branchen-news");
 }
 
 function morningBriefingStatus(item = {}) {
@@ -1357,6 +1357,10 @@ function newsImportPageContent(active) {
           <strong>Text- oder Bilddateien hier ablegen</strong>
           <span>PDF, DOCX, TXT, HTML, JPG, JPEG, PNG, WEBP</span>
           <input type="file" name="sourceFiles" accept=".pdf,.docx,.txt,.html,.htm,image/jpeg,image/png,image/webp" multiple hidden>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" name="splitMultipleNews" value="1">
+          <span>Mehrere News in Text/Datei automatisch erkennen und als einzelne News anlegen</span>
         </label>
         <div class="ai-news-file-list" data-ai-news-file-list>
           <p class="muted">Noch keine Dateien ausgewaehlt.</p>

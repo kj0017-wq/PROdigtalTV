@@ -10,9 +10,14 @@ export function eventCard(event, archive = false, partners = []) {
     .filter(Boolean)
     .filter((partner, index, list) => list.findIndex((entry) => entry.id === partner.id) === index);
   const hasDistinctSponsors = eventSponsors.some((partner) => partner.id !== host?.id);
+  const primaryHostName = event.primaryHostName || event.hostName || "PROdigitalTV";
+  const hostNames = [
+    primaryHostName,
+    ...promotedPartners.map((partner) => partner.name)
+  ].filter(Boolean).filter((name, index, list) => list.findIndex((entry) => entry.toLowerCase() === name.toLowerCase()) === index);
   const imageUrl = stableImageUrl(event.imageDisplayUrl || event.imageUrl || "", "event");
   const storedTicket = event.storedTicket || null;
-  const summary = event.subtitle || event.shortDescription || event.description || "";
+  const summary = event.description || event.publicTeaser || event.teaserText || event.shortDescription || event.subtitle || "";
   const imageStyle = imageUrl ? ` style="--event-card-image:url(&quot;${escapeHtml(imageUrl)}&quot;)"` : "";
   return `<article class="card event-card ${imageUrl ? "event-card--with-image" : ""}"${imageStyle}>
     <div class="event-card__visual ${archive ? "event-card__visual--archive" : ""}">
@@ -28,7 +33,7 @@ export function eventCard(event, archive = false, partners = []) {
       <div class="event-meta"><span>${formatDate(event.date)}${event.startTime ? ` - ${event.startTime} Uhr` : ""}</span></div>
       <div class="event-showcase">
         <div class="event-showcase__fact"><small>Veranstaltungsort</small><strong>${escapeHtml(event.locationName)}</strong><span>${escapeHtml(event.city)}</span></div>
-        ${promotedPartners.length ? `<div class="event-showcase__fact event-showcase__fact--partner"><small>${hasDistinctSponsors ? "Gastgeber / Sponsor" : "Gastgeber"}</small><strong>${escapeHtml(promotedPartners.map((partner) => partner.name).join(" - "))}</strong></div>` : ""}
+        <div class="event-showcase__fact event-showcase__fact--partner"><small>${promotedPartners.length ? hasDistinctSponsors ? "Gastgeber / Sponsor" : "Gastgeber / Co-Gastgeber" : "Gastgeber"}</small><strong>${escapeHtml(hostNames.join(" - "))}</strong></div>
       </div>
       ${archive ? "" : `<a class="event-card__cta" href="#/event/${event.id}">Zur Veranstaltung</a>`}
     </div>

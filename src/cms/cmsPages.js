@@ -1214,18 +1214,26 @@ function defaultEventRegistrationMailText(event = {}, variant = "confirmation", 
 
 function eventRegistrationTogglePanel(event = {}) {
   const isOpen = cmsEventRegistrationIsOpen(event);
+  const showOnHome = event.showOnHome !== false;
   return `<section class="panel" style="background:var(--pdt-bg);margin-bottom:18px">
     <div class="actions" style="justify-content:space-between;align-items:center;gap:18px">
       <div>
         <p class="eyebrow">Anmeldestatus</p>
         <h2>${isOpen ?"Anmeldung offen" : "Anmeldung geschlossen"}</h2>
-        <p class="muted">Ein Klick auf Aktiv veroeffentlicht das Event und oeffnet die passende Anmeldung. Beim Ausschalten wird nur die Anmeldung geschlossen; das Event bleibt sichtbar.</p>
+        <p class="muted">Ein Klick auf Aktiv veroeffentlicht das Event und oeffnet die passende Anmeldung. Der Startseiten-Schalter steuert nur die prominente Anzeige auf der Startseite.</p>
       </div>
-      <label class="cms-switch ${isOpen ?"is-active" : ""}">
-        <input type="checkbox" data-event-registration-toggle="${escapeHtml(event.id || "")}" ${isOpen ?"checked" : ""}>
-        <span class="cms-switch__track" aria-hidden="true"></span>
-        <span class="cms-switch__text">${isOpen ?"Aktiv" : "Inaktiv"}</span>
-      </label>
+      <div class="actions" style="gap:14px;align-items:center">
+        <label class="cms-switch ${isOpen ?"is-active" : ""}" title="Event aktivieren und Anmeldung oeffnen">
+          <input type="checkbox" data-event-registration-toggle="${escapeHtml(event.id || "")}" ${isOpen ?"checked" : ""}>
+          <span class="cms-switch__track" aria-hidden="true"></span>
+          <span class="cms-switch__text">${isOpen ?"Aktiv" : "Inaktiv"}</span>
+        </label>
+        <label class="cms-switch ${showOnHome ?"is-active" : ""}" title="Event auf der Startseite anzeigen">
+          <input type="checkbox" data-event-home-toggle="${escapeHtml(event.id || "")}" ${showOnHome ?"checked" : ""}>
+          <span class="cms-switch__track" aria-hidden="true"></span>
+          <span class="cms-switch__text">Startseite</span>
+        </label>
+      </div>
     </div>
     <div id="event-registration-toggle-result"></div>
   </section>`;

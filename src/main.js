@@ -3,18 +3,20 @@ import { currentUser, canUseCms, isAdmin, login, loginWithGoogle, logout, refres
 import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=517";
 import { escapeHtml, formatDate } from "./utils/format.js";
 import { normalizeLifecyclePhase } from "./data/platformConstants.js";
+import { publicShell } from "./components/layout.js?v=7";
 
 const root = document.querySelector("#app");
 const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const mediaProxyFunctionUrl = "https://europe-west3-prodigitaltv-da47b.cloudfunctions.net/mediaAssetProxy";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
+let renderGeneration = 0;
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=708");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=677");
-const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=493");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=717");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=681");
+const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=496");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=116");
-const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=13");
+const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=14");
 const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=7");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=13");
 const firebaseClientService = () => lazy.firebaseClientService ||= import("./firebase/firebaseClient.js?v=1");
@@ -27,6 +29,7 @@ const aiSourceCatalogService = () => lazy.aiSourceCatalog ||= import("./data/aiS
 
 const createRegistration = async (...args) => (await registrationService()).createRegistration(...args);
 const createAdminRegistration = async (...args) => (await registrationService()).createAdminRegistration(...args);
+const deleteAdminRegistration = async (...args) => (await registrationService()).deleteAdminRegistration(...args);
 const createEventNotification = async (...args) => (await notificationService()).createEventNotification(...args);
 const previewEventNotification = async (...args) => (await notificationService()).previewEventNotification(...args);
 const enableBrowserNotifications = async (...args) => (await notificationService()).enableBrowserNotifications(...args);
@@ -312,26 +315,62 @@ function redirectPublicRouteOutOfCms(current) {
   return true;
 }
 
+function publicActiveRoute(current = {}) {
+  if (["event", "events", "register", "registration", "ticket", "event-checkin"].includes(current.path)) return "events";
+  if (["topic", "topics"].includes(current.path)) return "topics";
+  if (["news", "retrospective"].includes(current.path)) return "news";
+  if (["portal", "login"].includes(current.path)) return current.path;
+  return current.path || "home";
+}
+
+function publicRouteLoadingHtml(current = {}) {
+  const labels = {
+    home: "Startseite wird geladen ...",
+    events: "Events werden geladen ...",
+    topics: "Themen werden geladen ...",
+    news: "News werden geladen ...",
+    portal: "Profil wird geladen ...",
+    login: "Login wird geladen ..."
+  };
+  const active = publicActiveRoute(current);
+  return publicShell(active, `<section class="login-wrap route-loading-screen"><div class="form-card login-card">
+    <p class="eyebrow">PROdigitalTV</p>
+    <h1>${escapeHtml(labels[active] || "Seite wird geladen ...")}</h1>
+  </div></section>`);
+}
+
 async function render() {
+  const generation = ++renderGeneration;
   let currentRoute;
+  let loadingTimer = null;
   try {
     applyTheme();
     stopAllAudioPlayback();
     currentRoute = route();
     if (redirectPublicRouteOutOfCms(currentRoute)) return;
+    const isCmsRoute = currentRoute?.path === "cms";
     if (root && !root.innerHTML) {
-      const loadingEyebrow = currentRoute.path === "cms" ? "CMS" : "PROdigitalTV";
-      const loadingTitle = currentRoute.path === "cms" ? "Lade Inhalte ..." : "Website laedt ...";
-      root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">${loadingEyebrow}</p><h1>${loadingTitle}</h1></div></section>`;
+      const loadingEyebrow = isCmsRoute ? "CMS" : "PROdigitalTV";
+      const loadingTitle = isCmsRoute ? "Lade Inhalte ..." : "Website laedt ...";
+      root.innerHTML = isCmsRoute
+        ? `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">${loadingEyebrow}</p><h1>${loadingTitle}</h1></div></section>`
+        : publicRouteLoadingHtml(currentRoute);
+    } else if (root && !isCmsRoute) {
+      loadingTimer = window.setTimeout(() => {
+        if (generation === renderGeneration) root.innerHTML = publicRouteLoadingHtml(currentRoute);
+      }, 180);
     }
     const viewPromise = viewForRoute(currentRoute);
-    const isCmsRoute = currentRoute?.path === "cms";
-    root.innerHTML = isCmsRoute
-      ? await Promise.race([
-          viewPromise,
-          new Promise((_, reject) => setTimeout(() => reject(new Error("CMS-Ladevorgang hat zu lange gedauert. Bitte neu anmelden oder am Desktop oeffnen.")), 9000))
-        ])
-      : await viewPromise;
+    const timeoutMessage = isCmsRoute
+      ? "CMS-Ladevorgang hat zu lange gedauert. Bitte neu anmelden oder am Desktop oeffnen."
+      : "Die Seite laedt zu lange. Bitte tippen Sie die Navigation erneut oder laden Sie die Website neu.";
+    const viewHtml = await Promise.race([
+      viewPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), isCmsRoute ? 9000 : 14000))
+    ]);
+    if (loadingTimer) window.clearTimeout(loadingTimer);
+    if (generation !== renderGeneration) return;
+    root.innerHTML = viewHtml;
     wireActions();
     initCheckinScreenWatcher();
     updateMobileQrCode();
@@ -339,6 +378,8 @@ async function render() {
     schedulePublicGermanTextNormalization();
     clearRoutePending();
   } catch (error) {
+    if (loadingTimer) window.clearTimeout(loadingTimer);
+    if (generation !== renderGeneration) return;
     clearRoutePending();
     console.error(error);
     const message = error.message || String(error);
@@ -890,14 +931,18 @@ document.addEventListener("click", (event) => {
   const link = clickedAnchor(event);
   if (!link || !link.matches('a[href^="#/"]')) return;
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const targetHash = linkTargetHash(link) || "#/home";
   if (isCurrentInternalRouteLink(link)) {
     event.preventDefault();
     clearRoutePending();
+    render();
     window.scrollTo({ top: 0 });
     return;
   }
+  event.preventDefault();
   stopAllAudioPlayback();
   showRoutePending(link);
+  window.location.hash = targetHash;
 });
 
 window.addEventListener("hashchange", stopAllAudioPlayback, true);
@@ -4663,7 +4708,7 @@ function sourceIsApprovedForMorning(source = {}) {
 
 function isMorningBriefingWorkItem(item = {}) {
   const marker = normalizeMorningKey([item.workflow, item.content_type, item.contentType, item.origin, item.source, item.category].join(" "));
-  return marker.includes("morning") || marker.includes("morgenbriefing");
+  return marker.includes("morning") || marker.includes("morgenbriefing") || marker.includes("weekly industry") || marker.includes("branchen news");
 }
 
 function verifiedSourceForMorning(item = {}, sources = []) {
@@ -5800,7 +5845,12 @@ function rawImportHeadline(value = "", fallback = "Importierte News") {
     .split(/\n+/)
     .map((item) => item.trim())
     .find((item) => item.length >= 6) || fallback;
-  return limitText(line.replace(/^Pressemitteilung[:\s-]*/i, ""), 90) || fallback;
+  return limitText(line
+    .replace(/^#+\s*/, "")
+    .replace(/^\*+|\*+$/g, "")
+    .replace(/^(?:\d{1,2}[.)]\s+|(?:news|meldung|thema)\s+\d{1,2}\s*[:.-]\s*)/i, "")
+    .replace(/^Pressemitteilung[:\s-]*/i, "")
+    .trim(), 90) || fallback;
 }
 
 function importedTitleLooksLikeSource(title = "", source = "", url = "") {
@@ -5841,6 +5891,135 @@ function rawImportHeadlineFromUrl(url = "") {
   } catch {
     return "URL-Import";
   }
+}
+
+function splitImportedNewsBlocks(rawText = "") {
+  const text = cleanRawImportText(rawText);
+  if (!text) return [];
+  const withExplicitMarkers = text
+    .replace(/\n\s*(?:-{3,}|={3,}|\*{3,})\s*\n/g, "\n\n@@NEWS_SPLIT@@\n\n")
+    .replace(/\n\s*(?:#{2,6}\s+|NEWS\s*:|MELDUNG\s+\d+\s*:|THEMA\s+\d+\s*:|(?:\*\*)?\d{1,2}[.)]\s+\S)/gi, "\n\n@@NEWS_SPLIT@@\n\n$&");
+  let blocks = withExplicitMarkers
+    .split(/\n\s*@@NEWS_SPLIT@@\s*\n/g)
+    .map(cleanRawImportText)
+    .map((block) => block.replace(/^(?:branchen-news|morgenbriefing|wochenbriefing)\s*[-–].*?(?:\n{2,}|$)/i, "").trim())
+    .filter((block) => block.length >= 80 && !/^(?:branchen-news|morgenbriefing|wochenbriefing)\s*[-–]/i.test(block));
+  if (blocks.length > 1) return blocks.slice(0, 30);
+
+  const lines = text.split(/\n/).map((line) => line.trim());
+  const startIndexes = [];
+  lines.forEach((line, index) => {
+    const previousBlank = index === 0 || !lines[index - 1];
+    const next = lines.slice(index + 1, index + 24).join(" ");
+    const normalizedLine = line.replace(/^\*+|\*+$/g, "").trim();
+    const looksLikeNumberedHeadline = /^(?:\*\*)?\d{1,2}[.)]\s+\S.{6,160}(?:\*\*)?$/.test(line);
+    const looksLikeSectionHeadline = /^(?:news|meldung|thema)\s+\d{1,2}\s*[:.-]\s+\S.{6,160}$/i.test(normalizedLine);
+    const looksLikeHeadline = previousBlank && normalizedLine.length >= 12 && normalizedLine.length <= 140 && !/[.!?]$/.test(normalizedLine) && /[A-ZÄÖÜ]/.test(normalizedLine[0] || "");
+    const hasNewsEvidence = /(quelle|source|http|www\.|dwdl|meedia|horizont|kress|turi2|vaunet|reuters|medienanstalt|bundesnetzagentur|eu-kommission|datum|stand:|kurz-teaser|branchen-news|einordnung)/i.test(`${line} ${next}`);
+    if (looksLikeNumberedHeadline || looksLikeSectionHeadline || (looksLikeHeadline && hasNewsEvidence)) startIndexes.push(index);
+  });
+  if (startIndexes.length < 2) return [text];
+  blocks = startIndexes.map((start, index) => {
+    const end = startIndexes[index + 1] ?? lines.length;
+    return cleanRawImportText(lines.slice(start, end).join("\n"));
+  }).filter((block) => block.length >= 80);
+  return blocks.length > 1 ? blocks.slice(0, 30) : [text];
+}
+
+async function saveImportedNewsArticle({
+  rawText = "",
+  cleanHeadline = "",
+  sourceSnapshot = [],
+  sourceUrl = "",
+  imageUrl = "",
+  assetStoragePath = "",
+  assetFileName = "",
+  galleryId = "",
+  unsupportedTextFiles = [],
+  now = new Date().toISOString(),
+  importMeta = {}
+} = {}) {
+  const articleId = `news-import-${crypto.randomUUID()}`;
+  const headline = cleanHeadline || rawImportHeadline(rawText || "Importierte News");
+  await upsert("editorialContent", {
+    id: articleId,
+    title: headline,
+    headline,
+    subtitle: "",
+    subline: "",
+    introText: "",
+    shortText: "",
+    teaserText: "",
+    bodyText: rawText,
+    ai_original_suggested_text: rawText,
+    source_suggested_text: rawText,
+    imported_full_text: rawText,
+    source_full_text: rawText,
+    page: "news",
+    section: "news",
+    key: `news.${articleId}`,
+    slug: slugify(headline),
+    category: "News-Import",
+    tags: [],
+    primary_keyword: "",
+    keyword_json: [],
+    source_snapshot_json: sourceSnapshot,
+    original_url: sourceUrl,
+    source_url: sourceUrl,
+    thumbnail_idea: "",
+    thumbnail_prompt: "",
+    thumbnail_alt: headline,
+    imageUrl,
+    thumbnail_url: imageUrl,
+    assetUrl: imageUrl,
+    assetFileName,
+    assetType: imageUrl ? "image" : "",
+    assetStoragePath,
+    galleryId,
+    gallery_suggestions: [],
+    editorial_note: [
+      "News-Import: Inhalt wurde als News-Beitrag uebernommen und direkt unter News veroeffentlicht.",
+      unsupportedTextFiles.length ? `PDF/DOCX-Text bitte pruefen oder separat einfuegen: ${unsupportedTextFiles.join(", ")}` : ""
+    ].filter(Boolean).join("\n\n"),
+    relevance_score: 0,
+    relevance_reason: "",
+    visible: true,
+    status: "published",
+    visibility: "public",
+    author_type: "ki_news_import",
+    author_name: "News-Import",
+    generation_origin: "ki_news_import",
+    ai_log_json: {
+      import_flow: "ki_news_import",
+      raw_import_only: true,
+      no_ai_interpretation: true,
+      no_status_logic: true,
+      visible: true,
+      sourceUrl,
+      ...importMeta,
+      unsupportedTextFiles
+    },
+    publishDate: now.slice(0, 10),
+    validFrom: now.slice(0, 10),
+    createdAt: now,
+    updatedAt: now
+  });
+  await Promise.all(sourceSnapshot.map((source, index) => upsert("article_sources", {
+    id: `article-source-${crypto.randomUUID()}`,
+    article_id: articleId,
+    title: source.title || `Quelle ${index + 1}`,
+    publisher: source.title || source.publisher || "",
+    domain: source.url ? domainFromUrl(source.url) : "",
+    url: source.url || "",
+    source_type: source.source_type || source.sourceType || "Importquelle",
+    relevance_note: "Aus dem Rohimport uebernommen.",
+    claim_reference: "",
+    trust_score: 0,
+    check_status: "ungeprueft",
+    created_at: now,
+    updated_at: now
+  })));
+  return articleId;
 }
 
 async function importUrlIntoNewsImportForm(form, sourceUrl = "") {
@@ -10384,6 +10563,38 @@ function wireActions() {
           source_type: source.type || source.mimeType || "Bildquelle"
         }))
       ];
+      const blocks = splitImportedNewsBlocks(rawText);
+      if (values.splitMultipleNews || blocks.length >= 3) {
+        if (blocks.length > 1) {
+          if (output) output.innerHTML = `<div class="alert">${progressMarkup(`${blocks.length} News werden einzeln angelegt ...`, 86)}</div>`;
+          const createdIds = [];
+          for (const [index, block] of blocks.entries()) {
+            const headline = rawImportHeadline(block, `Importierte News ${index + 1}`);
+            createdIds.push(await saveImportedNewsArticle({
+              rawText: block,
+              cleanHeadline: headline,
+              sourceSnapshot,
+              sourceUrl,
+              imageUrl: index === 0 ? imageUrl : "",
+              assetStoragePath: index === 0 ? assetStoragePath : "",
+              assetFileName: index === 0 ? imageFiles[0]?.name || "" : "",
+              galleryId: index === 0 ? galleryId : "",
+              unsupportedTextFiles,
+              now,
+              importMeta: {
+                split_multiple_news: true,
+                split_index: index + 1,
+                split_total: blocks.length,
+                textSourceCount: textSources.length,
+                imageSourceCount: imageFiles.length
+              }
+            }));
+          }
+          if (output) output.innerHTML = `<div class="alert alert--success">${createdIds.length} News wurden direkt unter News veroeffentlicht.</div>`;
+          window.location.hash = "#/cms/editorial/news";
+          return;
+        }
+      }
       await upsert("editorialContent", {
         id: articleId,
         title: cleanHeadline,
@@ -10421,14 +10632,14 @@ function wireActions() {
         galleryId,
         gallery_suggestions: [],
         editorial_note: [
-          "News-Import: Inhalt wurde als Quellenbasis uebernommen. Keine automatische Veroeffentlichung.",
+          "News-Import: Inhalt wurde als News-Beitrag uebernommen und direkt unter News veroeffentlicht.",
           unsupportedTextFiles.length ? `PDF/DOCX-Text bitte pruefen oder separat einfuegen: ${unsupportedTextFiles.join(", ")}` : ""
         ].filter(Boolean).join("\n\n"),
         relevance_score: 0,
         relevance_reason: "",
-        visible: false,
-        status: "draft",
-        visibility: "internal",
+        visible: true,
+        status: "published",
+        visibility: "public",
         author_type: "ki_news_import",
         author_name: "News-Import",
         generation_origin: "ki_news_import",
@@ -10437,13 +10648,13 @@ function wireActions() {
           raw_import_only: true,
           no_ai_interpretation: true,
           no_status_logic: true,
-          visible: false,
+          visible: true,
           sourceUrl,
           textSourceCount: textSources.length,
           imageSourceCount: imageFiles.length,
           unsupportedTextFiles
         },
-        publishDate: "",
+        publishDate: now.slice(0, 10),
         validFrom: importedUrl?.publishedAt || now.slice(0, 10),
         createdAt: now,
         updatedAt: now
@@ -10476,8 +10687,8 @@ function wireActions() {
         created_at: now,
         updated_at: now
       })));
-      if (output) output.innerHTML = `<div class="alert alert--success">News-Import wurde als Entwurf gespeichert. Redaktion > News bearbeiten wird geoeffnet.</div>`;
-      window.location.hash = `#/cms/edit?module=editorialContent&id=${encodeURIComponent(articleId)}&section=news`;
+      if (output) output.innerHTML = `<div class="alert alert--success">News-Import wurde direkt unter News veroeffentlicht.</div>`;
+      window.location.hash = "#/cms/editorial/news";
     } catch (error) {
       if (output) output.innerHTML = `<div class="alert alert--error">News-Import fehlgeschlagen: ${escapeHtml(error.message || String(error))}</div>`;
     } finally {
@@ -11893,7 +12104,11 @@ function wireActions() {
       if (action === "publish") {
         const editForm = document.querySelector("#ai-article-edit-form");
         const formValues = editForm?.dataset.articleId === articleId ? formObject(editForm) : {};
-        const publicationTarget = formValues.publication_target || article.publication_target || article.publicationTarget || "news";
+        const isKiNewsImport = article.author_type === "ki_news_import"
+          || article.authorType === "ki_news_import"
+          || article.generation_origin === "ki_news_import"
+          || article.ai_log_json?.import_flow === "ki_news_import";
+        const publicationTarget = isKiNewsImport ? "news" : formValues.publication_target || article.publication_target || article.publicationTarget || "news";
         if (publicationTarget === "topic" || publicationTarget === "monthly_topic") {
           const cleanTitle = String(formValues.headline || article.headline || article.title || "KI-Thema").replace(/^Themenvorschlag:\s*/i, "").trim();
           const topicId = article.published_topic_id || article.topic_id || article.slug || slugify(cleanTitle) || `ki-topic-${crypto.randomUUID()}`;
@@ -11929,6 +12144,7 @@ function wireActions() {
         } else {
           update.status = "published";
           update.visibility = "public";
+          update.visible = true;
           update.page = "news";
           update.section = "news";
           update.key = article.key || `news.${articleId}`;
@@ -11981,6 +12197,10 @@ function wireActions() {
     try {
       const article = await getOne("editorialContent", articleId);
       if (!article) throw new Error("Artikel wurde nicht gefunden.");
+      const isKiNewsImport = article.author_type === "ki_news_import"
+        || article.authorType === "ki_news_import"
+        || article.generation_origin === "ki_news_import"
+        || article.ai_log_json?.import_flow === "ki_news_import";
       const updated = {
         ...article,
         title: cleanHeadline,
@@ -11988,9 +12208,9 @@ function wireActions() {
         subtitle: values.subline || "",
         subline: values.subline || "",
         category: values.category || "",
-        publication_target: values.publication_target || article.publication_target || "news",
-        page: article.page || "news",
-        section: article.section || "news",
+        publication_target: "news",
+        page: "news",
+        section: "news",
         key: article.key || `news.${articleId}`,
         primary_keyword: values.primary_keyword || "",
         bodyText: values.bodyText || "",
@@ -12008,7 +12228,12 @@ function wireActions() {
         seo_description: values.seoDescription || "",
         seoKeywords: values.seoKeywords || "",
         seo_keywords: values.seoKeywords || "",
-        publication_status: article.publication_status === "veroeffentlicht" ? article.publication_status : "Entwurf",
+        visible: isKiNewsImport ? true : article.visible,
+        status: isKiNewsImport ? "published" : article.status,
+        visibility: isKiNewsImport ? "public" : article.visibility,
+        publishDate: isKiNewsImport ? article.publishDate || new Date().toISOString().slice(0, 10) : article.publishDate,
+        validFrom: isKiNewsImport ? article.validFrom || article.publishDate || new Date().toISOString().slice(0, 10) : article.validFrom,
+        publication_status: isKiNewsImport ? "veroeffentlicht" : article.publication_status === "veroeffentlicht" ? article.publication_status : "Entwurf",
         ai_check_status: article.publication_status === "veroeffentlicht" ? article.ai_check_status : "vorbereitet",
         updatedAt: new Date().toISOString()
       };
@@ -12017,9 +12242,12 @@ function wireActions() {
         aiCheck: { status: updated.ai_check_status },
         sourceCheck: { source_status: updated.source_status || "" }
       });
-      if (output) output.innerHTML = `<div class="alert alert--success">Aenderungen gespeichert.</div>`;
+      if (output) output.innerHTML = `<div class="alert alert--success">${isKiNewsImport ? "Aenderungen gespeichert. Der Beitrag ist unter News veroeffentlicht." : "Aenderungen gespeichert."}</div>`;
       form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: { id: articleId } }));
-      window.setTimeout(render, 700);
+      window.setTimeout(() => {
+        if (isKiNewsImport) window.location.hash = "#/cms/editorial/news";
+        else render();
+      }, 700);
     } catch (error) {
       if (output) output.innerHTML = `<div class="alert alert--error">${escapeHtml(error.message || String(error))}</div>`;
       form.dispatchEvent(new CustomEvent("cms-form-save-failed", { detail: { error } }));
@@ -12729,12 +12957,18 @@ function wireActions() {
     const button = event.currentTarget;
     const result = document.querySelector("#registration-cancel-result");
     const originalLabel = button.textContent;
+    const token = button.dataset.cancelRegistrationToken || "";
     button.disabled = true;
     button.textContent = "Storniere ...";
     if (result) result.innerHTML = `<div class="alert">Stornierung wird verarbeitet ...</div>`;
     try {
-      const response = await cancelRegistration(button.dataset.cancelRegistrationToken);
-      if (result) result.innerHTML = `<div class="alert alert--success">Die Anmeldung${response.eventTitle ? ` fuer ${escapeHtml(response.eventTitle)}` : ""} wurde storniert.</div>`;
+      const response = await Promise.race([
+        cancelRegistration(token),
+        new Promise((_, reject) => window.setTimeout(() => reject(new Error("Die Stornierung dauert zu lange. Bitte laden Sie die Seite neu oder versuchen Sie es gleich erneut.")), 18000))
+      ]);
+      const eventLink = response.eventId ? `<div class="actions" style="margin-top:12px"><a class="button button--secondary button--small" href="#/event/${escapeHtml(response.eventId)}">Zum Event</a></div>` : "";
+      if (result) result.innerHTML = `<div class="alert alert--success">Die Anmeldung${response.eventTitle ? ` fuer ${escapeHtml(response.eventTitle)}` : ""} wurde storniert.${eventLink}</div>`;
+      button.textContent = "Storniert";
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div>`;
       button.disabled = false;
@@ -14819,6 +15053,32 @@ function wireActions() {
     }
   }));
 
+  document.querySelectorAll("[data-event-home-toggle]").forEach((button) => button.addEventListener("change", async (event) => {
+    const target = event.currentTarget;
+    const eventId = target.dataset.eventHomeToggle;
+    const showOnHome = target.checked;
+    const result = document.querySelector("#event-registration-toggle-result");
+    if (!eventId) return;
+    const originalChecked = !showOnHome;
+    target.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Startseiten-Anzeige wird ${showOnHome ? "aktiviert" : "deaktiviert"} ...</div>`;
+    try {
+      const existing = await getOne("events", eventId);
+      if (!existing) throw new Error("Event wurde nicht gefunden.");
+      await upsert("events", {
+        ...existing,
+        showOnHome,
+        updatedAt: new Date().toISOString()
+      });
+      if (result) result.innerHTML = `<div class="alert alert--success">Startseiten-Anzeige wurde ${showOnHome ? "aktiviert" : "deaktiviert"}.</div>`;
+      await render();
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Startseiten-Anzeige konnte nicht geaendert werden: ${escapeHtml(error.message || String(error))}</div>`;
+      target.checked = originalChecked;
+      target.disabled = false;
+    }
+  }));
+
   document.querySelectorAll("[data-export-event]").forEach((button) => button.addEventListener("click", async () => {
     const event = await getOne("events", button.dataset.exportEvent);
     const registrations = (await list("registrations")).filter((item) => item.eventId === event.id);
@@ -14876,7 +15136,7 @@ function wireActions() {
     if (!registrationId || !confirmDatasetDelete("Diese Buchung")) return;
     button.disabled = true;
     try {
-      await remove("registrations", registrationId);
+      await deleteAdminRegistration(registrationId);
       row?.remove();
       const result = document.querySelector("#registration-bulk-result");
       if (result) result.innerHTML = `<div class="alert alert--success">Buchung wurde geloescht.</div>`;
@@ -14899,7 +15159,7 @@ function wireActions() {
     button.disabled = true;
     if (result) result.innerHTML = `<div class="alert">Buchungen werden geloescht ...</div>`;
     try {
-      await Promise.all(ids.map((id) => remove("registrations", id)));
+      await Promise.all(ids.map((id) => deleteAdminRegistration(id)));
       ids.forEach((id) => document.querySelector(`[data-registration-row="${CSS.escape(id)}"]`)?.remove());
       if (result) result.innerHTML = `<div class="alert alert--success">${ids.length} Buchung(en) geloescht.</div>`;
       updateRegistrationBulkState();

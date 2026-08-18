@@ -300,6 +300,10 @@ function eventUrl(eventId = "") {
   return publicHashUrl(`event/${encodeURIComponent(eventId)}`);
 }
 
+function publicSpaRouteUrl(path) {
+  return `${PUBLIC_APP_BASE_URL}/?v=${Date.now()}#/${String(path || "").replace(/^\/+/, "")}`;
+}
+
 function adminRegistrationMailTo() {
   return mailAddress(MAIL_TO.value());
 }
@@ -312,8 +316,11 @@ function publicHashUrl(path) {
   return `${PUBLIC_APP_BASE_URL}/${String(path || "").replace(/^\/+/, "")}?v=${Date.now()}`;
 }
 
-function registrationTicketUrl(token) {
-  return publicHashUrl(`ticket/link/${encodeURIComponent(token)}`);
+function registrationTicketUrl(token, eventId = "") {
+  if (eventId) {
+    return publicSpaRouteUrl(`event/${encodeURIComponent(eventId)}?ticket=${encodeURIComponent(token)}`);
+  }
+  return publicSpaRouteUrl(`ticket/link/${encodeURIComponent(token)}`);
 }
 
 function registrationCancelUrl(token) {
@@ -880,6 +887,27 @@ exports.adminCreateEventRegistration = onCall({ region }, async (request) => {
   };
 });
 
+exports.adminDeleteEventRegistration = onCall({ region }, async (request) => {
+  await requireEditor(request);
+  const registrationId = clean(request.data?.registrationId);
+  if (!registrationId) throw new HttpsError("invalid-argument", "registrationId fehlt.");
+  const registrationRef = db.collection("registrations").doc(registrationId);
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(registrationRef);
+    if (snapshot.exists) {
+      const registration = snapshot.data() || {};
+      if (registration.eventId && registration.email) {
+        transaction.delete(db.collection("registrationLocks").doc(registrationLockId(registration.eventId, registration.email)));
+      }
+      transaction.delete(registrationRef);
+      return;
+    }
+    const locks = await transaction.get(db.collection("registrationLocks").where("registrationId", "==", registrationId).limit(20));
+    locks.docs.forEach((document) => transaction.delete(document.ref));
+  });
+  return { deleted: true, registrationId };
+});
+
 exports.createEventNotification = onCall({ region }, async (request) => {
   const profile = await requireEditor(request);
   const input = request.data?.input || {};
@@ -1271,7 +1299,7 @@ exports.confirmRegistrationByToken = onCall({ region, invoker: "public" }, async
   }
   const ticketToken = randomBytes(32).toString("hex");
   const cancelToken = randomBytes(32).toString("hex");
-  const ticketLink = registrationTicketUrl(ticketToken);
+  const ticketLink = registrationTicketUrl(ticketToken, registration.eventId);
   const cancelUrl = registrationCancelUrl(cancelToken);
   await document.ref.update({
     status: "confirmed", emailConfirmed: true, confirmedAt: FieldValue.serverTimestamp(),
@@ -1434,14 +1462,21 @@ exports.cancelRegistrationByToken = onCall({ region, invoker: "public" }, async 
       updatedAt: FieldValue.serverTimestamp()
     }, { merge: true });
   }
-  await queueMail({
-    type: "registration_cancelled",
-    to: adminRegistrationMailTo(),
-    subject: `Anmeldung storniert: ${registration.eventTitle || ""}`,
-    text: `Eine Anmeldung wurde storniert.\n\nEvent: ${registration.eventTitle || ""}\nTeilnehmer: ${clean(registration.firstName)} ${clean(registration.lastName)}\nE-Mail: ${registration.email || ""}`,
-    registrationId: document.id,
-    eventId: registration.eventId || ""
-  });
+  try {
+    const adminMail = adminRegistrationMailTo();
+    if (adminMail) {
+      await queueMail({
+        type: "registration_cancelled",
+        to: adminMail,
+        subject: `Anmeldung storniert: ${registration.eventTitle || ""}`,
+        text: `Eine Anmeldung wurde storniert.\n\nEvent: ${registration.eventTitle || ""}\nTeilnehmer: ${clean(registration.firstName)} ${clean(registration.lastName)}\nE-Mail: ${registration.email || ""}`,
+        registrationId: document.id,
+        eventId: registration.eventId || ""
+      });
+    }
+  } catch (error) {
+    console.warn("Admin cancellation mail could not be queued", error);
+  }
   return { cancelled: true, eventId: registration.eventId || "", eventTitle: registration.eventTitle || "" };
 });
 
@@ -1775,6 +1810,183 @@ function briefingDuplicate(item = {}, existing = []) {
   }) || null;
 }
 
+function briefingDateValue(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return new Date(value).toISOString();
+  if (typeof value.toDate === "function") return value.toDate().toISOString();
+  if (value.seconds) return new Date(Number(value.seconds) * 1000).toISOString();
+  return "";
+}
+
+function briefingPublicationDate(item = {}) {
+  return [
+    item.source_publication_date,
+    item.sourcePublicationDate,
+    item.publication_date,
+    item.publicationDate,
+    item.published_at,
+    item.publishedAt,
+    item.published,
+    item.date,
+    item.first_seen,
+    item.firstSeen,
+    item.created_at,
+    item.createdAt
+  ].map(briefingDateValue).find(Boolean) || "";
+}
+
+function briefingDateAgeDays(dateValue = "", now = Date.now()) {
+  const millis = Date.parse(String(dateValue || ""));
+  if (!Number.isFinite(millis)) return null;
+  return Math.max(0, Math.floor((now - millis) / 86400000));
+}
+
+function briefingThemeScore(item = {}) {
+  const text = normalizeStatus([
+    item.headline,
+    item.title,
+    item.summary,
+    item.teaser,
+    item.category,
+    item.relevance,
+    item.source,
+    item.source_name,
+    Array.isArray(item.keywords) ? item.keywords.join(" ") : ""
+  ].join(" "));
+  const groups = [
+    { label: "KI, Arbeitsmarkt & Transformation", weight: 38, terms: ["ki", "ai", "kuenstliche intelligenz", "generative", "automation", "arbeitsplatz", "arbeitsplaetze", "jobabbau", "stellenabbau", "personalabbau", "skills", "weiterbildung"] },
+    { label: "Streaming, OTT & Plattformen", weight: 34, terms: ["streaming", "ott", "video-on-demand", "vod", "plattform", "netflix", "youtube", "creator", "fast", "connected tv", "smart-tv"] },
+    { label: "Medienregulierung & Medienpolitik", weight: 32, terms: ["regulierung", "medienpolitik", "gesetz", "verordnung", "urheberrecht", "lizenz", "medienrecht", "datenschutz", "eu", "bundestag", "aufsicht", "bundesnetzagentur", "medienanstalt", "kommission"] },
+    { label: "Werbung, Vermarktung & Geschaeftsmodelle", weight: 28, terms: ["werbung", "vermarktung", "adtech", "umsatz", "abo", "subscription", "geschaeftsmodell", "revenue", "addressable", "marketing"] },
+    { label: "Content, Produktion & Sportrechte", weight: 26, terms: ["content", "produktion", "format", "sportrechte", "rechte", "liga", "produktionstechnik", "studio", "creator economy"] },
+    { label: "Distribution, CDN & TV-Technologie", weight: 24, terms: ["distribution", "cdn", "dvb-i", "hbbtv", "broadcast", "mediathek", "sender", "fernsehen", "technologie", "innovation"] },
+    { label: "Kooperation, Uebernahme & Konsolidierung", weight: 22, terms: ["kooperation", "uebernahme", "fusion", "konsolidierung", "beteiligung", "partnerschaft", "joint venture", "allianz"] },
+    { label: "Rechte, Musik & Kreativwirtschaft", weight: 18, terms: ["gema", "musik", "verwertung", "kreativwirtschaft", "kuenstler", "urheber"] }
+  ];
+  const match = groups
+    .map((group) => ({ ...group, hits: group.terms.filter((term) => text.includes(term)).length }))
+    .filter((group) => group.hits)
+    .sort((a, b) => (b.weight + b.hits * 4) - (a.weight + a.hits * 4))[0];
+  return match ? { label: match.label, score: match.weight + match.hits * 4 } : { label: "Medienwirtschaft", score: 8 };
+}
+
+function briefingSourcePriority(item = {}) {
+  const text = normalizeStatus([item.source, item.source_name, item.original_url, item.url].join(" "));
+  const preferred = [
+    "dwdl",
+    "meedia",
+    "horizont",
+    "kress",
+    "turi2",
+    "broadband tv news",
+    "broadbandtvnews",
+    "digitalfernsehen",
+    "vaunet",
+    "medienanstalt",
+    "bundesnetzagentur",
+    "eu-kommission",
+    "ec.europa",
+    "reuters"
+  ];
+  if (preferred.some((term) => text.includes(term))) return 18;
+  if (/\.de|europa\.eu|europe|germany|deutschland|dach|vaunet|ard|zdf|rtl|prosieben|sat1/.test(text)) return 10;
+  return 0;
+}
+
+function briefingBusinessImpactScore(item = {}) {
+  const text = normalizeStatus([item.headline, item.summary, item.category, item.relevance, Array.isArray(item.keywords) ? item.keywords.join(" ") : ""].join(" "));
+  const terms = ["umsatz", "werbung", "markt", "abo", "preis", "kosten", "investition", "strategie", "plattform", "rechte", "distribution", "arbeitsplatz", "jobabbau", "regulierung", "uebernahme", "kooperation"];
+  return Math.min(30, terms.filter((term) => text.includes(term)).length * 5);
+}
+
+function briefingLooksLikeLandingPage(item = {}) {
+  const title = normalizeStatus(item.headline || item.title || "");
+  const url = normalizeStatus(item.original_url || item.url || item.source_url || "");
+  const genericTitle = /^(presse|news|aktuelles|publikationen|newsletter|kontakt|termine|events|impressum|suche)$/.test(title);
+  const genericUrl = /(newsletter|abonnieren|subscribe|kontakt|impressum|publikationen|press-?room|presseinformationen-abonnieren)/i.test(url);
+  return genericTitle || genericUrl;
+}
+
+function enrichBriefingCandidate(item = {}) {
+  const sourcePublicationDate = briefingPublicationDate(item);
+  const sourceAgeDays = briefingDateAgeDays(sourcePublicationDate);
+  const theme = briefingThemeScore(item);
+  const freshnessScore = sourceAgeDays === null ? -20 : Math.max(0, 35 - sourceAgeDays * 5);
+  const landingPenalty = briefingLooksLikeLandingPage(item) ? -80 : 0;
+  const baseScore = Number(item.score || item.relevance_score || item.quality_score || item.industry_score || 0);
+  const businessImpactScore = briefingBusinessImpactScore(item);
+  const sourcePriorityScore = briefingSourcePriority(item);
+  return {
+    ...item,
+    category: item.category && item.category !== "Morgenbriefing" ? item.category : theme.label,
+    briefing_theme: theme.label,
+    source_publication_date: sourcePublicationDate,
+    source_age_days: sourceAgeDays,
+    source_date_status: sourcePublicationDate ? "Quelle datiert" : "Datum fehlt",
+    is_landing_page_candidate: briefingLooksLikeLandingPage(item),
+    actuality_score: freshnessScore,
+    business_impact_score: businessImpactScore,
+    source_priority_score: sourcePriorityScore,
+    score: Math.round(baseScore + theme.score + freshnessScore + businessImpactScore + sourcePriorityScore + landingPenalty)
+  };
+}
+
+function briefingCandidateUsable(item = {}) {
+  if (item.is_landing_page_candidate) return false;
+  if (!item.source_publication_date) return false;
+  if (Number.isFinite(item.source_age_days) && item.source_age_days > 7) return false;
+  return true;
+}
+
+function germanWeekLabel(date = new Date()) {
+  const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const dayNumber = target.getUTCDay() || 7;
+  target.setUTCDate(target.getUTCDate() + 4 - dayNumber);
+  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((target - yearStart) / 86400000) + 1) / 7);
+  const start = new Date(date);
+  start.setDate(start.getDate() - 6);
+  const format = (value) => value.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return `KW ${String(week).padStart(2, "0")} / ${format(start)} bis ${format(date)}`;
+}
+
+function briefingArticleText(item = {}) {
+  const summary = String(item.summary || item.teaser || "").replace(/\s+/g, " ").trim();
+  const category = String(item.briefing_theme || item.category || "Medienwirtschaft").trim();
+  const source = String(item.source || item.source_name || "Quelle").trim();
+  const relevance = String(item.relevance || category).trim();
+  const why = [
+    `${summary}`,
+    `Fuer die Medienwirtschaft ist die Entwicklung relevant, weil sie ${relevance.toLowerCase()} beruehrt und damit Entscheidungen von TV-, Streaming- und Medienunternehmen beeinflussen kann.`,
+    `Besonders ins Gewicht fallen Aktualitaet, wirtschaftliche Wirkung und die strategische Bedeutung fuer Plattformen, Distribution, Inhalte oder Regulierung.`,
+    `Die Meldung sollte redaktionell anhand der Originalquelle geprueft und bei Bedarf um weitere Stimmen oder Zahlen ergaenzt werden.`
+  ].filter(Boolean).join(" ");
+  return why.replace(/\s+/g, " ").trim().slice(0, 1400)
+    || `Die Meldung von ${source} gehoert zu den relevanten Entwicklungen der deutschen oder europaeischen Medienwirtschaft.`;
+}
+
+function weeklyBriefingItemSummary(item = {}, index = 0) {
+  const headline = String(item.headline || item.title || `Thema ${index + 1}`).trim();
+  const summary = String(item.summary || item.teaser || "").replace(/\s+/g, " ").trim();
+  const source = String(item.source || item.source_name || "Quelle offen").trim();
+  const url = String(item.original_url || item.url || "").trim();
+  const sourceLine = `${source}${url ? ` - ${url}` : ""}`;
+  return [
+    `**${index + 1}. ${headline}**`,
+    "",
+    "**Kurz-Teaser:**",
+    summary,
+    "",
+    "**Branchen-News:**",
+    briefingArticleText(item),
+    "",
+    `**Einordnung:** ${String(item.briefing_theme || item.category || "Medienwirtschaft")} - relevant fuer TV-, Streaming- und Medienunternehmen.`,
+    "",
+    `**Quelle:** ${sourceLine}`
+  ].join("\n").trim();
+}
+
 function topicToBriefingItem(topic = {}, sources = [], existing = [], index = 0) {
   const sourceCandidate = Array.isArray(topic.source_candidates) ? topic.source_candidates[0] || {} : {};
   const sourceUrl = sourceCandidate.url || topic.source_url || topic.url || "";
@@ -1794,7 +2006,8 @@ function topicToBriefingItem(topic = {}, sources = [], existing = [], index = 0)
     source: sourceName || approvedSource?.name || "",
     source_name: sourceName || approvedSource?.name || "",
     original_url: sourceUrl,
-    first_seen: topic.created_at || topic.createdAt || new Date().toISOString(),
+    first_seen: briefingDateValue(topic.first_seen || topic.firstSeen || topic.created_at || topic.createdAt) || new Date().toISOString(),
+    source_publication_date: briefingPublicationDate({ ...topic, original_url: sourceUrl }),
     category: topic.category || "Morgenbriefing",
     score: Number(topic.relevance_score || topic.quality_score || topic.industry_score || 0),
     status: "Briefing",
@@ -1826,7 +2039,8 @@ function pressReleaseToBriefingItem(release = {}, sources = [], existing = [], i
     source: sourceName,
     source_name: sourceName,
     original_url: release.url || "",
-    first_seen: release.published_at || release.imported_at || new Date().toISOString(),
+    first_seen: briefingDateValue(release.first_seen || release.firstSeen || release.published_at || release.publishedAt || release.imported_at || release.importedAt) || new Date().toISOString(),
+    source_publication_date: briefingPublicationDate(release),
     category: release.category || "Presse / Branche",
     score: approvedSource ? 72 : 45,
     status: "Briefing",
@@ -1877,7 +2091,7 @@ async function runMorningBriefingPipeline({ manual = false, actor = "scheduler" 
   const existingTopics = topicsSnapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
   const pressReleases = pressSnapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
   const sourcePool = sources.filter(sourceApprovedForBriefing);
-  const candidates = [
+  const rawCandidates = [
     ...existingTopics
       .filter((topic) => !["abgelehnt", "archiviert", "uebernommen"].includes(normalizeStatus(topic.status || topic.queue_status)))
       .map((topic, index) => topicToBriefingItem(topic, sourcePool, [...existingArticles, ...existingTopics], index)),
@@ -1885,35 +2099,50 @@ async function runMorningBriefingPipeline({ manual = false, actor = "scheduler" 
       .filter((release) => !normalizeStatus(release.editorial_status || release.status).includes("dublette"))
       .map((release, index) => pressReleaseToBriefingItem(release, sourcePool, [...existingArticles, ...existingTopics], index))
   ].filter((item) => item.headline && item.summary)
-    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+    .map(enrichBriefingCandidate);
+  const rejectedCandidates = rawCandidates.filter((item) => !briefingCandidateUsable(item));
+  const candidates = rawCandidates
+    .filter(briefingCandidateUsable)
+    .sort((a, b) => {
+      const scoreDiff = Number(b.score || 0) - Number(a.score || 0);
+      if (scoreDiff) return scoreDiff;
+      return Date.parse(b.source_publication_date || b.first_seen || "") - Date.parse(a.source_publication_date || a.first_seen || "");
+    })
     .slice(0, 10);
 
   if (!candidates.length) {
     await writeAiEditorialLog({
       task_name: "Morgenbriefing",
       status: "blocked",
-      message: "Keine belegbaren Meldungen fuer ein Morgenbriefing vorhanden.",
+      message: "Keine belegbaren Meldungen aus den letzten 7 Tagen fuer ein Branchen-News-Wochenbriefing vorhanden.",
       used_sources_json: sourcePool.slice(0, 20),
-      ai_check_json: { status: "nicht bestanden", blockers: ["briefing_items_missing"] }
+      ai_check_json: { status: "nicht bestanden", blockers: ["briefing_items_missing", "fresh_7_day_sources_missing"] }
     });
-    return { ok: false, status: "blocked", message: "Keine belegbaren Meldungen fuer ein Morgenbriefing vorhanden." };
+    return { ok: false, status: "blocked", message: "Keine belegbaren Meldungen aus den letzten 7 Tagen vorhanden." };
   }
 
   const batch = db.batch();
   candidates.forEach((item) => batch.set(db.collection("ai_topic_suggestions").doc(item.id), item, { merge: true }));
-  const today = new Date().toISOString().slice(0, 10);
-  const briefingId = `morgenbriefing-${today}`;
-  const shortText = `${candidates.length} Meldungen aus freigegebenen Quellen als kurze redaktionelle Uebersicht.`;
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const weekLabel = germanWeekLabel(now);
+  const briefingId = `branchen-news-woche-${safeSlug(weekLabel) || today}`;
+  const shortText = `${candidates.length} aktuelle Themen der deutschen und europaeischen Medienwirtschaft aus freigegebenen Quellen der letzten 7 Tage.`;
+  const topThree = candidates.slice(0, 3);
   const bodyText = [
-    `Morgenbriefing ${today}`,
+    `### Branchen-News - Woche ${weekLabel}`,
     shortText,
     "",
-    ...candidates.map((item, index) => briefingItemSummary(item, index))
+    ...candidates.map((item, index) => weeklyBriefingItemSummary(item, index)),
+    "",
+    "**Die drei wichtigsten Themen der Woche**",
+    "",
+    ...topThree.map((item, index) => `${index + 1}. ${String(item.headline || item.title || "Thema").trim()} - ${String(item.briefing_theme || item.category || "Medienwirtschaft")} mit hoher Aktualitaet und Branchenrelevanz.`)
   ].join("\n\n").trim();
   batch.set(db.collection("editorialContent").doc(briefingId), {
     id: briefingId,
-    title: `Morgenbriefing ${today}`,
-    headline: `Morgenbriefing ${today}`,
+    title: `Branchen-News - Woche ${weekLabel}`,
+    headline: `Branchen-News - Woche ${weekLabel}`,
     subtitle: shortText,
     subline: shortText,
     introText: shortText,
@@ -1924,9 +2153,18 @@ async function runMorningBriefingPipeline({ manual = false, actor = "scheduler" 
     section: "news",
     key: `news.${briefingId}`,
     slug: briefingId,
-    category: "Morgenbriefing",
-    tags: ["Morgenbriefing", "KI-Redaktion", "Medienwirtschaft"],
-    source_snapshot_json: candidates.map((item) => ({ title: item.source, url: item.original_url, check_status: item.status, source_type: item.source_type })),
+    category: "Branchen-News",
+    tags: ["Branchen-News", "Medienwirtschaft", "Streaming", "KI", "Regulierung", "TV"],
+    source_snapshot_json: candidates.map((item) => ({
+      title: item.source,
+      headline: item.headline,
+      url: item.original_url,
+      check_status: item.status,
+      source_type: item.source_type,
+      source_publication_date: item.source_publication_date,
+      briefing_theme: item.briefing_theme,
+      score: item.score
+    })),
     source_status: "Quelle vorhanden",
     duplicate_status: "nicht geprueft",
     ai_check_status: "vorbereitet",
@@ -1936,10 +2174,20 @@ async function runMorningBriefingPipeline({ manual = false, actor = "scheduler" 
     visibility: "internal",
     author_type: "ai",
     author_name: "KI-Redaktion",
-    generation_origin: "morning_briefing",
-    content_type: "morning_briefing_summary",
-    editorialType: "morning_briefing",
-    ai_log_json: { workflow: "morning_briefing", actor, itemIds: candidates.map((item) => item.id) },
+    generation_origin: "weekly_industry_briefing",
+    content_type: "weekly_industry_briefing",
+    editorialType: "weekly_industry_briefing",
+    ai_log_json: {
+      workflow: "weekly_industry_briefing",
+      actor,
+      itemIds: candidates.map((item) => item.id),
+      prompt_rules: {
+        window_days: 7,
+        topic_count: 10,
+        market_focus: "deutsche und europaeische Medienwirtschaft",
+        output: "Branchen-News mit Kurz-Teaser, Beitrag, Einordnung und Quelle"
+      }
+    },
     publishDate: today,
     validFrom: today,
     createdAt: FieldValue.serverTimestamp(),
@@ -1955,13 +2203,27 @@ async function runMorningBriefingPipeline({ manual = false, actor = "scheduler" 
     article_id: briefingId,
     task_name: "Morgenbriefing",
     status: "success",
-    message: `${candidates.length} Meldungen fuer Morgenbriefing vorbereitet.`,
+    message: `${candidates.length} Branchen-News der Woche aus den letzten 7 Tagen vorbereitet.`,
     found_topics_json: logItems,
+    rejected_topics_json: rejectedCandidates.slice(0, 30).map((item) => ({
+      headline: item.headline,
+      source: item.source,
+      original_url: item.original_url,
+      source_publication_date: item.source_publication_date,
+      source_age_days: item.source_age_days,
+      is_landing_page_candidate: item.is_landing_page_candidate,
+      reason: item.is_landing_page_candidate ? "Landingpage/Serviceseite" : "Aelter als 7 Tage oder ohne belegbares Quelldatum"
+    })),
     used_sources_json: sourcePool.slice(0, 20),
     duplicate_check_json: { disabled: true },
-    ai_check_json: { status: "vorbereitet", publication_status: "Entwurf" }
+    ai_check_json: {
+      status: "vorbereitet",
+      publication_status: "Entwurf",
+      editorial_brief: "10 wichtigste Themen der deutschen Medienwirtschaft, Quellen maximal 7 Tage alt",
+      top_three: topThree.map((item) => item.headline || item.title || "")
+    }
   });
-  return { ok: true, status: "success", briefingId, items: candidates.length, message: `${candidates.length} Meldungen fuer Morgenbriefing vorbereitet.` };
+  return { ok: true, status: "success", briefingId, items: candidates.length, message: `${candidates.length} Branchen-News der Woche vorbereitet.` };
 }
 
 exports.runMorningBriefingTask = onCall({ region, timeoutSeconds: 300 }, async (request) => {
@@ -1990,7 +2252,7 @@ exports.KI_Redaktion_Taeglicher_Beitrag = onSchedule({ schedule: "every day 06:0
   await runAiEditorialPipeline({ manual: false, actor: "scheduler" });
 });
 
-exports.Morgenbriefing_Taeglich = onSchedule({ schedule: "every day 06:15", region, timeZone: "Europe/Berlin", timeoutSeconds: 300 }, async () => {
+exports.Morgenbriefing_Taeglich = onSchedule({ schedule: "every monday 06:15", region, timeZone: "Europe/Berlin", timeoutSeconds: 300 }, async () => {
   await runMorningBriefingPipeline({ manual: false, actor: "scheduler" });
 });
 

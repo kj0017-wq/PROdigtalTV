@@ -142,6 +142,13 @@ export async function createAdminRegistration(eventId, input) {
   return (await callable({ eventId, input })).data;
 }
 
+export async function deleteAdminRegistration(registrationId) {
+  const firebase = await getFirebaseServices();
+  if (!firebase) throw new Error("Firebase ist nicht erreichbar. Buchung kann nicht geloescht werden.");
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "adminDeleteEventRegistration");
+  return (await callable({ registrationId })).data;
+}
+
 export async function confirmRegistration(token) {
   const firebase = await getFirebaseServices();
   if (firebase) {
