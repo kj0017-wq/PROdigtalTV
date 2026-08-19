@@ -1,9 +1,9 @@
 import { route, onRouteChange, go } from "./utils/router.js?v=2";
 import { currentUser, canUseCms, isAdmin, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=471";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=517";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=524";
 import { escapeHtml, formatDate } from "./utils/format.js";
 import { normalizeLifecyclePhase } from "./data/platformConstants.js";
-import { publicShell } from "./components/layout.js?v=7";
+import { publicShell } from "./components/layout.js?v=8";
 
 const root = document.querySelector("#app");
 const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
@@ -12,11 +12,11 @@ const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9
 let renderGeneration = 0;
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=717");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=681");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=738");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=686");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=496");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=116");
-const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=14");
+const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=16");
 const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=7");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=13");
 const firebaseClientService = () => lazy.firebaseClientService ||= import("./firebase/firebaseClient.js?v=1");
@@ -235,7 +235,7 @@ async function viewForRoute(current) {
       } catch {}
       return eventEditPage(current.section, current.query.get("tab") || "base", current.query);
     }
-    if (current.id === "registrations") return registrationsPage();
+    if (current.id === "registrations") return registrationsPage(current.query);
     if (current.id === "followup") return eventFollowUpPage();
     if (current.id === "topics") return moduleListPage("topics");
     if (current.id === "galleries") return moduleListPage("galleries");
@@ -356,9 +356,7 @@ async function render() {
         ? `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">${loadingEyebrow}</p><h1>${loadingTitle}</h1></div></section>`
         : publicRouteLoadingHtml(currentRoute);
     } else if (root && !isCmsRoute) {
-      loadingTimer = window.setTimeout(() => {
-        if (generation === renderGeneration) root.innerHTML = publicRouteLoadingHtml(currentRoute);
-      }, 180);
+      showRoutePending({ getAttribute: () => `#/${publicActiveRoute(currentRoute)}` });
     }
     const viewPromise = viewForRoute(currentRoute);
     const timeoutMessage = isCmsRoute
@@ -470,6 +468,14 @@ function clearRoutePending() {
   root?.removeAttribute("aria-busy");
   document.body?.classList.remove("is-route-pending");
   document.querySelector("[data-route-pending]")?.remove();
+}
+
+function closePublicMenu() {
+  const topbar = document.querySelector(".topbar");
+  const toggle = document.querySelector("[data-public-menu-toggle]");
+  topbar?.classList.remove("is-public-menu-open");
+  toggle?.setAttribute("aria-expanded", "false");
+  toggle?.setAttribute("aria-label", "Menue oeffnen");
 }
 
 function clickedAnchor(event) {
@@ -942,6 +948,17 @@ document.addEventListener("click", (event) => {
   event.preventDefault();
   stopAllAudioPlayback();
   showRoutePending(link);
+  const isMobileNavigation = Boolean(link.closest(".public-mobile-menu, .pdtv-mobile-bottom-nav"));
+  if (isMobileNavigation) {
+    closePublicMenu();
+    const nav = link.closest("nav");
+    nav?.querySelectorAll("a.active").forEach((item) => item.classList.remove("active"));
+    link.classList.add("active");
+    window.requestAnimationFrame(() => {
+      window.location.hash = targetHash;
+    });
+    return;
+  }
   window.location.hash = targetHash;
 });
 
@@ -1768,6 +1785,82 @@ function normalizeInternalEditorialValues(values = {}) {
   };
 }
 
+function normalizeEditorialPlaceholderKey(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function editorialPlaceholderValue(key = "", context = {}) {
+  const normalized = normalizeEditorialPlaceholderKey(key);
+  const direct = context[key] ?? context[normalized];
+  if (direct !== undefined && direct !== null) return String(direct || "");
+  const source = Array.isArray(context.source_snapshot_json) ? context.source_snapshot_json[0] || {} : {};
+  const map = {
+    titel: context.title || context.headline || "",
+    title: context.title || context.headline || "",
+    headline: context.headline || context.title || "",
+    uberschrift: context.headline || context.title || "",
+    ueberschrift: context.headline || context.title || "",
+    subline: context.subline || context.subtitle || context.introText || "",
+    untertitel: context.subtitle || context.subline || context.introText || "",
+    teaser: context.teaserText || context.shortText || context.introText || "",
+    kurz_teaser: context.teaserText || context.shortText || context.introText || "",
+    datum: context.publishDate || context.validFrom || "",
+    date: context.publishDate || context.validFrom || "",
+    quelle: source.publisher || source.title || context.source_url || context.original_url || "",
+    source: source.publisher || source.title || context.source_url || context.original_url || "",
+    link: source.url || context.source_url || context.original_url || "",
+    url: source.url || context.source_url || context.original_url || "",
+    rubrik: context.category || "",
+    category: context.category || "",
+    autor: context.author_name || context.author || "",
+    author: context.author_name || context.author || ""
+  };
+  return map[normalized] || "";
+}
+
+function stripUnfilledEditorialPlaceholders(value = "", context = {}) {
+  const text = String(value || "");
+  if (!text) return "";
+  const replacePlaceholder = (_, key) => editorialPlaceholderValue(key, context);
+  return text
+    .replace(/\{\{\s*([^{}]+?)\s*\}\}/g, replacePlaceholder)
+    .replace(/\[\s*((?:TITEL|TITLE|HEADLINE|UEBERSCHRIFT|ÜBERSCHRIFT|SUBLINE|UNTERTITEL|TEASER|DATUM|DATE|QUELLE|SOURCE|LINK|URL|RUBRIK|CATEGORY|AUTOR|AUTHOR|PLATZHALTER)[^\]]*?)\s*\]/gi, replacePlaceholder)
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{4,}/g, "\n\n\n")
+    .trim();
+}
+
+function cleanEditorialImportedRecordValues(values = {}) {
+  const next = { ...values };
+  [
+    "title",
+    "headline",
+    "subtitle",
+    "subline",
+    "introText",
+    "shortText",
+    "teaserText",
+    "bodyText",
+    "longDescription",
+    "articleText",
+    "seoTitle",
+    "seoDescription",
+    "thumbnail_alt",
+    "editorial_note"
+  ].forEach((field) => {
+    if (Object.prototype.hasOwnProperty.call(next, field)) {
+      next[field] = stripUnfilledEditorialPlaceholders(next[field], next);
+    }
+  });
+  return next;
+}
+
 function dataUrlToFile(dataUrl, fileName) {
   if (!dataUrl?.startsWith("data:image/")) return null;
   const [header, data] = dataUrl.split(",");
@@ -2217,6 +2310,11 @@ function loginReturnTarget() {
     if (/^#\/[a-z0-9/?=&._%-]+$/i.test(decoded)) return decoded.replace(/^#\/?/, "");
   } catch {}
   return "";
+}
+
+function postLoginRouteForUser(user = {}) {
+  if (["admin", "editor"].includes(user.role) && !mobileCmsDisabled()) return "cms";
+  return "portal";
 }
 
 function cleanEditorialSentence(value = "") {
@@ -5831,7 +5929,7 @@ function confirmAiNewsImportDraft({ sourceText = "", draft = {}, regenerateDraft
 }
 
 function cleanRawImportText(value = "") {
-  return String(value || "")
+  return stripUnfilledEditorialPlaceholders(String(value || ""))
     .normalize("NFC")
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]+/g, " ")
     .replace(/\r/g, "\n")
@@ -5940,8 +6038,9 @@ async function saveImportedNewsArticle({
   importMeta = {}
 } = {}) {
   const articleId = `news-import-${crypto.randomUUID()}`;
-  const headline = cleanHeadline || rawImportHeadline(rawText || "Importierte News");
-  await upsert("editorialContent", {
+  const cleanedRawText = cleanRawImportText(rawText);
+  const headline = stripUnfilledEditorialPlaceholders(cleanHeadline || rawImportHeadline(cleanedRawText || "Importierte News"));
+  await upsert("editorialContent", cleanEditorialImportedRecordValues({
     id: articleId,
     title: headline,
     headline,
@@ -5950,11 +6049,11 @@ async function saveImportedNewsArticle({
     introText: "",
     shortText: "",
     teaserText: "",
-    bodyText: rawText,
-    ai_original_suggested_text: rawText,
-    source_suggested_text: rawText,
-    imported_full_text: rawText,
-    source_full_text: rawText,
+    bodyText: cleanedRawText,
+    ai_original_suggested_text: cleanedRawText,
+    source_suggested_text: cleanedRawText,
+    imported_full_text: cleanedRawText,
+    source_full_text: cleanedRawText,
     page: "news",
     section: "news",
     key: `news.${articleId}`,
@@ -6003,7 +6102,7 @@ async function saveImportedNewsArticle({
     validFrom: now.slice(0, 10),
     createdAt: now,
     updatedAt: now
-  });
+  }));
   await Promise.all(sourceSnapshot.map((source, index) => upsert("article_sources", {
     id: `article-source-${crypto.randomUUID()}`,
     article_id: articleId,
@@ -6088,7 +6187,7 @@ function wireImageDropzones() {
         });
       });
     });
-    const crop = { file: null, src: "", img: null, x: 0, y: 0, scale: 1, dragging: false, startX: 0, startY: 0, originX: 0, originY: 0 };
+    const crop = { file: null, src: "", img: null, x: 0, y: 0, scale: 1, minScale: 1, coverScale: 1, statusText: "", dragging: false, startX: 0, startY: 0, originX: 0, originY: 0 };
     const selectedSize = () => {
       const [width, height] = String(sizeSelect?.value || "240x180").split("x").map((value) => Number(value));
       return { width: width || 240, height: height || 180 };
@@ -6113,6 +6212,55 @@ function wireImageDropzones() {
         preview.style.height = `${Math.round(previewWidth * size.height / size.width)}px`;
       }
     };
+    const imageResolutionWarning = () => {
+      if (!crop.img?.naturalWidth || !crop.img?.naturalHeight) return "";
+      const size = selectedSize();
+      const tooSmall = crop.img.naturalWidth < size.width || crop.img.naturalHeight < size.height;
+      if (!tooSmall) return "";
+      return `Hinweis: Das Original hat nur ${crop.img.naturalWidth} x ${crop.img.naturalHeight} px, Ziel ist ${size.width} x ${size.height} px. Das Bild ist eigentlich zu klein und kann unscharf wirken.`;
+    };
+    const updateImageUploadStatus = () => {
+      if (!status) return;
+      const warning = imageResolutionWarning();
+      status.textContent = [crop.statusText, warning].filter(Boolean).join(" ");
+    };
+    const simpleCropScaleBounds = (viewportWidth = 1, viewportHeight = 1) => {
+      if (!crop.img?.naturalWidth || !crop.img?.naturalHeight) return { contain: 1, cover: 1, max: 3 };
+      const containScale = Math.min(viewportWidth / crop.img.naturalWidth, viewportHeight / crop.img.naturalHeight);
+      const coverScale = Math.max(viewportWidth / crop.img.naturalWidth, viewportHeight / crop.img.naturalHeight);
+      const minScale = Math.max(.05, containScale / Math.max(.0001, coverScale));
+      return { contain: minScale, cover: 1, max: Math.max(3, minScale * 4) };
+    };
+    const clampSimpleCropPosition = () => {
+      if (!zone.classList.contains("is-cropping-simple") || !crop.img || !preview) return;
+      const previewRect = preview.getBoundingClientRect();
+      if (!previewRect.width || !previewRect.height) return;
+      const baseScale = Math.max(previewRect.width / crop.img.naturalWidth, previewRect.height / crop.img.naturalHeight);
+      const drawWidth = crop.img.naturalWidth * baseScale * crop.scale;
+      const drawHeight = crop.img.naturalHeight * baseScale * crop.scale;
+      const maxX = Math.max(0, (drawWidth - previewRect.width) / 2);
+      const maxY = Math.max(0, (drawHeight - previewRect.height) / 2);
+      crop.x = Math.max(-maxX, Math.min(maxX, crop.x));
+      crop.y = Math.max(-maxY, Math.min(maxY, crop.y));
+    };
+    const syncSimpleZoomControl = () => {
+      if (!zoom || !zone.classList.contains("is-cropping-simple")) return;
+      zoom.min = String(crop.minScale || 1);
+      zoom.max = String(crop.coverScale || 3);
+      zoom.step = "0.01";
+      zoom.value = String(crop.scale);
+    };
+    const resetSimpleCropScale = () => {
+      if (!zone.classList.contains("is-cropping-simple") || !crop.img || !preview) return;
+      const previewRect = preview.getBoundingClientRect();
+      const bounds = simpleCropScaleBounds(previewRect.width || selectedSize().width, previewRect.height || selectedSize().height);
+      crop.minScale = bounds.contain;
+      crop.coverScale = bounds.max;
+      crop.scale = bounds.contain;
+      crop.x = 0;
+      crop.y = 0;
+      syncSimpleZoomControl();
+    };
     const renderCrop = () => {
       if (!crop.img) return;
       if (zone.classList.contains("is-cropping-simple")) {
@@ -6121,6 +6269,12 @@ function wireImageDropzones() {
           return;
         }
         const previewRect = preview.getBoundingClientRect();
+        const bounds = simpleCropScaleBounds(previewRect.width, previewRect.height);
+        crop.minScale = bounds.contain;
+        crop.coverScale = bounds.max;
+        crop.scale = Math.max(crop.minScale, Math.min(crop.coverScale, Number(crop.scale || crop.minScale)));
+        clampSimpleCropPosition();
+        syncSimpleZoomControl();
         const baseScale = Math.max(previewRect.width / crop.img.naturalWidth, previewRect.height / crop.img.naturalHeight);
         const width = crop.img.naturalWidth * baseScale * crop.scale;
         const height = crop.img.naturalHeight * baseScale * crop.scale;
@@ -6193,6 +6347,9 @@ function wireImageDropzones() {
         crop.x = 0;
         crop.y = 0;
         crop.scale = 1;
+        crop.minScale = 1;
+        crop.coverScale = 1;
+        crop.statusText = options.statusText || "Neues Bild ausgewaehlt. Das gesamte Motiv ist sichtbar. Bei Bedarf zoomen/verschieben oder direkt speichern.";
         preview.innerHTML = `<img src="${reader.result}" alt="">`;
         crop.img = preview.querySelector("img");
         preview.classList.add("has-image");
@@ -6203,7 +6360,15 @@ function wireImageDropzones() {
         if (dataInput) dataInput.value = options.dataUrl || "";
         if (fileNameInput) fileNameInput.value = options.fileName || "";
         updateResolution();
-        status.textContent = options.statusText || "Neues Bild ausgewaehlt. Das gesamte Motiv ist sichtbar. Bei Bedarf zoomen/verschieben oder direkt speichern.";
+        crop.img.addEventListener("load", updateImageUploadStatus, { once: true });
+        if (zone.classList.contains("is-cropping-simple")) {
+          crop.img.addEventListener("load", () => {
+            resetSimpleCropScale();
+            renderCrop();
+          }, { once: true });
+          if (crop.img.complete && crop.img.naturalWidth) resetSimpleCropScale();
+        }
+        updateImageUploadStatus();
         renderCrop();
       });
       reader.readAsDataURL(file);
@@ -6231,7 +6396,7 @@ function wireImageDropzones() {
       zone.dataset.cropPending = "1";
       delete zone.dataset.cropApplied;
       fileToInput(input, file);
-      showFile(file, { statusText: "Bild im Rahmen verschieben. Mit dem Mausrad kannst du leicht zoomen. Danach Uebernehmen klicken." });
+      showFile(file, { statusText: "Bild ist automatisch eingepasst. Mit dem Mausrad kannst du vergroessern oder verkleinern, dann Uebernehmen klicken." });
       await new Promise((resolve) => window.setTimeout(resolve, 120));
       simpleActions.hidden = false;
       if (simpleApply) simpleApply.hidden = false;
@@ -6256,9 +6421,13 @@ function wireImageDropzones() {
         preview.innerHTML = crop.previous.html || `<span>${emptyText}</span>`;
         preview.classList.toggle("has-image", Boolean(crop.previous.hasImage));
         crop.img = preview.querySelector("img");
-        crop.file = null;
-        crop.src = "";
-        input.value = "";
+      crop.file = null;
+      crop.src = "";
+      crop.scale = 1;
+      crop.minScale = 1;
+      crop.coverScale = 1;
+      crop.statusText = "";
+      input.value = "";
         if (dataInput) dataInput.value = "";
         if (fileNameInput) fileNameInput.value = "";
         zone.classList.remove("is-cropping-simple");
@@ -6279,6 +6448,10 @@ function wireImageDropzones() {
       crop.file = null;
       crop.src = "";
       crop.img = null;
+      crop.scale = 1;
+      crop.minScale = 1;
+      crop.coverScale = 1;
+      crop.statusText = "";
       zone.classList.remove("is-cropping-simple");
       delete zone.dataset.cropPending;
       delete zone.dataset.cropApplied;
@@ -6305,24 +6478,31 @@ function wireImageDropzones() {
       if (!crop.dragging) return;
       crop.x = crop.originX + event.clientX - crop.startX;
       crop.y = crop.originY + event.clientY - crop.startY;
+      clampSimpleCropPosition();
       renderCrop();
     });
     preview?.addEventListener("pointerup", () => { crop.dragging = false; });
     zoom?.addEventListener("input", () => {
-      crop.scale = Number(zoom.value || 1);
+      crop.scale = zone.classList.contains("is-cropping-simple")
+        ? Math.max(crop.minScale || .05, Math.min(crop.coverScale || 3, Number(zoom.value || 1)))
+        : Number(zoom.value || 1);
+      clampSimpleCropPosition();
       renderCrop();
     });
     preview?.addEventListener("wheel", (event) => {
       if (!zone.classList.contains("is-cropping-simple") || !crop.img) return;
       event.preventDefault();
       const direction = event.deltaY > 0 ? -1 : 1;
-      crop.scale = Math.max(1, Math.min(3, crop.scale + direction * 0.05));
+      const step = event.shiftKey ? 0.12 : 0.05;
+      crop.scale = Math.max(crop.minScale || .05, Math.min(crop.coverScale || 3, crop.scale + direction * step));
+      clampSimpleCropPosition();
       if (zoom) zoom.value = String(crop.scale);
       renderCrop();
     }, { passive: false });
     sizeSelect?.addEventListener("change", () => {
       form?.classList.remove("is-saved");
       updateResolution();
+      updateImageUploadStatus();
     });
     cropButton?.addEventListener("click", async () => {
       const cropped = await applyCropToInput();
@@ -6349,7 +6529,7 @@ function wireImageDropzones() {
         zone.classList.add("is-cropping-simple");
         zone.dataset.cropPending = "1";
         delete zone.dataset.cropApplied;
-        showFile(file, { statusText: "Bild im Rahmen verschieben. Mit dem Mausrad kannst du leicht zoomen. Danach Uebernehmen klicken." });
+        showFile(file, { statusText: "Bild ist automatisch eingepasst. Mit dem Mausrad kannst du vergroessern oder verkleinern, dann Uebernehmen klicken." });
         simpleActions.hidden = false;
         if (simpleApply) simpleApply.hidden = false;
       } else {
@@ -12786,6 +12966,8 @@ function wireActions() {
     const eventSelect = eventNotificationForm.querySelector("[data-notification-event-select]");
     const titleInput = eventNotificationForm.querySelector("[data-notification-title]");
     const textInput = eventNotificationForm.querySelector("[data-notification-shorttext]");
+    const textSourceSelect = eventNotificationForm.querySelector("[data-notification-text-source]");
+    const textSourceField = eventNotificationForm.querySelector("[data-notification-text-source-field]");
     const linkInput = eventNotificationForm.querySelector("[data-notification-link]");
     const linkToggle = eventNotificationForm.querySelector("[data-notification-link-toggle]");
     const testField = eventNotificationForm.querySelector("[data-notification-test-field]");
@@ -12801,10 +12983,32 @@ function wireActions() {
       }
       return message || "Versand konnte nicht vorbereitet werden.";
     };
+    const selectedNotificationEventPayload = () => {
+      const selected = eventSelect?.selectedOptions?.[0];
+      if (!selected?.dataset.eventPayload) return null;
+      try {
+        return JSON.parse(selected.dataset.eventPayload);
+      } catch {
+        return null;
+      }
+    };
+    const notificationTextFromSelection = () => {
+      const payload = selectedNotificationEventPayload();
+      const source = textSourceSelect?.value || "invitationText";
+      if (!payload || source === "custom") return textInput?.value || "";
+      return payload.texts?.[source] || payload.texts?.invitationText || textInput?.value || "";
+    };
+    const applyNotificationTextSource = ({ force = false } = {}) => {
+      if (!textInput || !textSourceSelect) return;
+      if (textSourceSelect.value === "custom" && !force) return;
+      const nextText = notificationTextFromSelection();
+      if (nextText || force) textInput.value = nextText;
+    };
     const syncNotificationMode = () => {
       const isMemberMessage = kindSelect?.value === "member_message";
       const isTestPerson = recipientGroup?.value === "test_person";
       if (eventField) eventField.hidden = isMemberMessage;
+      if (textSourceField) textSourceField.hidden = isMemberMessage;
       if (eventSelect) eventSelect.required = !isMemberMessage;
       if (scheduledField) scheduledField.hidden = sendMode?.value !== "scheduled";
       if (offsetField) offsetField.hidden = isMemberMessage || sendMode?.value !== "auto_before_event";
@@ -12819,10 +13023,11 @@ function wireActions() {
     };
     const setDefaultNotificationLink = () => {
       if (!linkInput) return;
+      const payload = selectedNotificationEventPayload();
       const selected = eventSelect?.selectedOptions?.[0];
       linkInput.value = kindSelect?.value === "member_message"
         ? "https://prodigitaltv-da47b.web.app/members"
-        : selected?.dataset.eventLink || "";
+        : payload?.link || selected?.dataset.eventLink || "";
     };
     const syncNotificationPreview = () => {
       if (!preview) return;
@@ -12830,12 +13035,19 @@ function wireActions() {
       preview.innerHTML = `<p class="eyebrow">Live-Vorschau</p><h3>${escapeHtml(titleInput.value || "Event-Benachrichtigung")}</h3><p>${escapeHtml(textInput.value || "")}</p>${previewLink ? `<a href="${escapeHtml(previewLink)}">Link oeffnen</a>` : ""}`;
     };
     eventSelect?.addEventListener("change", () => {
-      const selected = eventSelect.selectedOptions?.[0];
-      const eventTitle = selected?.dataset.eventTitle || "Veranstaltung";
+      const payload = selectedNotificationEventPayload();
+      const eventTitle = payload?.title || eventSelect.selectedOptions?.[0]?.dataset.eventTitle || "Veranstaltung";
       titleInput.value = `Einladung: ${eventTitle}`;
-      textInput.value = `Aktuelle Informationen zur Veranstaltung ${eventTitle}.`;
+      applyNotificationTextSource({ force: true });
       setDefaultNotificationLink();
       syncNotificationPreview();
+    });
+    textSourceSelect?.addEventListener("change", () => {
+      applyNotificationTextSource({ force: true });
+      syncNotificationPreview();
+    });
+    textInput?.addEventListener("input", () => {
+      if (textSourceSelect && textSourceSelect.value !== "custom") textSourceSelect.value = "custom";
     });
     kindSelect?.addEventListener("change", () => {
       if (kindSelect.value === "member_message") {
@@ -12854,6 +13066,7 @@ function wireActions() {
     });
     eventNotificationForm.querySelectorAll("input, textarea, select").forEach((field) => field.addEventListener("input", syncNotificationPreview));
     syncNotificationMode();
+    applyNotificationTextSource();
     if (linkInput && !linkInput.value) setDefaultNotificationLink();
     syncNotificationPreview();
     let confirmedPayload = null;
@@ -12910,7 +13123,10 @@ function wireActions() {
         if (!payload.testOnly) payload.testRecipients = "";
         const previewResponse = await previewEventNotification(payload);
         confirmedPayload = payload;
-        if (notificationResult) notificationResult.innerHTML = `<div class="alert alert--warning"><strong>${Number(previewResponse.mailCount || previewResponse.targetCount || 0)} Mails vorbereitet.</strong><div class="actions" style="margin-top:12px"><button class="button button--primary button--small" type="button" data-confirm-notification-send>Senden</button><button class="button button--secondary button--small" type="button" data-cancel-notification-send>Abbrechen</button></div></div>`;
+        const selectedSourceLabel = textSourceSelect?.selectedOptions?.[0]?.textContent || "Manueller Text";
+        const previewText = String(payload.shortText || "");
+        const previewExcerpt = previewText.length > 260 ?`${previewText.slice(0, 257)}...` : previewText;
+        if (notificationResult) notificationResult.innerHTML = `<div class="alert alert--warning"><strong>${Number(previewResponse.mailCount || previewResponse.targetCount || 0)} Mails vorbereitet.</strong><p style="margin:10px 0 0"><strong>Textquelle:</strong> ${escapeHtml(selectedSourceLabel)}</p><p style="margin:8px 0 0">${escapeHtml(previewExcerpt)}</p><div class="actions" style="margin-top:12px"><button class="button button--primary button--small" type="button" data-confirm-notification-send>Senden</button><button class="button button--secondary button--small" type="button" data-cancel-notification-send>Abbrechen</button></div></div>`;
       } catch (error) {
         confirmedPayload = null;
         if (notificationResult) notificationResult.innerHTML = `<div class="alert alert--error">${escapeHtml(notificationErrorText(error))}</div>`;
@@ -13021,7 +13237,7 @@ function wireActions() {
       const values = formObject(form);
       const user = await login(values.email, values.password, values.role);
       const returnTarget = loginReturnTarget();
-      go(returnTarget || (["admin", "editor"].includes(user.role) ? "cms" : "portal"));
+      go(returnTarget || postLoginRouteForUser(user));
     } catch (error) {
       form.querySelector("#login-result").innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message)}</div>`;
     }
@@ -13034,7 +13250,7 @@ function wireActions() {
       const values = formObject(form);
       const user = await loginWithGoogle(values.role);
       const returnTarget = loginReturnTarget();
-      go(returnTarget || (["admin", "editor"].includes(user.role) ? "cms" : "portal"));
+      go(returnTarget || postLoginRouteForUser(user));
     } catch (error) {
       form.querySelector("#login-result").innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message)}</div>`;
     }
@@ -15085,6 +15301,13 @@ function wireActions() {
     await downloadRegistrationsCsv(event, registrations);
   }));
 
+  document.querySelector("[data-registration-event-filter]")?.addEventListener("change", (event) => {
+    const eventId = event.currentTarget.value || "";
+    window.location.hash = eventId
+      ?`#/cms/registrations?eventId=${encodeURIComponent(eventId)}`
+      : "#/cms/registrations";
+  });
+
   document.querySelector("#admin-registration-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -15547,7 +15770,7 @@ async function resetInstalledAppCachesIfRequested() {
 
 async function refreshInstalledAppShellIfNeeded() {
   if (["localhost", "127.0.0.1"].includes(location.hostname) || location.protocol === "file:") return false;
-  const version = "1018";
+  const version = "1130";
   const key = "prodigitaltv-live-shell-version";
   try {
     if (localStorage.getItem(key) === version) return false;

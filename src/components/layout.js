@@ -2,7 +2,7 @@ import { currentUser, canUseCms } from "../firebase/authService.js?v=471";
 
 const nav = [
   ["home", "Start"], ["events", "Events"], ["topics", "Themen"], ["news", "News"], ["about", "Ueber uns"],
-  ["archive", "Rückblick"], ["webapp-qr", "WebApp QR"]
+  ["speakers", "Referenten"], ["archive", "Rückblick"], ["webapp-qr", "WebApp QR"]
 ];
 
 const aboutSubnav = [["board", "Vorstand"], ["members", "Mitglieder"], ["join", "Mitglied werden"]];

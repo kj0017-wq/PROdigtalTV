@@ -149,6 +149,14 @@ export async function deleteAdminRegistration(registrationId) {
   return (await callable({ registrationId })).data;
 }
 
+export async function listMyEventRegistrations(eventIds = []) {
+  const firebase = await getFirebaseServices();
+  if (!firebase) return [];
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "getMyEventRegistrations");
+  const result = (await callable({ eventIds })).data;
+  return Array.isArray(result?.registrations) ? result.registrations : [];
+}
+
 export async function confirmRegistration(token) {
   const firebase = await getFirebaseServices();
   if (firebase) {
@@ -175,6 +183,7 @@ export async function checkInWithStoredTicket(eventId) {
   if (!firebase) throw new Error("Firebase ist nicht erreichbar. Check-in nicht moeglich.");
   const ticket = readStoredTicket(eventId);
   if (!ticket?.ticketToken) throw new Error("Auf diesem Geraet ist kein Ticket fuer dieses Event gespeichert.");
+  if (ticket.eventId && ticket.eventId !== eventId) throw new Error("Das gespeicherte Ticket gehoert zu einer anderen Veranstaltung.");
   const callable = firebase.functionsLib.httpsCallable(firebase.functions, "checkInRegistrationByDevice");
   return (await callable({ eventId, ticketToken: ticket.ticketToken })).data;
 }
@@ -182,6 +191,10 @@ export async function checkInWithStoredTicket(eventId) {
 export async function validateStoredTicket(eventId) {
   const ticket = readStoredTicket(eventId);
   if (!ticket?.ticketToken) return null;
+  if (ticket.eventId && ticket.eventId !== eventId) {
+    clearStoredTicket(eventId);
+    return null;
+  }
   const firebase = await getFirebaseServices();
   if (!firebase) return ticket;
   try {

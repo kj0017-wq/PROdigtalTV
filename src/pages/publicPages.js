@@ -1,11 +1,11 @@
-import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=517";
+import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=524";
 import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=471";
-import { publicShell, logo } from "../components/layout.js?v=7";
-import { eventCard, topicCard } from "../components/cards.js?v=12";
+import { publicShell, logo } from "../components/layout.js?v=8";
+import { eventCard, topicCard } from "../components/cards.js?v=13";
 import { accessLabels, lifecycleLabels } from "../data/platformConstants.js?v=1";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
 import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=1";
-import { checkInWithStoredTicket, linkTicketDevice, readStoredTicket, validateStoredTicket } from "../firebase/registrationService.js?v=13";
+import { checkInWithStoredTicket, linkTicketDevice, listMyEventRegistrations, readStoredTicket, validateStoredTicket } from "../firebase/registrationService.js?v=16";
 
 function subhero(eyebrow, title, text) {
   return `<section class="subhero"><div class="container">${eyebrow ? `<p class="eyebrow">${eyebrow}</p>` : ""}<h1>${title}</h1><p>${text}</p></div></section>`;
@@ -500,13 +500,26 @@ function boardPortrait(person) {
 }
 
 function speakerPortrait(speaker) {
-  return speaker.photoUrl
-    ? `<img src="${escapeHtml(speaker.photoUrl)}" alt="Portraet ${escapeHtml(speaker.name)}" ${liveImageAttrs("member")}>`
-    : `<span class="avatar">${initials(speaker.name)}</span>`;
+  const photo = speakerPhotoUrl(speaker);
+  return photo
+    ? `<img src="${escapeHtml(photo)}" alt="Portraet ${escapeHtml(speakerName(speaker))}" ${liveImageAttrs("member")}>`
+    : `<span class="avatar">${initials(speakerName(speaker))}</span>`;
 }
 
 function speakerName(speaker = {}) {
   return speaker.name || [speaker.firstName, speaker.lastName].filter(Boolean).join(" ") || "Referent";
+}
+
+function speakerPhotoUrl(speaker = {}) {
+  return stableImageUrl(speaker.photoUrl || speaker.imageUrl || speaker.thumbnailUrl || speaker.thumbnail_url || speaker.assetUrl || speaker.portraitUrl || speaker.profileImageUrl || "", "member");
+}
+
+function speakerIntroText(speaker = {}) {
+  return speaker.shortBio || speaker.bio || speaker.introText || speaker.description || speaker.shortDescription || speaker.teaserText || "";
+}
+
+function speakerVitaText(speaker = {}) {
+  return speaker.longBio || speaker.vita || speaker.biography || speaker.bodyText || speaker.longDescription || speaker.profileText || speaker.description || "";
 }
 
 function speakerProfileHref(speaker = {}) {
@@ -1150,7 +1163,24 @@ function publicNewsItems(items = []) {
     const isPublishedPublic = item.status === "published" && item.visibility === "public";
     const isVisibleNews = item.visible === true || (isPublishedPublic && item.visible !== false);
     const isHidden = item.status === "archived" || item.visibility === "internal";
-    return isNews && isVisibleNews && !isHidden;
+    const pressMarker = [
+      item.page,
+      item.section,
+      item.publication_target,
+      item.publicationTarget,
+      item.category,
+      item.type,
+      item.contentType,
+      item.origin,
+      item.workflow
+    ].filter(Boolean).join(" ").toLowerCase();
+    const isPress = item.imported_press_release_id
+      || item.importedPressReleaseId
+      || item.ai_log_json?.import_flow === "german_press_release_import"
+      || /(^|\s)(press|presse|presseimport|pressemitteilung|pressemeldung|pressrelease|press-release)(\s|$)/.test(pressMarker)
+      || ["pressRelease", "press"].includes(item.section)
+      || item.page === "press";
+    return isNews && isVisibleNews && !isHidden && !isPress;
   });
   return dedupeNewsItems(filtered);
 }
@@ -1846,7 +1876,7 @@ function homeSpeakersOnePerTalk(events = [], topics = [], speakers = []) {
       const topicKey = [speaker.topicId, ...(speaker.topicIds || [])].find(Boolean) || speaker.id;
       if (!selected.some((entry) => entry.topicKey === topicKey)) addSpeaker(speaker, topicKey);
     });
-  return selected.map((entry) => entry.speaker).slice(0, 6);
+  return selected.map((entry) => entry.speaker);
 }
 
 function homeSection(title, eyebrow, body, action = "") {
@@ -1905,32 +1935,61 @@ function homeHeroMarkup({ next, nextImageUrl, retrospective, series }) {
   </section>`;
 }
 
+function pageContentCacheKey(name = "", variant = "public") {
+  return `pdtv-page-content-v4:${name}:${variant}`;
+}
+
+function readPageContentCache(name = "", variant = "public", maxAgeMs = 600000) {
+  try {
+    const cached = JSON.parse(localStorage.getItem(pageContentCacheKey(name, variant)) || "null");
+    if (!cached?.html || Date.now() - Number(cached.createdAt || 0) > maxAgeMs) return "";
+    return cached.html;
+  } catch {
+    return "";
+  }
+}
+
+function writePageContentCache(name = "", variant = "public", html = "") {
+  try {
+    if (html) localStorage.setItem(pageContentCacheKey(name, variant), JSON.stringify({ createdAt: Date.now(), html }));
+  } catch {}
+}
+
 export async function homePage() {
+  const homeVariant = mobileLeanStart() ? "mobile" : "desktop";
+  const cachedHome = readPageContentCache("home", homeVariant, 600000);
+  if (cachedHome) return publicShell("home", cachedHome);
   const withHomeTimeout = (promise, fallback = [], ms = 24000) => Promise.race([
     promise,
     new Promise((resolve) => setTimeout(() => resolve(fallback), ms))
   ]);
+  const leanHome = homeVariant === "mobile";
   const [events, editorial, topics, speakers, aboutBlocks] = await Promise.all([
-    withHomeTimeout(listPublicEvents().catch(() => [])),
-    withHomeTimeout(listPublicContent("editorialContent").catch(() => [])),
-    withHomeTimeout(listPublicContent("topics").catch(() => [])),
-    withHomeTimeout(listPublicContent("speakers").catch(() => [])),
-    withHomeTimeout(internalBlocks("ueber_uns").catch(() => []))
+    withHomeTimeout(listPublicEvents().catch(() => []), [], leanHome ? 9000 : 24000),
+    withHomeTimeout(listPublicContent("editorialContent").catch(() => []), [], leanHome ? 9000 : 24000),
+    withHomeTimeout(listPublicContent("topics").catch(() => []), [], leanHome ? 7000 : 24000),
+    withHomeTimeout(listPublicContent("speakers").catch(() => []), [], leanHome ? 7000 : 24000),
+    leanHome ? [] : withHomeTimeout(internalBlocks("ueber_uns").catch(() => []))
   ]);
   const upcoming = events.filter(upcomingEventIsVisible).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const next = upcoming.find(eventShowsOnHome) || null;
-  const mediaAssets = next ? await withHomeTimeout(listPublicEventMediaAssets([next]).catch(() => []), [], 8000) : [];
-  const nextImageUrl = next ? upcomingEventImageUrl(next, mediaAssets, { fallback: false }) : "";
+  let nextImageUrl = next ? upcomingEventImageUrl(next, [], { fallback: false }) : "";
+  if (next && !nextImageUrl) {
+    const mediaAssets = await withHomeTimeout(listPublicEventMediaAssets([next]).catch(() => []), [], 5000);
+    nextImageUrl = upcomingEventImageUrl(next, mediaAssets, { fallback: false });
+  }
   const retrospective = homeRetrospectiveItems(events, editorial)[0] || null;
   const seriesItems = homeFormatSeries(aboutBlocks);
   const latestNewsItems = publicNewsItems(editorial)
     .sort(newestContentFirst)
     .slice(0, 3);
   const visibleTopics = topics
-    .filter((topic) => topicIsReleasedAfterEvent(topic, events) && isStandaloneTopic(topic) && homeImageUrl(topic, "topic"))
+    .filter((topic) => topicIsReleasedAfterEvent(topic, events) && isStandaloneTopic(topic))
     .sort(newestContentFirst)
     .slice(0, 6);
-  const visibleSpeakers = homeSpeakersOnePerTalk(events, topics, speakers);
+  const visibleSpeakers = homeSpeakersOnePerTalk(events, topics, speakers)
+    .sort((a, b) => Number(Boolean(speakerPhotoUrl(b))) - Number(Boolean(speakerPhotoUrl(a))))
+    .slice(0, 6);
 
   const newsBody = latestNewsItems.length ? `<div class="pdtv-home-news-grid">${latestNewsItems.map((item) => {
     const image = homeImageUrl({ ...item, imageUrl: newsThumbUrl(item) }, "news");
@@ -1942,12 +2001,12 @@ export async function homePage() {
   }).join("")}</div>` : `<div class="pdtv-home-empty">Aktuell sind keine News veröffentlicht.</div>`;
 
   const topicsBody = visibleTopics.length ? `<div class="pdtv-home-topic-grid">${visibleTopics.map((topic) => `<a class="pdtv-home-topic-card" href="#/topic/${escapeHtml(topic.id)}">
-    <img src="${escapeHtml(homeImageUrl(topic, "topic"))}" alt="${escapeHtml(topic.title || "Thema")}" loading="lazy" decoding="async" ${liveImageAttrs("topic")}><span><strong>${escapeHtml(topic.title || "Thema")}</strong>${homeTeaser(topic, 135) ? `<small>${escapeHtml(homeTeaser(topic, 135))}</small>` : ""}</span>
+    ${homeImageUrl(topic, "topic") ? `<img src="${escapeHtml(homeImageUrl(topic, "topic"))}" alt="${escapeHtml(topic.title || "Thema")}" loading="lazy" decoding="async" ${liveImageAttrs("topic")}>` : `<span class="pdtv-home-topic-card__placeholder" aria-hidden="true">${escapeHtml(initials(topic.title || "Thema"))}</span>`}<span><strong>${escapeHtml(topic.title || "Thema")}</strong>${homeTeaser(topic, 135) ? `<small>${escapeHtml(homeTeaser(topic, 135))}</small>` : ""}</span>
   </a>`).join("")}</div>` : "";
 
   const speakersBody = visibleSpeakers.length ? `<div class="pdtv-home-speaker-grid">${visibleSpeakers.map((speaker) => {
     const name = speaker.name || [speaker.firstName, speaker.lastName].filter(Boolean).join(" ");
-    const photo = homeImageUrl({ ...speaker, imageUrl: speaker.photoUrl || speaker.imageUrl }, "member");
+    const photo = speakerPhotoUrl(speaker);
     return `<article class="pdtv-home-speaker-card">${photo ? `<img src="${escapeHtml(photo)}" alt="${escapeHtml(name)}" loading="lazy" decoding="async" ${liveImageAttrs("member")}>` : `<span>${escapeHtml(initials(name || "Referent"))}</span>`}<div><h3>${escapeHtml(name)}</h3>${speaker.company ? `<p>${escapeHtml(speaker.company)}</p>` : ""}<a class="button button--secondary button--small" href="${speakerProfileHref(speaker)}">Mehr</a></div></article>`;
   }).join("")}</div>` : "";
 
@@ -1958,13 +2017,15 @@ export async function homePage() {
     </article>`;
   }).join("")}</div>` : "";
 
-  return publicShell("home", `<main class="pdtv-home">
+  const homeContent = `<main class="pdtv-home">
     <div class="container">${homeHeroMarkup({ next, nextImageUrl, retrospective, series: seriesItems[0] || null })}</div>
     ${homeSection("Aktuelle News", "News", newsBody, `<a class="link" href="#/news">Alle News</a>`)}
     ${homeSection("Themen", "Dossiers", topicsBody, `<a class="link" href="#/topics">Alle Themen</a>`)}
     ${homeSection("Aktuelle Referenten", "Köpfe", speakersBody, `<a class="link" href="#/speakers">Alle Referenten</a>`)}
     ${homeSection("Vortragsreihen", "Interna", seriesBody)}
-  </main>`);
+  </main>`;
+  writePageContentCache("home", homeVariant, homeContent);
+  return publicShell("home", homeContent);
 }
 
 export async function speakersPage() {
@@ -1974,7 +2035,7 @@ export async function speakersPage() {
   const cards = speakers.map((speaker) => {
     const name = speakerName(speaker);
     const role = [speaker.position, speaker.company].filter(Boolean).join(" - ");
-    const teaser = speaker.shortBio || speaker.bio || speaker.longBio || "";
+    const teaser = speakerIntroText(speaker) || speakerVitaText(speaker);
     return `<article class="speaker-directory-card">
       <a class="speaker-directory-card__portrait" href="${speakerProfileHref(speaker)}">${speakerPortrait(speaker)}</a>
       <div>
@@ -2002,8 +2063,8 @@ export async function speakerDetailPage(id) {
   if (!speaker || !publicSpeakerIsVisible(speaker)) return notFoundPage();
   const name = speakerName(speaker);
   const role = [speaker.position, speaker.company].filter(Boolean).join(" - ");
-  const intro = speaker.shortBio || speaker.bio || "";
-  const vita = speaker.longBio || speaker.vita || speaker.biography || "";
+  const intro = speakerIntroText(speaker);
+  const vita = speakerVitaText(speaker);
   const talks = speakerTalkLinks(speaker, topics, events);
   const talksHtml = talks.length ? `<div class="speaker-detail-talks">${talks.map(({ topic, event }) => `<a class="speaker-detail-talk" href="#/topic/${escapeHtml(topic.id)}">
       <span>${escapeHtml(event?.displayDate || formatDate(event?.date || "") || "Vortrag")}</span>
@@ -2030,21 +2091,34 @@ export async function speakerDetailPage(id) {
 }
 
 export async function eventsPage() {
-  const [events, sponsors] = await Promise.all([
-    listPublicEvents(isMember()).catch(() => []),
-    listPublicContent("sponsors").catch(() => [])
-  ]);
   const user = currentUser();
+  const eventVariant = `${isMember(user) ? "member" : "public"}:${user?.uid || "guest"}`;
+  const cachedEvents = readPageContentCache("events", eventVariant, user ? 30000 : 120000);
+  if (cachedEvents) return publicShell("events", cachedEvents);
+  const leanEvents = mobileLeanStart();
+  const [events, sponsors] = await Promise.all([
+    listPublicEvents(isMember(user)).catch(() => []),
+    leanEvents ? [] : listPublicContent("sponsors").catch(() => [])
+  ]);
   const visible = events.filter((event) => event.accessType !== "invitation_only" || isMember(user) || event.showPublicTeaser);
   const rawUpcoming = visible.filter(upcomingEventIsVisible);
+  const myRegistrationByEventId = new Map(
+    user?.email
+      ? (await listMyEventRegistrations(rawUpcoming.map((event) => event.id)).catch(() => []))
+        .map((registration) => [registration.eventId, registration])
+      : []
+  );
   const upcoming = rawUpcoming.map((event) => ({
     ...event,
     imageDisplayUrl: upcomingEventImageUrl(event, [], { fallback: false }),
-    storedTicket: readStoredTicket(event.id)
+    storedTicket: readStoredTicket(event.id),
+    myRegistration: myRegistrationByEventId.get(event.id) || null
   }));
-  return publicShell("events", `${subhero("Veranstaltungen", "Events", "Kuratierte Formate für Wissenstransfer, Partnerschaften und relevante Branchenkontakte.")}
+  const eventsContent = `${subhero("Veranstaltungen", "Events", "Kuratierte Formate für Wissenstransfer, Partnerschaften und relevante Branchenkontakte.")}
     <section class="section"><div class="container"><div class="filters"><button class="filter active">Kommende Events</button><button class="filter">Öffentlich</button><button class="filter">Mitglieder</button><a class="filter" href="#/archive">Rückblicke</a></div>
-    ${upcoming.length ? `<div class="card-grid card-grid--three">${upcoming.map((event) => eventCard(event, false, sponsors)).join("")}</div>` : `<div class="alert">Aktuell sind keine neuen Termine veröffentlicht. Im Eventarchiv finden Sie die letzten PROdigitalTV-Veranstaltungen.</div>`}</div></section>`);
+    ${upcoming.length ? `<div class="card-grid card-grid--three">${upcoming.map((event) => eventCard(event, false, sponsors)).join("")}</div>` : `<div class="alert">Aktuell sind keine neuen Termine veröffentlicht. Im Eventarchiv finden Sie die letzten PROdigitalTV-Veranstaltungen.</div>`}</div></section>`;
+  writePageContentCache("events", eventVariant, eventsContent);
+  return publicShell("events", eventsContent);
 }
 
 async function getPublicRouteEvent(id, includeMemberEvents = false) {
@@ -2198,6 +2272,8 @@ export async function notificationUnsubscribePage(hash = "") {
 }
 
 export async function topicsPage() {
+  const cachedTopics = readPageContentCache("topics", "public", 600000);
+  if (cachedTopics) return publicShell("topics", cachedTopics);
   const [topicsRaw, speakers, mediaAssets, events] = await Promise.all([
     listPublicContent("topics"),
     listPublicContent("speakers").catch(() => []),
@@ -2229,8 +2305,10 @@ export async function topicsPage() {
   const loadMore = topics.length > initialVisible
     ? `<div class="topic-load-more"><button class="button button--secondary" type="button" data-topic-load-more data-topic-load-step="6">Mehr Themen laden</button><small data-topic-load-count>${Math.min(initialVisible, topics.length)} von ${topics.length} Themen sichtbar</small></div>`
     : "";
-  return publicShell("topics", `${subhero("Themen", "Die Agenda der digitalen Medienwirtschaft.", "PROdigitalTV buendelt relevante Fragestellungen und bringt sie in konkreten Events zur Diskussion.")}
-    <section class="section"><div class="container"><div class="card-grid card-grid--three editorial-list editorial-list--topics" data-topic-load-list>${topicCards}</div>${loadMore}</div></section>`);
+  const topicsContent = `${subhero("Themen", "Die Agenda der digitalen Medienwirtschaft.", "PROdigitalTV buendelt relevante Fragestellungen und bringt sie in konkreten Events zur Diskussion.")}
+    <section class="section"><div class="container"><div class="card-grid card-grid--three editorial-list editorial-list--topics" data-topic-load-list>${topicCards}</div>${loadMore}</div></section>`;
+  writePageContentCache("topics", "public", topicsContent);
+  return publicShell("topics", topicsContent);
 }
 
 export async function newsPage(query = new URLSearchParams()) {
@@ -2802,6 +2880,7 @@ export async function memberPortalPage() {
   if (!user) return loginPage();
   if (!isMember(user)) return portalPage();
   const adminMode = isAdmin(user);
+  const leanPortal = mobileLeanStart();
   const selectedMemberId = (() => {
     try {
       return new URLSearchParams((window.location.hash.split("?")[1] || "")).get("memberId") || "";
@@ -2820,13 +2899,19 @@ export async function memberPortalPage() {
     ? null
     : user.memberId ? await getOne("members", user.memberId).catch(() => null) : null;
   const linkedMemberBlocked = !adminMode && ownMember?.id && !memberHasPortalAccess(ownMember);
+  const needsEvents = activeTab === "overview" || activeTab === "events";
+  const needsSponsors = needsEvents;
+  const needsDocuments = activeTab === "documents";
+  const needsArticles = activeTab === "overview" || activeTab === "documents";
+  const needsGalleries = needsArticles;
+  const needsMembers = activeTab === "directory" || adminMode || (!leanPortal && activeTab === "overview");
   const [allEvents, sponsors, memberDocuments, members, memberVideos, galleries] = await Promise.all([
-    listPublicEvents(true).catch(() => []),
-    listPublicContent("sponsors").catch(() => []),
-    list("memberDocuments").catch(() => []),
-    list("members").catch(() => listPublicContent("members")).then(withPublicMemberLogos).catch(() => []),
-    listMemberContent("editorialContent").catch(() => []),
-    list("galleries").catch(() => [])
+    needsEvents ? listPublicEvents(true).catch(() => []) : [],
+    needsSponsors ? listPublicContent("sponsors").catch(() => []) : [],
+    needsDocuments ? list("memberDocuments").catch(() => []) : [],
+    needsMembers ? list("members").catch(() => listPublicContent("members")).then(withPublicMemberLogos).catch(() => []) : [],
+    needsArticles ? listMemberContent("editorialContent").catch(() => []) : [],
+    needsGalleries ? list("galleries").catch(() => []) : []
   ]);
   const sortedMembers = members
     .slice()
@@ -2892,7 +2977,8 @@ export async function memberPortalPage() {
   const directorySection = `<section class="member-portal-section"><div class="section-head"><h2>Mitgliederverzeichnis</h2></div><div class="card-grid card-grid--three member-directory-grid">${visibleMembers.length ? visibleMembers.map(memberDirectoryCard).join("") : `<div class="alert">Noch keine freigegebenen Mitglieder.</div>`}</div></section>`;
   const eventsSection = `<section class="member-portal-section"><div class="section-head"><h2>Mitglieder-Events</h2></div><div class="card-grid card-grid--three">${events.length ? events.map((event) => eventCard(event, false, sponsors)).join("") : `<div class="alert">Aktuell keine Mitglieder-Events.</div>`}</div></section>`;
   const uploadSection = `<section class="member-portal-section"><div class="section-head"><div><h2>Foto-Upload</h2><p class="muted">Bilder an die Redaktion senden. Die Zuordnung erfolgt spaeter im CMS.</p></div></div><form id="member-material-upload-form" class="form-card form-grid member-upload-form"><label class="button button--primary member-photo-upload-button">Fotos auswaehlen<input name="files" type="file" accept="image/*" multiple hidden></label><div class="field"><label>Hinweistext</label><textarea name="note" rows="3" placeholder="z. B. Eventname, Ort oder kurzer Hinweis"></textarea></div><label class="checkbox-line"><input type="checkbox" name="rightsConfirmed" value="1" required> Nutzungsfreigabe bestätigen</label><button class="button button--primary" type="submit">Bilder senden</button><div id="member-material-upload-result"></div></form></section>`;
-  const overviewSection = `<section class="member-portal-section"><div class="member-portal-overview"><article class="member-portal-card member-portal-card--infos"><span>${visibleMemberArticles.length}</span><h3>Member Infos</h3><p>Mitgliederbeiträge, Dokumente und Anlagen abrufen.</p><a href="#/portal?tab=documents">Öffnen</a></article><article class="member-portal-card member-portal-card--directory"><span>${visibleMembers.length}</span><h3>Mitgliederliste</h3><p>Aktuelle Mitglieder und freigegebene Kontaktdaten.</p><a href="#/portal?tab=directory">Öffnen</a></article><article class="member-portal-card member-portal-card--profile"><span>1</span><h3>Mein Profil</h3><p>Eigene Mitgliedsdaten pflegen.</p><a href="#/portal?tab=profile">Bearbeiten</a></article><article class="member-portal-card member-portal-card--upload"><span>+</span><h3>Foto-Upload</h3><p>Fotos an die Redaktion senden.</p><a href="#/portal?tab=upload">Hochladen</a></article></div></section>`;
+  const directoryCount = needsMembers ? visibleMembers.length : ">";
+  const overviewSection = `<section class="member-portal-section"><div class="member-portal-overview"><article class="member-portal-card member-portal-card--infos"><span>${visibleMemberArticles.length}</span><h3>Member Infos</h3><p>Mitgliederbeiträge, Dokumente und Anlagen abrufen.</p><a href="#/portal?tab=documents">Öffnen</a></article><article class="member-portal-card member-portal-card--directory"><span>${escapeHtml(String(directoryCount))}</span><h3>Mitgliederliste</h3><p>Aktuelle Mitglieder und freigegebene Kontaktdaten.</p><a href="#/portal?tab=directory">Öffnen</a></article><article class="member-portal-card member-portal-card--profile"><span>1</span><h3>Mein Profil</h3><p>Eigene Mitgliedsdaten pflegen.</p><a href="#/portal?tab=profile">Bearbeiten</a></article><article class="member-portal-card member-portal-card--upload"><span>+</span><h3>Foto-Upload</h3><p>Fotos an die Redaktion senden.</p><a href="#/portal?tab=upload">Hochladen</a></article></div></section>`;
   const content = activeTab === "profile" ? profileSection
     : activeTab === "directory" ? directorySection
     : activeTab === "documents" ? memberInfosSection

@@ -17,6 +17,14 @@ export function eventCard(event, archive = false, partners = []) {
   ].filter(Boolean).filter((name, index, list) => list.findIndex((entry) => entry.toLowerCase() === name.toLowerCase()) === index);
   const imageUrl = stableImageUrl(event.imageDisplayUrl || event.imageUrl || "", "event");
   const storedTicket = event.storedTicket || null;
+  const myRegistration = event.myRegistration || null;
+  const registrationStatusText = myRegistration
+    ? myRegistration.emailConfirmed || myRegistration.status === "confirmed"
+      ? "Angemeldet"
+      : myRegistration.status === "waitlist"
+        ? "Warteliste"
+        : "Bestaetigung offen"
+    : "";
   const summary = event.description || event.publicTeaser || event.teaserText || event.shortDescription || event.subtitle || "";
   const imageStyle = imageUrl ? ` style="--event-card-image:url(&quot;${escapeHtml(imageUrl)}&quot;)"` : "";
   return `<article class="card event-card ${imageUrl ? "event-card--with-image" : ""}"${imageStyle}>
@@ -28,6 +36,7 @@ export function eventCard(event, archive = false, partners = []) {
     <div class="card__body">
       <span class="tag ${event.accessType !== "public" ? "tag--red" : ""}">${accessLabels[event.accessType]}</span>
       ${storedTicket ? `<div class="event-ticket-status"><span class="event-ticket-status__icon" aria-hidden="true"></span><div><strong>Handy-Ticket aktiv</strong><span>${escapeHtml([storedTicket.firstName, storedTicket.lastName].filter(Boolean).join(" ") || "Dieses Geraet")}</span></div></div>` : ""}
+      ${!storedTicket && myRegistration ? `<div class="event-ticket-status event-ticket-status--booking"><span class="event-ticket-status__icon" aria-hidden="true"></span><div><strong>${escapeHtml(registrationStatusText)}</strong><span>${escapeHtml([myRegistration.firstName, myRegistration.lastName].filter(Boolean).join(" ") || "Ihre Buchung")}</span></div></div>` : ""}
       <h3>${escapeHtml(event.title)}</h3>
       ${summary ? `<p class="event-card__summary">${escapeHtml(summary)}</p>` : ""}
       <div class="event-meta"><span>${formatDate(event.date)}${event.startTime ? ` - ${event.startTime} Uhr` : ""}</span></div>

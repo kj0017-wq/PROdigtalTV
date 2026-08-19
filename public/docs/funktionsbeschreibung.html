@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PROdigitalTV Funktionsbeschreibung</title>
+    <style>
+      :root { color: #071a33; background: #f3f7fc; font-family: Arial, Helvetica, sans-serif; }
+      body { margin: 0; }
+      main { max-width: 980px; margin: 0 auto; padding: 48px 22px 80px; }
+      article { background: #fff; border: 1px solid #d8e2f0; border-radius: 12px; padding: clamp(24px, 4vw, 54px); box-shadow: 0 18px 55px rgba(7, 26, 51, .08); }
+      h1 { margin: 0 0 12px; font-size: clamp(2.1rem, 5vw, 4rem); line-height: 1.02; }
+      h2 { margin: 44px 0 14px; font-size: clamp(1.45rem, 3vw, 2.1rem); }
+      h3 { margin: 28px 0 10px; font-size: 1.18rem; }
+      p, li { color: #526176; font-size: 1.03rem; line-height: 1.7; }
+      ul, ol { padding-left: 24px; }
+      .eyebrow { color: #e30613; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+      .toc { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin: 28px 0 8px; padding: 18px; border-radius: 10px; background: #f5f8fc; }
+      .toc a { color: #071a33; font-weight: 700; text-decoration: none; }
+      .note { padding: 18px 20px; border-left: 5px solid #e30613; background: #fff6f7; color: #071a33; }
+      .flow-diagram { display: grid; gap: 18px; margin: 24px 0 12px; }
+      .flow-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: stretch; }
+      .flow-card { position: relative; min-height: 128px; padding: 18px; border: 1px solid #dbe5f2; border-radius: 10px; background: #f8fbff; }
+      .flow-card strong { display: block; color: #071a33; font-size: 1.05rem; line-height: 1.3; }
+      .flow-card span { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin-bottom: 12px; border-radius: 50%; background: #e30613; color: #fff; font-weight: 900; }
+      .flow-card p { margin: 8px 0 0; font-size: .93rem; line-height: 1.45; }
+      .flow-card::after { content: "↓"; position: absolute; left: 50%; bottom: -21px; transform: translateX(-50%); color: #e30613; font-size: 1.4rem; font-weight: 900; }
+      .flow-row:last-child .flow-card::after { display: none; }
+      .flow-card--red { background: #fff6f7; border-color: #f3b6bd; }
+      .flow-card--blue { background: #f1f6ff; border-color: #c9d8f0; }
+      .flow-card--green { background: #f1fbf6; border-color: #bee5ce; }
+      .flow-card--dark { background: #071a33; border-color: #071a33; }
+      .flow-card--dark strong, .flow-card--dark p { color: #fff; }
+      @media (max-width: 760px) {
+        main { padding: 24px 12px 52px; }
+        article { padding: 22px 18px 34px; border-radius: 10px; }
+        .flow-row { grid-template-columns: 1fr; gap: 22px; }
+        .flow-card { min-height: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article>
+        <p class="eyebrow">Stand August 2026</p>
+        <h1>PROdigitalTV Funktionsbeschreibung</h1>
+        <p>Diese Beschreibung fasst die wichtigsten Funktionen der PROdigitalTV-Webseite und des CMS zusammen. Sie richtet sich an Redaktion, Administration und Vorstand und erklaert, wofuer die einzelnen Bereiche gedacht sind, wie sie genutzt werden und welche Wirkung sie auf der Webseite haben.</p>
+        <h2>Highlights der Plattform</h2>
+        <p>PROdigitalTV verbindet Webseite, CMS, Events, Redaktion, Mitgliederbereich und Medienverwaltung in einem System.</p>
+        <ul>
+          <li>Events koennen vollstaendig geplant, beworben, verwaltet und nachbereitet werden.</li>
+          <li>Teilnehmer melden sich online an und nutzen ihr Handy als Ticket.</li>
+          <li>Nach Veranstaltungen koennen Teilnehmer gezielt mit Rueckblicken, Galerien, Themenbeitraegen und Folgeevents informiert werden.</li>
+          <li>Robo-Themen machen Vortraege der Medienfruehstuecke dauerhaft sichtbar.</li>
+          <li>Referenten bekommen eine eigene Buehne mit Foto, Vita, Vortrag und Fachbeitrag.</li>
+          <li>News und Morning Briefings koennen redaktionell gepflegt und veroeffentlicht werden.</li>
+          <li>KI ersetzt nicht die Redaktion, sondern unterstuetzt bei Formulierung, Rechtschreibung, Struktur und Artikelbildern.</li>
+          <li>Bilder werden hochgeladen, gecroppt, optimiert und als WebP-Varianten bereitgestellt.</li>
+          <li>Audiofassungen mit Mitlese- und Karaokefunktion machen Beitraege besser nutzbar.</li>
+          <li>Mitglieder erhalten einen geschuetzten Bereich fuer Events, Dokumente, Verzeichnis und Profil.</li>
+          <li>Das CMS prueft fehlende Bilder, Texte, Links und andere Qualitaetsprobleme.</li>
+          <li>Startseite, Events, Themen, News und Referenten lassen sich gezielt steuern.</li>
+        </ul>
+        <h2>Flussdiagramm</h2>
+        <p>Der Ablauf zeigt, wie aus einem Event ein vollstaendiger redaktioneller Kommunikationskreislauf entsteht.</p>
+        <section class="flow-diagram" aria-label="PROdigitalTV Ablaufdiagramm">
+          <div class="flow-row">
+            <div class="flow-card flow-card--blue"><span>1</span><strong>Event planen</strong><p>Stammdaten, Ort, Datum, Gastgeber, Sichtbarkeit und Startseitenfreigabe im CMS anlegen.</p></div>
+            <div class="flow-card flow-card--blue"><span>2</span><strong>Inhalte vorbereiten</strong><p>Einladung, Agenda, Vortraege, Referenten, Bilder, Logos und Anmeldeoptionen pflegen.</p></div>
+            <div class="flow-card flow-card--red"><span>3</span><strong>Veroeffentlichen</strong><p>Event aktivieren, auf Webseite oder im Mitgliederbereich anzeigen und gezielt bewerben.</p></div>
+          </div>
+          <div class="flow-row">
+            <div class="flow-card flow-card--red"><span>4</span><strong>Zentrale Einladung</strong><p>Empfaengerkreis auswaehlen und Einladungen per Mail sowie optional Push gezielt versenden.</p></div>
+            <div class="flow-card"><span>5</span><strong>Anmeldung</strong><p>Teilnehmer registrieren sich online, erhalten eine Bestaetigungsmail und nutzen das Handy als Ticket.</p></div>
+            <div class="flow-card"><span>6</span><strong>Durchfuehrung</strong><p>Check-in, Teilnehmerstatus, Eventkontakte, Medienmaterial und Foto-Uploads werden im System verwaltet.</p></div>
+          </div>
+          <div class="flow-row">
+            <div class="flow-card flow-card--green"><span>7</span><strong>Rueckblick</strong><p>Nach dem Event entstehen Rueckblick, Galerie, Nachbericht und oeffentliche Archivdarstellung.</p></div>
+            <div class="flow-card flow-card--green"><span>8</span><strong>Robo-Themen</strong><p>Vortraege der Medienfruehstuecke werden als dauerhafte Themenbeitraege redaktionell aufbereitet.</p></div>
+            <div class="flow-card flow-card--green"><span>9</span><strong>Referentenbuehne</strong><p>Referenten werden mit Foto, Vita, Unternehmen, Funktion, Vortrag und Fachbeitrag sichtbar gemacht.</p></div>
+          </div>
+          <div class="flow-row">
+            <div class="flow-card flow-card--dark"><span>10</span><strong>Nachkommunikation</strong><p>Teilnehmer erhalten gezielt Rueckblicke, Galerien, Themen, Referenteninfos und Hinweise auf Folgeevents.</p></div>
+          </div>
+        </section>
+        <nav class="toc" aria-label="Inhalt">
+          <a href="#plattform">Plattform</a>
+          <a href="#webseite">Webseite</a>
+          <a href="#cms">CMS</a>
+          <a href="#events">Events</a>
+          <a href="#anmeldung">Anmeldesystem</a>
+          <a href="#medien">Medien und Bilder</a>
+          <a href="#referenten">Referenten</a>
+          <a href="#news">News und KI</a>
+          <a href="#mitglieder">Mitgliederbereich</a>
+          <a href="#betrieb">Betrieb</a>
+        </nav>
+
+        <h2 id="plattform">1. Grundidee der Plattform</h2>
+        <p>PROdigitalTV ist eine redaktionelle Webseite und zugleich ein Verwaltungswerkzeug fuer den Verein. Die Plattform verbindet oeffentliche Inhalte, Eventkommunikation, Mitgliederinformationen, redaktionelle News, Rueckblicke, Themenbeitraege und interne Verwaltungsfunktionen.</p>
+        <p>Die Plattform ist als mobile-first Web-App gedacht. Besucher, Mitglieder und Eventteilnehmer sollen die wichtigsten Funktionen zuerst auf dem Smartphone nutzen koennen: Events ansehen, sich anmelden, Handy-Ticket oeffnen, Mitgliederbereich nutzen, News lesen, Themen entdecken und Inhalte teilen.</p>
+        <p>Ergaenzend gibt es eine Desktop-Variante fuer umfangreichere redaktionelle und administrative Arbeit. Das CMS ist bewusst fuer groessere Bildschirme ausgelegt, weil Eventplanung, Medienbearbeitung, Teilnehmerverwaltung, Galeriepflege, Redaktion und Qualitaetssicherung mehr Platz und Praezision brauchen.</p>
+        <p>Inhalte werden im CMS gepflegt und erscheinen je nach Status, Sichtbarkeit, Datum und Startseitenfreigabe auf der oeffentlichen Webseite oder im geschuetzten Mitgliederbereich.</p>
+        <ul>
+          <li>Oeffentliche Webseite fuer Besucher, Mitglieder und Eventteilnehmer</li>
+          <li>CMS fuer Redaktion, Eventverwaltung, Medienverwaltung und Administration</li>
+          <li>Mitgliederbereich fuer geschuetzte Inhalte, Mitglieder-Events und Dokumente</li>
+          <li>KI-Redaktion fuer Newsimport, Morning Briefing und Textunterstuetzung</li>
+        </ul>
+
+        <h2 id="webseite">2. Oeffentliche Webseite</h2>
+        <h3>Startseite</h3>
+        <p>Die Startseite zeigt die wichtigsten freigegebenen Inhalte: kommende Events, ausgewaehlte Themen, Referenten, News und Reihen wie Medienfruehstueck oder Von den Besten lernen. Inhalte erscheinen dort nur, wenn sie aktiv und fuer die Startseite freigegeben sind.</p>
+        <h3>Events</h3>
+        <p>Die Eventseite zeigt kommende Veranstaltungen, Mitglieder-Events nach Login sowie vergangene Events als Rueckblicke oder Archiv. Eventkarten koennen anzeigen, ob ein eingeloggter Nutzer bereits angemeldet ist.</p>
+        <h3>Themen</h3>
+        <p>Die Themenseite zeigt redaktionelle Themenbeitraege mit Vorschaubildern, Nachladefunktion und Detailseiten. Die Robo-Themen sind den Vortraegen der Medienfruehstuecke vorbehalten: Sie sind keine allgemeine Newsrubrik, sondern die redaktionelle Auswertung und dauerhafte Buehne fuer die fachlichen Impulse aus den Veranstaltungen.</p>
+        <p>Themen aus Events werden erst nach dem Eventdatum sichtbar, damit Vortragsinhalte nicht vorab veroeffentlicht werden. Die Referenten stehen dabei bewusst im Mittelpunkt: mit Foto, Vita, Unternehmen, Funktion, Vortragstitel, Themenbeitrag und Verknuepfung zum jeweiligen Event.</p>
+        <h3>Referenten</h3>
+        <p>Die Referentenseite zeigt Personenprofile mit Foto, Name, Unternehmen, Funktion, Vita und verknuepften Vortraegen. Referenten koennen auch auf der Startseite erscheinen.</p>
+        <h3>News</h3>
+        <p>Der Newsbereich enthaelt redaktionelle Nachrichten, Branchen-News, Morning Briefings und Importmeldungen. Jede Meldung soll als einzelner Newsbeitrag erscheinen.</p>
+
+        <h2 id="cms">3. CMS-Uebersicht</h2>
+        <p>Das CMS ist die Verwaltungsoberflaeche fuer Inhalte, Events, Medien, Mitglieder, News und Systemfunktionen. Es ist primaer fuer Desktop gedacht.</p>
+        <ul>
+          <li>Inhalte anlegen, bearbeiten, speichern und veroeffentlichen</li>
+          <li>Status und Sichtbarkeit steuern</li>
+          <li>Bilder hochladen, croppen und zuordnen</li>
+          <li>Events, Referenten, Vortraege und Teilnehmer verwalten</li>
+          <li>News und redaktionelle Beitraege erstellen</li>
+          <li>Qualitaetssicherung ausfuehren</li>
+        </ul>
+        <p class="note">Wichtig sind Status und Sichtbarkeit: Entwurf ist noch nicht oeffentlich, Aktiv/Veroeffentlicht darf angezeigt werden, Archiviert bleibt gespeichert, Oeffentlich ist fuer alle sichtbar, Mitglieder ist geschuetzt und Intern ist nur fuer interne Verwaltung gedacht.</p>
+
+        <h2 id="events">4. Eventverwaltung</h2>
+        <h3>Stammdaten</h3>
+        <p>In den Stammdaten werden Titel, Datum, Ort, Eventtyp, Gastgeber, Partner, Eventbild, Status, Sichtbarkeit, Mitgliederfreigabe und Startseitenfreigabe gepflegt. Ein einfacher Aktiv-Schalter soll das Event sichtbar machen, waehrend ein zweiter Schalter steuert, ob es auf die Startseite soll.</p>
+        <h3>Einladung</h3>
+        <p>Der Einladungsbereich enthaelt Teaser, Beschreibung, Einladungstext, Hinweise und Vorschau. Save-the-Date- oder Vorschau-Links muessen immer zur passenden Eventseite fuehren, auch bei Mitglieder-Events.</p>
+        <h3>Vortraege und Referenten</h3>
+        <p>Hier werden Agenda, Vortraege, Referenten, Unternehmen, Logos, Vortragsbilder und Reihenfolge gepflegt. Nach Drag-and-drop wird die Reihenfolge neu nummeriert. Bei mehreren Referenten kann auf Listen nur eine Person stellvertretend erscheinen.</p>
+        <h3>Rueckblick</h3>
+        <p>Nach dem Event koennen Rueckblicktext, Eventgalerie, Nachbericht und Archivdarstellung gepflegt werden. Rueckblicke erscheinen nicht als kommende Events.</p>
+        <p>Ein wichtiger Nutzen des Eventsystems ist die Kommunikation nach der Veranstaltung. Teilnehmer koennen gezielt informiert werden, zum Beispiel mit Rueckblick, Bildergalerie, weiterfuehrenden Themenbeitraegen, Referentenprofilen oder Hinweisen auf kommende Veranstaltungen.</p>
+
+        <h2 id="anmeldung">5. Anmeldesystem</h2>
+        <p>Das Anmeldesystem verwaltet oeffentliche und geschuetzte Eventregistrierungen. Es unterstuetzt Anmeldung, Warteliste, manuelle Teilnehmeranlage, Check-in, Stornierung, Bestaetigungsmails und Erinnerungen.</p>
+        <ul>
+          <li>Teilnehmer manuell hinzufuegen oder loeschen</li>
+          <li>Bestaetigungsmail auch bei manueller Anlage senden</li>
+          <li>Stornierungslink pro Anmeldung erzeugen</li>
+          <li>Datenschutz- und Foto-/Videohinweis abfragen</li>
+          <li>Dubletten pruefen, geloeschte oder stornierte Datensaetze aber nicht blockieren</li>
+          <li>Handy-Ticket fuer angemeldete Nutzer anzeigen</li>
+          <li>Gebuchte Events direkt in der Eventliste kennzeichnen</li>
+        </ul>
+        <p>Die Anmeldung soll fuer Teilnehmer moeglichst einfach sein: Formular ausfuellen, Datenschutz- und Foto-/Videohinweis bestaetigen, absenden und danach eine Bestaetigung per E-Mail erhalten. Bei Mitglieder-Events fuehrt der Link nach Login direkt zum passenden Event.</p>
+        <p>Die Teilnehmerliste ist auch nach dem Event wertvoll. PROdigitalTV kann Teilnehmer gezielt erneut ansprechen, etwa mit Dankesmail, Rueckblick, Fotogalerie, Veroeffentlichung der Vortraege, Robo-Themen, Referenteninformationen oder Einladungen zu passenden Folgeevents. So wird eine Veranstaltung redaktionell verlaengert und kann praeziser beworben werden.</p>
+        <h3>Handy als Ticket</h3>
+        <p>Das Handy-Ticket ersetzt eine separate Papierbestaetigung. Ein eingeloggter Teilnehmer kann auf dem Mobilgeraet sehen, ob sein Ticket aktiv ist, ob die Bestaetigung noch offen ist oder ob er auf der Warteliste steht. Beim Einlass kann das Team den Teilnehmerstatus pruefen und eine Person als eingecheckt markieren.</p>
+        <p>Technisch arbeitet das Ticket mit einem persoenlichen Token. Dieser Token ist eine eindeutige, schwer zu erratende Kennung, die mit genau einer Anmeldung und genau einem Event verbunden ist. Dadurch erkennt das System, zu welchem Gast, welchem Event und welchem Status ein Ticket gehoert.</p>
+        <p>Der QR-Code ist vor allem dann relevant, wenn sich ein Teilnehmer nicht direkt am Handy, sondern am Desktop anmeldet. Nach der Anmeldung erscheint auf dem Desktop ein QR-Code. Diesen scannt der Teilnehmer mit seinem Smartphone. Dadurch wird das persoenliche Handy-Ticket auf dem Mobilgeraet geoeffnet oder aktiviert.</p>
+        <p>Dabei wird der persoenliche Token auf dem betreffenden Handy gespeichert. Das ist wichtig, weil das System dieses Smartphone danach der richtigen Anmeldung zuordnen kann. Das Handy wird dadurch zum persoenlichen Tickettraeger fuer genau diesen Gast und genau dieses Event.</p>
+        <p>Der QR-Code ist also nicht das eigentliche Einlassticket auf dem Handy, sondern die technische Bruecke vom Desktop zum Smartphone. Nach dem Scan liegt der Token auf dem Handy. Dort sieht der Gast sein Event, seinen Status und die persoenlichen Ticketdaten.</p>
+        <p>Diese Loesung unterstuetzt eine professionelle Eventdurchfuehrung. Am Einlass kann das Team das Handy-Ticket pruefen und den Gast persoenlich auf dem Screen begruessen, zum Beispiel mit Name, Unternehmen und Eventstatus. Das beschleunigt den Check-in und macht den Empfang deutlich wertiger.</p>
+        <h3>Technischer Ablauf: Anmeldung und Handy-Ticket</h3>
+        <section class="flow-diagram" aria-label="Technischer Ablauf Anmeldung und Handy-Ticket">
+          <div class="flow-row">
+            <div class="flow-card flow-card--blue"><span>1</span><strong>Event ist aktiv</strong><p>Im CMS sind Event, Sichtbarkeit, Anmeldung und Kapazitaet freigeschaltet.</p></div>
+            <div class="flow-card flow-card--blue"><span>2</span><strong>Formular absenden</strong><p>Der Teilnehmer traegt Daten ein, bestaetigt Datenschutz sowie Foto-/Videohinweis und sendet die Anmeldung.</p></div>
+            <div class="flow-card"><span>3</span><strong>Pruefung</strong><p>Das System prueft Pflichtfelder, Dubletten, Storno-/Loeschstatus, Kapazitaet und Warteliste.</p></div>
+          </div>
+          <div class="flow-row">
+            <div class="flow-card"><span>4</span><strong>Token erzeugen</strong><p>Die Anmeldung wird mit Event-ID, Teilnehmerdaten, Status und persoenlichem Token gespeichert.</p></div>
+            <div class="flow-card flow-card--red"><span>5</span><strong>Desktop-QR-Code</strong><p>Bei Desktop-Anmeldung scannt der Gast den QR-Code und uebernimmt den Token auf sein Smartphone.</p></div>
+            <div class="flow-card flow-card--green"><span>6</span><strong>Token auf Handy</strong><p>Der Token wird auf diesem Handy gespeichert. Das System kann das Geraet der Anmeldung zuordnen.</p></div>
+          </div>
+          <div class="flow-row">
+            <div class="flow-card flow-card--green"><span>7</span><strong>Eventliste erkennt Buchung</strong><p>Bei eingeloggten Nutzern fragt die Webseite eigene Registrierungen ab und markiert gebuchte Events.</p></div>
+            <div class="flow-card"><span>8</span><strong>Check-in am Einlass</strong><p>Das System erkennt das gespeicherte Handy-Ticket und begruesst den Gast persoenlich auf dem Screen.</p></div>
+            <div class="flow-card flow-card--dark"><span>9</span><strong>Nachlauf</strong><p>Nach dem Event koennen Teilnehmer gezielt mit Rueckblick, Galerie, Themen und Folgeevents angesprochen werden.</p></div>
+          </div>
+        </section>
+        <h3>Mailingfunktion</h3>
+        <p>Die Mailverwaltung ist die zentrale Steuerung fuer automatische und redaktionell vorbereitete E-Mails. Sie begleitet Teilnehmer, Mitglieder und Interessenten vor, waehrend und nach einer Veranstaltung.</p>
+        <ul>
+          <li>erste Einladung zu einer Veranstaltung aus dem CMS vorbereiten</li>
+          <li>Empfaengerkreis gezielt auswaehlen, zum Beispiel gesamter Adressbestand oder nur Vereinsmitglieder</li>
+          <li>weitere Zielgruppen wie Teilnehmer, Interessenten, Sponsoren, Partner oder manuelle Verteiler adressieren</li>
+          <li>Automatische Bestaetigungsmails nach Anmeldung</li>
+          <li>Bestaetigungsmail auch bei manueller Teilnehmeranlage im CMS</li>
+          <li>Stornierungslinks, Aktivierungslinks und Erinnerungen</li>
+          <li>Einladungen und Save-the-Date-Kommunikation</li>
+          <li>Statuspruefung fuer versendete oder fehlgeschlagene Mails</li>
+          <li>Gezielte Nachfassmails nach Veranstaltungen</li>
+          <li>Links zu Event, Handy-Ticket, Storno, Rueckblick oder Mitgliederbereich</li>
+        </ul>
+        <p>Schon bei der ersten Einladung kann festgelegt werden, welcher Besucherkreis angesprochen werden soll. So kann ein Event breit an den gesamten Adressbestand kommuniziert werden oder bewusst nur an Vereinsmitglieder, bestimmte Teilnehmergruppen, Partner oder ausgewaehlte Kontakte gehen.</p>
+        <p>Nach dem Event wird Mailing zum redaktionellen Nachlauf: Teilnehmer koennen gezielt Rueckblicke, Galerien, Robo-Themen, Referenteninformationen, Sponsorenhinweise und Einladungen zu passenden Folgeformaten erhalten. Damit wird die Veranstaltung ueber den eigentlichen Termin hinaus weiter genutzt.</p>
+        <h3>Push-Nachrichten</h3>
+        <p>Ergaenzend zur E-Mail-Kommunikation kann die Plattform Push-Nachrichten fuer mobile Nutzer einsetzen. Push ist besonders sinnvoll fuer kurze, zeitnahe Hinweise rund um ein Event.</p>
+        <ul>
+          <li>Teilnehmer koennen eine Event-Erinnerung auf dem eigenen Geraet aktivieren</li>
+          <li>kurzfristige Hinweise vor oder waehrend einer Veranstaltung senden</li>
+          <li>Erinnerungen an Beginn, Check-in, Ortsinformationen oder Programmupdates ausspielen</li>
+          <li>mobile Nutzer direkt erreichen, ohne dass sie eine E-Mail oeffnen muessen</li>
+          <li>Push als freiwillige Ergaenzung nutzen, falls Browser und Geraet dies unterstuetzen</li>
+        </ul>
+        <p>Push-Nachrichten ersetzen keine E-Mail, sondern ergaenzen sie. E-Mail bleibt der verlaessliche Kommunikationskanal fuer Einladungen, Bestaetigungen und Nachfassmails. Push ist der schnelle mobile Kanal fuer aktuelle Hinweise.</p>
+
+        <h2 id="medien">6. Medien und Bilder</h2>
+        <p>Die Medienverwaltung ist die zentrale Ablage fuer Bilder, Logos, Videos, Dokumente und Varianten. Beim Upload sollen benoetigte Varianten automatisch erzeugt und richtig zugeordnet werden.</p>
+        <h3>Upload und Optimierung</h3>
+        <p>Bilder koennen direkt im Formular oder aus der Mediathek gewaehlt werden. Das System erzeugt optimierte WebP-Dateien. Bei zu kleiner Aufloesung erscheint ein Hinweis, dass das Bild unscharf wirken kann.</p>
+        <h3>Cropping</h3>
+        <p>Beim Cropping wird das Bild in einem Rahmen verschoben und mit dem Mausrad skaliert. Der ausgewaehlte Ausschnitt wird uebernommen. Referentenfotos und Vortragsbilder koennen unterschiedliche Formate haben und brauchen deshalb unterschiedliche Cropfenster.</p>
+        <h3>Varianten</h3>
+        <ul>
+          <li>Eventbild fuer Eventkarte und Detailseite</li>
+          <li>Themenbild fuer Liste und Artikel</li>
+          <li>Thumbnail fuer Vorschauen</li>
+          <li>Referentenfoto fuer Personenprofile</li>
+          <li>Logo fuer Unternehmen, Gastgeber und Partner</li>
+          <li>Artikelbild fuer redaktionelle Detailseiten</li>
+        </ul>
+
+        <h2 id="referenten">7. Referentenverwaltung</h2>
+        <p>Referenten koennen zentral oder im Eventkontext gepflegt werden. Ein vollstaendiges Profil enthaelt Name, Unternehmen, Funktion, Foto, Vita, Kurzbeschreibung und Zuordnung zu Vortraegen.</p>
+        <p>Fotos und Vita sind wichtig, damit Referentenseiten, Themenbeitraege und Eventdetailseiten vollstaendig wirken.</p>
+        <p>Die Plattform baut den Referenten eine eigene Buehne. Aus einem Vortrag entsteht ein eigenstaendiger Fachbeitrag, der den Referenten als fachlichen Kopf sichtbar macht und den Inhalt auch nach dem Event auffindbar, zitierbar und teilbar haelt.</p>
+
+        <h2 id="news">8. News, KI-Redaktion und Morning Briefing</h2>
+        <p>News koennen manuell, ueber KI-Newsimport oder aus einem Morning Briefing entstehen. Importierte Dateien mit mehreren Meldungen sollen in einzelne Newsbeitraege getrennt werden.</p>
+        <p class="note">Die KI-Unterstuetzung ersetzt nicht die Redaktion. Sie ergaenzt die redaktionelle Arbeit nur als Werkzeug fuer Formulierungsvorschlaege, Rechtschreib- und Stilpruefung, Strukturierung von Texten sowie die Erstellung oder Vorbereitung von Artikelbildern. Redaktionelle Auswahl, Bewertung, Freigabe, Quellenpruefung und Verantwortung bleiben immer beim Menschen.</p>
+        <ul>
+          <li>News anlegen und direkt im Newsbereich veroeffentlichen</li>
+          <li>Rubrik, Datum, Quelle und Bild pflegen</li>
+          <li>Morning Briefing mit aktuellen Branchenthemen erzeugen</li>
+          <li>Formulierungen verbessern und Rechtschreibung pruefen</li>
+          <li>KI-Texte redaktionell pruefen und erst danach speichern</li>
+          <li>Artikelbilder vorbereiten oder erzeugen</li>
+          <li>Optional Audio und Vorschaubilder erzeugen</li>
+        </ul>
+        <h3>Redaktionelle Medienwerkzeuge</h3>
+        <p>Die Redaktion kann Beitraege nicht nur als Text veroeffentlichen, sondern mit passenden Medien ergaenzen. So entstehen vollstaendige Artikelpakete fuer News, Themen, Rueckblicke, Mitgliederinformationen und Pressebeitraege.</p>
+        <ul>
+          <li>Bilder und Thumbnails fuer Artikel erstellen oder hochladen</li>
+          <li>automatische Thumbnail-Varianten fuer Listen, Karten und Detailseiten erzeugen</li>
+          <li>Galerien mit mehreren Bildern einem Beitrag oder Event zuordnen</li>
+          <li>PDFs oder Dokumente an redaktionelle Beitraege anhaengen</li>
+          <li>Videos, zum Beispiel YouTube-Links, mit einem Beitrag verbinden</li>
+          <li>Audiofassungen fuer Artikel erzeugen</li>
+          <li>Audioplayer und Karaokefunktion fuer laengere Texte nutzen</li>
+          <li>Medienstatus im CMS pruefen</li>
+          <li>fehlende Bilder, Thumbnails, Videos oder PDFs in der Qualitaetssicherung erkennen</li>
+        </ul>
+        <p>Galerien sind besonders fuer Rueckblicke wichtig. PDFs koennen fuer Programme, Einladungen, Presseunterlagen oder Mitgliederinformationen genutzt werden. Videos ergaenzen Beitraege, wenn Mitschnitte, Interviews, Trailer oder externe Videoinhalte eingebunden werden sollen.</p>
+        <p>Die Thumbnail-Erstellung sorgt dafuer, dass Beitraege in Listen, auf der Startseite und in mobilen Ansichten professionell aussehen. Ein gutes Thumbnail ist ein bewusst gesetzter Ausschnitt fuer die jeweilige Darstellung.</p>
+        <h3>Audio-Erstellung und Karaokefunktion</h3>
+        <p>Aus redaktionellen Texten kann eine hochwertige Audiofassung erzeugt werden. Die Vorleser-Funktion nutzt sehr natuerlich klingende Sprachstimmen auf dem aktuellen Stand der Sprachtechnologie. Das ist besonders sinnvoll fuer News, Themenbeitraege, Rueckblicke und laengere Artikel. Gleichzeitig ist die Vorleser-Funktion ein Beitrag zur Barrierefreiheit, weil Inhalte auch gehoert und nicht nur gelesen werden koennen.</p>
+        <ul>
+          <li>Audiofassung aus Titel, Subline, Kurztext und Haupttext erzeugen</li>
+          <li>natuerlich klingende Sprachstimmen fuer redaktionelle Beitraege nutzen</li>
+          <li>Barrierefreiheit verbessern, weil Inhalte auch auditiv verfuegbar sind</li>
+          <li>Audioplayer auf der Webseite anzeigen</li>
+          <li>Mitlese- oder Karaokefunktion aktivieren</li>
+          <li>aktuell gesprochenen Textabschnitt hervorheben</li>
+          <li>Audio beim Seitenwechsel automatisch stoppen</li>
+        </ul>
+        <p>Die Karaokefunktion hilft Nutzern, den gesprochenen Text mitzulesen. Dadurch werden laengere Beitraege auf Mobilgeraeten leichter verstaendlich und barriereaermer nutzbar.</p>
+
+        <h2 id="mitglieder">9. Mitgliederbereich</h2>
+        <p>Der Mitgliederbereich ist nach Login erreichbar und gehoert zur Webseite, nicht zum mobilen CMS. Er enthaelt Mitglieder-Events, Mitgliederinformationen, Dokumente, Mitgliederverzeichnis, Profilpflege und Uploadmoeglichkeiten.</p>
+        <p>Mitglieder-Events muessen fuer berechtigte Mitglieder sichtbar sein, auch wenn sie nicht oeffentlich auf der Eventseite beworben werden.</p>
+        <h3>Foto-Upload waehrend Veranstaltungen</h3>
+        <p>Mitglieder koennen waehrend einer Veranstaltung oder direkt danach Fotos an PROdigitalTV senden. Diese Uploads werden nicht automatisch ungeprueft veroeffentlicht, sondern dienen der Redaktion als Materialpool.</p>
+        <p>Die Redaktion kann eingereichte Bilder sichten, freigeben, einer Galerie zuordnen, fuer Rueckblicke verwenden oder aussortieren. So koennen Mitglieder zur Eventdokumentation beitragen, waehrend die redaktionelle Kontrolle erhalten bleibt.</p>
+
+        <h2 id="betrieb">10. Betrieb, Qualitaet und Sicherheit</h2>
+        <h3>Mobile-first Web-App und Desktop-Variante</h3>
+        <p>Die oeffentliche Webseite ist als mobile-first Web-App konzipiert. Sie soll auf dem Smartphone besonders schnell und klar funktionieren: Startseite, Events, Themen, News, Login, Mitgliederbereich, Handy-Ticket, QR-Code und Burger-Menue stehen im Mittelpunkt.</p>
+        <p>Die Desktop-Variante ist fuer komplexere Arbeit gedacht. Im CMS werden groessere Tabellen, Medienbearbeitung, Eventorganisation, Teilnehmerverwaltung, Galeriepflege, Redaktion und Qualitaetssicherung auf einem grossen Bildschirm deutlich besser bedienbar.</p>
+        <h3>Qualitaetssicherung</h3>
+        <p>Die Qualitaetssicherung prueft fehlende Bilder, Alt-Texte, Links, Eventbilder, Sponsorenlogos, leere Galerien, fehlerhafte Sichtbarkeit und fehlende Video-Poster.</p>
+        <h3>Deployment und Cache</h3>
+        <p>Die Webseite wird als statischer Build auf Firebase Hosting deployt. Cache-Buster fuer CSS und JavaScript sorgen dafuer, dass neue Versionen nach dem Deploy geladen werden. Der erste Aufruf nach einem Deploy kann laenger dauern, danach sollte die Seite schneller reagieren.</p>
+        <h3>Loeschschutz</h3>
+        <p>Beim Loeschen ganzer Datensaetze soll das CMS immer nachfragen. Das schuetzt Events, Vortraege, Referenten, Teilnehmer und News vor versehentlichem Verlust.</p>
+
+        <h2>11. Typische Arbeitsablaeufe</h2>
+        <h3>Event anlegen</h3>
+        <ol>
+          <li>Event im CMS anlegen.</li>
+          <li>Stammdaten, Datum, Ort und Gastgeber pflegen.</li>
+          <li>Eventbild hochladen oder aus der Mediathek waehlen.</li>
+          <li>Einladungstext schreiben.</li>
+          <li>Anmeldung aktivieren.</li>
+          <li>Vortraege und Referenten anlegen.</li>
+          <li>Referentenfotos, Logos und Vortragsbilder zuordnen.</li>
+          <li>Event aktivieren und Startseiten-Schalter pruefen.</li>
+          <li>Teilnehmer verwalten.</li>
+          <li>Nach dem Event Rueckblick, Galerie und Themenbeitraege veroeffentlichen.</li>
+        </ol>
+        <h3>News erstellen</h3>
+        <ol>
+          <li>News im CMS oder per KI-Newsimport erstellen.</li>
+          <li>Titel, Datum, Rubrik und Text pruefen.</li>
+          <li>Jede Meldung als eigenen Beitrag speichern.</li>
+          <li>Bild oder Thumb hinterlegen.</li>
+          <li>Status auf veroeffentlicht setzen.</li>
+          <li>Webseite pruefen.</li>
+        </ol>
+        <h3>Bild hochladen</h3>
+        <ol>
+          <li>Bild hochladen.</li>
+          <li>Aufloesungshinweis beachten.</li>
+          <li>Bild im passenden Rahmen ausrichten.</li>
+          <li>Ausschnitt uebernehmen.</li>
+          <li>System erzeugt WebP-Varianten.</li>
+          <li>Vorschau in Liste und Detailseite pruefen.</li>
+        </ol>
+      </article>
+    </main>
+  </body>
+</html>

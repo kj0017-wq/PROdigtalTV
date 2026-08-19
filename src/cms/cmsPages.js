@@ -1879,10 +1879,61 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   return protect(cmsShell(activeSection, `${cmsTitle("Event bearbeiten", escapeHtml(event.title || "Neues Event"), `<a class="button button--secondary button--small" href="#/event/${event.id}?preview=1">Vorschau</a>`)}<section class="panel">${eventTabs(event.id, tab)}${content}</section>`));
 }
 
-export async function registrationsPage() {
+function cmsRegistrationEventCandidates(events = [], registrations = []) {
+  const registrationCounts = registrations.reduce((map, registration) => {
+    const eventId = registration.eventId || "";
+    if (!eventId) return map;
+    map.set(eventId, (map.get(eventId) || 0) + 1);
+    return map;
+  }, new Map());
+  const today = todayString();
+  return events
+    .map((event) => normalizeCmsEventRecord(event))
+    .filter((event) => {
+      const eventId = event.id || "";
+      const statusValue = normalizedCmsState(event.status || event.lifecyclePhase || "");
+      const hasRegistrationData = eventId && registrationCounts.has(eventId);
+      const canReceiveFutureData = event.date
+        && event.date >= today
+        && !["archived", "deleted", "inactive", "cancelled", "canceled"].includes(statusValue);
+      return hasRegistrationData || canReceiveFutureData || cmsEventRegistrationIsOpen(event);
+    })
+    .sort((a, b) => {
+      const aFuture = (a.date || "") >= today;
+      const bFuture = (b.date || "") >= today;
+      if (aFuture !== bFuture) return aFuture ?-1 : 1;
+      if (aFuture) return String(a.date || "9999-12-31").localeCompare(String(b.date || "9999-12-31"));
+      return String(b.date || "0000-00-00").localeCompare(String(a.date || "0000-00-00"));
+    })
+    .map((event) => ({ ...event, registrationCount: registrationCounts.get(event.id || "") || 0 }));
+}
+
+export async function registrationsPage(query = new URLSearchParams()) {
   if (!hasCmsAccess()) return denied();
   const [registrations, events] = await Promise.all([list("registrations"), list("events")]);
-  return protect(cmsShell("cms/registrations", `${cmsTitle("Teilnehmermanagement", "Anmeldungen")}<section class="panel"><div class="field" style="max-width:390px;margin-bottom:18px"><label>Event auswaehlen</label><select>${events.map((event) => `<option>${escapeHtml(event.title)}</option>`).join("")}</select></div><div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Event</th><th>Bestaetigung</th><th>Mailstatus</th></tr></thead><tbody>${registrations.map((record) => `<tr><td>${record.firstName} ${record.lastName}</td><td>${record.eventTitle}</td><td>${status(record.status)}</td><td>${status(record.mailStatus)}</td></tr>`).join("")}</tbody></table></div></section>`));
+  const selectableEvents = cmsRegistrationEventCandidates(events, registrations);
+  const requestedEventId = query?.get?.("eventId") || "";
+  const selectedEvent = selectableEvents.find((event) => event.id === requestedEventId) || selectableEvents[0] || null;
+  const selectedEventId = selectedEvent?.id || "";
+  const visibleRegistrations = selectedEventId
+    ?registrations.filter((record) => record.eventId === selectedEventId)
+    : [];
+  const eventOptions = selectableEvents.map((event) => {
+    const countLabel = event.registrationCount ?` · ${event.registrationCount} Anmeldung${event.registrationCount === 1 ? "" : "en"}` : " · erwartet";
+    return `<option value="${escapeHtml(event.id)}" ${event.id === selectedEventId ?"selected" : ""}>${escapeHtml([event.date ?formatDate(event.date) : "", event.title || event.id].filter(Boolean).join(" · ")).replace(/&amp;middot;/g, "&middot;")}${escapeHtml(countLabel)}</option>`;
+  }).join("");
+  const rows = visibleRegistrations.length
+    ?visibleRegistrations.map((record) => `<tr>
+      <td>${escapeHtml([record.firstName, record.lastName].filter(Boolean).join(" ") || record.email || "-")}</td>
+      <td>${escapeHtml(record.eventTitle || selectedEvent?.title || "-")}</td>
+      <td>${status(record.status)}</td>
+      <td>${status(record.mailStatus)}</td>
+    </tr>`).join("")
+    : `<tr><td colspan="4">${selectedEvent ? "Noch keine Anmeldungen fuer dieses Event." : "Keine relevanten Events fuer Anmeldungen vorhanden."}</td></tr>`;
+  const chooser = selectableEvents.length
+    ?`<div class="field" style="max-width:560px;margin-bottom:18px"><label>Event auswaehlen</label><select data-registration-event-filter>${eventOptions}</select><p class="muted">Angezeigt werden nur Events mit vorhandenen Anmeldungen oder zukuenftige/offene Events, bei denen Anmeldungen zu erwarten sind.</p></div>`
+    : `<div class="alert">Aktuell gibt es keine Events mit Anmeldedaten und keine zukuenftigen/offenen Events fuer Anmeldungen.</div>`;
+  return protect(cmsShell("cms/registrations", `${cmsTitle("Teilnehmermanagement", "Anmeldungen")}<section class="panel">${chooser}<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Event</th><th>Bestaetigung</th><th>Mailstatus</th></tr></thead><tbody>${rows}</tbody></table></div></section>`));
 }
 
 export async function eventNotificationsPage() {
@@ -1898,6 +1949,29 @@ export async function eventNotificationsPage() {
   const firstEvent = activeEvents[0] || {};
   const publicBaseUrl = "https://prodigitaltv-da47b.web.app";
   const eventLink = firstEvent.id ? `${publicBaseUrl}/event/${firstEvent.id}?v=943` : "";
+  const eventNotificationText = (event = {}, key = "invitationText") => {
+    const title = event.title || "PROdigitalTV Veranstaltung";
+    const fallback = {
+      saveTheDateText: `Save the date: ${title}${event.date ?` am ${formatDate(event.date)}` : ""}.`,
+      invitationText: event.invitationText || event.description || `Wir laden Sie herzlich zur Veranstaltung ${title} ein.`,
+      invitationUpdateText: event.invitationUpdateText || `Aktuelle Informationen zur Veranstaltung ${title}.`,
+      mailText: event.mailText || `Bitte bestaetigen Sie Ihre Anmeldung zur Veranstaltung ${title}.`,
+      description: event.description || `Aktuelle Informationen zur Veranstaltung ${title}.`
+    };
+    return event[key] || fallback[key] || fallback.invitationText;
+  };
+  const notificationEventPayload = (event = {}) => escapeHtml(JSON.stringify({
+    id: event.id || "",
+    title: event.title || "",
+    link: event.id ?`${publicBaseUrl}/event/${event.id}?v=943` : "",
+    texts: {
+      saveTheDateText: eventNotificationText(event, "saveTheDateText"),
+      invitationText: eventNotificationText(event, "invitationText"),
+      invitationUpdateText: eventNotificationText(event, "invitationUpdateText"),
+      mailText: eventNotificationText(event, "mailText"),
+      description: eventNotificationText(event, "description")
+    }
+  }));
   const rows = notifications
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
     .slice(0, 20)
@@ -1921,7 +1995,19 @@ export async function eventNotificationsPage() {
           <div class="field"><label>Art</label><select name="notificationKind" data-notification-kind><option value="event">Event-Benachrichtigung</option><option value="member_message">Mitglieder-Nachricht</option></select></div>
           <div class="field"><label>Versand</label><select name="sendMode" data-notification-send-mode><option value="now">Sofort</option><option value="scheduled">Geplant</option><option value="auto_before_event">Automatisch vor Veranstaltung</option></select></div>
         </div>
-        <div class="field" data-notification-event-field><label>Veranstaltung</label><select name="eventId" data-notification-event-select required>${activeEvents.map((event) => `<option value="${escapeHtml(event.id)}" data-event-title="${escapeHtml(event.title || "")}" data-event-link="${publicBaseUrl}/event/${escapeHtml(event.id)}?v=943">${escapeHtml(event.title || event.id)}</option>`).join("")}</select>${activeEvents.length ? "" : `<p class="muted">Keine aktive zukuenftige Veranstaltung vorhanden.</p>`}</div>
+        <div class="field" data-notification-event-field><label>Veranstaltung</label><select name="eventId" data-notification-event-select required>${activeEvents.map((event) => `<option value="${escapeHtml(event.id)}" data-event-title="${escapeHtml(event.title || "")}" data-event-link="${publicBaseUrl}/event/${escapeHtml(event.id)}?v=943" data-event-payload="${notificationEventPayload(event)}">${escapeHtml(event.title || event.id)}</option>`).join("")}</select>${activeEvents.length ? "" : `<p class="muted">Keine aktive zukuenftige Veranstaltung vorhanden.</p>`}</div>
+        <div class="field" data-notification-text-source-field>
+          <label>Einladungstext aus Event verwenden</label>
+          <select name="messageSource" data-notification-text-source>
+            <option value="invitationText">Einladungstext</option>
+            <option value="saveTheDateText">Save-the-Date</option>
+            <option value="invitationUpdateText">Einladungsupdate</option>
+            <option value="mailText">Anmelde-/Bestaetigungstext</option>
+            <option value="description">Eventbeschreibung</option>
+            <option value="custom">Eigener Text / manuell pruefen</option>
+          </select>
+          <p class="muted">Der Text wird unten in die Vorschau uebernommen und kann vor dem Versand noch angepasst werden.</p>
+        </div>
         <div class="form-grid--two">
           <div class="field"><label>Empfaenger</label><select name="recipientGroup" data-notification-recipient-group><option value="members_contacts">Mitglieder und Kontakte</option><option value="members">Nur Mitglieder</option><option value="contacts">Nur Kontakte</option><option value="test_group">Testgruppe</option><option value="test_person">Testpersonen</option></select></div>
           <div class="field"><label>Anmeldestatus</label><select name="registrationStatus"><option value="all">Alle</option><option value="unregistered">Noch nicht angemeldet</option><option value="registered">Bereits angemeldet</option></select></div>
@@ -1933,7 +2019,7 @@ export async function eventNotificationsPage() {
           <div class="field" data-notification-offset-field hidden><label>Automatisch vor Veranstaltung</label><select name="offsetMinutes"><option value="10080">7 Tage vorher</option><option value="1440">1 Tag vorher</option><option value="120">2 Stunden vorher</option></select></div>
         </div>
         <div class="field"><label>Titel</label><input name="title" data-notification-title value="${escapeHtml(firstEvent.title ? `Einladung: ${firstEvent.title}` : "Einladung zur Veranstaltung")}" required></div>
-        <div class="field"><label>Kurztext</label><textarea name="shortText" rows="4" data-notification-shorttext>${escapeHtml(firstEvent.title ? `Aktuelle Informationen zur Veranstaltung ${firstEvent.title}.` : "Aktuelle Informationen zur PROdigitalTV-Veranstaltung.")}</textarea></div>
+        <div class="field"><label>Mailtext kurz pruefen / bearbeiten</label><textarea name="shortText" rows="7" data-notification-shorttext>${escapeHtml(firstEvent.id ?eventNotificationText(firstEvent, "invitationText") : "Aktuelle Informationen zur PROdigitalTV-Veranstaltung.")}</textarea></div>
         <section class="panel" style="background:var(--pdt-bg)">
           <label class="checkbox"><input type="checkbox" name="linkEnabled" data-notification-link-toggle checked> Link mitsenden</label>
           <div class="field"><label>Link optional</label><input name="link" data-notification-link value="${escapeHtml(eventLink)}" placeholder="https://... oder leer lassen"></div>
@@ -4158,7 +4244,7 @@ Ausgangstext:
     const sourceJsonValue = JSON.stringify(item.source_snapshot_json || item.sources || [], null, 2);
     const tagsValue = Array.isArray(item.tags) ?item.tags.join(", ") : item.tags || "";
     const editorTitle = sectionKey === "press" ?"Pressemeldung bearbeiten" : sectionKey === "member-area" ?"Mitgliederbeitrag bearbeiten" : "News bearbeiten";
-    return protect(cmsShell(`cms/${backPath}`, `${cmsTitle("Redaktion", editorTitle, `<a class="button button--secondary button--small" href="#/cms/${backPath}">Zurueck</a>`)}
+    return protect(cmsShell(`cms/${backPath}`, `${cmsTitle("Redaktion", editorTitle, `<a class="button button--secondary button--small" href="#/cms/${backPath}">Zurueck</a><button class="button button--primary button--small" type="submit" form="content-edit-form">Speichern</button>`)}
       <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid">
         <input type="hidden" name="page" value="${escapeHtml(sectionKey)}">
         <input type="hidden" name="section" value="${escapeHtml(sectionKey === "press" ?"pressRelease" : sectionKey)}">
@@ -4684,6 +4770,201 @@ export async function audioAdminPage() {
         <small data-audio-area-count>${rows.length} Inhalte</small>
       </div>
       <div class="table-wrap"><table class="table table--editorial table--audio-service"><thead><tr><th>Inhalt</th><th>Bereich</th><th>Audio</th><th>Modell</th><th>Stimme</th><th>Aktion</th></tr></thead><tbody>${rowHtml || `<tr><td colspan="6">Noch keine audiofähigen Inhalte vorhanden.</td></tr>`}</tbody></table></div>
+    </section>`));
+}
+
+function peopleContactName(item = {}) {
+  return [item.firstName, item.lastName].filter(Boolean).join(" ").trim()
+    || item.name
+    || item.displayName
+    || item.company
+    || item.email
+    || item.id
+    || "-";
+}
+
+function peopleContactType(item = {}) {
+  if (item.type) return item.type;
+  if (item.memberId || item.membershipType || item.isMember || item.source === "member" || item.__peopleSource === "member") return "member";
+  return "contact";
+}
+
+function peopleContactPushState(item = {}) {
+  return item.pushToken || item.pushSubscription || item.browserPushEnabled || item.pushEnabled ? "yes" : "no";
+}
+
+function peopleContactRow(item = {}, membersByEmail = new Map(), highlightEmail = "") {
+  const email = String(item.email || item.contactEmail || item.primaryEmail || "").trim();
+  const member = membersByEmail.get(email.toLowerCase()) || null;
+  const type = peopleContactType(item);
+  const push = peopleContactPushState(item);
+  const disabled = Boolean(item.mailingDisabled || item.disabled || item.inactive);
+  const isMemberOnly = item.__peopleSource === "member";
+  const name = peopleContactName(item);
+  const company = item.company || item.organization || item.organisation || member?.name || "";
+  const position = item.position || item.role || item.function || "";
+  const search = [name, company, position, email, type, member?.name].filter(Boolean).join(" ").toLowerCase();
+  return `<tr data-people-row data-name="${escapeHtml(search)}" data-type="${escapeHtml(type)}" data-push="${escapeHtml(push)}" ${email && email.toLowerCase() === highlightEmail ?"class=\"is-highlighted\"" : ""}>
+    <td><strong>${escapeHtml(name)}</strong>${company ?`<small>${escapeHtml(company)}</small>` : ""}</td>
+    <td>${escapeHtml(email || "-")}</td>
+    <td>${escapeHtml(position || "-")}</td>
+    <td>${status(type === "member" ?"member" : "contact")}</td>
+    <td>${status(push === "yes" ?"active" : "inactive")}</td>
+    <td>${status(disabled ?"inactive" : "active")}</td>
+    <td><div class="table-actions">
+      <button class="button button--secondary button--small" type="button"
+        data-people-edit-open
+        data-contact-id="${escapeHtml(item.id || "")}"
+        data-first-name="${escapeHtml(item.firstName || "")}"
+        data-last-name="${escapeHtml(item.lastName || "")}"
+        data-company="${escapeHtml(company)}"
+        data-position="${escapeHtml(position)}"
+        data-email="${escapeHtml(email)}"
+        data-mobile="${escapeHtml(item.mobile || item.phone || "")}"
+        data-type="${escapeHtml(type)}"
+        data-newsletter-allowed="${item.newsletterAllowed || item.newsletterConsent ? "yes" : "no"}">Bearbeiten</button>
+      ${isMemberOnly ?`<a class="button button--secondary button--small" href="#/cms/edit?module=members&id=${encodeURIComponent(item.__memberId || item.id || "")}">Mitglied oeffnen</a>` : `<button class="button button--secondary button--small" type="button" data-people-toggle-active="${escapeHtml(item.id || "")}" data-people-disabled="${disabled ? "yes" : "no"}">${disabled ?"Aktivieren" : "Pausieren"}</button>
+      <button class="button button--secondary button--small" type="button" data-people-delete="contacts:${escapeHtml(item.id || "")}" data-people-name="${escapeHtml(name)}">Loeschen</button>`}
+    </div></td>
+  </tr>`;
+}
+
+function peopleMemberContactRows(member = {}) {
+  const baseName = member.name || member.company || member.title || "";
+  const contacts = Array.isArray(member.eventContacts) ?member.eventContacts : [];
+  const explicitContacts = contacts
+    .map((contact, index) => ({
+      id: `member-contact-${member.id}-${index}`,
+      __peopleSource: "member",
+      __memberId: member.id,
+      type: "member",
+      firstName: contact.firstName || "",
+      lastName: contact.lastName || "",
+      name: contact.name || [contact.firstName, contact.lastName].filter(Boolean).join(" ") || baseName,
+      company: baseName,
+      position: contact.role || contact.function || contact.position || "",
+      email: contact.email || contact.contactEmail || "",
+      mobile: contact.mobile || contact.phone || "",
+      newsletterAllowed: true,
+      mailingDisabled: member.mailingDisabled || member.membershipAccessStatus === "inactive" || member.membershipAccessStatus === "cancelled"
+    }))
+    .filter((contact) => contact.email);
+  const fallbackEmail = member.email || member.contactEmail || member.primaryEmail || "";
+  if (explicitContacts.length || !fallbackEmail) return explicitContacts;
+  return [{
+    id: `member-${member.id}`,
+    __peopleSource: "member",
+    __memberId: member.id,
+    type: "member",
+    name: baseName || fallbackEmail,
+    company: baseName,
+    position: member.category || member.membershipType || "",
+    email: fallbackEmail,
+    mobile: member.mobile || member.phone || member.contactPhone || "",
+    newsletterAllowed: true,
+    mailingDisabled: member.mailingDisabled || member.membershipAccessStatus === "inactive" || member.membershipAccessStatus === "cancelled"
+  }];
+}
+
+function mergePeopleContactsAndMembers(contacts = [], members = []) {
+  const usedEmails = new Set(contacts
+    .map((contact) => String(contact.email || contact.contactEmail || contact.primaryEmail || "").trim().toLowerCase())
+    .filter(Boolean));
+  const memberRows = members
+    .filter((member) => !["archived", "deleted"].includes(String(member.status || "").toLowerCase()))
+    .flatMap(peopleMemberContactRows)
+    .filter((contact) => {
+      const email = String(contact.email || "").trim().toLowerCase();
+      if (!email || usedEmails.has(email)) return false;
+      usedEmails.add(email);
+      return true;
+    });
+  return [...contacts, ...memberRows];
+}
+
+export async function peoplePage(query = new URLSearchParams()) {
+  if (!hasCmsAccess()) return denied();
+  let contacts = [];
+  let members = [];
+  let loadError = "";
+  try {
+    [contacts, members] = await Promise.all([
+      list("contacts").catch((error) => {
+        loadError = error?.message || String(error);
+        return [];
+      }),
+      list("members").catch(() => [])
+    ]);
+  } catch (error) {
+    loadError = error?.message || String(error);
+  }
+  const membersByEmail = new Map(members
+    .map((member) => [String(member.email || member.contactEmail || "").trim().toLowerCase(), member])
+    .filter(([email]) => email));
+  const highlightEmail = String(query?.get?.("email") || "").trim().toLowerCase();
+  const mailingPeople = mergePeopleContactsAndMembers(contacts, members);
+  const sortedPeople = mailingPeople.slice().sort((a, b) => peopleContactName(a).localeCompare(peopleContactName(b), "de"));
+  const activeCount = sortedPeople.filter((item) => !(item.mailingDisabled || item.disabled || item.inactive)).length;
+  const memberCount = sortedPeople.filter((item) => peopleContactType(item) === "member").length;
+  const pushCount = sortedPeople.filter((item) => peopleContactPushState(item) === "yes").length;
+  const rows = sortedPeople.map((item) => peopleContactRow(item, membersByEmail, highlightEmail)).join("");
+  const importMessage = (() => {
+    try {
+      const stored = JSON.parse(sessionStorage.getItem("pdtv-people-import-message") || "null");
+      if (!stored?.message) return "";
+      sessionStorage.removeItem("pdtv-people-import-message");
+      return `<div class="alert ${stored.success ?"alert--success" : "alert--error"}">${escapeHtml(stored.message)}</div>`;
+    } catch {
+      return "";
+    }
+  })();
+  return protect(cmsShell("cms/people", `${cmsTitle("Kommunikation", "Mailingadressen")}
+    ${loadError ?`<section class="panel"><div class="alert alert--error">Mailingadressen konnten nicht geladen werden: ${escapeHtml(loadError)}</div></section>` : ""}
+    <section class="panel">
+      <div class="setup-steps">
+        <div class="setup-step"><span>Adressen</span><strong>${sortedPeople.length}</strong></div>
+        <div class="setup-step"><span>Aktiv</span><strong>${activeCount}</strong></div>
+        <div class="setup-step"><span>Mitglieder</span><strong>${memberCount}</strong></div>
+        <div class="setup-step"><span>Push erreichbar</span><strong>${pushCount}</strong></div>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Mailing-Adresse anlegen</h2>
+      <form class="form-grid" data-people-edit-form>
+        <div class="form-grid--two">
+          <div class="field"><label>Vorname</label><input name="firstName"></div>
+          <div class="field"><label>Nachname</label><input name="lastName"></div>
+        </div>
+        <div class="form-grid--two">
+          <div class="field"><label>Firma</label><input name="company"></div>
+          <div class="field"><label>Position</label><input name="position"></div>
+        </div>
+        <div class="form-grid--two">
+          <div class="field"><label>E-Mail *</label><input name="email" type="email" required></div>
+          <div class="field"><label>Mobilnummer</label><input name="mobile"></div>
+        </div>
+        <div class="form-grid--two">
+          <div class="field"><label>Typ</label><select name="type"><option value="contact">Kontakt</option><option value="member">Mitglied</option></select></div>
+          <label class="checkbox"><input type="checkbox" name="newsletterAllowed" checked> Newsletter / Mailing erlaubt</label>
+        </div>
+        <div class="actions"><button class="button button--primary button--small" type="submit">Mailing-Adresse speichern</button></div>
+      </form>
+      <div id="people-import-result" style="margin-top:14px">${importMessage}</div>
+    </section>
+    <section class="panel">
+      <div class="actions" style="justify-content:space-between;margin-bottom:18px">
+        <h2>Adressbestand</h2>
+        <label class="button button--secondary button--small">CSV importieren<input type="file" data-people-import-file accept=".csv,text/csv" hidden></label>
+      </div>
+      <div class="form-grid--three" style="margin-bottom:18px">
+        <div class="field"><label>Suche</label><input data-people-search placeholder="Name, Firma, E-Mail"></div>
+        <div class="field"><label>Typ</label><select data-people-type-filter><option value="all">Alle</option><option value="contact">Kontakte</option><option value="member">Mitglieder</option></select></div>
+        <div class="field"><label>Push</label><select data-people-push-filter><option value="all">Alle</option><option value="yes">Push vorhanden</option><option value="no">Ohne Push</option></select></div>
+      </div>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>E-Mail</th><th>Funktion</th><th>Typ</th><th>Push</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>
+        ${rows || `<tr data-people-empty><td colspan="7">Noch keine Mailingadressen vorhanden.</td></tr>`}
+        <tr data-people-empty hidden><td colspan="7">Keine Adressen fuer diesen Filter gefunden.</td></tr>
+      </tbody></table></div>
     </section>`));
 }
 

@@ -2,8 +2,8 @@
 
 import { normalizeLifecyclePhase } from "../data/platformConstants.js";
 
-const PUBLIC_LIST_CACHE_MS = 45000;
-const PUBLIC_SESSION_CACHE_MS = 180000;
+const PUBLIC_LIST_CACHE_MS = 120000;
+const PUBLIC_SESSION_CACHE_MS = 600000;
 const PUBLIC_READ_TIMEOUT_MS = 22000;
 const publicListCache = new Map();
 
@@ -113,14 +113,17 @@ function publicCacheKey(collectionName, predicates) {
 }
 
 function publicSessionCacheKey(key = "") {
-  return `pdtv-public-list-v3:${key}`;
+  return `pdtv-public-list-v4:${key}`;
 }
 
 function publicSessionCacheAllowed(collectionName, predicates = []) {
   if (!firebaseEnabled() || !realDataMode()) return false;
-  if (["events", "media_assets"].includes(collectionName)) return false;
   if (["users", "registrations", "mailQueue"].includes(collectionName)) return false;
-  return predicates.every(([field, operator]) => operator === "==" && !["accessType", "email", "uid"].includes(field));
+  return predicates.every(([field, operator]) => {
+    if (operator !== "==") return false;
+    if (collectionName === "events" && field === "accessType") return true;
+    return !["accessType", "email", "uid"].includes(field);
+  });
 }
 
 function readPublicSessionCache(key = "") {
@@ -139,6 +142,18 @@ function writePublicSessionCache(key = "", records = []) {
       createdAt: Date.now(),
       records: records.map(scrubOversizedInlineImages)
     }));
+  } catch {}
+}
+
+function clearPublicReadCaches() {
+  publicListCache.clear();
+  try {
+    const stores = [sessionStorage, localStorage].filter(Boolean);
+    stores.forEach((store) => {
+      Object.keys(store)
+        .filter((key) => key.startsWith("pdtv-public-list-") || key.startsWith("pdtv-page-content-"))
+        .forEach((key) => store.removeItem(key));
+    });
   } catch {}
 }
 
@@ -277,31 +292,17 @@ export async function listPublicEventMediaAssets(eventsOrIds = []) {
   }
 
   const requests = [];
-  if (eventIds.length <= 4) {
+  if (eventIds.length <= 8) {
     requests.push(...eventIds.flatMap((eventId) => [
-      cachedConstrainedList("media_assets", [["status", "==", "active"], ["visibility", "==", "public"], ["target_collection", "==", "events"], ["target_id", "==", eventId]]).catch(() => []),
-      cachedConstrainedList("media_assets", [["status", "==", "active"], ["visibility", "==", "public"], ["linked_collection", "==", "events"], ["linked_record_id", "==", eventId]]).catch(() => []),
-      cachedConstrainedList("media_assets", [["status", "==", "active"], ["target_collection", "==", "events"], ["target_id", "==", eventId]]).catch(() => []),
-      cachedConstrainedList("media_assets", [["status", "==", "active"], ["linked_collection", "==", "events"], ["linked_record_id", "==", eventId]]).catch(() => []),
-      cachedConstrainedList("media_assets", [["status", "==", "active"], ["targetCollection", "==", "events"], ["targetId", "==", eventId]]).catch(() => []),
-      cachedConstrainedList("media_assets", [["status", "==", "active"], ["linkedCollection", "==", "events"], ["linkedRecordId", "==", eventId]]).catch(() => []),
-      cachedConstrainedList("media_assets", [["visibility", "==", "public"], ["target_collection", "==", "events"], ["target_id", "==", eventId]]).catch(() => []),
-      cachedConstrainedList("media_assets", [["visibility", "==", "public"], ["linked_collection", "==", "events"], ["linked_record_id", "==", eventId]]).catch(() => []),
-      cachedConstrainedList("media_assets", [["visibility", "==", "public"], ["targetCollection", "==", "events"], ["targetId", "==", eventId]]).catch(() => []),
-      cachedConstrainedList("media_assets", [["visibility", "==", "public"], ["linkedCollection", "==", "events"], ["linkedRecordId", "==", eventId]]).catch(() => [])
+      cachedConstrainedList("media_assets", [["target_collection", "==", "events"], ["target_id", "==", eventId]]).catch(() => []),
+      cachedConstrainedList("media_assets", [["linked_collection", "==", "events"], ["linked_record_id", "==", eventId]]).catch(() => []),
+      cachedConstrainedList("media_assets", [["targetCollection", "==", "events"], ["targetId", "==", eventId]]).catch(() => []),
+      cachedConstrainedList("media_assets", [["linkedCollection", "==", "events"], ["linkedRecordId", "==", eventId]]).catch(() => [])
     ]));
   }
   directIds.forEach((assetId) => {
     requests.push(getOne("media_assets", assetId).then((asset) => publicActiveMediaAsset(asset || {}) ? [asset] : []).catch(() => []));
   });
-  requests.push(
-    cachedConstrainedList("media_assets", [["status", "==", "active"]])
-      .then((assets) => assets.filter((asset) => publicActiveMediaAsset(asset) && mediaAssetEventIds(asset).some((eventId) => eventIds.includes(eventId))))
-      .catch(() => []),
-    cachedConstrainedList("media_assets", [["visibility", "==", "public"]])
-      .then((assets) => assets.filter((asset) => publicActiveMediaAsset(asset) && mediaAssetEventIds(asset).some((eventId) => eventIds.includes(eventId))))
-      .catch(() => [])
-  );
 
   const records = (await Promise.all(requests)).flat().filter(publicActiveMediaAsset);
   return Array.from(new Map(records.filter(Boolean).map((record) => [record.id, record])).values());
@@ -318,54 +319,47 @@ export async function listPublicMediaAssets() {
 }
 
 export async function listPublicEvents(includeMemberEvents = false) {
-  const [
-    publishedEvents,
-    activeEvents,
-    visibleEvents,
-    registrationOpenEvents,
-    registrationStatusOpenEvents,
-    germanRegistrationOpenEvents,
-    registrationEnabledEvents,
-    activeMemberTeaserEvents,
-    publishedMemberTeaserEvents,
-    germanPublishedMemberTeaserEvents,
-    allEvents
-  ] = await Promise.all([
+  const aggregateCacheKey = `publicEvents:${includeMemberEvents ? "member" : "public"}`;
+  const aggregateCached = readPublicSessionCache(aggregateCacheKey);
+  if (aggregateCached) return aggregateCached;
+  const baseQueries = [
     cachedConstrainedList("events", [["status", "==", "published"], ["visibility", "==", "public"]]).catch(() => []),
     cachedConstrainedList("events", [["status", "==", "active"], ["visibility", "==", "public"]]).catch(() => []),
     cachedConstrainedList("events", [["visible", "==", true]]).catch(() => []),
     cachedConstrainedList("events", [["registrationStatus", "==", "open"]]).catch(() => []),
     cachedConstrainedList("events", [["registration_state", "==", "open"]]).catch(() => []),
     cachedConstrainedList("events", [["registrationStatus", "==", "offen"]]).catch(() => []),
-    cachedConstrainedList("events", [["registrationEnabled", "==", true]]).catch(() => []),
+    cachedConstrainedList("events", [["registrationEnabled", "==", true]]).catch(() => [])
+  ];
+  const memberQueries = [
     cachedConstrainedList("events", [["accessType", "==", "members_only"], ["status", "==", "active"]]).catch(() => []),
     cachedConstrainedList("events", [["accessType", "==", "members_only"], ["status", "==", "published"]]).catch(() => []),
-    cachedConstrainedList("events", [["accessType", "==", "members_only"], ["status", "==", "aktiv"]]).catch(() => []),
-    list("events").catch(() => [])
-  ]);
+    cachedConstrainedList("events", [["accessType", "==", "members_only"], ["status", "==", "aktiv"]]).catch(() => [])
+  ];
+  const batches = await Promise.all([...baseQueries, ...memberQueries]);
   const mergedEvents = new Map();
-  [
-    ...publishedEvents,
-    ...activeEvents,
-    ...visibleEvents,
-    ...registrationOpenEvents,
-    ...registrationStatusOpenEvents,
-    ...germanRegistrationOpenEvents,
-    ...registrationEnabledEvents,
-    ...activeMemberTeaserEvents,
-    ...publishedMemberTeaserEvents,
-    ...germanPublishedMemberTeaserEvents,
-    ...allEvents
-  ].forEach((event) => {
+  batches.flat().forEach((event) => {
     if (!event?.id) return;
     mergedEvents.set(event.id, mergeLiveRecord(mergedEvents.get(event.id), normalizePublicEvent(event)));
   });
+  if (!mergedEvents.size) {
+    const allEvents = await list("events").catch(() => []);
+    allEvents.forEach((event) => {
+      if (!event?.id) return;
+      mergedEvents.set(event.id, mergeLiveRecord(mergedEvents.get(event.id), normalizePublicEvent(event)));
+    });
+  }
   const publicEvents = Array.from(mergedEvents.values());
   const activePublicEvents = publicEvents.filter(isEventVisible);
-  if (!includeMemberEvents) return activePublicEvents;
+  if (!includeMemberEvents) {
+    writePublicSessionCache(aggregateCacheKey, activePublicEvents);
+    return activePublicEvents;
+  }
   const memberEvents = await cachedConstrainedList("events", [["accessType", "==", "members_only"]]).catch(() => []);
   const activeMemberEvents = memberEvents.map(normalizePublicEvent).filter(isEventVisible);
-  return [...activePublicEvents, ...activeMemberEvents.filter((event) => !activePublicEvents.some((publicEvent) => publicEvent.id === event.id))];
+  const result = [...activePublicEvents, ...activeMemberEvents.filter((event) => !activePublicEvents.some((publicEvent) => publicEvent.id === event.id))];
+  writePublicSessionCache(aggregateCacheKey, result);
+  return result;
 }
 
 function isEventVisible(event) {
@@ -501,6 +495,7 @@ export async function upsert(collectionName, entity) {
     const id = record.id || crypto.randomUUID();
     try {
       await firebase.firestore.setDoc(firebase.firestore.doc(firebase.db, collectionName, id), record, { merge: true });
+      clearPublicReadCaches();
       return { id, ...record };
     } catch (error) {
       if (!canFallbackToLocal(error)) throw error;
@@ -513,7 +508,9 @@ export async function remove(collectionName, id) {
   const firebase = await getDataFirebase({ write: true });
   if (firebase) {
     try {
-      return await firebase.firestore.deleteDoc(firebase.firestore.doc(firebase.db, collectionName, id));
+      const result = await firebase.firestore.deleteDoc(firebase.firestore.doc(firebase.db, collectionName, id));
+      clearPublicReadCaches();
+      return result;
     } catch (error) {
       if (!canFallbackToLocal(error)) throw error;
     }
