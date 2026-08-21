@@ -1,4 +1,4 @@
-import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=524";
+import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=525";
 import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=471";
 import { publicShell, logo } from "../components/layout.js?v=8";
 import { eventCard, topicCard } from "../components/cards.js?v=13";
@@ -2274,10 +2274,15 @@ export async function notificationUnsubscribePage(hash = "") {
 export async function topicsPage() {
   const cachedTopics = readPageContentCache("topics", "public", 600000);
   if (cachedTopics) return publicShell("topics", cachedTopics);
+  const leanTopics = mobileLeanStart();
+  const withTopicsTimeout = (promise, fallback = [], ms = 6000) => Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallback), ms))
+  ]);
   const [topicsRaw, speakers, mediaAssets, events] = await Promise.all([
     listPublicContent("topics"),
     listPublicContent("speakers").catch(() => []),
-    listPublicMediaAssets().catch(() => []),
+    withTopicsTimeout(listPublicMediaAssets().catch(() => []), [], leanTopics ? 2500 : 8000),
     listPublicEvents().catch(() => [])
   ]);
   const speakerForTopic = (topic = {}) => speakers.find((speaker) => {
@@ -2511,15 +2516,28 @@ export async function archivePage() {
   const leanMobile = mobileLeanStart();
   const archiveQuery = new URLSearchParams(String(window.location.hash || "").split("?")[1] || "");
   const showAll = archiveQuery.get("all") === "1";
+  const archiveVariant = `${leanMobile ? "mobile" : "desktop"}:${showAll ? "all" : "initial"}`;
+  const cachedArchive = readPageContentCache("archive", archiveVariant, 600000);
+  if (cachedArchive) return publicShell("archive", cachedArchive);
+  const withArchiveTimeout = (promise, fallback = [], ms = 6000) => Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallback), ms))
+  ]);
   const initialLimit = leanMobile ? 8 : 12;
-  const [allEvents, sponsors, editorial, galleries, eventMedia] = await Promise.all([listPublicEvents(true), listPublicContent("sponsors"), listPublicContent("editorialContent"), listPublicContent("galleries"), listPublicContent("eventMedia")]);
+  const [allEvents, sponsors, editorial, galleries, eventMedia] = await Promise.all([
+    withArchiveTimeout(listPublicEvents(true).catch(() => []), [], leanMobile ? 5000 : 14000),
+    leanMobile ? [] : withArchiveTimeout(listPublicContent("sponsors").catch(() => []), [], 6000),
+    withArchiveTimeout(listPublicContent("editorialContent").catch(() => []), [], leanMobile ? 5000 : 12000),
+    leanMobile ? [] : withArchiveTimeout(listPublicContent("galleries").catch(() => []), [], 6000),
+    leanMobile ? [] : withArchiveTimeout(listPublicContent("eventMedia").catch(() => []), [], 6000)
+  ]);
   const events = allEvents.filter((event) => isPastEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
   const visibleEvents = showAll ? events : events.slice(0, initialLimit);
   const mediaLookupEvents = visibleEvents
     .filter((event) => !archiveEventImageUrl(event, []))
     .slice(0, leanMobile ? 8 : 16);
-  const mediaAssets = await listPublicEventMediaAssets(mediaLookupEvents).catch(() => []);
+  const mediaAssets = await withArchiveTimeout(listPublicEventMediaAssets(mediaLookupEvents).catch(() => []), [], leanMobile ? 2500 : 8000);
   const archiveEvents = visibleEvents;
   const retrospectives = editorial
     .filter(isRetrospectiveArticle)
@@ -2533,8 +2551,10 @@ export async function archivePage() {
   const moreLink = !showAll && totalCount > visibleCount
     ? `<div class="archive-more"><a class="button button--secondary" href="#/archive?all=1">Alle ${totalCount} R&uuml;ckblicke anzeigen</a></div>`
     : "";
-  return publicShell("archive", `${leanMobile ? "" : subhero("Rückblick", "Rückblick", "Nachbericht, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen.")}
-    <section class="section"><div class="container"><div class="archive-list archive-list--compact">${items || `<div class="alert">Rückblicke werden aktuell vorbereitet.</div>`}</div>${moreLink}</div></section>`);
+  const archiveContent = `${leanMobile ? "" : subhero("Rückblick", "Rückblick", "Nachbericht, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen.")}
+    <section class="section"><div class="container"><div class="archive-list archive-list--compact">${items || `<div class="alert">Rückblicke werden aktuell vorbereitet.</div>`}</div>${moreLink}</div></section>`;
+  writePageContentCache("archive", archiveVariant, archiveContent);
+  return publicShell("archive", archiveContent);
 }
 
 export async function downloadsPage() {

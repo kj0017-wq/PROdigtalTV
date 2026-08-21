@@ -4,7 +4,8 @@ export const firebaseConfig = {
   projectId: "prodigitaltv-da47b",
   storageBucket: "prodigitaltv-da47b.firebasestorage.app",
   messagingSenderId: "769486150443",
-  appId: "1:769486150443:web:7cb4e407c58c56362d836e"
+  appId: "1:769486150443:web:7cb4e407c58c56362d836e",
+  measurementId: "G-X36TS46YNE"
 };
 
 export const useFirebase = true;

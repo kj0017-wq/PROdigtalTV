@@ -48,6 +48,37 @@ function clean(value = "") {
   return String(value || "").trim();
 }
 
+function cleanUsageValue(value = "", maxLength = 120) {
+  return clean(value).replace(/[<>]/g, "").slice(0, maxLength);
+}
+
+exports.logUsageEvent = onCall({ region, invoker: "public" }, async (request) => {
+  const input = request.data?.input || {};
+  const type = cleanUsageValue(input.type || "page_view", 40);
+  if (type !== "page_view") return { logged: false };
+  const path = cleanUsageValue(input.path || "home", 80);
+  if (!path || path === "cms") return { logged: false };
+  const now = new Date();
+  const sessionHash = input.sessionId ? hashToken(clean(input.sessionId)).slice(0, 24) : "";
+  const eventId = `usage-${now.getTime()}-${randomBytes(6).toString("hex")}`;
+  await db.collection("usageEvents").doc(eventId).set({
+    id: eventId,
+    type,
+    path,
+    routeId: cleanUsageValue(input.routeId || "", 160),
+    section: cleanUsageValue(input.section || "", 80),
+    route: cleanUsageValue(input.route || path, 220),
+    hash: cleanUsageValue(input.hash || "", 220),
+    pathname: cleanUsageValue(input.pathname || "", 160),
+    viewport: ["mobile", "desktop"].includes(input.viewport) ? input.viewport : "unknown",
+    sessionHash,
+    day: now.toISOString().slice(0, 10),
+    createdAtIso: now.toISOString(),
+    createdAt: FieldValue.serverTimestamp()
+  });
+  return { logged: true };
+});
+
 function clientIp(request) {
   const headers = request.rawRequest?.headers || {};
   const forwarded = String(headers["x-forwarded-for"] || "").split(",").map((item) => item.trim()).filter(Boolean);

@@ -1,6 +1,6 @@
 import { route, onRouteChange, go } from "./utils/router.js?v=2";
 import { currentUser, canUseCms, isAdmin, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=471";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=524";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=525";
 import { escapeHtml, formatDate } from "./utils/format.js";
 import { normalizeLifecyclePhase } from "./data/platformConstants.js";
 import { publicShell } from "./components/layout.js?v=8";
@@ -26,6 +26,7 @@ const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js
 const ttsService = () => lazy.ttsService ||= import("./ai/ttsService.js?v=2");
 const audioService = () => lazy.audioService ||= import("./ai/audioService.js");
 const aiSourceCatalogService = () => lazy.aiSourceCatalog ||= import("./data/aiSourceCatalog.js");
+const usageService = () => lazy.usageService ||= import("./firebase/usageService.js?v=1");
 
 const createRegistration = async (...args) => (await registrationService()).createRegistration(...args);
 const createAdminRegistration = async (...args) => (await registrationService()).createAdminRegistration(...args);
@@ -63,6 +64,8 @@ const testAudioProviderConnection = async (...args) => (await audioService()).te
 const loadAudioProviderVoices = async (...args) => (await audioService()).loadVoices(...args);
 const previewAudioProviderVoice = async (...args) => (await audioService()).previewVoice(...args);
 const getAiSourceCatalog = async () => (await aiSourceCatalogService()).aiSourceCatalog;
+const logUsagePageView = async (...args) => (await usageService()).logUsagePageView(...args);
+let lastLoggedUsageRoute = "";
 
 function storedTheme() {
   return localStorage.getItem("pdtv-theme") || localStorage.getItem("pdtTheme") || "day";
@@ -339,6 +342,12 @@ function publicRouteLoadingHtml(current = {}) {
   </div></section>`);
 }
 
+function publicRouteFromHashValue(hash = "") {
+  const cleanHash = String(hash || "#/home").replace(/^#\/?/, "");
+  const path = cleanHash.split("?")[0].split("/")[0] || "home";
+  return { path };
+}
+
 async function render() {
   const generation = ++renderGeneration;
   let currentRoute;
@@ -374,6 +383,13 @@ async function render() {
     updateMobileQrCode();
     window.scrollTo({ top: 0 });
     schedulePublicGermanTextNormalization();
+    if (!isCmsRoute) {
+      const usageRoute = `${currentRoute?.path || "home"}:${currentRoute?.id || ""}:${currentRoute?.section || ""}:${window.location.hash || ""}`;
+      if (usageRoute !== lastLoggedUsageRoute) {
+        lastLoggedUsageRoute = usageRoute;
+        logUsagePageView(currentRoute).catch(() => {});
+      }
+    }
     clearRoutePending();
   } catch (error) {
     if (loadingTimer) window.clearTimeout(loadingTimer);
@@ -954,6 +970,7 @@ document.addEventListener("click", (event) => {
     const nav = link.closest("nav");
     nav?.querySelectorAll("a.active").forEach((item) => item.classList.remove("active"));
     link.classList.add("active");
+    if (root) root.innerHTML = publicRouteLoadingHtml(publicRouteFromHashValue(targetHash));
     window.requestAnimationFrame(() => {
       window.location.hash = targetHash;
     });

@@ -4,6 +4,7 @@ import { normalizeLifecyclePhase } from "../data/platformConstants.js";
 
 const PUBLIC_LIST_CACHE_MS = 120000;
 const PUBLIC_SESSION_CACHE_MS = 600000;
+const PUBLIC_LOCAL_CACHE_MS = 1800000;
 const PUBLIC_READ_TIMEOUT_MS = 22000;
 const publicListCache = new Map();
 
@@ -126,10 +127,14 @@ function publicSessionCacheAllowed(collectionName, predicates = []) {
   });
 }
 
-function readPublicSessionCache(key = "") {
+function readPublicSessionCache(key = "", options = {}) {
   try {
-    const cached = JSON.parse(sessionStorage.getItem(publicSessionCacheKey(key)) || "null");
-    if (!cached || !Array.isArray(cached.records) || Date.now() - Number(cached.createdAt || 0) > PUBLIC_SESSION_CACHE_MS) return null;
+    const cacheKey = publicSessionCacheKey(key);
+    const raw = sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
+    const cached = JSON.parse(raw || "null");
+    const maxAge = raw === sessionStorage.getItem(cacheKey) ? PUBLIC_SESSION_CACHE_MS : PUBLIC_LOCAL_CACHE_MS;
+    if (!cached || !Array.isArray(cached.records)) return null;
+    if (!options.allowStale && Date.now() - Number(cached.createdAt || 0) > maxAge) return null;
     return cached.records;
   } catch {
     return null;
@@ -138,10 +143,12 @@ function readPublicSessionCache(key = "") {
 
 function writePublicSessionCache(key = "", records = []) {
   try {
-    sessionStorage.setItem(publicSessionCacheKey(key), JSON.stringify({
+    const payload = JSON.stringify({
       createdAt: Date.now(),
       records: records.map(scrubOversizedInlineImages)
-    }));
+    });
+    sessionStorage.setItem(publicSessionCacheKey(key), payload);
+    localStorage.setItem(publicSessionCacheKey(key), payload);
   } catch {}
 }
 
@@ -171,6 +178,8 @@ async function cachedConstrainedList(collectionName, predicates) {
     return records;
   } catch (error) {
     publicListCache.delete(key);
+    const stale = publicSessionCacheAllowed(collectionName, predicates) ? readPublicSessionCache(key, { allowStale: true }) : null;
+    if (stale) return stale;
     throw error;
   }
 }
@@ -336,7 +345,14 @@ export async function listPublicEvents(includeMemberEvents = false) {
     cachedConstrainedList("events", [["accessType", "==", "members_only"], ["status", "==", "published"]]).catch(() => []),
     cachedConstrainedList("events", [["accessType", "==", "members_only"], ["status", "==", "aktiv"]]).catch(() => [])
   ];
-  const batches = await Promise.all([...baseQueries, ...memberQueries]);
+  let batches;
+  try {
+    batches = await Promise.all([...baseQueries, ...memberQueries]);
+  } catch {
+    const stale = readPublicSessionCache(aggregateCacheKey, { allowStale: true });
+    if (stale) return stale;
+    batches = [];
+  }
   const mergedEvents = new Map();
   batches.flat().forEach((event) => {
     if (!event?.id) return;

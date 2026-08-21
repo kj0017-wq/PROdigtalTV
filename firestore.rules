@@ -281,6 +281,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /usageEvents/{id} {
+      allow read: if editor();
+      allow write: if false;
+    }
+
     match /aiLogs/{id} {
       allow read: if editor();
       allow create: if editor();

@@ -920,9 +920,56 @@ function chatGptHints(events, media, downloads = []) {
   return `<section class="panel ai-panel"><div class="actions" style="justify-content:space-between"><h2>ChatGPT-Hinweise</h2><a class="button button--secondary button--small" href="#/cms/chatgpt">KI-Prüfung oeffnen</a></div>${hints.length ?`<div class="setup-steps">${hints.map((hint) => `<div class="setup-step"><span>${escapeHtml(hint)}</span><strong>Hinweis</strong></div>`).join("")}</div>` : `<p>Keine akuten ChatGPT-Hinweise aus den aktuellen CMS-Daten.</p>`}<p class="muted" style="margin-top:14px">KI-Hinweise sind redaktionelle Empfehlungen und blockieren keine Pipeline-Statuswechsel.</p></section>`;
 }
 
+function usageEventTime(event = {}) {
+  const value = event.createdAtIso || event.createdAt || event.timestamp || "";
+  if (value?.seconds) return value.seconds * 1000;
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function usageStatsPanel(usageEvents = []) {
+  const now = Date.now();
+  const today = new Date().toISOString().slice(0, 10);
+  const pageViews = usageEvents.filter((event) => (event.type || "page_view") === "page_view");
+  const todayViews = pageViews.filter((event) => event.day === today).length;
+  const weekViews = pageViews.filter((event) => usageEventTime(event) >= now - 7 * 86400000).length;
+  const monthViews = pageViews.filter((event) => usageEventTime(event) >= now - 30 * 86400000).length;
+  const mobileViews = pageViews.filter((event) => event.viewport === "mobile").length;
+  const routeCounts = new Map();
+  pageViews
+    .filter((event) => usageEventTime(event) >= now - 7 * 86400000)
+    .forEach((event) => {
+      const label = event.route || event.path || "home";
+      routeCounts.set(label, (routeCounts.get(label) || 0) + 1);
+    });
+  const topRoutes = [...routeCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+  return `<section class="panel">
+    <div class="actions" style="justify-content:space-between;align-items:flex-start;gap:16px">
+      <div><h2>Nutzung der Website</h2><p class="muted">Eigene Schnellstatistik ohne Namen oder E-Mail-Adressen.</p></div>
+      <a class="button button--secondary button--small" href="https://analytics.google.com/analytics/web/" target="_blank" rel="noopener">Google Analytics oeffnen</a>
+    </div>
+    <div class="setup-steps" style="margin-top:18px">
+      <div class="setup-step"><span>Heute</span><strong>${todayViews}</strong></div>
+      <div class="setup-step"><span>7 Tage</span><strong>${weekViews}</strong></div>
+      <div class="setup-step"><span>30 Tage</span><strong>${monthViews}</strong></div>
+      <div class="setup-step"><span>Mobil-Anteil</span><strong>${pageViews.length ? Math.round((mobileViews / pageViews.length) * 100) : 0}%</strong></div>
+    </div>
+    ${topRoutes.length
+      ? `<div class="table-wrap" style="margin-top:18px"><table class="table"><thead><tr><th>Top-Seite 7 Tage</th><th>Aufrufe</th></tr></thead><tbody>${topRoutes.map(([route, count]) => `<tr><td>${escapeHtml(route)}</td><td>${count}</td></tr>`).join("")}</tbody></table></div>`
+      : `<p class="muted" style="margin-top:16px">Noch keine Nutzungsdaten vorhanden. Nach dem Deploy werden neue Seitenaufrufe automatisch erfasst.</p>`}
+  </section>`;
+}
+
 export async function dashboardPage() {
   if (!hasCmsAccess()) return denied();
-  const [rawEvents, registrations, media, mails, downloads] = await Promise.all([list("events"), list("registrations"), list("eventMedia"), list("mailQueue"), list("downloads")]);
+  const [rawEvents, registrations, media, mails, downloads, usageEvents] = await Promise.all([
+    list("events"),
+    list("registrations"),
+    list("eventMedia"),
+    list("mailQueue"),
+    list("downloads"),
+    list("usageEvents").catch(() => [])
+  ]);
   const events = rawEvents.map(normalizeCmsEventRecord).filter(hasLiveCmsEventIdentity);
   const upcoming = events.filter((event) => event.status !== "inactive" && !isPastCmsEvent(event));
   const pending = registrations.filter((item) => item.status === "pending_email_confirmation").length;
@@ -943,7 +990,8 @@ export async function dashboardPage() {
         <div class="setup-steps"><div class="setup-step"><span>Unbestätigte Anmeldungen</span><strong>${pending}</strong></div><div class="setup-step"><span>Medien in Prüfung</span><strong>${media.filter((item) => item.status === "in_review").length}</strong></div><div class="setup-step"><span>Event Rückblick offen</span><strong>${openPost}</strong></div></div>
         <div class="actions" style="margin-top:20px"><a class="button button--secondary button--small" href="#/cms/editorial">Redaktion bearbeiten</a><a class="button button--secondary button--small" href="#/cms/members">Mitglied anlegen</a></div>
       </section>
-    </div>`));
+    </div>
+    ${usageStatsPanel(usageEvents)}`));
 }
 
 function todayString() {
