@@ -3,7 +3,8 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { getStorage } = require("firebase-admin/storage");
 const { getMessaging } = require("firebase-admin/messaging");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { getAuth } = require("firebase-admin/auth");
+const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
@@ -22,6 +23,7 @@ const MAIL_TO = defineSecret("MAIL_TO");
 const smtpSecrets = [SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM, MAIL_TO];
 const PUBLIC_APP_BASE_URL = "https://prodigitaltv-da47b.web.app";
 const PUBLIC_CONFIRMATION_BASE_URL = `${PUBLIC_APP_BASE_URL}/confirm.html`;
+const transparentPixel = Buffer.from("R0lGODlhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==", "base64");
 
 const openaiFunctions = require("./openaiFunctions");
 Object.assign(exports, openaiFunctions);
@@ -85,6 +87,65 @@ function clientIp(request) {
   return forwarded[0]
     || String(headers["fastly-client-ip"] || headers["x-real-ip"] || request.rawRequest?.ip || "").trim();
 }
+
+function requestIp(req) {
+  const headers = req.headers || {};
+  const forwarded = String(headers["x-forwarded-for"] || "").split(",").map((item) => item.trim()).filter(Boolean);
+  return forwarded[0]
+    || String(headers["fastly-client-ip"] || headers["x-real-ip"] || req.ip || "").trim();
+}
+
+exports.logPwaPrivacyConsent = onRequest({ region, invoker: "public" }, async (req, res) => {
+  const origin = String(req.get("origin") || "");
+  const allowedOrigin = origin === PUBLIC_APP_BASE_URL || /^http:\/\/localhost:\d+$/i.test(origin) || /^http:\/\/127\.0\.0\.1:\d+$/i.test(origin)
+    ? origin
+    : PUBLIC_APP_BASE_URL;
+  res.set("Access-Control-Allow-Origin", allowedOrigin);
+  res.set("Access-Control-Allow-Methods", "POST,OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
+  res.set("Vary", "Origin");
+  if (req.method === "OPTIONS") {
+    res.status(204).end();
+    return;
+  }
+  if (req.method !== "POST") {
+    res.status(405).json({ ok: false, error: "method_not_allowed" });
+    return;
+  }
+  try {
+    const input = req.body && typeof req.body === "object" ? req.body : {};
+    const accepted = input.accepted === true;
+    if (!accepted) {
+      res.status(400).json({ ok: false, error: "consent_not_accepted" });
+      return;
+    }
+    const now = new Date();
+    const ipAddress = requestIp(req);
+    const userAgent = cleanUsageValue(req.get("user-agent") || input.userAgent || "", 500);
+    const consentId = `pwa-consent-${now.getTime()}-${randomBytes(6).toString("hex")}`;
+    await db.collection("privacyConsents").doc(consentId).set({
+      id: consentId,
+      type: "pwa_homescreen_install",
+      accepted: true,
+      consentVersion: cleanUsageValue(input.consentVersion || "pwa-homescreen-v1", 80),
+      legalTextKey: cleanUsageValue(input.legalTextKey || "pwa-local-storage-cache-ticket-token", 120),
+      source: cleanUsageValue(input.source || "webapp_start_prompt", 80),
+      path: cleanUsageValue(input.path || "", 220),
+      pathname: cleanUsageValue(input.pathname || "", 160),
+      userAgent,
+      ipAddress,
+      ipHash: ipAddress ? hashToken(ipAddress).slice(0, 32) : "",
+      day: now.toISOString().slice(0, 10),
+      acceptedAtIso: now.toISOString(),
+      acceptedAt: FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp()
+    });
+    res.status(200).json({ ok: true, consentId, acceptedAtIso: now.toISOString() });
+  } catch (error) {
+    console.error("logPwaPrivacyConsent failed", error);
+    res.status(500).json({ ok: false, error: "consent_log_failed" });
+  }
+});
 
 function eventRegistrationIsOpen(event = {}) {
   return Boolean(event.registrationEnabled)
@@ -157,12 +218,17 @@ async function emailBelongsToMember(email = "") {
 async function eventNotificationTargets(eventId = "", options = {}) {
   const hasEvent = Boolean(clean(eventId));
   const recipientGroup = clean(options.recipientGroup || "");
+  const includeRegistered = ["event_registered", "event_registered_speakers"].includes(recipientGroup) || options.includeRegistered === true;
+  const includeSpeakers = ["event_speakers", "event_registered_speakers"].includes(recipientGroup) || options.includeSpeakers === true;
   const includeMembers = ["members", "members_contacts", "test_group"].includes(recipientGroup) || options.includeMembers === true;
   const includeContacts = ["contacts", "members_contacts"].includes(recipientGroup) || options.includeContacts === true;
-  const [membersSnapshot, contactsSnapshot, registrationsSnapshot] = await Promise.all([
+  const [membersSnapshot, usersSnapshot, contactsSnapshot, registrationsSnapshot, speakersSnapshot, topicsSnapshot] = await Promise.all([
     includeMembers ? db.collection("members").get() : Promise.resolve({ docs: [] }),
+    includeMembers ? db.collection("users").get() : Promise.resolve({ docs: [] }),
     includeContacts ? db.collection("contacts").get() : Promise.resolve({ docs: [] }),
-    hasEvent ? db.collection("registrations").where("eventId", "==", eventId).get() : Promise.resolve({ docs: [] })
+    hasEvent ? db.collection("registrations").where("eventId", "==", eventId).get() : Promise.resolve({ docs: [] }),
+    includeSpeakers ? db.collection("speakers").get() : Promise.resolve({ docs: [] }),
+    includeSpeakers ? db.collection("topics").get().catch(() => ({ docs: [] })) : Promise.resolve({ docs: [] })
   ]);
   const activeRegistrations = registrationsSnapshot.docs
     .map((document) => ({ id: document.id, ...document.data() }))
@@ -173,6 +239,15 @@ async function eventNotificationTargets(eventId = "", options = {}) {
     const member = { id: document.id, ...document.data() };
     if (!memberCanMatchRegistration(member)) return;
     normalizedMemberEmails(member).forEach((email) => officialMemberEmails.add(email));
+  });
+  usersSnapshot.docs.forEach((document) => {
+    const user = { id: document.id, ...document.data() };
+    const status = clean(user.status || "active").toLowerCase();
+    const role = clean(user.role || "member").toLowerCase();
+    const email = clean(user.email).toLowerCase();
+    if (!email || ["inactive", "archived", "deleted", "disabled"].includes(status)) return;
+    if (role !== "member" && !clean(user.memberId)) return;
+    officialMemberEmails.add(email);
   });
   const people = new Map();
   const addPerson = (email, person = {}, source = "contact") => {
@@ -192,7 +267,7 @@ async function eventNotificationTargets(eventId = "", options = {}) {
   membersSnapshot.docs.forEach((document) => {
     const member = { id: document.id, ...document.data() };
     if (!memberCanMatchRegistration(member)) return;
-    if (member.notificationOptOut === true || member.reminderConsent === false) return;
+    if (member.notificationOptOut === true || member.mailingDisabled === true || member.reminderConsent === false) return;
     if (recipientGroup === "test_group" && !memberIsNotificationTestGroup(member)) return;
     normalizedMemberEmails(member).forEach((email) => addPerson(email, {
       firstName: member.firstName || "",
@@ -201,14 +276,77 @@ async function eventNotificationTargets(eventId = "", options = {}) {
       memberId: member.id
     }, "member"));
   });
+  usersSnapshot.docs.forEach((document) => {
+    const user = { id: document.id, ...document.data() };
+    const status = clean(user.status || "active").toLowerCase();
+    const role = clean(user.role || "member").toLowerCase();
+    const email = clean(user.email).toLowerCase();
+    if (!email || ["inactive", "archived", "deleted", "disabled"].includes(status)) return;
+    if (role !== "member" && !clean(user.memberId)) return;
+    if (user.notificationOptOut === true || user.mailingDisabled === true || user.reminderConsent === false) return;
+    addPerson(email, {
+      firstName: user.firstName || "",
+      lastName: user.lastName || "",
+      name: user.displayName || "",
+      company: user.company || "",
+      memberId: user.memberId || "",
+      userId: user.id
+    }, "member");
+  });
   contactsSnapshot.docs.forEach((document) => {
     const contact = { id: document.id, ...document.data() };
     if (["archived", "deleted", "inactive"].includes(clean(contact.status).toLowerCase())) return;
-    if (contact.notificationOptOut === true || contact.reminderConsent === false) return;
+    if (contact.notificationOptOut === true || contact.mailingDisabled === true || contact.reminderConsent === false) return;
     const email = clean(contact.email).toLowerCase();
     if (officialMemberEmails.has(email)) return;
     addPerson(email, contact, "contact");
   });
+  if (includeRegistered) {
+    activeRegistrations.forEach((registration) => {
+      if (registration.notificationOptOut === true || registration.mailingDisabled === true || registration.reminderConsent === false) return;
+      addPerson(registration.email, {
+        firstName: registration.firstName || "",
+        lastName: registration.lastName || "",
+        name: compactNameParts(registration),
+        company: registration.company || "",
+        registrationId: registration.id
+      }, "registration");
+    });
+  }
+  if (includeSpeakers && hasEvent) {
+    const eventSnapshot = await db.collection("events").doc(eventId).get();
+    const eventRecord = eventSnapshot.exists ? { id: eventSnapshot.id, ...eventSnapshot.data() } : { id: eventId };
+    const eventSpeakerIds = new Set([...(eventRecord.speakerIds || []), eventRecord.speakerId].filter(Boolean));
+    const eventTopicIds = new Set([...(eventRecord.topicIds || []), eventRecord.topicId].filter(Boolean));
+    topicsSnapshot.docs.forEach((document) => {
+      const topic = { id: document.id, ...document.data() };
+      const linkedToEvent = eventTopicIds.has(topic.id)
+        || (topic.eventIds || []).includes(eventId)
+        || topic.eventId === eventId;
+      if (!linkedToEvent) return;
+      [topic.speakerId, ...(topic.speakerIds || [])].filter(Boolean).forEach((id) => eventSpeakerIds.add(id));
+    });
+    speakersSnapshot.docs.forEach((document) => {
+      const speaker = { id: document.id, ...document.data() };
+      const status = clean(speaker.status || "published").toLowerCase();
+      if (["archived", "deleted", "inactive"].includes(status)) return;
+      const linkedToEvent = eventSpeakerIds.has(speaker.id)
+        || (speaker.eventIds || []).includes(eventId)
+        || speaker.eventId === eventId
+        || (speaker.topicIds || []).some((topicId) => eventTopicIds.has(topicId))
+        || eventTopicIds.has(speaker.topicId);
+      if (!linkedToEvent) return;
+      const email = mailAddress(speaker.email || speaker.mail || speaker.contactEmail);
+      if (!email || speaker.notificationOptOut === true || speaker.mailingDisabled === true || speaker.reminderConsent === false) return;
+      addPerson(email, {
+        firstName: speaker.firstName || "",
+        lastName: speaker.lastName || "",
+        name: compactNameParts(speaker),
+        company: speaker.company || "",
+        speakerId: speaker.id
+      }, "speaker");
+    });
+  }
   return [...people.values()];
 }
 
@@ -220,7 +358,30 @@ async function queueEventNotificationDelivery(notification = {}, eventRecord = {
   let queued = 0;
   let pushed = 0;
   for (const target of targets) {
-    const link = notification.linkEnabled === false ? "" : clean(notification.link || eventUrl(eventRecord.id));
+    let link = notification.linkEnabled === false ? "" : clean(notification.link || eventUrl(eventRecord.id));
+    let surveyInviteId = "";
+    if (notification.linkEnabled !== false && notification.surveyId) {
+      const surveyToken = randomBytes(18).toString("hex");
+      const surveyTokenHash = hashToken(surveyToken);
+      surveyInviteId = `live-survey-invite-${surveyTokenHash.slice(0, 40)}`;
+      await db.collection("liveSurveyInvites").doc(surveyInviteId).set({
+        id: surveyInviteId,
+        surveyId: notification.surveyId,
+        notificationId: notification.id || "",
+        eventId: eventRecord.id || "",
+        email: target.email || "",
+        emailHash: target.email ? hashToken(clean(target.email).toLowerCase()).slice(0, 32) : "",
+        personName: clean(`${target.firstName || ""} ${target.lastName || ""}`) || target.name || target.company || target.email || "",
+        firstName: target.firstName || "",
+        lastName: target.lastName || "",
+        company: target.company || "",
+        audienceType: target.audienceType || "",
+        status: "open",
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+      link = publicHashUrl(`survey/${encodeURIComponent(notification.surveyId)}?t=${encodeURIComponent(surveyToken)}`);
+    }
     const rawBody = target.audienceType === "registered"
       ? notification.registeredText || notification.shortText
       : notification.invitationText || notification.shortText;
@@ -275,6 +436,8 @@ async function queueEventNotificationDelivery(notification = {}, eventRecord = {
       to: target.email,
       eventId: eventRecord.id,
       notificationId: notification.id,
+      surveyId: notification.surveyId || "",
+      surveyInviteId,
       title: renderedTitle || notification.title,
       shortText: body,
       link,
@@ -312,32 +475,95 @@ function notificationOptOutUrl(email = "") {
   return hash ? publicHashUrl(`notifications/unsubscribe/${encodeURIComponent(hash)}`) : "";
 }
 
+function liveSurveyOptions(value = "") {
+  const source = Array.isArray(value) ? value : clean(value).split(/\r?\n/);
+  return source
+    .map((item) => stripTags(typeof item === "string" ? item : item?.label || ""))
+    .filter(Boolean)
+    .filter((item, index, all) => all.indexOf(item) === index)
+    .slice(0, 6)
+    .map((label, index) => ({ id: `option-${index + 1}`, label }));
+}
+
 function contactId(email = "") {
   return `contact-${createHash("sha256").update(clean(email).toLowerCase()).digest("hex").slice(0, 32)}`;
 }
 
-async function upsertContactFromRegistration(registration = {}, eventRecord = {}, now = FieldValue.serverTimestamp()) {
-  const email = clean(registration.email).toLowerCase();
-  if (!email) return;
-  const ref = db.collection("contacts").doc(contactId(email));
-  const existing = await ref.get();
-  await ref.set({
-    id: ref.id,
+function compactNameParts(record = {}) {
+  const explicit = clean(record.name || record.displayName || record.fullName);
+  if (explicit) return explicit;
+  return [record.firstName, record.lastName].map(clean).filter(Boolean).join(" ");
+}
+
+function contactWritePayload(person = {}, source = "manual", now = FieldValue.serverTimestamp()) {
+  const email = clean(person.email || person.mail || person.contactEmail).toLowerCase();
+  if (!email) return null;
+  const firstName = clean(person.firstName);
+  const lastName = clean(person.lastName);
+  const name = compactNameParts({ ...person, firstName, lastName });
+  const payload = {
     email,
-    firstName: clean(registration.firstName),
-    lastName: clean(registration.lastName),
-    company: clean(registration.company),
-    position: clean(registration.position),
-    phone: clean(registration.phone),
-    source: existing.exists ? existing.data()?.source || "event_registration" : "event_registration",
+    source,
     status: "active",
-    reminderConsent: Boolean(registration.notifyForThisEvent || registration.notifyFutureEvents || existing.data()?.reminderConsent),
     notificationOptOutHash: notificationOptOutHash(email),
-    lastEventId: eventRecord.id || registration.eventId || "",
-    lastRegistrationId: registration.id || "",
+    updatedAt: now
+  };
+  if (firstName) payload.firstName = firstName;
+  if (lastName) payload.lastName = lastName;
+  if (name) payload.name = name;
+  if (clean(person.company)) payload.company = clean(person.company);
+  if (clean(person.position || person.role)) payload.position = clean(person.position || person.role);
+  if (clean(person.phone || person.mobile)) payload.phone = clean(person.phone || person.mobile);
+  if (clean(person.website || person.url)) payload.website = clean(person.website || person.url);
+  return payload;
+}
+
+async function upsertMailingContact(person = {}, { source = "manual", eventId = "", eventIds = [], registrationId = "", speakerId = "", topicIds = [], reminderConsent = false } = {}, now = FieldValue.serverTimestamp()) {
+  const payload = contactWritePayload(person, source, now);
+  if (!payload?.email) return { created: false, email: "", contactId: "" };
+  const ref = db.collection("contacts").doc(contactId(payload.email));
+  const existing = await ref.get();
+  const created = !existing.exists;
+  const update = {
+    id: ref.id,
+    ...payload,
+    source: existing.exists ? existing.data()?.source || source : source,
+    reminderConsent: Boolean(reminderConsent || existing.data()?.reminderConsent),
+    lastEventId: eventId || existing.data()?.lastEventId || "",
+    lastRegistrationId: registrationId || existing.data()?.lastRegistrationId || "",
+    lastSpeakerId: speakerId || existing.data()?.lastSpeakerId || "",
     createdAt: existing.exists ? existing.data()?.createdAt || now : now,
     updatedAt: now
+  };
+  const cleanEventIds = [...new Set([eventId, ...eventIds].map(clean).filter(Boolean))];
+  if (cleanEventIds.length) update.eventIds = FieldValue.arrayUnion(...cleanEventIds);
+  if (registrationId) update.registrationIds = FieldValue.arrayUnion(registrationId);
+  if (speakerId) update.speakerIds = FieldValue.arrayUnion(speakerId);
+  const cleanTopicIds = topicIds.map(clean).filter(Boolean);
+  if (cleanTopicIds.length) update.topicIds = FieldValue.arrayUnion(...cleanTopicIds);
+  await ref.set(update, { merge: true });
+  return { created, email: payload.email, contactId: ref.id };
+}
+
+async function countNewMailingContactForEvent(eventId = "", source = "", contact = {}, now = FieldValue.serverTimestamp()) {
+  const id = clean(eventId);
+  if (!id) return;
+  await db.collection("events").doc(id).set({
+    newMailingContactsCount: FieldValue.increment(1),
+    mailingContactsSyncedCount: FieldValue.increment(1),
+    lastNewMailingContactAt: now,
+    lastNewMailingContactEmail: clean(contact.email),
+    lastNewMailingContactSource: clean(source)
   }, { merge: true });
+}
+
+async function upsertContactFromRegistration(registration = {}, eventRecord = {}, now = FieldValue.serverTimestamp()) {
+  return upsertMailingContact(registration, {
+    source: registration.source === "cms_admin" ? "cms_admin_registration" : "event_registration",
+    eventId: eventRecord.id || registration.eventId || "",
+    registrationId: registration.id || "",
+    reminderConsent: Boolean(registration.notifyForThisEvent || registration.notifyFutureEvents)
+  }, now);
 }
 
 function eventDateTimeMillis(eventRecord = {}) {
@@ -401,6 +627,26 @@ function stripTags(value = "") {
   return clean(value).replace(/[<>]/g, "");
 }
 
+function escapeAttribute(value = "") {
+  return clean(value)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function mailOpenTrackingUrl(mailId = "") {
+  const id = clean(mailId);
+  return id ? `https://${region}-prodigitaltv-da47b.cloudfunctions.net/trackMailOpen?m=${encodeURIComponent(id)}` : "";
+}
+
+function appendMailTrackingPixel(html = "", mailId = "") {
+  const url = mailOpenTrackingUrl(mailId);
+  if (!url || !html) return html;
+  const pixel = `<img src="${escapeAttribute(url)}" alt="" width="1" height="1" style="display:none;width:1px;height:1px;opacity:0;border:0;margin:0;padding:0" aria-hidden="true">`;
+  return html.includes("</body>") ? html.replace("</body>", `${pixel}</body>`) : `${html}${pixel}`;
+}
+
 function plainDate(value = "") {
   if (!value) return "dem Veranstaltungstermin";
   const date = value.toDate ? value.toDate() : new Date(value);
@@ -439,11 +685,31 @@ function defaultGlobalEventRegistrationMailText(variant = "confirmation") {
   ].join("\n");
 }
 
+function defaultMemberLoginInvitationText() {
+  return [
+    "Guten Tag {{displayName}},",
+    "",
+    "fuer Sie wurde ein Zugang zum PROdigitalTV-System vorbereitet.",
+    "",
+    "Rolle: {{role}}",
+    "Memberprofil: {{memberName}}",
+    "",
+    "Bitte legitimieren Sie sich ueber den folgenden Link und vergeben Sie Ihr persoenliches Passwort:",
+    "{{invitationLink}}",
+    "",
+    "Der Link ist 12 Stunden gueltig. Falls er abgelaufen ist, kann jederzeit ein neuer Link angefordert werden.",
+    "",
+    "Viele Gruesse",
+    "PROdigitalTV"
+  ].join("\n");
+}
+
 function mailTemplateSettings(record = {}) {
   const value = record?.value && typeof record.value === "object" ? record.value : {};
   return {
     registrationConfirmation: record?.registrationConfirmation || value.registrationConfirmation || defaultGlobalEventRegistrationMailText("confirmation"),
-    registrationWaitlist: record?.registrationWaitlist || value.registrationWaitlist || defaultGlobalEventRegistrationMailText("waitlist")
+    registrationWaitlist: record?.registrationWaitlist || value.registrationWaitlist || defaultGlobalEventRegistrationMailText("waitlist"),
+    memberLoginInvitation: record?.memberLoginInvitation || value.memberLoginInvitation || defaultMemberLoginInvitationText()
   };
 }
 
@@ -460,6 +726,10 @@ function renderTemplateText(template = "", { registration = {}, eventRecord = {}
     link: variables.link || variables.eventLink || "",
     confirmationLink: variables.confirmationLink || variables.confirmationUrl || "",
     confirmationUrl: variables.confirmationUrl || variables.confirmationLink || "",
+    invitationLink: variables.invitationLink || variables.link || "",
+    displayName: variables.displayName || registration.displayName || "",
+    role: variables.role || registration.role || "",
+    memberName: variables.memberName || registration.memberName || "",
     ticketLink: variables.ticketLink || "",
     cancelLink: variables.cancelLink || variables.cancelUrl || "",
     cancelUrl: variables.cancelUrl || variables.cancelLink || ""
@@ -480,7 +750,7 @@ function mailHtmlShell(title = "", body = "") {
 
 function mailButton(label = "", url = "") {
   if (!url) return "";
-  return `<p style="margin:26px 0"><a href="${url}" style="display:inline-block;background:#e30613;color:#ffffff;text-decoration:none;font-weight:800;border-radius:999px;padding:15px 24px">${label}</a></p>`;
+  return `<p style="margin:26px 0"><a href="${escapeAttribute(url)}" target="_blank" rel="noopener" style="display:inline-block;background:#e30613;color:#ffffff;text-decoration:none;font-weight:800;border-radius:999px;padding:15px 24px">${escapeAttribute(label)}</a></p>`;
 }
 
 function storagePathFromMediaUrl(value = "") {
@@ -660,6 +930,7 @@ function renderMail(mail, context = {}) {
 
   if (mail.template === "event_notification") {
     const link = mail.linkEnabled === false ? "" : clean(mail.link || eventUrl(mail.eventId || eventRecord.id || ""));
+    const isSurveyMail = Boolean(clean(mail.surveyId));
     const mailPerson = {
       firstName: mail.firstName || registration.firstName || "",
       lastName: mail.lastName || registration.lastName || "",
@@ -672,16 +943,19 @@ function renderMail(mail, context = {}) {
       eventRecord,
       variables: { eventLink: link, link }
     }));
-    const body = clean(renderTemplateText(mail.shortText || mail.text || "Neue Informationen zu einer PROdigitalTV-Veranstaltung.", {
+    const body = clean(renderTemplateText(mail.shortText || mail.text || (isSurveyMail ? "Bitte nehmen Sie kurz an unserer Umfrage teil." : "Neue Informationen zu einer PROdigitalTV-Veranstaltung."), {
       registration: mailPerson,
       eventRecord,
       variables: { eventLink: link, link }
     }));
     const optOutUrl = notificationOptOutUrl(mail.to);
     const salutation = clean(mail.personName) ? `Guten Tag ${clean(mail.personName)},` : "Guten Tag,";
-    const intro = mail.audienceType === "registered"
+    const intro = isSurveyMail
+      ? "Ihre Meinung ist uns wichtig."
+      : mail.audienceType === "registered"
       ? "hier finden Sie Ihre Erinnerung mit den Veranstaltungsinformationen."
       : "wir moechten Sie auf diese Veranstaltung hinweisen.";
+    const linkLabel = isSurveyMail ? "Zur Umfrage" : "Zur Veranstaltung";
     const text = [
       salutation,
       "",
@@ -690,8 +964,8 @@ function renderMail(mail, context = {}) {
       title,
       body,
       "",
-      link ? `Zur Veranstaltung: ${link}` : "",
-      optOutUrl ? `Keine Erinnerungen mehr erhalten: ${optOutUrl}` : "",
+      link ? `${linkLabel}: ${link}` : "",
+      optOutUrl ? `Umfrage- und Veranstaltungshinweise abbestellen: ${optOutUrl}` : "",
       "",
       "Viele Gruesse",
       "PROdigitalTV"
@@ -703,8 +977,46 @@ function renderMail(mail, context = {}) {
         `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${salutation}</p>`,
         `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${intro}</p>`,
         `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${textToHtml(body)}</p>`,
-        mailButton("Zur Veranstaltung", link),
-        optOutUrl ? `<p style="font-size:12px;line-height:1.5;color:#7a8493;margin:24px 0 0;border-top:1px solid #dbe4f1;padding-top:14px">Sie erhalten diese Nachricht, weil Sie PROdigitalTV-Veranstaltungshinweise aktiviert haben. <a href="${optOutUrl}" style="color:#5f6b7c">Keine Erinnerungen mehr erhalten</a>.</p>` : ""
+        mailButton(linkLabel, link),
+        optOutUrl ? `<p style="font-size:12px;line-height:1.5;color:#7a8493;margin:24px 0 0;border-top:1px solid #dbe4f1;padding-top:14px">Sie erhalten diese Nachricht, weil Sie PROdigitalTV-Veranstaltungs- und Umfragehinweise aktiviert haben. <a href="${optOutUrl}" style="color:#5f6b7c">Umfrage- und Veranstaltungshinweise abbestellen</a>.</p>` : ""
+      ].filter(Boolean).join(""))
+    };
+  }
+
+  if (mail.template === "member_login_invitation") {
+    const baseTemplate = mail.mailText || mailTemplates.memberLoginInvitation || defaultMemberLoginInvitationText();
+    const displayName = clean(mail.displayName || mail.personName || mail.to || "Guten Tag");
+    const invitationLink = clean(mail.invitationLink || mail.link || "");
+    const bodyText = renderTemplateText(baseTemplate, {
+      registration: {
+        displayName,
+        role: mail.role || "member",
+        memberName: mail.memberName || "",
+        email: mail.to || ""
+      },
+      variables: {
+        displayName,
+        role: mail.role || "member",
+        memberName: mail.memberName || "",
+        invitationLink,
+        link: invitationLink
+      }
+    });
+    const htmlBodyText = invitationLink
+      ? bodyText.replace(invitationLink, "").replace(/\n{3,}/g, "\n\n").trim()
+      : bodyText;
+    const safeInvitationLink = escapeAttribute(invitationLink);
+    return {
+      subject: mail.subject || "Ihr PROdigitalTV-Zugang",
+      text: [
+        bodyText,
+        "",
+        invitationLink ? `Zugangslink: ${invitationLink}` : ""
+      ].filter(Boolean).join("\n"),
+      html: mailHtmlShell("PROdigitalTV-Zugang aktivieren", [
+        textToHtml(htmlBodyText),
+        mailButton("Zugang aktivieren", invitationLink),
+        invitationLink ? `<p style="font-size:14px;line-height:1.5;color:#5f6b7c;margin:18px 0 0">Falls der Button nicht funktioniert, oeffnen Sie diesen Link:<br><a href="${safeInvitationLink}" target="_blank" rel="noopener" style="color:#0b3a66;text-decoration:underline;word-break:break-all">${safeInvitationLink}</a></p>` : ""
       ].filter(Boolean).join(""))
     };
   }
@@ -729,7 +1041,7 @@ async function sendQueuedMail(mail) {
     replyTo: replyTo ? mailAddress(replyTo) : undefined,
     subject: stripTags(rendered.subject),
     text: rendered.text,
-    html: rendered.html
+    html: appendMailTrackingPixel(rendered.html, mail.id)
   });
 }
 
@@ -739,6 +1051,360 @@ async function requireEditor(request) {
   if (!["admin", "editor"].includes(profile?.role)) throw new HttpsError("permission-denied", "Keine CMS-Berechtigung.");
   return profile;
 }
+
+async function requireAdmin(request) {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Login erforderlich.");
+  const profile = (await db.collection("users").doc(request.auth.uid).get()).data();
+  if (profile?.role !== "admin") throw new HttpsError("permission-denied", "Nur Admins duerfen Mitglieder-Logins anlegen.");
+  return profile;
+}
+
+function memberInvitationLink(invitationId = "", token = "") {
+  return `${PUBLIC_APP_BASE_URL}/user-invite/${encodeURIComponent(invitationId)}/${encodeURIComponent(token)}`;
+}
+
+function memberInvitationExpiresAtDate() {
+  return new Date(Date.now() + 12 * 60 * 60 * 1000);
+}
+
+function memberLoginInvitationMailPayload(invitation = {}, mailText = "") {
+  return {
+    type: "member_login_invitation",
+    template: "member_login_invitation",
+    userInvitationId: invitation.id,
+    userId: invitation.uid,
+    memberId: invitation.memberId,
+    to: invitation.email,
+    subject: "Ihr PROdigitalTV-Zugang",
+    displayName: invitation.displayName,
+    role: invitation.role,
+    memberName: invitation.memberName,
+    invitationLink: invitation.invitationLink,
+    link: invitation.invitationLink,
+    mailText
+  };
+}
+
+async function queueMemberLoginInvitationMail(invitation = {}, mailText = "") {
+  const ref = await queueMail(memberLoginInvitationMailPayload(invitation, mailText));
+  await db.collection("userInvitations").doc(invitation.id).set({
+    mailStatus: "queued",
+    mailQueueId: ref.id,
+    mailQueuedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  await db.collection("users").doc(invitation.uid).set({
+    invitationMailStatus: "queued",
+    invitationMailQueueId: ref.id,
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  return ref;
+}
+
+exports.createMemberLogin = onCall({ region }, async (request) => {
+  const adminProfile = await requireAdmin(request);
+  const input = request.data?.input || {};
+  const memberId = clean(input.memberId);
+  const email = clean(input.email).toLowerCase();
+  const requestedRole = clean(input.role || "member").toLowerCase();
+  const role = ["admin", "editor", "member"].includes(requestedRole) ? requestedRole : "";
+  const invitationDelivery = clean(input.invitationDelivery || "manual").toLowerCase() === "auto" ? "auto" : "manual";
+  if (!memberId) throw new HttpsError("invalid-argument", "Bitte ein Mitglied auswaehlen.");
+  if (!email || !email.includes("@")) throw new HttpsError("invalid-argument", "Bitte eine gueltige Mailadresse eintragen.");
+  if (!role) throw new HttpsError("invalid-argument", "Bitte eine gueltige Rolle auswaehlen.");
+  const memberSnapshot = await db.collection("members").doc(memberId).get();
+  if (!memberSnapshot.exists) throw new HttpsError("not-found", "Mitglied wurde nicht gefunden.");
+  const member = { id: memberSnapshot.id, ...memberSnapshot.data() };
+  const displayName = clean(input.displayName || member.profileContactName || member.contactName || member.name || email);
+  const memberName = clean(member.name || member.company || member.profileContactName || member.id || memberId);
+  const auth = getAuth();
+  let authUser;
+  let created = false;
+  try {
+    authUser = await auth.getUserByEmail(email);
+    await auth.updateUser(authUser.uid, { email, displayName, disabled: false });
+    authUser = await auth.getUser(authUser.uid);
+  } catch (error) {
+    if (error?.code !== "auth/user-not-found") throw error;
+    const temporaryPassword = randomBytes(24).toString("hex");
+    authUser = await auth.createUser({ email, password: temporaryPassword, displayName, emailVerified: false, disabled: false });
+    created = true;
+  }
+  const invitationToken = randomBytes(32).toString("hex");
+  const invitationId = `user-invite-${Date.now()}-${randomBytes(5).toString("hex")}`;
+  const expiresAtDate = memberInvitationExpiresAtDate();
+  const invitation = {
+    id: invitationId,
+    uid: authUser.uid,
+    email,
+    displayName,
+    role,
+    memberId,
+    memberName,
+    invitationLink: memberInvitationLink(invitationId, invitationToken),
+    tokenHash: hashToken(invitationToken),
+    status: "pending",
+    deliveryMode: invitationDelivery,
+    mailStatus: invitationDelivery === "auto" ? "queued" : "manual",
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+    expiresAt: Timestamp.fromDate(expiresAtDate),
+    createdBy: request.auth.uid,
+    createdByEmail: adminProfile.email || request.auth.token.email || ""
+  };
+  await db.collection("userInvitations").doc(invitationId).set(invitation);
+  const userRecord = {
+    email,
+    displayName,
+    role,
+    status: "active",
+    memberId,
+    providerId: "password",
+    emailVerified: Boolean(authUser.emailVerified),
+    invitationId,
+    invitationStatus: "pending",
+    invitationDelivery,
+    invitationMailStatus: invitationDelivery === "auto" ? "queued" : "manual",
+    invitationExpiresAt: Timestamp.fromDate(expiresAtDate),
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: request.auth.uid,
+    updatedByEmail: adminProfile.email || request.auth.token.email || "",
+    createdVia: created ? "cms_member_login_create" : "cms_member_login_update"
+  };
+  if (created) userRecord.createdAt = FieldValue.serverTimestamp();
+  await db.collection("users").doc(authUser.uid).set(userRecord, { merge: true });
+  const memberUserLink = {
+    uid: authUser.uid,
+    email,
+    displayName,
+    role
+  };
+  const memberUpdate = {
+    linkedUserIds: FieldValue.arrayUnion(authUser.uid),
+    linkedUserEmails: FieldValue.arrayUnion(email),
+    linkedUsers: FieldValue.arrayUnion(memberUserLink),
+    updatedAt: FieldValue.serverTimestamp()
+  };
+  if (!member.linkedUserId) {
+    memberUpdate.linkedUserId = authUser.uid;
+    memberUpdate.linkedUserEmail = email;
+  }
+  await db.collection("members").doc(memberId).set(memberUpdate, { merge: true });
+  if (invitationDelivery === "auto") {
+    const mailTemplatesSnapshot = await db.collection("settings").doc("mailTemplates").get().catch(() => null);
+    const templates = mailTemplateSettings(mailTemplatesSnapshot?.exists ? mailTemplatesSnapshot.data() : {});
+    await queueMemberLoginInvitationMail(invitation, templates.memberLoginInvitation);
+  }
+  await db.collection("auditLog").add({
+    action: created ? "create_member_login" : "update_member_login",
+    module: "users",
+    entityType: "user",
+    entityId: authUser.uid,
+    userId: request.auth.uid,
+    userEmail: adminProfile.email || request.auth.token.email || "",
+    timestamp: FieldValue.serverTimestamp(),
+    details: { memberId, email, role, invitationId, invitationDelivery }
+  });
+  return { ok: true, created, uid: authUser.uid, email, memberId, displayName, role, invitationId, invitationDelivery, invitationMailStatus: invitation.invitationMailStatus || invitation.mailStatus, invitationLink: invitation.invitationLink };
+});
+
+exports.sendMemberLoginInvitation = onCall({ region }, async (request) => {
+  const adminProfile = await requireAdmin(request);
+  const invitationId = clean(request.data?.invitationId || request.data?.input?.invitationId || "");
+  if (!invitationId) throw new HttpsError("invalid-argument", "Einladungs-ID fehlt.");
+  const snapshot = await db.collection("userInvitations").doc(invitationId).get();
+  if (!snapshot.exists) throw new HttpsError("not-found", "Einladung wurde nicht gefunden.");
+  let invitation = { id: snapshot.id, ...snapshot.data() };
+  if (invitation.status === "accepted") throw new HttpsError("failed-precondition", "Diese Einladung wurde bereits angenommen.");
+  if (!invitation.invitationLink || !invitation.email) throw new HttpsError("failed-precondition", "Einladung ist unvollstaendig.");
+  const expiresAt = invitation.expiresAt?.toDate ? invitation.expiresAt.toDate() : new Date(invitation.expiresAt || 0);
+  if (expiresAt && expiresAt.getTime && expiresAt.getTime() < Date.now()) {
+    const invitationToken = randomBytes(32).toString("hex");
+    const expiresAtDate = memberInvitationExpiresAtDate();
+    invitation = {
+      ...invitation,
+      invitationLink: memberInvitationLink(invitationId, invitationToken),
+      tokenHash: hashToken(invitationToken),
+      status: "pending",
+      expiresAt: Timestamp.fromDate(expiresAtDate)
+    };
+    await db.collection("userInvitations").doc(invitationId).set({
+      invitationLink: invitation.invitationLink,
+      tokenHash: invitation.tokenHash,
+      status: "pending",
+      expiresAt: invitation.expiresAt,
+      renewedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+    await db.collection("users").doc(invitation.uid).set({
+      invitationStatus: "pending",
+      invitationExpiresAt: invitation.expiresAt,
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
+  const mailTemplatesSnapshot = await db.collection("settings").doc("mailTemplates").get().catch(() => null);
+  const templates = mailTemplateSettings(mailTemplatesSnapshot?.exists ? mailTemplatesSnapshot.data() : {});
+  const ref = await queueMemberLoginInvitationMail(invitation, templates.memberLoginInvitation);
+  await db.collection("auditLog").add({
+    action: "send_member_login_invitation",
+    module: "users",
+    entityType: "userInvitation",
+    entityId: invitationId,
+    userId: request.auth.uid,
+    userEmail: adminProfile.email || request.auth.token.email || "",
+    timestamp: FieldValue.serverTimestamp(),
+    details: { invitationId, mailQueueId: ref.id, email: invitation.email, role: invitation.role }
+  });
+  return { ok: true, invitationId, mailQueueId: ref.id, email: invitation.email };
+});
+
+async function prepareMemberLoginInvitationForUser(userId = "", adminProfile = {}, adminUid = "") {
+  const userSnapshot = await db.collection("users").doc(userId).get();
+  if (!userSnapshot.exists) return { status: "skipped", reason: "user_not_found", userId };
+  const user = { id: userSnapshot.id, ...userSnapshot.data() };
+  const email = clean(user.email).toLowerCase();
+  if (!email || !email.includes("@")) return { status: "skipped", reason: "email_missing", userId };
+  if (user.invitationStatus === "accepted") return { status: "skipped", reason: "already_accepted", userId, email };
+
+  const memberId = clean(user.memberId || user.memberProfileId || "");
+  const memberSnapshot = memberId ? await db.collection("members").doc(memberId).get().catch(() => null) : null;
+  const member = memberSnapshot?.exists ? { id: memberSnapshot.id, ...memberSnapshot.data() } : {};
+  const displayName = clean(user.displayName || member.profileContactName || member.contactName || member.name || email);
+  const memberName = clean(member.name || member.company || member.title || member.id || memberId);
+  const role = ["admin", "editor", "member"].includes(clean(user.role).toLowerCase()) ? clean(user.role).toLowerCase() : "member";
+
+  let invitation = null;
+  if (user.invitationId) {
+    const invitationSnapshot = await db.collection("userInvitations").doc(user.invitationId).get().catch(() => null);
+    if (invitationSnapshot?.exists) invitation = { id: invitationSnapshot.id, ...invitationSnapshot.data() };
+  }
+  if (invitation?.status === "accepted") return { status: "skipped", reason: "already_accepted", userId, email };
+
+  const expiresAt = invitation?.expiresAt?.toDate ? invitation.expiresAt.toDate() : new Date(invitation?.expiresAt || 0);
+  const needsNewToken = !invitation || !invitation.invitationLink || !invitation.tokenHash || (expiresAt?.getTime && expiresAt.getTime() < Date.now());
+  if (needsNewToken) {
+    const invitationId = invitation?.id || `user-invite-${Date.now()}-${randomBytes(5).toString("hex")}`;
+    const invitationToken = randomBytes(32).toString("hex");
+    const expiresAtDate = memberInvitationExpiresAtDate();
+    invitation = {
+      ...(invitation || {}),
+      id: invitationId,
+      uid: user.id,
+      email,
+      displayName,
+      role,
+      memberId,
+      memberName,
+      invitationLink: memberInvitationLink(invitationId, invitationToken),
+      tokenHash: hashToken(invitationToken),
+      status: "pending",
+      deliveryMode: "manual",
+      mailStatus: "queued",
+      expiresAt: Timestamp.fromDate(expiresAtDate)
+    };
+    await db.collection("userInvitations").doc(invitationId).set({
+      ...invitation,
+      updatedAt: FieldValue.serverTimestamp(),
+      createdAt: invitation.createdAt || FieldValue.serverTimestamp(),
+      createdBy: invitation.createdBy || adminUid,
+      createdByEmail: invitation.createdByEmail || adminProfile.email || ""
+    }, { merge: true });
+    await db.collection("users").doc(user.id).set({
+      invitationId,
+      invitationStatus: "pending",
+      invitationDelivery: "manual",
+      invitationMailStatus: "queued",
+      invitationExpiresAt: invitation.expiresAt,
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
+  return { status: "ready", invitation };
+}
+
+exports.sendMemberLoginInvitationsForUsers = onCall({ region }, async (request) => {
+  const adminProfile = await requireAdmin(request);
+  const rawUserIds = request.data?.userIds || request.data?.input?.userIds || [];
+  const userIds = [...new Set((Array.isArray(rawUserIds) ? rawUserIds : []).map(clean).filter(Boolean))].slice(0, 200);
+  if (!userIds.length) throw new HttpsError("invalid-argument", "Bitte mindestens einen User auswaehlen.");
+  const mailTemplatesSnapshot = await db.collection("settings").doc("mailTemplates").get().catch(() => null);
+  const templates = mailTemplateSettings(mailTemplatesSnapshot?.exists ? mailTemplatesSnapshot.data() : {});
+  const results = [];
+  for (const userId of userIds) {
+    try {
+      const prepared = await prepareMemberLoginInvitationForUser(userId, adminProfile, request.auth.uid);
+      if (prepared.status !== "ready") {
+        results.push(prepared);
+        continue;
+      }
+      const ref = await queueMemberLoginInvitationMail(prepared.invitation, templates.memberLoginInvitation);
+      results.push({
+        status: "queued",
+        userId,
+        email: prepared.invitation.email,
+        invitationId: prepared.invitation.id,
+        mailQueueId: ref.id
+      });
+    } catch (error) {
+      results.push({ status: "error", userId, reason: error?.message || String(error) });
+    }
+  }
+  await db.collection("auditLog").add({
+    action: "send_member_login_invitations_bulk",
+    module: "users",
+    entityType: "user",
+    entityId: "bulk",
+    userId: request.auth.uid,
+    userEmail: adminProfile.email || request.auth.token.email || "",
+    timestamp: FieldValue.serverTimestamp(),
+    details: {
+      requested: userIds.length,
+      queued: results.filter((item) => item.status === "queued").length,
+      skipped: results.filter((item) => item.status === "skipped").length,
+      errors: results.filter((item) => item.status === "error").length
+    }
+  });
+  return {
+    ok: true,
+    requested: userIds.length,
+    queued: results.filter((item) => item.status === "queued").length,
+    skipped: results.filter((item) => item.status === "skipped").length,
+    errors: results.filter((item) => item.status === "error").length,
+    results
+  };
+});
+
+exports.completeMemberLoginInvitation = onCall({ region, invoker: "public" }, async (request) => {
+  const invitationId = clean(request.data?.invitationId || request.data?.input?.invitationId || "");
+  const token = clean(request.data?.token || request.data?.input?.token || "");
+  const password = String(request.data?.password || request.data?.input?.password || "");
+  if (!invitationId || !token) throw new HttpsError("invalid-argument", "Einladungslink ist unvollstaendig.");
+  if (password.length < 8) throw new HttpsError("invalid-argument", "Das Passwort muss mindestens 8 Zeichen lang sein.");
+  const ref = db.collection("userInvitations").doc(invitationId);
+  const snapshot = await ref.get();
+  if (!snapshot.exists) throw new HttpsError("not-found", "Einladung wurde nicht gefunden.");
+  const invitation = { id: snapshot.id, ...snapshot.data() };
+  if (invitation.status === "accepted") throw new HttpsError("failed-precondition", "Diese Einladung wurde bereits angenommen.");
+  if (hashToken(token) !== invitation.tokenHash) throw new HttpsError("permission-denied", "Einladungstoken ist ungueltig.");
+  const expiresAt = invitation.expiresAt?.toDate ? invitation.expiresAt.toDate() : new Date(invitation.expiresAt || 0);
+  if (expiresAt && expiresAt.getTime && expiresAt.getTime() < Date.now()) throw new HttpsError("deadline-exceeded", "Diese Einladung ist abgelaufen.");
+  const auth = getAuth();
+  await auth.updateUser(invitation.uid, { password, emailVerified: true, disabled: false });
+  await db.collection("users").doc(invitation.uid).set({
+    status: "active",
+    role: invitation.role || "member",
+    memberId: invitation.memberId || "",
+    emailVerified: true,
+    invitationStatus: "accepted",
+    invitationAcceptedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  await ref.set({
+    status: "accepted",
+    acceptedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  return { ok: true, email: invitation.email, role: invitation.role || "member", memberId: invitation.memberId || "", displayName: invitation.displayName || invitation.email || "" };
+});
 
 exports.bootstrapFirstAdmin = onCall({ region }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Login erforderlich.");
@@ -863,7 +1529,8 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
       updatedAt: now
     }, { merge: true });
   }
-  await upsertContactFromRegistration(registration, eventRecord, now);
+  const contactSync = await upsertContactFromRegistration(registration, eventRecord, now);
+  if (contactSync.created) await countNewMailingContactForEvent(eventRecord.id, "event_registration", contactSync, now);
   await queueMail({
     type: "registration_confirmation",
     to: registration.email,
@@ -958,7 +1625,8 @@ exports.adminCreateEventRegistration = onCall({ region }, async (request) => {
       createdAt: lock?.createdAt || now
     }, { merge: true });
   });
-  await upsertContactFromRegistration(registration, eventRecord, now);
+  const contactSync = await upsertContactFromRegistration(registration, eventRecord, now);
+  if (contactSync.created) await countNewMailingContactForEvent(eventRecord.id, "cms_admin_registration", contactSync, now);
   await queueMail({
     type: "registration_confirmation",
     to: registration.email,
@@ -1050,7 +1718,7 @@ exports.createEventNotification = onCall({ region }, async (request) => {
     .filter((email, index, all) => all.indexOf(email) === index);
   const testOnly = Boolean(input.testOnly);
   if (testOnly && !testRecipients.length) throw new HttpsError("invalid-argument", "Bitte mindestens eine Testperson eintragen.");
-  const recipientGroup = ["members", "contacts", "members_contacts", "test_group", "test_person"].includes(clean(input.recipientGroup))
+  const recipientGroup = ["members", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "test_group", "test_person"].includes(clean(input.recipientGroup))
     ? clean(input.recipientGroup)
     : "members_contacts";
   const offsetMinutes = Number(input.offsetMinutes || 0);
@@ -1067,6 +1735,36 @@ exports.createEventNotification = onCall({ region }, async (request) => {
   const linkEnabled = input.linkEnabled !== false && clean(input.linkEnabled) !== "false";
   const submittedLink = clean(input.link);
   const defaultLink = notificationKind === "event" ? eventUrl(eventId) : publicHashUrl("members");
+  const liveActionMode = clean(input.liveActionMode) === "survey" ? "survey" : "message";
+  let liveSurvey = null;
+  let notificationLink = linkEnabled ? submittedLink || defaultLink : "";
+  if (liveActionMode === "survey") {
+    if (notificationKind !== "event") throw new HttpsError("invalid-argument", "Umfragen sind aktuell an eine Veranstaltung gebunden.");
+    const surveyQuestion = stripTags(input.surveyQuestion || shortText);
+    const surveyOptions = liveSurveyOptions(input.surveyOptions);
+    const surveyAllowMultiple = input.surveyAllowMultiple === true || clean(input.surveyAllowMultiple) === "true";
+    if (!surveyQuestion) throw new HttpsError("invalid-argument", "Bitte eine Umfragefrage eintragen.");
+    if (surveyOptions.length < 1) throw new HttpsError("invalid-argument", "Bitte mindestens eine Antwortmoeglichkeit eintragen.");
+    const surveyRef = db.collection("liveSurveys").doc(`live-survey-${randomBytes(16).toString("hex")}`);
+    const surveyCreatedAtIso = new Date().toISOString();
+    liveSurvey = {
+      id: surveyRef.id,
+      eventId,
+      notificationId: notificationRef.id,
+      title,
+      question: surveyQuestion,
+      options: surveyOptions,
+      allowMultiple: surveyAllowMultiple,
+      status: "active",
+      requiresToken: true,
+      createdAtIso: surveyCreatedAtIso,
+      createdBy: profile.email || request.auth.uid,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    };
+    await surveyRef.set(liveSurvey);
+    notificationLink = publicHashUrl(`survey/${encodeURIComponent(surveyRef.id)}`);
+  }
   const notification = {
     id: notificationRef.id,
     eventId: notificationKind === "event" ? eventId : "",
@@ -1074,12 +1772,19 @@ exports.createEventNotification = onCall({ region }, async (request) => {
     title,
     shortText,
     linkEnabled,
-    link: linkEnabled ? submittedLink || defaultLink : "",
+    link: notificationLink,
+    liveActionMode,
+    surveyId: liveSurvey?.id || "",
+    surveyQuestion: liveSurvey?.question || "",
+    surveyOptions: liveSurvey?.options || [],
+    surveyAllowMultiple: liveSurvey?.allowMultiple || false,
     testOnly,
     testRecipients: testOnly ? testRecipients : [],
     recipientGroup,
     includeMembers: ["members", "members_contacts", "test_group"].includes(recipientGroup),
     includeContacts: ["contacts", "members_contacts"].includes(recipientGroup),
+    includeRegistered: ["event_registered", "event_registered_speakers"].includes(recipientGroup),
+    includeSpeakers: ["event_speakers", "event_registered_speakers"].includes(recipientGroup),
     registrationStatus: ["all", "registered", "unregistered"].includes(clean(input.registrationStatus)) ? clean(input.registrationStatus) : "all",
     sendMode,
     offsetMinutes: Number.isFinite(offsetMinutes) ? offsetMinutes : 0,
@@ -1092,9 +1797,9 @@ exports.createEventNotification = onCall({ region }, async (request) => {
   await notificationRef.set(notification);
   if (sendMode === "now") {
     const result = await queueEventNotificationDelivery({ ...notification, id: notificationRef.id }, eventRecord);
-    return { id: notificationRef.id, ...result };
+    return { id: notificationRef.id, surveyId: liveSurvey?.id || "", ...result };
   }
-  return { id: notificationRef.id, scheduled: true };
+  return { id: notificationRef.id, surveyId: liveSurvey?.id || "", scheduled: true };
 });
 
 exports.previewEventNotification = onCall({ region }, async (request) => {
@@ -1110,7 +1815,7 @@ exports.previewEventNotification = onCall({ region }, async (request) => {
     .filter((email, index, all) => all.indexOf(email) === index);
   const testOnly = Boolean(input.testOnly);
   if (testOnly && !testRecipients.length) throw new HttpsError("invalid-argument", "Bitte mindestens eine Testperson eintragen.");
-  const recipientGroup = ["members", "contacts", "members_contacts", "test_group", "test_person"].includes(clean(input.recipientGroup))
+  const recipientGroup = ["members", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "test_group", "test_person"].includes(clean(input.recipientGroup))
     ? clean(input.recipientGroup)
     : "members_contacts";
   const registrationStatus = ["all", "registered", "unregistered"].includes(clean(input.registrationStatus)) ? clean(input.registrationStatus) : "all";
@@ -1120,6 +1825,8 @@ exports.previewEventNotification = onCall({ region }, async (request) => {
       recipientGroup,
       includeMembers: ["members", "members_contacts", "test_group"].includes(recipientGroup),
       includeContacts: ["contacts", "members_contacts"].includes(recipientGroup),
+      includeRegistered: ["event_registered", "event_registered_speakers"].includes(recipientGroup),
+      includeSpeakers: ["event_speakers", "event_registered_speakers"].includes(recipientGroup),
       registrationStatus
     });
   return {
@@ -1128,6 +1835,110 @@ exports.previewEventNotification = onCall({ region }, async (request) => {
     testOnly,
     recipientGroup
   };
+});
+
+exports.getLiveSurvey = onCall({ region, invoker: "public" }, async (request) => {
+  const surveyId = clean(request.data?.surveyId);
+  if (!surveyId) throw new HttpsError("invalid-argument", "Umfrage fehlt.");
+  const snapshot = await db.collection("liveSurveys").doc(surveyId).get();
+  if (!snapshot.exists) throw new HttpsError("not-found", "Umfrage wurde nicht gefunden.");
+  const survey = { id: snapshot.id, ...snapshot.data() };
+  if (["archived", "deleted", "inactive"].includes(clean(survey.status).toLowerCase())) {
+    throw new HttpsError("failed-precondition", "Diese Umfrage ist nicht aktiv.");
+  }
+  return {
+    id: survey.id,
+    eventId: survey.eventId || "",
+    title: survey.title || "PROdigitalTV Umfrage",
+    question: survey.question || "",
+    allowMultiple: survey.allowMultiple === true,
+    options: Array.isArray(survey.options) ? survey.options.map((option) => ({
+      id: clean(option.id),
+      label: clean(option.label)
+    })).filter((option) => option.id && option.label) : []
+  };
+});
+
+exports.submitLiveSurveyResponse = onCall({ region, invoker: "public" }, async (request) => {
+  const input = request.data?.input || {};
+  const surveyId = clean(input.surveyId);
+  const rawOptionIds = Array.isArray(input.optionIds) ? input.optionIds : [input.optionId];
+  const optionIds = rawOptionIds.map((item) => clean(item)).filter(Boolean).filter((item, index, all) => all.indexOf(item) === index).slice(0, 6);
+  const responseToken = clean(input.token);
+  if (!surveyId || !optionIds.length) throw new HttpsError("invalid-argument", "Bitte eine Antwort auswaehlen.");
+  const surveySnapshot = await db.collection("liveSurveys").doc(surveyId).get();
+  if (!surveySnapshot.exists) throw new HttpsError("not-found", "Umfrage wurde nicht gefunden.");
+  const survey = { id: surveySnapshot.id, ...surveySnapshot.data() };
+  if (["archived", "deleted", "inactive"].includes(clean(survey.status).toLowerCase())) {
+    throw new HttpsError("failed-precondition", "Diese Umfrage ist nicht aktiv.");
+  }
+  const options = Array.isArray(survey.options) ? survey.options : [];
+  const allowMultiple = survey.allowMultiple === true;
+  if (!allowMultiple && optionIds.length > 1) throw new HttpsError("invalid-argument", "Bitte nur eine Antwort auswaehlen.");
+  const selectedOptions = optionIds.map((optionId) => options.find((option) => clean(option.id) === optionId)).filter(Boolean);
+  if (selectedOptions.length !== optionIds.length) throw new HttpsError("invalid-argument", "Antwort wurde nicht gefunden.");
+  const selectedLabels = selectedOptions.map((option) => clean(option.label)).filter(Boolean);
+  if (survey.requiresToken !== false && !responseToken) {
+    throw new HttpsError("failed-precondition", "Dieser Umfragelink ist persoenlich. Bitte den Link aus der Einladung oeffnen.");
+  }
+  const now = new Date();
+  const ipAddress = clientIp(request);
+  const responsePayload = {
+    surveyId,
+    eventId: survey.eventId || "",
+    notificationId: survey.notificationId || "",
+    question: survey.question || "",
+    optionId: optionIds[0] || "",
+    optionIds,
+    optionLabel: selectedLabels.join(", "),
+    optionLabels: selectedLabels,
+    allowMultiple,
+    userAgent: stripTags(request.rawRequest?.headers?.["user-agent"] || ""),
+    ipHash: ipAddress ? hashToken(ipAddress).slice(0, 32) : "",
+    createdAtIso: now.toISOString()
+  };
+  await db.runTransaction(async (transaction) => {
+    let responseRef = db.collection("liveSurveyResponses").doc(`live-survey-response-${randomBytes(16).toString("hex")}`);
+    let inviteRef = null;
+    let invite = {};
+    if (responseToken) {
+      const responseTokenHash = hashToken(responseToken);
+      inviteRef = db.collection("liveSurveyInvites").doc(`live-survey-invite-${responseTokenHash.slice(0, 40)}`);
+      const inviteSnapshot = await transaction.get(inviteRef);
+      if (!inviteSnapshot.exists) throw new HttpsError("permission-denied", "Dieser Umfragelink ist ungueltig.");
+      invite = inviteSnapshot.data() || {};
+      if (invite.surveyId !== surveyId) throw new HttpsError("permission-denied", "Dieser Umfragelink gehoert nicht zu dieser Umfrage.");
+      if (invite.usedAt || clean(invite.status) === "used") throw new HttpsError("already-exists", "Fuer diesen Link wurde bereits abgestimmt.");
+      responseRef = db.collection("liveSurveyResponses").doc(`live-survey-response-${responseTokenHash.slice(0, 40)}`);
+      transaction.set(inviteRef, {
+        status: "used",
+        usedAtIso: now.toISOString(),
+        usedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+    transaction.set(responseRef, {
+      id: responseRef.id,
+      ...responsePayload,
+      surveyInviteId: inviteRef?.id || "",
+      email: invite.email || "",
+      personName: invite.personName || "",
+      firstName: invite.firstName || "",
+      lastName: invite.lastName || "",
+      company: invite.company || "",
+      audienceType: invite.audienceType || "",
+      createdAt: FieldValue.serverTimestamp()
+    });
+    const surveyUpdate = {
+      responseCount: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp()
+    };
+    optionIds.forEach((optionId) => {
+      surveyUpdate[`optionCounts.${optionId}`] = FieldValue.increment(1);
+    });
+    transaction.set(db.collection("liveSurveys").doc(surveyId), surveyUpdate, { merge: true });
+  });
+  return { ok: true, optionLabel: selectedLabels.join(", ") };
 });
 
 exports.registerNotificationToken = onCall({ region }, async (request) => {
@@ -1229,6 +2040,24 @@ exports.unsubscribeEventNotifications = onCall({ region, invoker: "public" }, as
     updated += 1;
   });
   if (memberUpdates) await memberBatch.commit();
+  const users = await db.collection("users").get();
+  const userBatch = db.batch();
+  let userUpdates = 0;
+  users.docs.forEach((document) => {
+    const user = document.data() || {};
+    const email = clean(user.email || user.contactEmail || user.primaryEmail);
+    if (!email || notificationOptOutHash(email) !== hash) return;
+    userBatch.set(document.ref, {
+      reminderConsent: false,
+      mailingDisabled: true,
+      notificationOptOut: true,
+      notificationOptOutAt: now,
+      updatedAt: now
+    }, { merge: true });
+    userUpdates += 1;
+    updated += 1;
+  });
+  if (userUpdates) await userBatch.commit();
   if (!updated) throw new HttpsError("not-found", "Abmeldeeintrag wurde nicht gefunden.");
   return { unsubscribed: true, updated };
 });
@@ -1298,6 +2127,9 @@ exports.onRegistrationCreated = onDocumentCreated({ document: "registrations/{re
     await event.data.ref.update({ status: "cancelled", internalNote: "Referenziertes Event nicht gefunden.", updatedAt: FieldValue.serverTimestamp() });
     return;
   }
+  const now = FieldValue.serverTimestamp();
+  const contactSync = await upsertContactFromRegistration({ id: event.params.registrationId, ...registration }, { id: registration.eventId, ...eventRecord }, now);
+  if (contactSync.created) await countNewMailingContactForEvent(registration.eventId, "event_registration_trigger", contactSync, now);
   const token = randomBytes(32).toString("hex");
   const tokenHash = hashToken(token);
   const expiresAt = Timestamp.fromMillis(Date.now() + 48 * 60 * 60 * 1000);
@@ -1320,6 +2152,48 @@ exports.onRegistrationCreated = onDocumentCreated({ document: "registrations/{re
     eventId: registration.eventId,
     registrationId: event.params.registrationId
   });
+});
+
+async function eventIdsForSpeaker(speaker = {}) {
+  const ids = new Set([
+    ...(Array.isArray(speaker.eventIds) ? speaker.eventIds : []),
+    speaker.eventId
+  ].map(clean).filter(Boolean));
+  const topicIds = [
+    ...(Array.isArray(speaker.topicIds) ? speaker.topicIds : []),
+    speaker.topicId
+  ].map(clean).filter(Boolean);
+  for (const topicId of topicIds.slice(0, 20)) {
+    const snapshot = await db.collection("events").where("topicIds", "array-contains", topicId).limit(20).get().catch(() => null);
+    snapshot?.docs?.forEach((document) => ids.add(document.id));
+  }
+  return [...ids];
+}
+
+exports.onSpeakerWritten = onDocumentWritten({ document: "speakers/{speakerId}", region }, async (event) => {
+  if (!event.data?.after?.exists) return;
+  const speaker = { id: event.params.speakerId, ...event.data.after.data() };
+  const email = clean(speaker.email || speaker.mail || speaker.contactEmail).toLowerCase();
+  if (!email) return;
+  const now = FieldValue.serverTimestamp();
+  const eventIds = await eventIdsForSpeaker(speaker);
+  const contactSync = await upsertMailingContact({
+    ...speaker,
+    email,
+    name: compactNameParts(speaker)
+  }, {
+    source: "speaker",
+    eventId: eventIds[0] || "",
+    eventIds,
+    speakerId: speaker.id,
+    topicIds: [
+      ...(Array.isArray(speaker.topicIds) ? speaker.topicIds : []),
+      speaker.topicId
+    ].map(clean).filter(Boolean)
+  }, now);
+  if (contactSync.created) {
+    await Promise.all(eventIds.map((eventId) => countNewMailingContactForEvent(eventId, "speaker", contactSync, now)));
+  }
 });
 
 exports.onMembershipApplicationCreated = onDocumentCreated({ document: "membershipApplications/{applicationId}", region }, async (event) => {
@@ -1352,20 +2226,29 @@ exports.sendQueuedMail = onDocumentCreated({ document: "mailQueue/{mailId}", reg
   if (mail.status !== "queued") return;
   try {
     const result = await sendQueuedMail({ id: event.params.mailId, ...mail });
+    const accepted = Array.isArray(result.accepted) ? result.accepted.map(clean).filter(Boolean) : [];
+    const rejected = Array.isArray(result.rejected) ? result.rejected.map(clean).filter(Boolean) : [];
     await event.data.ref.update({
-      status: "sent",
+      status: rejected.length && !accepted.length ? "failed" : "sent",
       sentAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
-      providerMessageId: result.messageId || ""
+      providerMessageId: result.messageId || "",
+      providerAccepted: accepted,
+      providerRejected: rejected,
+      providerResponse: clean(result.response || "").slice(0, 500),
+      deliveryStatus: rejected.length ? "partly_rejected" : "accepted"
     });
     const updateTarget = mail.registrationId
       ? db.collection("registrations").doc(mail.registrationId)
       : mail.membershipApplicationId
         ? db.collection("membershipApplications").doc(mail.membershipApplicationId)
-        : null;
+        : mail.userInvitationId
+          ? db.collection("userInvitations").doc(mail.userInvitationId)
+          : null;
     if (updateTarget) {
       await updateTarget.set({
-        mailStatus: "sent",
+        mailStatus: rejected.length && !accepted.length ? "failed" : "sent",
+        mailDeliveryStatus: rejected.length ? "partly_rejected" : "accepted",
         lastMailSentAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp()
       }, { merge: true });
@@ -1381,7 +2264,9 @@ exports.sendQueuedMail = onDocumentCreated({ document: "mailQueue/{mailId}", reg
       ? db.collection("registrations").doc(mail.registrationId)
       : mail.membershipApplicationId
         ? db.collection("membershipApplications").doc(mail.membershipApplicationId)
-        : null;
+        : mail.userInvitationId
+          ? db.collection("userInvitations").doc(mail.userInvitationId)
+          : null;
     if (updateTarget) {
       await updateTarget.set({
         mailStatus: "failed",
@@ -1390,6 +2275,37 @@ exports.sendQueuedMail = onDocumentCreated({ document: "mailQueue/{mailId}", reg
       }, { merge: true });
     }
   }
+});
+
+exports.trackMailOpen = onRequest({ region, invoker: "public" }, async (req, res) => {
+  res.set("Content-Type", "image/gif");
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  const mailId = clean(req.query.m || req.query.mailId || "");
+  if (mailId && /^[A-Za-z0-9_-]{8,80}$/.test(mailId)) {
+    const now = new Date();
+    const userAgent = cleanUsageValue(req.get("user-agent") || "", 500);
+    const ipAddress = requestIp(req);
+    const ref = db.collection("mailQueue").doc(mailId);
+    await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(ref);
+      const update = {
+        opened: true,
+        openCount: FieldValue.increment(1),
+        lastOpenedAt: FieldValue.serverTimestamp(),
+        lastOpenDay: now.toISOString().slice(0, 10),
+        lastOpenUserAgent: userAgent,
+        lastOpenIpHash: ipAddress ? hashToken(ipAddress).slice(0, 32) : "",
+        updatedAt: FieldValue.serverTimestamp()
+      };
+      if (!snapshot.exists || !snapshot.data()?.opened) update.firstOpenedAt = FieldValue.serverTimestamp();
+      transaction.set(ref, update, { merge: true });
+    }).catch((error) => {
+      console.error("trackMailOpen failed", mailId, error);
+    });
+  }
+  res.status(200).send(transparentPixel);
 });
 
 exports.sendRegistrationConfirmationMail = onCall({ region }, async (request) => {

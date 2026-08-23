@@ -100,21 +100,10 @@ export async function login(email, password, requestedRole = "member") {
     return userFromCredential(firebase, credential.user, requestedRole);
   } catch (error) {
     if (error?.code === "auth/invalid-credential") {
-      throw new Error("Firebase kennt diese E-Mail/Passwort-Kombination nicht. Wenn das Konto ueber Google angelegt wurde, bitte 'Mit Google anmelden' nutzen.");
+      throw new Error("Firebase kennt diese E-Mail/Passwort-Kombination nicht. Bitte E-Mail und Passwort pruefen oder einen neuen Zugangslink anfordern.");
     }
     throw error;
   }
-}
-
-export async function loginWithGoogle(requestedRole = "member") {
-  const firebase = await getFirebaseServices();
-  if (!firebase) {
-    throw new Error("Firebase-Login ist nicht erreichbar.");
-  }
-  const provider = new firebase.authLib.GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: "select_account" });
-  const credential = await firebase.authLib.signInWithPopup(firebase.auth, provider);
-  return userFromCredential(firebase, credential.user, requestedRole);
 }
 
 export async function refreshAuthToken(force = false) {

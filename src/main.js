@@ -1,28 +1,55 @@
-import { route, onRouteChange, go } from "./utils/router.js?v=2";
-import { currentUser, canUseCms, isAdmin, login, loginWithGoogle, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=471";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=525";
+import { route, onRouteChange, go } from "./utils/router.js?v=3";
+import { currentUser, canUseCms, isAdmin, login, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=472";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=530";
 import { escapeHtml, formatDate } from "./utils/format.js";
 import { normalizeLifecyclePhase } from "./data/platformConstants.js";
-import { publicShell } from "./components/layout.js?v=8";
+import { publicShell } from "./components/layout.js?v=11";
 
 const root = document.querySelector("#app");
 const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const mediaProxyFunctionUrl = "https://europe-west3-prodigitaltv-da47b.cloudfunctions.net/mediaAssetProxy";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 let renderGeneration = 0;
+let mobileCmsLiveResultsTimer = null;
+let mobileCheckinStatsTimer = null;
+const memberProfileWarmups = new Map();
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=738");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=686");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=752");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=701");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=496");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=116");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=16");
-const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=7");
+const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=8");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=13");
 const firebaseClientService = () => lazy.firebaseClientService ||= import("./firebase/firebaseClient.js?v=1");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
 const csvService = () => lazy.csvService ||= import("./utils/csv.js");
 const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=328");
+
+function memberProfileCacheKey(user = {}) {
+  const memberId = user.memberId || "";
+  const userKey = user.uid || user.email || "member";
+  return memberId ? `pdtv-member-profile-v2:${userKey}:${memberId}` : "";
+}
+
+function writeCachedMemberProfile(user = {}, member = null) {
+  try {
+    const key = memberProfileCacheKey(user);
+    if (key && member?.id) localStorage.setItem(key, JSON.stringify({ createdAt: Date.now(), member }));
+  } catch {}
+}
+
+function warmMemberProfileCache(user = currentUser()) {
+  if (!user?.memberId) return;
+  const key = memberProfileCacheKey(user);
+  const last = Number(memberProfileWarmups.get(key) || 0);
+  if (Date.now() - last < 60000) return;
+  memberProfileWarmups.set(key, Date.now());
+  getOne("members", user.memberId)
+    .then((member) => writeCachedMemberProfile(user, member))
+    .catch(() => {});
+}
 const ttsService = () => lazy.ttsService ||= import("./ai/ttsService.js?v=2");
 const audioService = () => lazy.audioService ||= import("./ai/audioService.js");
 const aiSourceCatalogService = () => lazy.aiSourceCatalog ||= import("./data/aiSourceCatalog.js");
@@ -33,6 +60,8 @@ const createAdminRegistration = async (...args) => (await registrationService())
 const deleteAdminRegistration = async (...args) => (await registrationService()).deleteAdminRegistration(...args);
 const createEventNotification = async (...args) => (await notificationService()).createEventNotification(...args);
 const previewEventNotification = async (...args) => (await notificationService()).previewEventNotification(...args);
+const getLiveSurvey = async (...args) => (await notificationService()).getLiveSurvey(...args);
+const submitLiveSurveyResponse = async (...args) => (await notificationService()).submitLiveSurveyResponse(...args);
 const enableBrowserNotifications = async (...args) => (await notificationService()).enableBrowserNotifications(...args);
 const unsubscribeEventNotifications = async (...args) => (await notificationService()).unsubscribeEventNotifications(...args);
 const cancelRegistration = async (...args) => (await registrationService()).cancelRegistration(...args);
@@ -97,8 +126,8 @@ function mobileCmsPlaceholder() {
   return `<section class="login-wrap"><div class="form-card login-card">
     <p class="eyebrow">CMS</p>
     <h1>CMS nur am Desktop</h1>
-    <p style="margin:14px 0 24px">Die mobile CMS-Version wird spaeter als reduzierte Oberflaeche umgesetzt.</p>
-    <a class="button button--primary" href="/website.html?v=1019">Zur Website</a>
+    <p style="margin:14px 0 24px">Das volle CMS bleibt am Desktop. Fuer Veranstaltungen gibt es mobil das schlanke Mobil-CMS.</p>
+    <div class="actions"><a class="button button--primary" href="#/cms/live">Mobil-CMS</a><a class="button button--secondary" href="/website.html?v=1019">Zur Website</a></div>
   </div></section>`;
 }
 
@@ -209,8 +238,407 @@ async function mobileQualityPage() {
   const rows = issues.sort((a, b) => a.severity === b.severity ? String(a.area).localeCompare(String(b.area), "de") : a.severity === "error" ? -1 : 1).map((issue) => `<tr><td>${escapeHtml(issue.area)}</td><td>${escapeHtml(issue.type)}</td><td>${escapeHtml(issue.title)}</td><td>${escapeHtml(issue.fault)}</td><td>${escapeHtml(issue.description)}</td><td>${escapeHtml(issue.href || "-")}</td><td>${issue.severity === "error" ? "Fehler" : "Warnung"}</td></tr>`).join("");
   return `<main class="cms-app"><section class="cms-main"><div class="cms-title"><div><p class="eyebrow">Mobile Schnellansicht</p><h1>Qualitaetspruefung</h1><p>Schnelle mobile Auswertung ohne externe Netzwerkpruefung.</p></div></div><section class="panel"><div class="setup-steps"><div class="setup-step"><span>Fehler</span><strong>${issues.filter((issue) => issue.severity === "error").length}</strong></div><div class="setup-step"><span>Warnungen</span><strong>${issues.filter((issue) => issue.severity !== "error").length}</strong></div><div class="setup-step"><span>Collections</span><strong>${names.length}</strong></div><div class="setup-step"><span>Alt-Texte</span><strong><button class="link-button" type="button" data-quality-fill-alt-texts>fehlende ergaenzen</button></strong><small id="quality-alt-text-result"></small></div></div></section><section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Bereich</th><th>Typ</th><th>Titel</th><th>Fehler</th><th>Beschreibung</th><th>Pfad</th><th>Einstufung</th></tr></thead><tbody>${rows || `<tr><td colspan="7">Keine Fehler oder Warnungen gefunden.</td></tr>`}</tbody></table></div></section></section></main>`;
 }
+
+function mobileLiveEventIsRelevant(event = {}, registrations = []) {
+  const statusValue = String(event.status || "").toLowerCase();
+  if (["archived", "deleted", "inactive", "draft"].includes(statusValue)) return false;
+  if (registrations.some((registration) => registration.eventId === event.id)) return true;
+  const dateValue = event.date || event.startDate || event.eventDate || "";
+  const parsed = Date.parse(`${dateValue}T${event.time || event.startTime || "23:59"}`);
+  return Number.isFinite(parsed) ? parsed >= Date.now() - 12 * 60 * 60 * 1000 : true;
+}
+
+function mobileEventSpeakerCount(event = {}, speakers = [], topics = []) {
+  const speakerIds = new Set([...(event.speakerIds || []), event.speakerId].filter(Boolean));
+  const topicIds = new Set([...(event.topicIds || []), event.topicId].filter(Boolean));
+  topics.forEach((topic) => {
+    const linked = topicIds.has(topic.id) || topic.eventId === event.id || (topic.eventIds || []).includes(event.id);
+    if (!linked) return;
+    [topic.speakerId, ...(topic.speakerIds || [])].filter(Boolean).forEach((id) => speakerIds.add(id));
+  });
+  speakers.forEach((speaker) => {
+    if ((speaker.eventIds || []).includes(event.id) || speaker.eventId === event.id) speakerIds.add(speaker.id);
+    if ((speaker.topicIds || []).some((topicId) => topicIds.has(topicId)) || topicIds.has(speaker.topicId)) speakerIds.add(speaker.id);
+  });
+  return speakerIds.size;
+}
+
+function mobileEventTopicTitles(event = {}, topics = []) {
+  const topicIds = new Set([...(event.topicIds || []), event.topicId].filter(Boolean));
+  return topics
+    .filter((topic) => topicIds.has(topic.id) || topic.eventId === event.id || (topic.eventIds || []).includes(event.id))
+    .sort((a, b) => Number(a.sortOrder || a.eventSortOrder || a.eventOrder || 999) - Number(b.sortOrder || b.eventSortOrder || b.eventOrder || 999))
+    .map((topic) => String(topic.title || topic.headline || topic.name || "").trim())
+    .filter(Boolean);
+}
+
+function mobileCheckinStats(eventId = "", registrations = []) {
+  const assigned = registrations.filter((registration) => registration.eventId === eventId);
+  const active = assigned.filter((registration) => !["cancelled", "canceled", "expired", "deleted", "archived"].includes(String(registration.status || "").toLowerCase()));
+  const checkedIn = active.filter((registration) => String(registration.status || "").toLowerCase() === "checked_in" || registration.checkedInEventId === eventId);
+  const waitlist = active.filter((registration) => String(registration.status || "").toLowerCase() === "waitlist");
+  const confirmed = active.filter((registration) => {
+    const status = String(registration.status || "").toLowerCase();
+    return status === "confirmed" || status === "checked_in" || registration.emailConfirmed === true || registration.confirmed === true;
+  });
+  const pending = Math.max(0, active.length - confirmed.length - waitlist.length);
+  const open = Math.max(0, confirmed.length - checkedIn.length);
+  const percent = confirmed.length ? Math.round((checkedIn.length / confirmed.length) * 100) : 0;
+  return { assigned, active, checkedIn, confirmed, waitlist, pending, open, percent };
+}
+
+function renderMobileCheckinStats(eventId = "", registrations = []) {
+  const stats = mobileCheckinStats(eventId, registrations);
+  const recentRows = stats.checkedIn
+    .sort((a, b) => String(b.checkedInAt || b.updatedAt || "").localeCompare(String(a.checkedInAt || a.updatedAt || "")))
+    .slice(0, 6)
+    .map((registration) => {
+      const name = [registration.firstName, registration.lastName].filter(Boolean).join(" ") || registration.email || "Teilnehmer";
+      const meta = [registration.company, registration.email].filter(Boolean).join(" · ");
+      return `<div class="mobile-checkin-person"><strong>${escapeHtml(name)}</strong>${meta ? `<span>${escapeHtml(meta)}</span>` : ""}</div>`;
+    })
+    .join("");
+  return `<div class="mobile-checkin-stats" data-mobile-checkin-stats>
+    <div class="mobile-checkin-stat"><span>Angemeldet</span><strong>${stats.active.length}</strong></div>
+    <div class="mobile-checkin-stat"><span>Bestätigt</span><strong>${stats.confirmed.length}</strong></div>
+    <div class="mobile-checkin-stat mobile-checkin-stat--red"><span>Eingecheckt</span><strong>${stats.checkedIn.length}</strong></div>
+    <div class="mobile-checkin-stat"><span>Noch offen</span><strong>${stats.open}</strong></div>
+    <div class="mobile-checkin-progress"><div><span>Einlassquote</span><strong>${stats.percent}%</strong></div><i style="--value:${stats.percent}%"></i></div>
+    <details class="mobile-checkin-recent"><summary>Letzte Check-ins</summary>${recentRows || `<p class="muted">Noch kein Check-in vorhanden.</p>`}</details>
+  </div>`;
+}
+
+function renderMobileSurveyResults(liveSurveys = [], liveSurveyResponses = [], events = []) {
+  const eventById = new Map(events.map((event) => [event.id, event]));
+  const uniqueSurveys = [];
+  const seenSurveys = new Set();
+  liveSurveys
+    .sort((a, b) => String(b.createdAtIso || b.createdAt || "").localeCompare(String(a.createdAtIso || a.createdAt || "")))
+    .forEach((survey) => {
+      const key = [survey.eventId || "", survey.question || survey.title || ""].map((value) => String(value).trim().toLowerCase()).join("::");
+      if (seenSurveys.has(key)) return;
+      seenSurveys.add(key);
+      uniqueSurveys.push(survey);
+    });
+  return uniqueSurveys
+    .slice(0, 6)
+    .map((survey) => {
+      const surveyEvent = eventById.get(survey.eventId) || {};
+      const options = Array.isArray(survey.options) ? survey.options : [];
+      const surveyResponses = liveSurveyResponses
+        .filter((response) => response.surveyId === survey.id)
+        .sort((a, b) => String(b.createdAtIso || "").localeCompare(String(a.createdAtIso || "")));
+      const responseCounts = surveyResponses.reduce((counts, response) => {
+        const ids = Array.isArray(response.optionIds) ? response.optionIds : [response.optionId];
+        ids.map((id) => String(id || "").trim()).filter(Boolean).forEach((id) => {
+          counts[id] = Number(counts[id] || 0) + 1;
+        });
+        return counts;
+      }, {});
+      const storedCounts = survey.optionCounts || {};
+      const counts = Object.values(storedCounts).some((value) => Number(value || 0) > 0) ? storedCounts : responseCounts;
+      const total = surveyResponses.length || Number(survey.responseCount || Object.values(counts).reduce((sum, value) => sum + Number(value || 0), 0));
+      const voters = surveyResponses
+        .sort((a, b) => String(b.createdAtIso || "").localeCompare(String(a.createdAtIso || "")))
+        .slice(0, 20)
+        .map((response) => {
+          const person = response.personName || [response.firstName, response.lastName].filter(Boolean).join(" ") || response.email || "Teilnehmer";
+          const answer = response.optionLabel || (Array.isArray(response.optionLabels) ? response.optionLabels.join(", ") : "") || response.optionId || "";
+          const meta = [response.email, response.company].filter(Boolean).join(" · ");
+          return `<div class="mobile-live-vote-row"><strong>${escapeHtml(person)}</strong><span>${escapeHtml(answer)}</span>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}</div>`;
+        })
+        .join("");
+      const optionRows = options.map((option) => {
+        const count = Number(counts?.[option.id] || 0);
+        const percent = total > 0 ? Math.round((count / total) * 100) : 0;
+        return `<div class="mobile-live-result-option"><div><strong>${escapeHtml(option.label || "")}</strong><span>${count} Stimme${count === 1 ? "" : "n"} · ${percent}%</span></div><i style="--value:${percent}%"></i></div>`;
+      }).join("");
+      return `<article class="mobile-live-survey-result"><h3>${escapeHtml(survey.question || survey.title || "Umfrage")}</h3><p class="muted">${escapeHtml(surveyEvent.title || survey.eventId || "Ohne Event")} · ${total} Antwort${total === 1 ? "" : "en"}</p>${optionRows || `<p class="muted">Noch keine Antwortoptionen gespeichert.</p>`}<details class="mobile-live-votes"><summary>Wer hat abgestimmt?</summary>${voters || `<p class="muted">Noch keine Stimmen abgegeben.</p>`}</details></article>`;
+    })
+    .join("");
+}
+
+function stopMobileCmsLiveResults() {
+  if (mobileCmsLiveResultsTimer) window.clearInterval(mobileCmsLiveResultsTimer);
+  mobileCmsLiveResultsTimer = null;
+}
+
+function stopMobileCheckinStats() {
+  if (mobileCheckinStatsTimer) window.clearInterval(mobileCheckinStatsTimer);
+  mobileCheckinStatsTimer = null;
+}
+
+async function refreshMobileCheckinStats({ silent = false } = {}) {
+  const target = document.querySelector("[data-mobile-checkin-stats-wrap]");
+  const select = document.querySelector("[data-mobile-checkin-event]");
+  if (!target || !select) {
+    stopMobileCheckinStats();
+    return;
+  }
+  const eventId = select.value || "";
+  if (!eventId) return;
+  try {
+    const registrations = await list("registrations").catch(() => []);
+    target.innerHTML = renderMobileCheckinStats(eventId, registrations);
+  } catch (error) {
+    if (!silent) target.innerHTML = `<div class="alert alert--warning">Einlass-Statistik konnte nicht geladen werden: ${escapeHtml(error.message || String(error))}</div>`;
+  }
+}
+
+function startMobileCheckinStats() {
+  stopMobileCheckinStats();
+  refreshMobileCheckinStats({ silent: true });
+  mobileCheckinStatsTimer = window.setInterval(() => refreshMobileCheckinStats({ silent: true }), 5000);
+}
+
+async function refreshMobileCmsLiveResults({ silent = false } = {}) {
+  const container = document.querySelector("[data-mobile-live-results]");
+  const status = document.querySelector("[data-mobile-live-results-status]");
+  if (!container) {
+    stopMobileCmsLiveResults();
+    return;
+  }
+  if (!silent && status) status.textContent = "Aktualisiere ...";
+  try {
+    const [events, liveSurveys, liveSurveyResponses] = await Promise.all([
+      list("events").catch(() => []),
+      list("liveSurveys").catch(() => []),
+      list("liveSurveyResponses").catch(() => [])
+    ]);
+    const html = renderMobileSurveyResults(liveSurveys, liveSurveyResponses, events);
+    container.innerHTML = html || `<p class="muted">Noch keine Umfrage-Auswertung vorhanden.</p>`;
+    if (status) status.textContent = `Aktualisiert: ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+  } catch (error) {
+    if (status) status.textContent = error.message || "Aktualisierung fehlgeschlagen.";
+  }
+}
+
+function startMobileCmsLiveResults() {
+  stopMobileCmsLiveResults();
+  refreshMobileCmsLiveResults({ silent: false });
+  mobileCmsLiveResultsTimer = window.setInterval(() => refreshMobileCmsLiveResults({ silent: true }), 1000);
+}
+
+async function mobileLiveResultsPage() {
+  const user = currentUser();
+  if (!canUseCms(user)) {
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobil-CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
+  }
+  const [events, liveSurveys, liveSurveyResponses] = await Promise.all([
+    list("events").catch(() => []),
+    list("liveSurveys").catch(() => []),
+    list("liveSurveyResponses").catch(() => [])
+  ]);
+  const surveyResultRows = renderMobileSurveyResults(liveSurveys, liveSurveyResponses, events);
+  return `<main class="mobile-live-admin mobile-live-results-screen">
+    <section class="mobile-live-hero mobile-live-results-hero">
+      <p class="eyebrow">Umfrage-Auswertung</p>
+      <h1>Umfragen live auswerten</h1>
+      <p>Dieser Bildschirm aktualisiert die Umfrage jede Sekunde und zeigt Antworten, Balken und Stimmen live an.</p>
+      <div class="actions">
+        <a class="button button--secondary" href="#/cms/live">Zurück zum Mobil-CMS</a>
+        <a class="button button--secondary" href="/website.html?v=1020#/home">Website</a>
+      </div>
+    </section>
+    <section class="panel mobile-live-panel mobile-live-results-stage" id="mobile-cms-results" data-mobile-live-results-screen>
+      <div class="mobile-live-results-head">
+        <div>
+          <h2>Umfrage-Auswertung</h2>
+          <p class="muted" data-mobile-live-results-status>Live-Modus startet ...</p>
+        </div>
+        <div class="mobile-live-results-actions">
+          <button class="button button--secondary button--small" type="button" data-mobile-live-results-refresh>Aktualisieren</button>
+          <button class="button button--primary button--small" type="button" data-mobile-live-results-toggle>Live stoppen</button>
+        </div>
+      </div>
+      <div data-mobile-live-results>${surveyResultRows || `<p class="muted">Noch keine Umfrage-Auswertung vorhanden.</p>`}</div>
+    </section>
+  </main>`;
+}
+
+async function mobileLiveAdminPage() {
+  const user = currentUser();
+  if (!canUseCms(user)) {
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobil-CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
+  }
+  const [events, registrations, speakers, topics, notifications] = await Promise.all([
+    list("events").catch(() => []),
+    list("registrations").catch(() => []),
+    list("speakers").catch(() => []),
+    list("topics").catch(() => []),
+    list("eventNotifications").catch(() => [])
+  ]);
+  const eventRows = events
+    .filter((event) => mobileLiveEventIsRelevant(event, registrations))
+    .sort((a, b) => String(a.date || a.startDate || "").localeCompare(String(b.date || b.startDate || "")));
+  const firstEvent = eventRows[0] || {};
+  const publicBaseUrl = "https://prodigitaltv-da47b.web.app";
+  const eventOptions = eventRows.map((event) => {
+    const registrationCount = registrations.filter((registration) => registration.eventId === event.id && !["cancelled", "expired", "deleted"].includes(String(registration.status || "").toLowerCase())).length;
+    const speakerCount = mobileEventSpeakerCount(event, speakers, topics);
+    const topicTitles = mobileEventTopicTitles(event, topics);
+    const label = [event.date ? formatDate(event.date) : "", event.title || event.id, `${registrationCount} T`, `${speakerCount} R`].filter(Boolean).join(" · ");
+    const payload = escapeHtml(JSON.stringify({
+      id: event.id,
+      title: event.title || event.id,
+      link: `${publicBaseUrl}/event/${event.id}?v=943`,
+      checkinUrl: `${publicBaseUrl}/?v=1021#/event-checkin/${event.id}`,
+      checkinScreenUrl: `${publicBaseUrl}/?v=1021#/event-checkin-screen/${event.id}`,
+      surveyQuestion: "Welcher Vortrag hat Ihnen am besten gefallen?",
+      surveyOptions: topicTitles,
+      surveyAllowMultiple: false,
+      texts: {
+        invitationText: event.invitationText || event.description || `Aktuelle Information zur Veranstaltung ${event.title || event.id}.`,
+        description: event.description || `Aktuelle Information zur Veranstaltung ${event.title || event.id}.`
+      }
+    }));
+    return `<option value="${escapeHtml(event.id)}" data-event-title="${escapeHtml(event.title || event.id)}" data-event-link="${publicBaseUrl}/event/${escapeHtml(event.id)}?v=943" data-checkin-url="${publicBaseUrl}/?v=1021#/event-checkin/${escapeHtml(event.id)}" data-checkin-screen-url="${publicBaseUrl}/?v=1021#/event-checkin-screen/${escapeHtml(event.id)}" data-event-payload="${payload}">${escapeHtml(label)}</option>`;
+  }).join("");
+  const recentRows = notifications
+    .filter((item) => !firstEvent.id || item.eventId === firstEvent.id)
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+    .slice(0, 5)
+    .map((item) => {
+      const label = {
+        queued: "Vorbereitet",
+        processing: "In Arbeit",
+        scheduled: "Geplant",
+        sent: "Gesendet",
+        draft: "Entwurf"
+      }[String(item.status || "draft").toLowerCase()] || item.status || "Entwurf";
+      return `<div class="mobile-live-row"><strong>${escapeHtml(item.title || "-")}</strong><span>${escapeHtml(label)} · ${escapeHtml(String(item.targetCount ?? "-"))} Empfaenger · ${escapeHtml(String(item.queuedMailCount ?? "-"))} Mails</span></div>`;
+    })
+    .join("");
+  const eventLink = firstEvent.id ? `${publicBaseUrl}/event/${firstEvent.id}?v=943` : "";
+  const firstCheckinUrl = firstEvent.id ? `${publicBaseUrl}/?v=1021#/event-checkin/${firstEvent.id}` : "";
+  const firstCheckinScreenUrl = firstEvent.id ? `${publicBaseUrl}/?v=1021#/event-checkin-screen/${firstEvent.id}` : "";
+  const firstCheckinPdfUrl = firstEvent.id ? `${publicBaseUrl}/?v=1021#/event-checkin-screen/${firstEvent.id}?print=1` : "";
+  const firstCheckinQrUrl = firstCheckinUrl ? `https://api.qrserver.com/v1/create-qr-code/?size=720x720&margin=2&data=${encodeURIComponent(firstCheckinUrl)}` : "";
+  return `<main class="mobile-live-admin">
+    <section class="mobile-live-hero">
+      <p class="eyebrow">Mobil-CMS</p>
+      <h1>Veranstaltungs-Cockpit</h1>
+      <p>Für schnelle Aktionen während einer Veranstaltung: Teilnehmer und Referenten per Mail oder Push erreichen.</p>
+      <details class="mobile-cms-menu" data-mobile-cms-menu>
+        <summary aria-label="Mobil-CMS Menü öffnen">
+          <span>Menü</span>
+          <i aria-hidden="true"></i>
+        </summary>
+        <nav aria-label="Mobil-CMS Funktionen">
+          <button type="button" data-mobile-cms-scroll="mobile-cms-checkin-qr">Einlass-QR</button>
+          <button type="button" data-mobile-cms-scroll="mobile-cms-send">Live-Umfrage</button>
+          <a href="#/cms/live-results">Umfrage-Auswertung</a>
+          <button type="button" data-mobile-cms-scroll="mobile-cms-history">Historie</button>
+          <a href="#/cms/quality">Qualität</a>
+          <a href="/website.html?v=1020#/home" data-mobile-cms-website-link>Website</a>
+        </nav>
+      </details>
+    </section>
+    <details class="panel mobile-live-panel mobile-live-collapsible mobile-checkin-qr-panel" id="mobile-cms-checkin-qr" open>
+      <summary><span>Einlass-QR</span><small>QR-Code für Empfang und Check-in</small></summary>
+      <p class="muted">Diesen QR-Code am Empfang anzeigen. Teilnehmer scannen ihn mit dem Handy-Ticket.</p>
+      <div class="field"><label>Veranstaltung</label><select data-mobile-checkin-event ${eventRows.length ? "" : "disabled"}>${eventOptions}</select></div>
+      ${firstCheckinQrUrl ? `<figure class="mobile-checkin-qr">
+        <img data-mobile-checkin-qr-img src="${escapeHtml(firstCheckinQrUrl)}" alt="Einlass-QR-Code">
+        <figcaption data-mobile-checkin-qr-title>${escapeHtml(firstEvent.title || "Veranstaltung")}</figcaption>
+      </figure>
+      <div data-mobile-checkin-stats-wrap>${renderMobileCheckinStats(firstEvent.id, registrations)}</div>
+      <p class="webapp-qr-card__url" data-mobile-checkin-url>${escapeHtml(firstCheckinUrl)}</p>
+      <div class="actions">
+        <a class="button button--primary" data-mobile-checkin-screen-link href="${escapeHtml(firstCheckinScreenUrl)}" target="_blank" rel="noreferrer">QR Vollbild öffnen</a>
+        <a class="button button--secondary" data-mobile-checkin-pdf-link href="${escapeHtml(firstCheckinPdfUrl)}" target="_blank" rel="noreferrer">PDF teilen</a>
+        <button class="button button--secondary" type="button" data-mobile-checkin-copy>Link kopieren</button>
+      </div>` : `<p class="muted">Keine Veranstaltung mit Einlassdaten gefunden.</p>`}
+      <div class="alert" data-mobile-checkin-status hidden></div>
+    </details>
+    <details class="panel mobile-live-panel mobile-live-collapsible" id="mobile-cms-send">
+      <summary><span>Live-Umfrage</span><small>Frage erstellen und an Teilnehmer senden</small></summary>
+      <form id="event-notification-form" class="form-grid mobile-live-form">
+        <input type="hidden" name="notificationKind" value="event">
+        <input type="hidden" name="sendMode" value="now">
+        <input type="hidden" name="registrationStatus" value="all">
+        <input type="hidden" name="includeMembers" value="false" data-notification-include-members>
+        <input type="hidden" name="includeContacts" value="false" data-notification-include-contacts>
+        <div class="field"><label>Veranstaltung</label><select name="eventId" data-notification-event-select required>${eventOptions}</select>${eventRows.length ? "" : `<p class="muted">Keine aktive Veranstaltung mit Live-Daten gefunden.</p>`}</div>
+        <div class="field"><label>Zielgruppe</label><select name="recipientGroup" data-notification-recipient-group>
+          <option value="event_registered_speakers">Teilnehmer + Referenten</option>
+          <option value="event_registered">Nur Teilnehmer</option>
+          <option value="event_speakers">Nur Referenten</option>
+          <option value="members">Alle Mitglieder</option>
+          <option value="members_contacts">Gesamte Mailingliste</option>
+          <option value="test_person">Test an einzelne Mailadresse</option>
+        </select></div>
+        <div class="registration-section registration-section--compact" data-notification-test-field hidden>
+          <div class="field"><label>Test-Mailadressen</label><textarea name="testRecipients" rows="2" placeholder="mail@example.de"></textarea></div>
+        </div>
+        <div class="field"><label>Aktion</label><select name="liveActionMode" data-live-action-mode>
+          <option value="message">Nachricht / Link</option>
+          <option value="survey">Umfrage mit Antworten</option>
+        </select></div>
+        <div class="field"><label>Titel</label><input name="title" data-notification-title value="${escapeHtml(firstEvent.title ? `Live-Frage: ${firstEvent.title}` : "Live-Frage von PROdigitalTV")}" required></div>
+        <div class="field"><label>Nachricht / Frage / Voting</label><textarea name="shortText" rows="5" data-notification-shorttext placeholder="Kurze Frage oder Voting-Link einfuegen">Bitte nehmen Sie kurz an unserer Live-Abfrage teil.</textarea></div>
+        <section class="panel mobile-live-subpanel" data-live-survey-fields hidden>
+          <div class="mobile-live-subpanel__head"><div><strong>Umfrage-Editor</strong><small>Freie Frage und 1 bis 6 Antworten.</small></div><button class="button button--secondary button--small" type="button" data-live-survey-fill-topics>Vorträge übernehmen</button></div>
+          <div class="field"><label>Frage</label><input name="surveyQuestion" data-live-survey-question value="Welcher Vortrag hat Ihnen am besten gefallen?" placeholder="Frage frei formulieren"></div>
+          <div class="field"><label>Antwortmodus</label><select name="surveyAllowMultiple" data-live-survey-answer-mode>
+            <option value="false">Nur eine Antwort möglich</option>
+            <option value="true">Mehrere Antworten möglich</option>
+          </select></div>
+          <input type="hidden" name="surveyOptions" data-live-survey-options value="Vortrag A&#10;Vortrag B&#10;Vortrag C">
+          <div class="live-survey-answer-editor" data-live-survey-answer-editor>
+            <div class="field live-survey-answer-row"><label>Antwort 1</label><input data-live-survey-answer value="Vortrag A" placeholder="Antwort 1"></div>
+            <div class="field live-survey-answer-row"><label>Antwort 2</label><input data-live-survey-answer value="Vortrag B" placeholder="Antwort 2"></div>
+            <div class="field live-survey-answer-row"><label>Antwort 3</label><input data-live-survey-answer value="Vortrag C" placeholder="Antwort 3"></div>
+          </div>
+          <div class="actions"><button class="button button--secondary button--small" type="button" data-live-survey-add-answer>Antwort hinzufügen</button><button class="button button--secondary button--small" type="button" data-live-survey-remove-answer>Antwort entfernen</button></div>
+        </section>
+        <section class="panel mobile-live-subpanel">
+          <label class="checkbox"><input type="checkbox" name="linkEnabled" data-notification-link-toggle checked> Link mitsenden</label>
+          <div class="field"><label>Link zur Umfrage / zum Voting</label><input name="link" data-notification-link value="${escapeHtml(eventLink)}" placeholder="https://..."></div>
+        </section>
+        <div class="event-notification-preview" data-notification-preview></div>
+        <button class="button button--primary" ${eventRows.length ? "" : "disabled"}>Vorschau erstellen</button>
+        <div id="event-notification-result"></div>
+      </form>
+    </details>
+    <details class="panel mobile-live-panel mobile-live-collapsible">
+      <summary><span>Umfrage-Auswertung</span><small>Live-Balken und Stimmen ansehen</small></summary>
+      <p class="muted">Für die laufende Veranstaltung gibt es einen eigenen Auswertungs-Screen mit automatisch aktualisierten Balken.</p>
+      <a class="button button--primary" href="#/cms/live-results">Umfrage-Auswertung öffnen</a>
+    </details>
+    <details class="panel mobile-live-panel mobile-live-collapsible" id="mobile-cms-history">
+      <summary><span>Letzte Aktionen</span><small>Live-Umfragen und Nachrichtenhistorie</small></summary>
+      ${recentRows || `<p class="muted">Noch keine Live-Aktion vorhanden.</p>`}
+    </details>
+  </main>`;
+}
+
+async function liveSurveyPage(surveyId = "") {
+  try {
+    const survey = await getLiveSurvey(surveyId);
+    const surveyToken = route().query.get("t") || "";
+    const storedKey = `pdtv-live-survey-response:${survey.id}`;
+    const alreadyAnswered = localStorage.getItem(storedKey);
+    const storedAnswers = String(alreadyAnswered || "").split(",").filter(Boolean);
+    const inputType = survey.allowMultiple ? "checkbox" : "radio";
+    const options = (survey.options || []).map((option) => `<label class="checkbox live-survey-option"><input type="${inputType}" name="optionIds" value="${escapeHtml(option.id)}" ${survey.allowMultiple ? "" : "required"} ${storedAnswers.includes(option.id) ? "checked" : ""}><span>${escapeHtml(option.label)}</span></label>`).join("");
+    return plainVotingShell(`<section class="section live-survey-page"><div class="container" style="max-width:780px"><form id="live-survey-form" class="form-card" data-live-survey-id="${escapeHtml(survey.id)}" data-live-survey-token="${escapeHtml(surveyToken)}">
+      <p class="eyebrow">Live-Umfrage</p>
+      <h1>${escapeHtml(survey.question || survey.title || "Ihre Meinung ist gefragt")}</h1>
+      <p class="muted">${survey.allowMultiple ? "Mehrere Antworten sind möglich." : "Bitte genau eine Antwort auswählen."}</p>
+      <div class="live-survey-options">${options}</div>
+      <button class="button button--primary" type="submit">${alreadyAnswered ? "Antwort aktualisieren" : "Antwort absenden"}</button>
+      <div id="live-survey-result" style="margin-top:16px">${alreadyAnswered ? `<div class="alert alert--success">Auf diesem Geraet wurde bereits eine Antwort gespeichert.</div>` : ""}</div>
+    </form></div></section>`);
+  } catch (error) {
+    return plainVotingShell(`<section class="section"><div class="container" style="max-width:760px"><div class="form-card"><p class="eyebrow">Live-Umfrage</p><h1>Umfrage nicht verfuegbar</h1><p class="muted">${escapeHtml(error.message || "Diese Umfrage konnte nicht geladen werden.")}</p><a class="button button--primary" href="/website.html#/events">Zu den Events</a></div></div></section>`);
+  }
+}
 async function viewForRoute(current) {
   window.__pdtCmsStage = `route:${current.path}/${current.id || ""}`;
+  if (current.path === "survey") return liveSurveyPage(current.id);
+  if (current.path === "cms" && mobileCmsDisabled() && current.id === "live") return mobileLiveAdminPage();
+  if (current.path === "cms" && mobileCmsDisabled() && current.id === "live-results") return mobileLiveResultsPage();
   if (current.path === "cms" && mobileCmsDisabled() && current.id !== "quality") return mobileCmsPlaceholder();
   if (current.path === "cms" && current.id === "quality" && mobileCmsDisabled()) return mobileQualityPage();
   if (current.path === "cms" && current.id === "media") {
@@ -225,7 +653,7 @@ async function viewForRoute(current) {
     window.__pdtCmsStage = "import:cmsPages";
     const {
       dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage,
-      moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, aiAccessPage, mailAdminPage, audioAdminPage, memberAreaAdminPage, qualityPage, eventNotificationsPage, peoplePage
+      moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, aiAccessPage, mailAdminPage, audioAdminPage, memberAreaAdminPage, qualityPage, privacyConsentsPage, eventNotificationsPage, peoplePage
     } = await cmsPages();
     window.__pdtCmsStage = `cms:${current.id || "dashboard"}`;
     if (!current.id) return dashboardPage();
@@ -247,7 +675,7 @@ async function viewForRoute(current) {
     if (current.id === "people") return peoplePage(current.query);
     if (current.id === "members") {
       window.__pdtCmsStage = "cms:members:list";
-      return moduleListPage("members");
+      return moduleListPage("members", current.query.get("view") || "members");
     }
     if (current.id === "membership-applications") return moduleListPage("membershipApplications");
     if (current.id === "member-area") return memberAreaAdminPage();
@@ -255,6 +683,7 @@ async function viewForRoute(current) {
     if (current.id === "member-directories") return moduleListPage("memberDirectories");
     if (current.id === "users") return moduleListPage("users");
     if (current.id === "quality") return qualityPage();
+    if (current.id === "privacy-consents") return privacyConsentsPage();
     if (current.id === "board") return moduleListPage("boardMembers");
     if (current.id === "editorial") return moduleListPage("editorialContent", current.section || "press");
     if (current.id === "mail") return moduleListPage("mailQueue");
@@ -270,7 +699,7 @@ async function viewForRoute(current) {
   const {
     homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
     newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage,
-    downloadsPage, joinPage, loginPage, memberPortalPage, memberArticleDetailPage, legalPage, speakersPage, speakerDetailPage,
+    downloadsPage, joinPage, loginPage, userInvitationPage, memberPortalPage, memberArticleDetailPage, legalPage, speakersPage, speakerDetailPage,
     notFoundPage, webappQrPage, ticketLinkPage, eventCheckinPage, eventCheckinScreenPage, registrationCancelPage,
     notificationUnsubscribePage
   } = await publicPages();
@@ -304,6 +733,7 @@ async function viewForRoute(current) {
   if (current.path === "archive") return archivePage();
   if (current.path === "webapp-qr") return webappQrPage();
   if (current.path === "login") return loginPage();
+  if (current.path === "user-invite") return userInvitationPage(current.id, current.query, current.section);
   if (current.path === "portal" && current.id === "article") return memberArticleDetailPage(current.section);
   if (current.path === "portal") return memberPortalPage();
   if (current.path === "imprint") return legalPage("imprint");
@@ -314,7 +744,7 @@ async function viewForRoute(current) {
 function redirectPublicRouteOutOfCms(current) {
   if (current.path === "cms") return false;
   if (!String(window.location.pathname || "").endsWith("/cms.html")) return false;
-  window.location.replace(`${window.location.origin}/${window.location.search}${window.location.hash || "#/home"}`);
+  window.location.replace(`${window.location.origin}/website.html${window.location.search}${window.location.hash || "#/home"}`);
   return true;
 }
 
@@ -342,6 +772,15 @@ function publicRouteLoadingHtml(current = {}) {
   </div></section>`);
 }
 
+function plainVotingShell(content = "") {
+  return `<div class="plain-voting-page">
+    <header class="plain-voting-header">
+      <a class="logo" href="/website.html#/home" aria-label="PROdigitalTV Startseite"><span class="logo__asset"><img src="/assets/official/brand/prodigitaltv-logo-claim.png" alt="PROdigitalTV - Interessengemeinschaft Digitale Medien e.V."></span></a>
+    </header>
+    <main class="plain-voting-main">${content}</main>
+  </div>`;
+}
+
 function publicRouteFromHashValue(hash = "") {
   const cleanHash = String(hash || "#/home").replace(/^#\/?/, "");
   const path = cleanHash.split("?")[0].split("/")[0] || "home";
@@ -353,9 +792,12 @@ async function render() {
   let currentRoute;
   let loadingTimer = null;
   try {
+    stopMobileCmsLiveResults();
+    stopMobileCheckinStats();
     applyTheme();
     stopAllAudioPlayback();
     currentRoute = route();
+    warmMemberProfileCache(currentUser());
     if (redirectPublicRouteOutOfCms(currentRoute)) return;
     const isCmsRoute = currentRoute?.path === "cms";
     if (root && !root.innerHTML) {
@@ -381,7 +823,27 @@ async function render() {
     wireActions();
     initCheckinScreenWatcher();
     updateMobileQrCode();
-    window.scrollTo({ top: 0 });
+    window.PROdigitalTVPwa?.updatePrompt?.();
+    let scrollAfterRender = "";
+    let startMobileLiveAfterRender = false;
+    try {
+      scrollAfterRender = sessionStorage.getItem("pdtv-mobile-cms-scroll-after-render") || "";
+      if (scrollAfterRender) sessionStorage.removeItem("pdtv-mobile-cms-scroll-after-render");
+      startMobileLiveAfterRender = sessionStorage.getItem("pdtv-mobile-cms-live-after-render") === "1";
+      if (startMobileLiveAfterRender) sessionStorage.removeItem("pdtv-mobile-cms-live-after-render");
+    } catch {}
+    if (scrollAfterRender) {
+      window.setTimeout(() => {
+        document.getElementById(scrollAfterRender)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 60);
+    } else {
+      window.scrollTo({ top: 0 });
+    }
+    if (startMobileLiveAfterRender) {
+      const button = document.querySelector("[data-mobile-live-results-toggle]");
+      if (button) button.textContent = "Live stoppen";
+      startMobileCmsLiveResults();
+    }
     schedulePublicGermanTextNormalization();
     if (!isCmsRoute) {
       const usageRoute = `${currentRoute?.path || "home"}:${currentRoute?.id || ""}:${currentRoute?.section || ""}:${window.location.hash || ""}`;
@@ -2330,7 +2792,8 @@ function loginReturnTarget() {
 }
 
 function postLoginRouteForUser(user = {}) {
-  if (["admin", "editor"].includes(user.role) && !mobileCmsDisabled()) return "cms";
+  if (mobileCmsDisabled() && canUseCms(user)) return "cms/live";
+  if (!mobileCmsDisabled()) return "home";
   return "portal";
 }
 
@@ -10130,7 +10593,86 @@ function wireQualityInspection() {
   });
   apply();
 }
+
+function updateMobileCheckinQr() {
+  const select = document.querySelector("[data-mobile-checkin-event]");
+  if (!select) return;
+  const option = select.selectedOptions?.[0];
+  const checkinUrl = option?.dataset?.checkinUrl || "";
+  const screenUrl = option?.dataset?.checkinScreenUrl || "";
+  const title = option?.dataset?.eventTitle || option?.textContent || "Veranstaltung";
+  const image = document.querySelector("[data-mobile-checkin-qr-img]");
+  const caption = document.querySelector("[data-mobile-checkin-qr-title]");
+  const urlText = document.querySelector("[data-mobile-checkin-url]");
+  const screenLink = document.querySelector("[data-mobile-checkin-screen-link]");
+  const pdfLink = document.querySelector("[data-mobile-checkin-pdf-link]");
+  if (image && checkinUrl) {
+    image.src = `https://api.qrserver.com/v1/create-qr-code/?size=720x720&margin=2&data=${encodeURIComponent(checkinUrl)}`;
+    image.alt = `Einlass-QR-Code fuer ${title}`;
+  }
+  if (caption) caption.textContent = title;
+  if (urlText) urlText.textContent = checkinUrl;
+  if (screenLink && screenUrl) screenLink.href = screenUrl;
+  if (pdfLink && screenUrl) pdfLink.href = `${screenUrl}?print=1`;
+}
+
 function wireActions() {
+  document.querySelector("[data-mobile-checkin-event]")?.addEventListener("change", () => {
+    updateMobileCheckinQr();
+    refreshMobileCheckinStats({ silent: false });
+  });
+  document.querySelector("[data-mobile-checkin-copy]")?.addEventListener("click", async () => {
+    const status = document.querySelector("[data-mobile-checkin-status]");
+    const url = document.querySelector("[data-mobile-checkin-url]")?.textContent || "";
+    try {
+      await navigator.clipboard.writeText(url);
+      if (status) {
+        status.hidden = false;
+        status.className = "alert alert--success";
+        status.textContent = "Einlass-Link wurde kopiert.";
+      }
+    } catch {
+      if (status) {
+        status.hidden = false;
+        status.className = "alert alert--warning";
+        status.textContent = url || "Link konnte nicht kopiert werden.";
+      }
+    }
+  });
+  updateMobileCheckinQr();
+  if (document.querySelector("[data-mobile-checkin-stats-wrap]")) startMobileCheckinStats();
+  document.querySelector("[data-mobile-live-results-refresh]")?.addEventListener("click", () => {
+    refreshMobileCmsLiveResults({ silent: false });
+  });
+  document.querySelector("[data-mobile-live-results-toggle]")?.addEventListener("click", (event) => {
+    const button = event.currentTarget;
+    if (mobileCmsLiveResultsTimer) {
+      stopMobileCmsLiveResults();
+      button.textContent = "Live starten";
+      const status = document.querySelector("[data-mobile-live-results-status]");
+      if (status) status.textContent = "Live-Modus gestoppt.";
+      return;
+    }
+    button.textContent = "Live stoppen";
+    startMobileCmsLiveResults();
+  });
+  if (document.querySelector("[data-mobile-live-results-screen]")) {
+    startMobileCmsLiveResults();
+  }
+  document.querySelectorAll("[data-mobile-cms-scroll]").forEach((button) => button.addEventListener("click", async () => {
+    button.closest("[data-mobile-cms-menu]")?.removeAttribute("open");
+    const targetId = button.dataset.mobileCmsScroll || "";
+    if (targetId === "mobile-cms-results" || targetId === "mobile-cms-history") {
+      try {
+        sessionStorage.setItem("pdtv-mobile-cms-scroll-after-render", targetId);
+        if (targetId === "mobile-cms-results") sessionStorage.setItem("pdtv-mobile-cms-live-after-render", "1");
+      } catch {}
+      await render();
+      return;
+    }
+    const target = document.getElementById(targetId);
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
   document.querySelector("[data-theme-toggle]")?.addEventListener("click", () => {
     const next = document.documentElement.dataset.theme === "night" ? "day" : "night";
     localStorage.setItem("pdtv-theme", next);
@@ -10239,10 +10781,12 @@ function wireActions() {
         group: "communication",
         value: {
           registrationConfirmation: values.registrationConfirmation || "",
-          registrationWaitlist: values.registrationWaitlist || ""
+          registrationWaitlist: values.registrationWaitlist || "",
+          memberLoginInvitation: values.memberLoginInvitation || ""
         },
         registrationConfirmation: values.registrationConfirmation || "",
         registrationWaitlist: values.registrationWaitlist || "",
+        memberLoginInvitation: values.memberLoginInvitation || "",
         updatedAt: new Date().toISOString()
       });
       if (result) result.innerHTML = `<div class="alert alert--success">Standardtexte wurden gespeichert.</div>`;
@@ -12992,6 +13536,14 @@ function wireActions() {
     const includeMembers = eventNotificationForm.querySelector("[data-notification-include-members]");
     const includeContacts = eventNotificationForm.querySelector("[data-notification-include-contacts]");
     const testOnlyInput = eventNotificationForm.querySelector("[data-notification-test-only]");
+    const liveActionMode = eventNotificationForm.querySelector("[data-live-action-mode]");
+    const liveSurveyFields = eventNotificationForm.querySelector("[data-live-survey-fields]");
+    const liveSurveyQuestion = eventNotificationForm.querySelector("[data-live-survey-question]");
+    const liveSurveyOptions = eventNotificationForm.querySelector("[data-live-survey-options]");
+    const liveSurveyAnswerMode = eventNotificationForm.querySelector("[data-live-survey-answer-mode]");
+    const liveSurveyAnswerEditor = eventNotificationForm.querySelector("[data-live-survey-answer-editor]");
+    const liveSurveyAddAnswer = eventNotificationForm.querySelector("[data-live-survey-add-answer]");
+    const liveSurveyRemoveAnswer = eventNotificationForm.querySelector("[data-live-survey-remove-answer]");
     const notificationResult = eventNotificationForm.querySelector("#event-notification-result");
     const notificationErrorText = (error) => {
       const message = String(error?.message || error || "").trim();
@@ -13015,6 +13567,37 @@ function wireActions() {
       if (!payload || source === "custom") return textInput?.value || "";
       return payload.texts?.[source] || payload.texts?.invitationText || textInput?.value || "";
     };
+    const liveSurveyAnswers = () => Array.from(eventNotificationForm.querySelectorAll("[data-live-survey-answer]"))
+      .map((input) => input.value.trim())
+      .filter(Boolean)
+      .slice(0, 6);
+    const syncLiveSurveyOptions = () => {
+      if (liveSurveyOptions) liveSurveyOptions.value = liveSurveyAnswers().join("\n");
+      const fieldCount = eventNotificationForm.querySelectorAll("[data-live-survey-answer]").length;
+      if (liveSurveyAddAnswer) liveSurveyAddAnswer.disabled = fieldCount >= 6;
+      if (liveSurveyRemoveAnswer) liveSurveyRemoveAnswer.disabled = fieldCount <= 1;
+    };
+    const renderLiveSurveyAnswerFields = (answers = []) => {
+      if (!liveSurveyAnswerEditor) return;
+      const values = answers.map((item) => String(item || "").trim()).slice(0, 6);
+      const normalized = values.length ? values : [""];
+      liveSurveyAnswerEditor.innerHTML = normalized.map((value, index) => `<div class="field live-survey-answer-row"><label>Antwort ${index + 1}</label><input data-live-survey-answer value="${escapeHtml(value)}" placeholder="Antwort ${index + 1}"></div>`).join("");
+      liveSurveyAnswerEditor.querySelectorAll("[data-live-survey-answer]").forEach((input) => input.addEventListener("input", () => {
+        syncLiveSurveyOptions();
+        syncNotificationPreview();
+      }));
+      syncLiveSurveyOptions();
+    };
+    const fillSurveyFromEventTopics = ({ force = false } = {}) => {
+      const payload = selectedNotificationEventPayload();
+      const topicOptions = Array.isArray(payload?.surveyOptions) ? payload.surveyOptions.filter(Boolean) : [];
+      if (liveSurveyQuestion && (force || !liveSurveyQuestion.value)) {
+        liveSurveyQuestion.value = payload?.surveyQuestion || "Welcher Vortrag hat Ihnen am besten gefallen?";
+      }
+      if (topicOptions.length && (force || !liveSurveyOptions?.value || /^Vortrag A\s+Vortrag B\s+Vortrag C\s*$/i.test(liveSurveyOptions.value))) {
+        renderLiveSurveyAnswerFields(topicOptions);
+      }
+    };
     const applyNotificationTextSource = ({ force = false } = {}) => {
       if (!textInput || !textSourceSelect) return;
       if (textSourceSelect.value === "custom" && !force) return;
@@ -13034,9 +13617,20 @@ function wireActions() {
       const testRecipientInput = testField?.querySelector("[name='testRecipients']");
       if (testRecipientInput) testRecipientInput.required = isTestPerson;
       if (testOnlyInput) testOnlyInput.value = String(isTestPerson);
-      if (includeMembers) includeMembers.value = String(!["contacts", "test_person"].includes(recipientGroup?.value || ""));
-      if (includeContacts) includeContacts.value = String(!["members", "test_group", "test_person"].includes(recipientGroup?.value || ""));
-      if (linkInput) linkInput.disabled = linkToggle?.checked === false;
+      if (includeMembers) includeMembers.value = String(["members", "members_contacts", "test_group"].includes(recipientGroup?.value || ""));
+      if (includeContacts) includeContacts.value = String(["contacts", "members_contacts"].includes(recipientGroup?.value || ""));
+      const isSurvey = liveActionMode?.value === "survey";
+      if (liveSurveyFields) liveSurveyFields.hidden = !isSurvey;
+      if (liveSurveyQuestion) liveSurveyQuestion.required = isSurvey;
+      if (liveSurveyOptions) {
+        syncLiveSurveyOptions();
+        liveSurveyOptions.required = isSurvey;
+      }
+      if (linkToggle && isSurvey) linkToggle.checked = true;
+      if (linkInput) {
+        linkInput.disabled = linkToggle?.checked === false || isSurvey;
+        if (isSurvey) linkInput.value = "Wird beim Senden automatisch erzeugt";
+      }
     };
     const setDefaultNotificationLink = () => {
       if (!linkInput) return;
@@ -13049,13 +13643,18 @@ function wireActions() {
     const syncNotificationPreview = () => {
       if (!preview) return;
       const previewLink = linkToggle?.checked === false ? "" : linkInput?.value || "";
-      preview.innerHTML = `<p class="eyebrow">Live-Vorschau</p><h3>${escapeHtml(titleInput.value || "Event-Benachrichtigung")}</h3><p>${escapeHtml(textInput.value || "")}</p>${previewLink ? `<a href="${escapeHtml(previewLink)}">Link oeffnen</a>` : ""}`;
+      const isSurvey = liveActionMode?.value === "survey";
+      syncLiveSurveyOptions();
+      const surveyOptions = liveSurveyAnswers();
+      const answerModeLabel = liveSurveyAnswerMode?.value === "true" ? "Mehrfachauswahl" : "Einzelauswahl";
+      preview.innerHTML = `<p class="eyebrow">Live-Vorschau</p><h3>${escapeHtml(titleInput.value || "Event-Benachrichtigung")}</h3><p>${escapeHtml(textInput.value || "")}</p>${isSurvey ? `<div class="live-survey-preview"><strong>${escapeHtml(liveSurveyQuestion?.value || "Umfragefrage")}</strong><small>${escapeHtml(answerModeLabel)}</small>${surveyOptions.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : previewLink ? `<a href="${escapeHtml(previewLink)}">Link oeffnen</a>` : ""}`;
     };
     eventSelect?.addEventListener("change", () => {
       const payload = selectedNotificationEventPayload();
       const eventTitle = payload?.title || eventSelect.selectedOptions?.[0]?.dataset.eventTitle || "Veranstaltung";
       titleInput.value = `Einladung: ${eventTitle}`;
       applyNotificationTextSource({ force: true });
+      fillSurveyFromEventTopics({ force: liveActionMode?.value === "survey" });
       setDefaultNotificationLink();
       syncNotificationPreview();
     });
@@ -13077,11 +13676,37 @@ function wireActions() {
     });
     sendMode?.addEventListener("change", syncNotificationMode);
     recipientGroup?.addEventListener("change", syncNotificationMode);
+    liveActionMode?.addEventListener("change", () => {
+      const isSurvey = liveActionMode.value === "survey";
+      if (isSurvey) {
+        if (titleInput && !/^Umfrage:/i.test(titleInput.value || "")) titleInput.value = `Umfrage: ${selectedNotificationEventPayload()?.title || eventSelect?.selectedOptions?.[0]?.dataset.eventTitle || "PROdigitalTV"}`;
+        fillSurveyFromEventTopics({ force: false });
+      }
+      syncNotificationMode();
+      syncNotificationPreview();
+    });
+    eventNotificationForm.querySelector("[data-live-survey-fill-topics]")?.addEventListener("click", () => {
+      fillSurveyFromEventTopics({ force: true });
+      syncNotificationPreview();
+    });
+    liveSurveyAddAnswer?.addEventListener("click", () => {
+      const currentValues = Array.from(eventNotificationForm.querySelectorAll("[data-live-survey-answer]")).map((input) => input.value);
+      if (currentValues.length >= 6) return;
+      renderLiveSurveyAnswerFields([...currentValues, ""]);
+      syncNotificationPreview();
+    });
+    liveSurveyRemoveAnswer?.addEventListener("click", () => {
+      const currentValues = Array.from(eventNotificationForm.querySelectorAll("[data-live-survey-answer]")).map((input) => input.value);
+      if (currentValues.length <= 1) return;
+      renderLiveSurveyAnswerFields(currentValues.slice(0, -1));
+      syncNotificationPreview();
+    });
     linkToggle?.addEventListener("change", () => {
       syncNotificationMode();
       syncNotificationPreview();
     });
     eventNotificationForm.querySelectorAll("input, textarea, select").forEach((field) => field.addEventListener("input", syncNotificationPreview));
+    liveSurveyAnswerMode?.addEventListener("change", syncNotificationPreview);
     syncNotificationMode();
     applyNotificationTextSource();
     if (linkInput && !linkInput.value) setDefaultNotificationLink();
@@ -13105,9 +13730,10 @@ function wireActions() {
           submitButton.textContent = "Sende ...";
         }
         const response = await createEventNotification(confirmedPayload);
+        const surveyHint = response.surveyId ? `<p style="margin:10px 0 0">Umfrage wurde angelegt. Die Auswertung erscheint im Mobil-CMS nach dem Neuladen dieses Bereichs.</p>` : "";
         notificationResult.innerHTML = response.scheduled
           ? `<div class="alert alert--success">Benachrichtigung wurde geplant.</div>`
-          : `<div class="alert alert--success">Versand wurde fuer ${Number(response.targetCount || 0)} Empfaenger angestossen. E-Mail in Warteschlange: ${Number(response.queuedMailCount || 0)}, Push gesendet: ${Number(response.pushedCount || 0)}.</div>`;
+          : `<div class="alert alert--success">Versand wurde fuer ${Number(response.targetCount || 0)} Empfaenger angestossen. E-Mail in Warteschlange: ${Number(response.queuedMailCount || 0)}, Push gesendet: ${Number(response.pushedCount || 0)}.${surveyHint}</div>`;
         confirmedPayload = null;
         if (submitButton) {
           submitButton.classList.add("button--success");
@@ -13136,6 +13762,12 @@ function wireActions() {
           button.textContent = "Bereite vor ...";
         }
         const payload = formObject(eventNotificationForm);
+        if (payload.liveActionMode === "survey") {
+          syncLiveSurveyOptions();
+          payload.surveyOptions = liveSurveyOptions?.value || "";
+          payload.surveyAllowMultiple = liveSurveyAnswerMode?.value === "true";
+          if (!liveSurveyAnswers().length) throw new Error("Bitte mindestens eine Antwortmoeglichkeit eintragen.");
+        }
         payload.testOnly = recipientGroup?.value === "test_person";
         if (!payload.testOnly) payload.testRecipients = "";
         const previewResponse = await previewEventNotification(payload);
@@ -13155,6 +13787,30 @@ function wireActions() {
       }
     });
   }
+
+  document.querySelector("#live-survey-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = form.querySelector("#live-survey-result");
+    const button = form.querySelector("button[type='submit']");
+    const values = formObject(form);
+    const surveyId = form.dataset.liveSurveyId || "";
+    if (button) button.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Antwort wird gespeichert ...</div>`;
+    try {
+      const optionIds = Array.from(form.querySelectorAll("input[name='optionIds']:checked")).map((input) => input.value).filter(Boolean);
+      if (!optionIds.length) throw new Error("Bitte mindestens eine Antwort auswaehlen.");
+      const response = await submitLiveSurveyResponse({ surveyId, optionId: optionIds[0] || "", optionIds, token: form.dataset.liveSurveyToken || "" });
+      try {
+        localStorage.setItem(`pdtv-live-survey-response:${surveyId}`, optionIds.join(","));
+      } catch {}
+      if (result) result.innerHTML = `<div class="alert alert--success">Danke, Ihre Antwort "${escapeHtml(response.optionLabel || "")}" wurde gespeichert.</div>`;
+      if (button) button.textContent = "Gespeichert";
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div>`;
+      if (button) button.disabled = false;
+    }
+  });
 
   const notificationTestGroupForm = document.querySelector("#notification-test-group-form");
   notificationTestGroupForm?.addEventListener("submit", async (event) => {
@@ -13247,6 +13903,16 @@ function wireActions() {
     });
   }));
 
+  if (route().query.get("print") === "1" && document.querySelector("[data-checkin-screen-event]")) {
+    window.setTimeout(() => {
+      const button = document.querySelector("[data-print-page]");
+      if (button && button.dataset.autoPrintStarted !== "1") {
+        button.dataset.autoPrintStarted = "1";
+        button.click();
+      }
+    }, 450);
+  }
+
   document.querySelector("#login-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -13260,16 +13926,34 @@ function wireActions() {
     }
   });
 
-  document.querySelector("#google-login-button")?.addEventListener("click", async (event) => {
+  document.querySelector("#user-invitation-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const form = document.querySelector("#login-form");
+    const form = event.currentTarget;
+    const result = form.querySelector("#user-invitation-result");
+    const button = form.querySelector("button[type='submit'], button:not([type])");
+    const values = formObject(form);
+    if (values.password !== values.passwordRepeat) {
+      if (result) result.innerHTML = `<div class="alert alert--warning">Die beiden Passwoerter stimmen nicht ueberein.</div>`;
+      return;
+    }
+    if (button) button.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Zugang wird aktiviert ...</div>`;
     try {
-      const values = formObject(form);
-      const user = await loginWithGoogle(values.role);
-      const returnTarget = loginReturnTarget();
-      go(returnTarget || postLoginRouteForUser(user));
+      const firebase = await import("./firebase/firebaseClient.js").then((module) => module.getFirebaseServices());
+      if (!firebase) throw new Error("Firebase ist nicht erreichbar.");
+      const callable = firebase.functionsLib.httpsCallable(firebase.functions, "completeMemberLoginInvitation");
+      const response = await callable({
+        invitationId: form.dataset.invitationId,
+        token: form.dataset.token,
+        password: values.password
+      });
+      const data = response.data || {};
+      await login(data.email, values.password, data.role || "member");
+      if (result) result.innerHTML = `<div class="alert alert--success">Zugang aktiviert. Sie werden weitergeleitet ...</div>`;
+      window.setTimeout(() => go(postLoginRouteForUser(currentUser() || data)), 350);
     } catch (error) {
-      form.querySelector("#login-result").innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message)}</div>`;
+      if (result) result.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div>`;
+      if (button) button.disabled = false;
     }
   });
 
@@ -13287,6 +13971,131 @@ function wireActions() {
       output.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div>`;
     }
   });
+
+  document.querySelector("[data-member-login-select]")?.addEventListener("change", (event) => {
+    const option = event.currentTarget.selectedOptions?.[0];
+    const form = event.currentTarget.closest("form");
+    const emailInput = form?.querySelector("[data-member-login-email]");
+    const nameInput = form?.querySelector("[data-member-login-name]");
+    if (emailInput && !emailInput.value) emailInput.value = option?.dataset.email || "";
+    if (nameInput && !nameInput.value) nameInput.value = option?.dataset.name || "";
+  });
+
+  document.querySelector("#member-user-create-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = form.querySelector("#member-user-create-result");
+    const button = form.querySelector("button[type='submit']");
+    if (result) result.innerHTML = `<div class="alert">Mitglieder-Login wird angelegt ...</div>`;
+    if (button) button.disabled = true;
+    try {
+      const values = formObject(form);
+      values.invitationDelivery = values.sendInvitationAuto ? "auto" : "manual";
+      delete values.sendInvitationAuto;
+      const firebase = await import("./firebase/firebaseClient.js").then((module) => module.getFirebaseServices());
+      if (!firebase) throw new Error("Firebase ist nicht erreichbar.");
+      const callable = firebase.functionsLib.httpsCallable(firebase.functions, "createMemberLogin");
+      const response = await callable({ input: values });
+      const data = response.data || {};
+      const manualAction = data.invitationDelivery === "manual" && data.invitationId
+        ? `<div class="actions" style="margin-top:12px"><button class="button button--primary button--small" type="button" data-send-member-invitation="${escapeHtml(data.invitationId)}">Einladungsmail jetzt senden</button>${data.invitationLink ?`<a class="button button--secondary button--small" href="${escapeHtml(data.invitationLink)}" target="_blank" rel="noopener">Link pruefen</a>` : ""}</div>`
+        : "";
+      if (result) result.innerHTML = `<div class="alert alert--success">Login ${data.created ? "angelegt" : "aktualisiert"}: ${escapeHtml(data.email || values.email)} / Rolle ${escapeHtml(data.role || values.role || "member")} / Memberprofil ${escapeHtml(data.memberId || values.memberId)}. Einladung: ${data.invitationDelivery === "auto" ?"automatisch in die Mail-Queue gelegt" : "manuell vorbereitet"}.${manualAction}</div>`;
+      form.reset();
+      if (data.invitationDelivery === "auto") window.setTimeout(() => render(), 900);
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
+
+  document.querySelector("#member-user-create-result")?.addEventListener("click", async (event) => {
+    const sendButton = event.target.closest("[data-send-member-invitation]");
+    if (!sendButton) return;
+    const result = document.querySelector("#member-user-create-result");
+    sendButton.disabled = true;
+    try {
+      const firebase = await import("./firebase/firebaseClient.js").then((module) => module.getFirebaseServices());
+      if (!firebase) throw new Error("Firebase ist nicht erreichbar.");
+      const callable = firebase.functionsLib.httpsCallable(firebase.functions, "sendMemberLoginInvitation");
+      const response = await callable({ invitationId: sendButton.dataset.sendMemberInvitation });
+      const data = response.data || {};
+      if (result) result.innerHTML = `<div class="alert alert--success">Einladungsmail wurde fuer ${escapeHtml(data.email || "")} in die Mail-Queue gelegt.</div>`;
+      window.setTimeout(() => render(), 900);
+    } catch (error) {
+      sendButton.disabled = false;
+      if (result) result.innerHTML += `<div class="alert alert--warning" style="margin-top:12px">Einladung konnte nicht gesendet werden: ${escapeHtml(error.message || String(error))}</div>`;
+    }
+  });
+
+  document.querySelectorAll("[data-send-member-invitation]").forEach((sendButton) => {
+    if (sendButton.closest("#member-user-create-result")) return;
+    sendButton.addEventListener("click", async () => {
+      const result = sendButton.closest("section")?.querySelector("[data-member-invitation-send-result]");
+      sendButton.disabled = true;
+      if (result) result.innerHTML = `<span class="muted">Mail wird vorbereitet ...</span>`;
+      try {
+        const firebase = await import("./firebase/firebaseClient.js").then((module) => module.getFirebaseServices());
+        if (!firebase) throw new Error("Firebase ist nicht erreichbar.");
+        const callable = firebase.functionsLib.httpsCallable(firebase.functions, "sendMemberLoginInvitation");
+        const response = await callable({ invitationId: sendButton.dataset.sendMemberInvitation });
+        const data = response.data || {};
+        if (result) result.innerHTML = `<span class="status">Mail-Queue: ${escapeHtml(data.mailQueueId || "angelegt")}</span>`;
+      } catch (error) {
+        sendButton.disabled = false;
+        if (result) result.innerHTML = `<span class="status status--error">${escapeHtml(error.message || String(error))}</span>`;
+      }
+    });
+  });
+
+  const memberLoginChecks = Array.from(document.querySelectorAll("[data-member-user-select]"));
+  const memberLoginSelectAll = Array.from(document.querySelectorAll("[data-member-user-select-all]"));
+  const memberLoginBulkButton = document.querySelector("[data-send-selected-member-logins]");
+  const memberLoginBulkStatus = document.querySelector("[data-member-login-bulk-status]");
+  const syncMemberLoginBulkState = () => {
+    const selectable = memberLoginChecks.filter((item) => !item.disabled);
+    const checked = selectable.filter((item) => item.checked);
+    memberLoginSelectAll.forEach((control) => {
+      control.checked = Boolean(selectable.length && checked.length === selectable.length);
+      control.indeterminate = Boolean(checked.length && checked.length < selectable.length);
+    });
+    if (memberLoginBulkButton) memberLoginBulkButton.disabled = !checked.length;
+    if (memberLoginBulkStatus && checked.length) memberLoginBulkStatus.textContent = `${checked.length} ausgewaehlt`;
+    if (memberLoginBulkStatus && !checked.length) memberLoginBulkStatus.textContent = "";
+  };
+  memberLoginChecks.forEach((item) => item.addEventListener("change", syncMemberLoginBulkState));
+  memberLoginSelectAll.forEach((control) => control.addEventListener("change", () => {
+    memberLoginChecks.filter((item) => !item.disabled).forEach((item) => {
+      item.checked = control.checked;
+    });
+    syncMemberLoginBulkState();
+  }));
+  memberLoginBulkButton?.addEventListener("click", async () => {
+    const userIds = memberLoginChecks
+      .filter((item) => item.checked && !item.disabled)
+      .map((item) => item.dataset.memberUserSelect)
+      .filter(Boolean);
+    if (!userIds.length) return;
+    if (!window.confirm(`Login-Mail an ${userIds.length} ausgewaehlte User vorbereiten und versenden?`)) return;
+    memberLoginBulkButton.disabled = true;
+    if (memberLoginBulkStatus) memberLoginBulkStatus.textContent = "Mails werden vorbereitet ...";
+    try {
+      const firebase = await import("./firebase/firebaseClient.js").then((module) => module.getFirebaseServices());
+      if (!firebase) throw new Error("Firebase ist nicht erreichbar.");
+      const callable = firebase.functionsLib.httpsCallable(firebase.functions, "sendMemberLoginInvitationsForUsers");
+      const response = await callable({ userIds });
+      const data = response.data || {};
+      if (memberLoginBulkStatus) {
+        memberLoginBulkStatus.textContent = `${data.queued || 0} Mail(s) in Queue, ${data.skipped || 0} uebersprungen, ${data.errors || 0} Fehler.`;
+      }
+      window.setTimeout(() => render(), 1200);
+    } catch (error) {
+      if (memberLoginBulkStatus) memberLoginBulkStatus.textContent = error.message || String(error);
+      memberLoginBulkButton.disabled = false;
+    }
+  });
+  syncMemberLoginBulkState();
 
   document.querySelector("#logout-button")?.addEventListener("click", async () => {
     await logout();
@@ -14126,6 +14935,21 @@ function wireActions() {
     try {
       const existing = (await getOne(form.dataset.module, form.dataset.id)) || { id: form.dataset.id, createdAt: new Date().toISOString() };
       let values = formObject(form);
+      if (form.dataset.module === "users" && Object.prototype.hasOwnProperty.call(values, "statusActive")) {
+        values.status = values.statusActive ? "active" : "inactive";
+        delete values.statusActive;
+      }
+      if (["users", "members"].includes(form.dataset.module)) {
+        const mailingField = form.querySelector('[name="mailingEnabled"]');
+        if (mailingField) {
+          const mailingEnabled = Boolean(mailingField.checked);
+          values.mailingDisabled = !mailingEnabled;
+          values.notificationOptOut = !mailingEnabled;
+          values.reminderConsent = mailingEnabled;
+          if (mailingEnabled) values.notificationOptOutAt = "";
+          delete values.mailingEnabled;
+        }
+      }
       if (form.dataset.module === "editorialContent") {
         values.videoAttachments = collectVideoAttachments(form, values);
         ["category", "linkedEventId", "galleryId", "sponsorId", "retrospectivePrompt", "galleryEventId"].forEach((name) => {
@@ -14683,25 +15507,18 @@ function wireActions() {
     }
   }));
 
-  document.querySelector("[data-admin-member-select]")?.addEventListener("change", (event) => {
-    const memberId = event.currentTarget.value || "";
-    if (!memberId) return;
-    window.location.hash = `#/portal?tab=profile&memberId=${encodeURIComponent(memberId)}`;
-  });
-
   document.querySelector("#member-profile-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     const result = form.querySelector("#member-profile-result");
     const submitButton = form.querySelector('button[type="submit"]');
     const user = currentUser();
-    const adminMode = isAdmin(user);
     const memberId = form.dataset.memberId || user?.memberId || "";
     if (submitButton) submitButton.disabled = true;
     if (result) result.innerHTML = `<div class="alert">Profil wird gespeichert...</div>`;
     try {
-      if (!adminMode && !user?.memberId) throw new Error("Ihr Login ist keinem Mitgliedsprofil zugeordnet.");
-      if (!adminMode && user.memberId !== memberId) throw new Error("Sie koennen nur Ihr eigenes Mitgliedsprofil bearbeiten.");
+      if (!user?.memberId) throw new Error("Ihr Login ist keinem Mitgliedsprofil zugeordnet.");
+      if (user.memberId !== memberId) throw new Error("Sie koennen nur Ihr eigenes Mitgliedsprofil bearbeiten.");
       const existing = await getOne("members", memberId);
       if (!existing) throw new Error("Das verknuepfte Mitgliedsprofil wurde nicht gefunden.");
       let values = normalizeMemberContactValues(removeMemberEventContactFormFields(formObject(form)));
@@ -14717,7 +15534,8 @@ function wireActions() {
         if (Object.prototype.hasOwnProperty.call(values, field)) update[field] = values[field] || "";
       });
       await upsert("members", update);
-      if (result) result.innerHTML = `<div class="alert alert--success">${adminMode ? "Mitgliedsprofil wurde gespeichert." : "Ihr Mitgliedsprofil wurde gespeichert."}</div>`;
+      writeCachedMemberProfile(user, { ...existing, ...update });
+      if (result) result.innerHTML = `<div class="alert alert--success">Ihr Mitgliedsprofil wurde gespeichert.</div>`;
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--error">Speichern fehlgeschlagen: ${escapeHtml(error.message || "Unbekannter Fehler")}</div>`;
     } finally {
@@ -15014,6 +15832,34 @@ function wireActions() {
     const state = event.currentTarget.form?.querySelector("[data-member-photo-state]");
     if (state) state.textContent = count ? `${count} Bild${count === 1 ? "" : "er"} ausgewaehlt.` : "Keine Bilder ausgewaehlt.";
   });
+  const memberUploadForm = document.querySelector("#member-material-upload-form");
+  const memberUploadInput = memberUploadForm?.elements.files;
+  const memberUploadPreview = memberUploadForm?.querySelector("[data-member-photo-preview]");
+  const memberUploadState = memberUploadForm?.querySelector("[data-member-photo-state]");
+  const clearMemberUploadObjectUrls = () => {
+    memberUploadPreview?.querySelectorAll("[data-object-url]").forEach((item) => {
+      URL.revokeObjectURL(item.dataset.objectUrl || "");
+    });
+  };
+  const renderMemberUploadPreview = () => {
+    if (!memberUploadInput || !memberUploadPreview) return;
+    const files = Array.from(memberUploadInput.files || []);
+    clearMemberUploadObjectUrls();
+    memberUploadPreview.innerHTML = "";
+    memberUploadPreview.hidden = !files.length;
+    if (memberUploadState) {
+      memberUploadState.textContent = files.length ? `${files.length} Bild${files.length === 1 ? "" : "er"} bereit zum Senden.` : "Keine Bilder ausgewaehlt.";
+    }
+    files.slice(0, 24).forEach((file) => {
+      const url = URL.createObjectURL(file);
+      const sizeMb = file.size ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "";
+      const item = document.createElement("figure");
+      item.dataset.objectUrl = url;
+      item.innerHTML = `<img src="${url}" alt=""><figcaption>${escapeHtml(file.name || "Bild")}<span>${escapeHtml(sizeMb)}</span></figcaption>`;
+      memberUploadPreview.appendChild(item);
+    });
+  };
+  memberUploadInput?.addEventListener("change", renderMemberUploadPreview);
   document.querySelector("#member-material-upload-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -15047,6 +15893,11 @@ function wireActions() {
       result.querySelector("span").style.width = `${progress}%`;
     });
     form.reset();
+    clearMemberUploadObjectUrls();
+    if (memberUploadPreview) {
+      memberUploadPreview.innerHTML = "";
+      memberUploadPreview.hidden = true;
+    }
     const state = form.querySelector("[data-member-photo-state]");
     if (state) state.textContent = "Keine Bilder ausgewaehlt.";
     result.innerHTML = `<div class="alert alert--success" style="margin-top:12px">Danke. Die Bilder wurden an die Redaktion uebertragen.</div>`;

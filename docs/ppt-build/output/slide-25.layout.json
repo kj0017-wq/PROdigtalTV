@@ -1,0 +1,463 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/k9j1r3",
+    "id": "k9j1r3",
+    "slide": 25,
+    "layoutId": "58881d5d-6e5c-4441-b2f8-b74dd4656116",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "495f31fd-7c1a-49f8-8812-3952d45e4ba2",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#F4F8FD",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "+mn-lt"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "58881d5d-6e5c-4441-b2f8-b74dd4656116",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "495f31fd-7c1a-49f8-8812-3952d45e4ba2",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "495f31fd-7c1a-49f8-8812-3952d45e4ba2",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/8z65wrql",
+      "id": "1",
+      "bbox": [
+        72,
+        54,
+        520,
+        26
+      ],
+      "geometry": "rect",
+      "text": "FAZIT",
+      "textPreview": "FAZIT",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "+mn-lt",
+        "color": "#E30613",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "FAZIT"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "FAZIT",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "color": "#E30613",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "FAZIT",
+              "fontSize": 15,
+              "color": "#E30613",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/7yxo3mp0",
+      "id": "2",
+      "bbox": [
+        72,
+        92,
+        880,
+        90
+      ],
+      "geometry": "rect",
+      "text": "PROdigitalTV wird zur digitalen Infrastruktur des Vereins",
+      "textPreview": "PROdigitalTV wird zur digitalen Infrastruktur des Vereins",
+      "resolvedFontSize": 40,
+      "resolvedTextStyle": {
+        "fontSize": 40,
+        "typeface": "+mn-lt",
+        "color": "#071A33",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "PROdigitalTV wird zur digitalen Infrastruktur des"
+          },
+          {
+            "index": 2,
+            "text": "Vereins"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "PROdigitalTV wird zur digitalen Infrastruktur des Vereins",
+          "resolvedTextStyle": {
+            "fontSize": 40,
+            "color": "#071A33",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "PROdigitalTV wird zur digitalen Infrastruktur des Vereins",
+              "fontSize": 40,
+              "color": "#071A33",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/6xonuh8v",
+      "id": "3",
+      "bbox": [
+        72,
+        670,
+        360,
+        26
+      ],
+      "geometry": "rect",
+      "text": "PROdigitalTV Plattform",
+      "textPreview": "PROdigitalTV Plattform",
+      "resolvedFontSize": 13,
+      "resolvedTextStyle": {
+        "fontSize": 13,
+        "typeface": "+mn-lt",
+        "color": "#5E6B7F",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "PROdigitalTV Plattform"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "PROdigitalTV Plattform",
+          "resolvedTextStyle": {
+            "fontSize": 13,
+            "color": "#5E6B7F",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "PROdigitalTV Plattform",
+              "fontSize": 13,
+              "color": "#5E6B7F",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/lwv61c7a",
+      "id": "4",
+      "bbox": [
+        1150,
+        670,
+        56,
+        26
+      ],
+      "geometry": "rect",
+      "text": "25",
+      "textPreview": "25",
+      "resolvedFontSize": 13,
+      "resolvedTextStyle": {
+        "fontSize": 13,
+        "typeface": "+mn-lt",
+        "color": "#5E6B7F",
+        "alignment": "right",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "25"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "25",
+          "resolvedTextStyle": {
+            "fontSize": 13,
+            "color": "#5E6B7F",
+            "alignment": "right"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "25",
+              "fontSize": 13,
+              "color": "#5E6B7F",
+              "alignment": "right"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/kvm5s7qp",
+      "id": "5",
+      "bbox": [
+        120,
+        245,
+        1040,
+        260
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#071A33",
+      "lineColor": "#071A33",
+      "lineWidth": 1
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/judozmp4",
+      "id": "6",
+      "bbox": [
+        180,
+        295,
+        920,
+        70
+      ],
+      "geometry": "rect",
+      "text": "Sichtbarkeit, Professionalitaet und Nachhaltigkeit in einem System.",
+      "textPreview": "Sichtbarkeit, Professionalitaet und Nachhaltigkeit in einem System.",
+      "resolvedFontSize": 38,
+      "resolvedTextStyle": {
+        "fontSize": 38,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Sichtbarkeit, Professionalitaet und Nachhaltigkeit in"
+          },
+          {
+            "index": 2,
+            "text": "einem System."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Sichtbarkeit, Professionalitaet und Nachhaltigkeit in einem System.",
+          "resolvedTextStyle": {
+            "fontSize": 38,
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Sichtbarkeit, Professionalitaet und Nachhaltigkeit in einem System.",
+              "fontSize": 38,
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/yt4nqh8j",
+      "id": "7",
+      "bbox": [
+        220,
+        390,
+        840,
+        78
+      ],
+      "geometry": "rect",
+      "text": "Die Plattform verbindet Eventdurchfuehrung, Redaktion, Mitgliederkommunikation und digitale Services zu einem dauerhaften Nutzen fuer PROdigitalTV.",
+      "textPreview": "Die Plattform verbindet Eventdurchfuehrung, Redaktion, Mitgliederkommunikation und digitale Services zu einem dauerhaften Nutzen fuer PRO...",
+      "resolvedFontSize": 23,
+      "resolvedTextStyle": {
+        "fontSize": 23,
+        "typeface": "+mn-lt",
+        "color": "#D9E4F2",
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Die Plattform verbindet Eventdurchfuehrung, Redaktion, Mitgliederkommunikation und"
+          },
+          {
+            "index": 2,
+            "text": "digitale Services zu einem dauerhaften Nutzen fuer PROdigitalTV."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Die Plattform verbindet Eventdurchfuehrung, Redaktion, Mitgliederkommunikation und digitale Services zu einem dauerhaften Nutzen fuer PROdigitalTV.",
+          "resolvedTextStyle": {
+            "fontSize": 23,
+            "color": "#D9E4F2",
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Die Plattform verbindet Eventdurchfuehrung, Redaktion, Mitgliederkommunikation und digitale Services zu einem dauerhaften Nutzen fuer PROdigitalTV.",
+              "fontSize": 23,
+              "color": "#D9E4F2",
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    }
+  ],
+  "composeRuns": []
+}

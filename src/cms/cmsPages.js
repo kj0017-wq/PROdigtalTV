@@ -1,4 +1,4 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=471";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=474";
 import { list, getOne } from "../firebase/dataService.js?v=504";
 import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=471";
 import { accessLabels, lifecycleLabels, normalizeLifecyclePhase } from "../data/platformConstants.js";
@@ -927,7 +927,7 @@ function usageEventTime(event = {}) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function usageStatsPanel(usageEvents = []) {
+function usageStatsPanel(usageEvents = [], mails = []) {
   const now = Date.now();
   const today = new Date().toISOString().slice(0, 10);
   const pageViews = usageEvents.filter((event) => (event.type || "page_view") === "page_view");
@@ -935,6 +935,11 @@ function usageStatsPanel(usageEvents = []) {
   const weekViews = pageViews.filter((event) => usageEventTime(event) >= now - 7 * 86400000).length;
   const monthViews = pageViews.filter((event) => usageEventTime(event) >= now - 30 * 86400000).length;
   const mobileViews = pageViews.filter((event) => event.viewport === "mobile").length;
+  const desktopViews = pageViews.filter((event) => event.viewport === "desktop").length;
+  const sentMails = mails.filter((mail) => mail.status === "sent");
+  const openedMails = sentMails.filter((mail) => mail.opened === true || Number(mail.openCount || 0) > 0);
+  const failedMails = mails.filter((mail) => mail.status === "failed");
+  const mailOpenRate = sentMails.length ? Math.round((openedMails.length / sentMails.length) * 100) : 0;
   const routeCounts = new Map();
   pageViews
     .filter((event) => usageEventTime(event) >= now - 7 * 86400000)
@@ -943,21 +948,101 @@ function usageStatsPanel(usageEvents = []) {
       routeCounts.set(label, (routeCounts.get(label) || 0) + 1);
     });
   const topRoutes = [...routeCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
-  return `<section class="panel">
+  const last7Days = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(now - (6 - index) * 86400000);
+    const day = date.toISOString().slice(0, 10);
+    return {
+      day,
+      label: date.toLocaleDateString("de-DE", { weekday: "short" }),
+      count: pageViews.filter((event) => (event.day || new Date(usageEventTime(event)).toISOString().slice(0, 10)) === day).length
+    };
+  });
+  const maxDayViews = Math.max(1, ...last7Days.map((item) => item.count));
+  const maxTopRoute = Math.max(1, ...topRoutes.map(([, count]) => count));
+  const deviceTotal = Math.max(1, mobileViews + desktopViews);
+  const mobilePercent = Math.round((mobileViews / deviceTotal) * 100);
+  const desktopPercent = Math.round((desktopViews / deviceTotal) * 100);
+  return `<section class="panel cms-usage-panel">
     <div class="actions" style="justify-content:space-between;align-items:flex-start;gap:16px">
-      <div><h2>Nutzung der Website</h2><p class="muted">Eigene Schnellstatistik ohne Namen oder E-Mail-Adressen.</p></div>
-      <a class="button button--secondary button--small" href="https://analytics.google.com/analytics/web/" target="_blank" rel="noopener">Google Analytics oeffnen</a>
+      <div><h2>Nutzung der Website</h2><p class="muted">Eigene Schnellstatistik ohne Namen oder E-Mail-Adressen. Google Analytics ist separat direkt verlinkt.</p></div>
+      <a class="button button--primary button--small" href="https://analytics.google.com/analytics/web/" target="_blank" rel="noopener">Google Analytics direkt oeffnen</a>
     </div>
     <div class="setup-steps" style="margin-top:18px">
       <div class="setup-step"><span>Heute</span><strong>${todayViews}</strong></div>
       <div class="setup-step"><span>7 Tage</span><strong>${weekViews}</strong></div>
       <div class="setup-step"><span>30 Tage</span><strong>${monthViews}</strong></div>
       <div class="setup-step"><span>Mobil-Anteil</span><strong>${pageViews.length ? Math.round((mobileViews / pageViews.length) * 100) : 0}%</strong></div>
+      <div class="setup-step"><span>Mail-Oeffnungsquote</span><strong>${mailOpenRate}%</strong><small>${openedMails.length}/${sentMails.length} geoeffnet</small></div>
+      <div class="setup-step"><span>Nicht zugestellt</span><strong>${failedMails.length}</strong></div>
     </div>
-    ${topRoutes.length
-      ? `<div class="table-wrap" style="margin-top:18px"><table class="table"><thead><tr><th>Top-Seite 7 Tage</th><th>Aufrufe</th></tr></thead><tbody>${topRoutes.map(([route, count]) => `<tr><td>${escapeHtml(route)}</td><td>${count}</td></tr>`).join("")}</tbody></table></div>`
-      : `<p class="muted" style="margin-top:16px">Noch keine Nutzungsdaten vorhanden. Nach dem Deploy werden neue Seitenaufrufe automatisch erfasst.</p>`}
+    <div class="cms-usage-grid">
+      <article class="cms-usage-card">
+        <h3>Besuche 7 Tage</h3>
+        <div class="cms-usage-bars">${last7Days.map((item) => `<div class="cms-usage-bar"><span style="height:${Math.max(6, Math.round((item.count / maxDayViews) * 100))}%"></span><strong>${item.count}</strong><small>${escapeHtml(item.label)}</small></div>`).join("")}</div>
+      </article>
+      <article class="cms-usage-card">
+        <h3>Top-Seiten</h3>
+        ${topRoutes.length ? `<div class="cms-usage-rank">${topRoutes.map(([route, count]) => `<div><span>${escapeHtml(shortText(route, 36))}</span><strong>${count}</strong><i style="width:${Math.max(8, Math.round((count / maxTopRoute) * 100))}%"></i></div>`).join("")}</div>` : `<p class="muted">Noch keine Nutzungsdaten vorhanden.</p>`}
+      </article>
+      <article class="cms-usage-card">
+        <h3>Mobile / Desktop</h3>
+        <div class="cms-usage-device"><span style="width:${mobilePercent}%"></span><i style="width:${desktopPercent}%"></i></div>
+        <p><strong>${mobilePercent}% Mobil</strong><br><small>${desktopPercent}% Desktop</small></p>
+      </article>
+    </div>
   </section>`;
+}
+
+function privacyConsentTime(consent = {}) {
+  const value = consent.acceptedAtIso || consent.createdAtIso || consent.acceptedAt || consent.createdAt || "";
+  if (value?.seconds) return value.seconds * 1000;
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function privacyConsentDate(consent = {}) {
+  const value = consent.acceptedAtIso || consent.createdAtIso || consent.acceptedAt || consent.createdAt || "";
+  return value ? formatDateTime(value) : "-";
+}
+
+function maskIp(value = "") {
+  const ip = String(value || "").trim();
+  if (!ip) return "-";
+  if (ip.includes(":")) {
+    const parts = ip.split(":").filter(Boolean);
+    return parts.length > 2 ? `${parts.slice(0, 2).join(":")}:...` : ip;
+  }
+  const parts = ip.split(".");
+  return parts.length === 4 ? `${parts[0]}.${parts[1]}.${parts[2]}.xxx` : ip;
+}
+
+export async function privacyConsentsPage() {
+  if (!hasCmsAccess()) return denied();
+  const consents = await list("privacyConsents").catch(() => []);
+  const sorted = [...consents].sort((a, b) => privacyConsentTime(b) - privacyConsentTime(a));
+  const rows = sorted.slice(0, 250).map((item) => `<tr>
+    <td>${escapeHtml(privacyConsentDate(item))}</td>
+    <td>${escapeHtml(item.type || "-")}</td>
+    <td>${status(item.accepted ? "active" : "inactive")}</td>
+    <td>${escapeHtml(item.consentVersion || "-")}</td>
+    <td>${escapeHtml(maskIp(item.ipAddress))}<br><small>${escapeHtml(item.ipHash || "-")}</small></td>
+    <td>${escapeHtml(item.path || item.pathname || "-")}</td>
+    <td title="${escapeHtml(item.userAgent || "")}">${escapeHtml(shortText(item.userAgent || "-", 90))}</td>
+  </tr>`).join("");
+  return protect(cmsShell("cms/privacy-consents", `${cmsTitle("System", "Datenschutz-Consents")}
+    <section class="panel">
+      <div class="actions" style="justify-content:space-between;align-items:flex-start;gap:16px">
+        <div>
+          <h2>WebApp-Consent-Protokoll</h2>
+          <p class="muted">Serverseitig gespeicherte Datenschutz-Bestaetigungen fuer die WebApp-Installation. IP-Adressen werden in der Tabelle maskiert angezeigt, der Hash bleibt zur Nachvollziehbarkeit sichtbar.</p>
+        </div>
+        <span class="tag">${sorted.length} Eintraege</span>
+      </div>
+      <div class="table-wrap" style="margin-top:18px"><table class="table">
+        <thead><tr><th>Zeitpunkt</th><th>Typ</th><th>Status</th><th>Version</th><th>IP / Hash</th><th>Route</th><th>Browser</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="7">Noch keine Datenschutz-Consents gespeichert.</td></tr>`}</tbody>
+      </table></div>
+    </section>`));
 }
 
 export async function dashboardPage() {
@@ -991,7 +1076,7 @@ export async function dashboardPage() {
         <div class="actions" style="margin-top:20px"><a class="button button--secondary button--small" href="#/cms/editorial">Redaktion bearbeiten</a><a class="button button--secondary button--small" href="#/cms/members">Mitglied anlegen</a></div>
       </section>
     </div>
-    ${usageStatsPanel(usageEvents)}`));
+    ${usageStatsPanel(usageEvents, mails)}`));
 }
 
 function todayString() {
@@ -1054,7 +1139,7 @@ function hasLiveCmsEventIdentity(event = {}) {
 
 function eventTable(events, { showThumb = false, mediaAssets = [], registrations = [], returnTo = "#/cms/events" } = {}) {
   const registrationCount = (eventId) => registrations.filter((item) => item.eventId === eventId && item.status !== "cancelled").length;
-  return `<section class="panel"><div class="table-wrap"><table class="table ${showThumb ?"table--event-followup" : ""}"><thead><tr>${showThumb ?"<th>Bild</th>" : ""}<th>Event</th><th>Datum</th><th>Ablauf</th><th>Zugang</th><th>Anmeldungen</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${events.map((event) => `<tr>${showThumb ?`<td><div class="topic-thumb topic-thumb--table editorial-thumb--table event-thumb--table">${eventThumb(event, mediaAssets, returnTo)}</div></td>` : ""}<td><a class="link" href="#/cms/event/${event.id}">${escapeHtml(event.title)}</a></td><td>${formatDate(event.date)}</td><td>${event.expiresAt ?formatDateTime(event.expiresAt) : "-"}</td><td>${accessLabels[event.accessType]}</td><td><strong>${registrationCount(event.id)}</strong></td><td>${status(cmsEventRegistrationIsOpen(event) ?"offen" : "geschlossen")}</td><td>${eventActionButtons(event)}</td></tr>`).join("")}</tbody></table></div></section>`;
+  return `<section class="panel"><div class="table-wrap"><table class="table ${showThumb ?"table--event-followup" : ""}"><thead><tr>${showThumb ?"<th>Bild</th>" : ""}<th>Event</th><th>Datum</th><th>Ablauf</th><th>Zugang</th><th>Anmeldungen</th><th>Neue Kontakte</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${events.map((event) => `<tr>${showThumb ?`<td><div class="topic-thumb topic-thumb--table editorial-thumb--table event-thumb--table">${eventThumb(event, mediaAssets, returnTo)}</div></td>` : ""}<td><a class="link" href="#/cms/event/${event.id}">${escapeHtml(event.title)}</a></td><td>${formatDate(event.date)}</td><td>${event.expiresAt ?formatDateTime(event.expiresAt) : "-"}</td><td>${accessLabels[event.accessType]}</td><td><strong>${registrationCount(event.id)}</strong></td><td><strong>${Number(event.newMailingContactsCount || 0)}</strong></td><td>${status(cmsEventRegistrationIsOpen(event) ?"offen" : "geschlossen")}</td><td>${eventActionButtons(event)}</td></tr>`).join("")}</tbody></table></div></section>`;
 }
 
 function settingValue(settings, id, fallback = []) {
@@ -1229,12 +1314,30 @@ function defaultGlobalEventRegistrationMailText(variant = "confirmation") {
   ].join("\n");
 }
 
+function defaultMemberLoginInvitationText() {
+  return [
+    "Guten Tag {{displayName}},",
+    "",
+    "fuer Sie wurde ein Zugang zum PROdigitalTV-System vorbereitet.",
+    "",
+    "Rolle: {{role}}",
+    "Memberprofil: {{memberName}}",
+    "",
+    "Bitte legitimieren Sie sich ueber den folgenden Link und vergeben Sie Ihr persoenliches Passwort:",
+    "{{invitationLink}}",
+    "",
+    "Viele Gruesse",
+    "PROdigitalTV"
+  ].join("\n");
+}
+
 function mailTemplateSettings(record = {}) {
   record = record || {};
   const value = record?.value && typeof record.value === "object" ?record.value : {};
   return {
     registrationConfirmation: record.registrationConfirmation || value.registrationConfirmation || defaultGlobalEventRegistrationMailText("confirmation"),
-    registrationWaitlist: record.registrationWaitlist || value.registrationWaitlist || defaultGlobalEventRegistrationMailText("waitlist")
+    registrationWaitlist: record.registrationWaitlist || value.registrationWaitlist || defaultGlobalEventRegistrationMailText("waitlist"),
+    memberLoginInvitation: record.memberLoginInvitation || value.memberLoginInvitation || defaultMemberLoginInvitationText()
   };
 }
 
@@ -1260,9 +1363,28 @@ function defaultEventRegistrationMailText(event = {}, variant = "confirmation", 
   return renderEventMailTemplate(template || defaultGlobalEventRegistrationMailText(variant), event);
 }
 
+function explicitOffFlag(value) {
+  if (value === false || value === 0) return true;
+  if (typeof value !== "string") return false;
+  return ["false", "0", "no", "nein", "off", "aus", "inactive", "inaktiv"].includes(value.trim().toLowerCase());
+}
+
+function cmsEventShowsOnHome(event = {}) {
+  return ![
+    event.showOnHome,
+    event.show_on_home,
+    event.displayOnHome,
+    event.display_on_home,
+    event.homePage,
+    event.homepage,
+    event.startseite,
+    event.onHome
+  ].some(explicitOffFlag);
+}
+
 function eventRegistrationTogglePanel(event = {}) {
   const isOpen = cmsEventRegistrationIsOpen(event);
-  const showOnHome = event.showOnHome !== false;
+  const showOnHome = cmsEventShowsOnHome(event);
   return `<section class="panel" style="background:var(--pdt-bg);margin-bottom:18px">
     <div class="actions" style="justify-content:space-between;align-items:center;gap:18px">
       <div>
@@ -2132,7 +2254,8 @@ export async function mailAdminPage() {
       <form id="mail-default-templates-form" class="form-grid">
         <div class="field"><label>Bestaetigungsmail Standard</label><textarea name="registrationConfirmation" rows="11">${escapeHtml(templates.registrationConfirmation)}</textarea></div>
         <div class="field"><label>Wartelistenmail Standard</label><textarea name="registrationWaitlist" rows="9">${escapeHtml(templates.registrationWaitlist)}</textarea></div>
-        <p class="muted">Platzhalter: <code>{{firstName}}</code>, <code>{{lastName}}</code>, <code>{{eventTitle}}</code>, <code>{{eventDate}}</code>, <code>{{eventLocation}}</code>. Links und Buttons werden vom System ergaenzt.</p>
+        <div class="field"><label>Einladung Mitglieder-Login</label><textarea name="memberLoginInvitation" rows="11">${escapeHtml(templates.memberLoginInvitation)}</textarea></div>
+        <p class="muted">Event-Platzhalter: <code>{{firstName}}</code>, <code>{{lastName}}</code>, <code>{{eventTitle}}</code>, <code>{{eventDate}}</code>, <code>{{eventLocation}}</code>. Login-Platzhalter: <code>{{displayName}}</code>, <code>{{role}}</code>, <code>{{memberName}}</code>, <code>{{invitationLink}}</code>. Links und Buttons werden vom System ergaenzt.</p>
         <button class="button button--primary">Standardtexte speichern</button><div id="mail-default-templates-result"></div>
       </form>
     </section>
@@ -2374,6 +2497,132 @@ function qualitySeverityLabel(severity = "warning") {
 
 function qualityStatusLabel(value = "offen") {
   return `<span class="status">${escapeHtml(value)}</span>`;
+}
+
+function memberLoginEmail(member = {}) {
+  const contact = Array.isArray(member.eventContacts)
+    ? member.eventContacts.find((item) => item?.email)
+    : null;
+  return member.contactEmail || member.email || member.profileEmail || contact?.email || "";
+}
+
+function memberLoginName(member = {}) {
+  return member.profileContactName || member.contactName || [member.firstName, member.lastName].filter(Boolean).join(" ") || member.name || "";
+}
+
+function memberLoginCreatePanel(members = []) {
+  const options = members
+    .slice()
+    .filter((member) => member.id && memberIsManagedActive(member))
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "de", { sensitivity: "base" }))
+    .map((member) => `<option value="${escapeHtml(member.id)}" data-email="${escapeHtml(memberLoginEmail(member))}" data-name="${escapeHtml(memberLoginName(member))}">${escapeHtml([member.name || member.id, memberLoginEmail(member)].filter(Boolean).join(" / "))}</option>`)
+    .join("");
+  return `<section class="panel">
+    <h2>Mitglieder-Login anlegen</h2>
+    <p class="muted" style="margin-bottom:16px">Mitglied auswaehlen, Mailadresse pruefen und Rolle setzen. Das Mitglied erhaelt danach einen Legitimationslink und vergibt sein Passwort selbst. Bei Unternehmensmitgliedern koennen mehrere Logins mit derselben Mitglied-ID verknuepft werden.</p>
+    <form id="member-user-create-form" class="form-grid">
+      <div class="field"><label>Mitglied</label><select name="memberId" data-member-login-select required><option value="">Mitglied waehlen</option>${options}</select></div>
+      <div class="form-grid--two">
+        <div class="field"><label>Name</label><input name="displayName" data-member-login-name placeholder="Name aus Mitglied"></div>
+        <div class="field"><label>Mailadresse</label><input name="email" data-member-login-email type="email" required placeholder="name@example.de"></div>
+      </div>
+      <div class="form-grid--two">
+        <div class="field"><label>Rolle</label><select name="role" required><option value="member" selected>Member</option><option value="editor">Editor</option><option value="admin">Admin</option></select><p class="muted">Admin und Editor erhalten CMS-Zugriff. Member erhalten nur Zugriff auf den Mitgliederbereich.</p></div>
+        <div class="field"><label>Einladungsmail</label><label class="cms-switch" title="Einladung automatisch versenden"><input type="checkbox" name="sendInvitationAuto"><span class="cms-switch__track" aria-hidden="true"></span><span class="cms-switch__text">Automatisch versenden</span></label><input type="hidden" name="invitationDelivery" value="manual"><p class="muted">Standard ist manuell. Nach dem Anlegen kann die Einladung gezielt ausgeloest werden.</p></div>
+      </div>
+      <div class="actions"><button class="button button--primary" type="submit">Mitglieder-Login anlegen</button></div>
+      <div id="member-user-create-result"></div>
+    </form>
+  </section>`;
+}
+
+function userIsActive(user = {}) {
+  const statusValue = String(user.status || "active").toLowerCase();
+  return !["inactive", "archived", "deleted", "disabled"].includes(statusValue);
+}
+
+function usersForMember(users = [], memberId = "") {
+  const id = String(memberId || "");
+  if (!id) return [];
+  return users
+    .filter((user) => String(user.memberId || user.memberProfileId || "") === id)
+    .sort((a, b) => String(a.email || a.displayName || "").localeCompare(String(b.email || b.displayName || ""), "de", { sensitivity: "base" }));
+}
+
+function memberLoginSummaryCell(member = {}, users = []) {
+  const linkedUsers = usersForMember(users, member.id);
+  if (!linkedUsers.length) {
+    return `<div class="member-login-cell"><span class="status status--inactive">kein Login</span><small>Login oben anlegen</small></div>`;
+  }
+  return `<div class="member-login-cell">${linkedUsers.map((user) => {
+    const roleLabel = String(user.role || "member");
+    const active = userIsActive(user);
+    const mailState = user.invitationStatus === "accepted"
+      ? "legitimiert"
+      : user.invitationId
+        ? (user.invitationMailStatus === "sent" ? "eingeladen" : "Einladung offen")
+        : "";
+    return `<a class="member-login-chip" href="#/cms/edit?module=users&id=${escapeHtml(user.id)}">
+      <strong>${escapeHtml(user.email || user.displayName || user.id || "-")}</strong>
+      <small>${escapeHtml(roleLabel)} · ${active ?"aktiv" : "inaktiv"}${mailState ?` · ${mailState}` : ""}</small>
+    </a>`;
+  }).join("")}</div>`;
+}
+
+function userMemberProfileLabel(user = {}, membersById = new Map()) {
+  const memberId = String(user.memberId || user.memberProfileId || "");
+  const member = membersById.get(memberId);
+  return member
+    ? [member.name || member.company || member.title || member.id, member.city].filter(Boolean).join(" / ")
+    : memberId || "-";
+}
+
+function memberUsersListSection(users = [], members = [], activeStatus = "active", inactiveStatus = "inactive") {
+  const membersById = new Map(members.map((member) => [String(member.id || ""), member]).filter(([id]) => id));
+  const rows = users
+    .slice()
+    .sort((a, b) => String(a.email || a.displayName || "").localeCompare(String(b.email || b.displayName || ""), "de", { sensitivity: "base" }))
+    .map((item) => {
+      const accepted = item.invitationStatus === "accepted";
+      return `<tr>
+      <td><input type="checkbox" data-member-user-select="${escapeHtml(item.id)}" ${accepted ?"disabled" : ""} aria-label="${escapeHtml(item.email || item.displayName || "User")} auswaehlen"></td>
+      <td><a class="link editorial-title-link" href="#/cms/edit?module=users&id=${escapeHtml(item.id)}">${escapeHtml(item.email || item.displayName || item.id || "-")}</a><br><small>${escapeHtml(item.displayName || "-")}</small></td>
+      <td>${escapeHtml(item.role || "-")}</td>
+      <td>${status(item.status || "active")}</td>
+      <td>${escapeHtml(userMemberProfileLabel(item, membersById))}</td>
+      <td>${item.invitationStatus === "accepted" ?status("active") : item.invitationId ?status(item.invitationMailStatus === "sent" ?"queued" : "draft") : "-"}</td>
+      <td>${cmsListActionButtons(item, "all", "users", activeStatus, inactiveStatus)}</td>
+    </tr>`;
+    })
+    .join("");
+  return `<section class="panel">
+    <div class="actions" style="justify-content:space-between;margin-bottom:16px">
+      <div><h2>Logins & Rollen</h2><p class="muted">Alle User-Logins, Rollen und verknuepfte Memberprofile auf einen Blick.</p></div>
+      <a class="button button--secondary button--small" href="#/cms/edit?module=users&id=new">Login manuell anlegen</a>
+    </div>
+    <div class="cms-bulk-bar">
+      <label class="checkbox"><input type="checkbox" data-member-user-select-all> alle noch nicht legitimierten User auswaehlen</label>
+      <button class="button button--primary button--small" type="button" data-send-selected-member-logins>Login-Mail versenden</button>
+      <span class="muted" data-member-login-bulk-status></span>
+    </div>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th><input type="checkbox" data-member-user-select-all aria-label="Alle auswahlen"></th><th>User</th><th>Rolle</th><th>Status</th><th>Memberprofil</th><th>Einladung</th><th>Aktionen</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="7">Noch keine User-Logins vorhanden.</td></tr>`}</tbody>
+    </table></div>
+  </section>`;
+}
+
+function memberAdminListTabs(activeView = "members") {
+  const view = activeView === "users" ? "users" : "members";
+  const tabs = [
+    ["members", "Mitglieder", "#/cms/members"],
+    ["users", "Logins & Rollen", "#/cms/members?view=users"]
+  ];
+  return `<section class="panel panel--compact">
+    <div class="cms-segment-tabs" role="tablist" aria-label="Mitgliederansicht">
+      ${tabs.map(([id, label, href]) => `<a href="${href}" class="${view === id ? "active" : ""}" role="tab" aria-selected="${view === id ? "true" : "false"}">${label}</a>`).join("")}
+    </div>
+  </section>`;
 }
 
 function qualityEditLink(issue = {}) {
@@ -3814,7 +4063,7 @@ export async function moduleListPage(module, section = "all") {
     membershipApplications: ["Mitgliedsantraege", "Antrag", "company", "email"],
     memberDocuments: ["Mitglieder-Dokumente", "Dokument", "title", "category"],
     memberDirectories: ["Mitgliederverzeichnisse", "Verzeichnis", "title", "year"],
-    users: ["User", "User", "email", "role"],
+    users: ["Logins & Rollen", "Login", "email", "role"],
     boardMembers: ["Vorstandsgalerie", "Vorstandsmitglied", "name", "role"],
     editorialContent: ["Redaktion / Seiteninhalte", "Inhalt", "title", "page"],
     galleries: ["Bildergalerien", "Galerie", "title", "description"],
@@ -3849,8 +4098,9 @@ export async function moduleListPage(module, section = "all") {
       return Number(b.sortOrder || 0) - Number(a.sortOrder || 0);
     });
   const memberMediaAssets = module === "members" ?await list("media_assets").catch(() => []) : [];
+  const memberUsers = module === "members" ?await list("users").catch(() => []) : [];
   const linkedMediaAssets = ["editorialContent", "topics", "boardMembers", "speakers", "sponsors"].includes(module) ?await list("media_assets").catch(() => []) : [];
-  const active = editorialConfig?.active || { topics: "cms/topics", galleries: "cms/galleries", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", membershipApplications: "cms/membership-applications", memberDocuments: "cms/member-documents", memberDirectories: "cms/member-directories", users: "cms/users", boardMembers: "cms/board", editorialContent: "cms/editorial", mailQueue: "cms/mail", eventMedia: "cms/followup" }[module];
+  const active = editorialConfig?.active || { topics: "cms/topics", galleries: "cms/galleries", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", membershipApplications: "cms/membership-applications", memberDocuments: "cms/member-documents", memberDirectories: "cms/member-directories", users: "cms/members", boardMembers: "cms/board", editorialContent: "cms/editorial", mailQueue: "cms/mail", eventMedia: "cms/followup" }[module];
   const editable = !["mailQueue", "eventMedia"].includes(module);
   const manageable = module !== "mailQueue";
   const inactiveStatus = module === "editorialContent" || module === "eventMedia" || module === "speakers" || module === "sponsors" || module === "galleries" || module === "memberDocuments" ?"archived" : "inactive";
@@ -3880,7 +4130,24 @@ export async function moduleListPage(module, section = "all") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${isBulkEditorialList ?cmsBulkToolbar(records, { collection: "editorialContent", label: bulkLabel }) : ""}<div class="table-wrap"><table class="table table--editorial table--with-audio${section === "press" ?" table--press" : ""}${section === "news" ?" table--news" : ""}"><thead><tr>${selectHead}<th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr>${selectCell(item)}<td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td><td>${audioListCell("editorialContent", item, { showMeta: false })}</td><td>${editorialMediaFlags(item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${emptyColspan}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "members") {
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--members"><thead><tr><th>Logo</th><th>Mitglied</th><th>Ansprechperson</th><th>Kontakt</th><th>Art</th><th>Ort</th><th>Visible</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table member-logo-thumb--table">${memberLogoThumb(item, memberMediaAssets, section)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a>${memberProfileMissingCell(item)}</td><td>${escapeHtml(shortText(item.contactName || [item.firstName, item.lastName].filter(Boolean).join(" ") || "-", 70))}</td><td>${memberContactCell(item)}</td><td class="member-type-short" title="${escapeHtml(memberMembershipTypeTitle(item))}">${escapeHtml(memberMembershipTypeLabel(item))}</td><td>${escapeHtml([item.postalCode, item.city].filter(Boolean).join(" ") || "-")}</td><td>${memberVisibleToggleCell(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    const view = section === "users" ? "users" : "members";
+    const actions = view === "members"
+      ? `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`
+      : "";
+    const body = view === "users"
+      ? `${memberLoginCreatePanel(records)}${memberUsersListSection(memberUsers, records, activeStatus, inactiveStatus)}`
+      : `<section class="panel"><div class="table-wrap"><table class="table table--editorial table--members"><thead><tr><th>Logo</th><th>Mitglied</th><th>Ansprechperson</th><th>Kontakt</th><th>Art</th><th>Ort</th><th>Login / Rolle</th><th>Visible</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table member-logo-thumb--table">${memberLogoThumb(item, memberMediaAssets, section)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=members&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a>${memberProfileMissingCell(item)}</td><td>${escapeHtml(shortText(item.contactName || [item.firstName, item.lastName].filter(Boolean).join(" ") || "-", 70))}</td><td>${memberContactCell(item)}</td><td class="member-type-short" title="${escapeHtml(memberMembershipTypeTitle(item))}">${escapeHtml(memberMembershipTypeLabel(item))}</td><td>${escapeHtml([item.postalCode, item.city].filter(Boolean).join(" ") || "-")}</td><td>${memberLoginSummaryCell(item, memberUsers)}</td><td>${memberVisibleToggleCell(item)}</td><td>${memberActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="9">${emptyText}</td></tr>`}</tbody></table></div></section>`;
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, actions)}
+      ${memberAdminListTabs(view)}
+      ${body}`));
+  }
+  if (module === "users") {
+    return protect(cmsShell("cms/members", `${cmsTitle("Mitglieder", "Logins & Rollen")}
+      <section class="panel">
+        <h2>In Mitglieder zusammengeführt</h2>
+        <p>Logins, Rollen und Memberprofile werden jetzt direkt in der Mitgliederliste gepflegt. Dort ist pro Mitglied sichtbar, welche Logins verknüpft sind; neue Logins werden ebenfalls dort angelegt.</p>
+        <div class="actions"><a class="button button--primary" href="#/cms/members">Mitglieder öffnen</a></div>
+      </section>`));
   }
   if (["boardMembers", "speakers", "sponsors"].includes(module)) {
     const imageField = module === "sponsors" ?"logoUrl" : "photoUrl";
@@ -3894,28 +4161,33 @@ export async function moduleListPage(module, section = "all") {
     const counters = {
       queued: records.filter((item) => item.status === "queued").length,
       sent: records.filter((item) => item.status === "sent").length,
-      failed: records.filter((item) => item.status === "failed").length
+      failed: records.filter((item) => item.status === "failed").length,
+      opened: records.filter((item) => item.opened === true || Number(item.openCount || 0) > 0).length
     };
+    const openRate = counters.sent ? Math.round((counters.opened / counters.sent) * 100) : 0;
     return protect(cmsShell(active, `${cmsTitle("Mail", title)}
       <section class="panel">
         <div class="setup-steps" style="margin-bottom:20px">
           <div class="setup-step"><span>Wartet</span><strong>${counters.queued}</strong></div>
           <div class="setup-step"><span>Gesendet</span><strong>${counters.sent}</strong></div>
+          <div class="setup-step"><span>Geoeffnet</span><strong>${counters.opened}</strong></div>
+          <div class="setup-step"><span>Oeffnungsquote</span><strong>${openRate}%</strong></div>
           <div class="setup-step"><span>Fehler</span><strong>${counters.failed}</strong></div>
         </div>
         <div class="table-wrap"><table class="table table--mail-queue">
-          <thead><tr><th>Status</th><th>Typ</th><th>Empfaenger</th><th>Betreff</th><th>Bezug</th><th>Zeit</th><th>Fehler</th></tr></thead>
+          <thead><tr><th>Status</th><th>Typ</th><th>Empfaenger</th><th>Betreff</th><th>Bezug</th><th>Tracking</th><th>Zeit</th><th>Fehler</th></tr></thead>
           <tbody>${records.length ?records.map((item) => `<tr>
             <td>${status(item.status || "queued")}</td>
             <td>${escapeHtml(item.type || item.template || "-")}</td>
             <td>${escapeHtml(item.to || item.replyTo || "-")}</td>
             <td>${escapeHtml(shortText(item.subject || "-", 70))}</td>
             <td>${escapeHtml(mailReference(item))}</td>
+            <td><small>${Number(item.openCount || 0) ?`Geoeffnet: ${escapeHtml(String(item.openCount || 0))}x` : "Noch keine Oeffnung"}</small><br><small>Letzte Oeffnung: ${escapeHtml(mailQueueDate(item.lastOpenedAt))}</small><br><small>Zustellung: ${escapeHtml(item.deliveryStatus || (item.status === "failed" ? "fehlgeschlagen" : "-"))}</small></td>
             <td><small>Queue: ${escapeHtml(mailQueueDate(item.queuedAt || item.createdAt))}</small><br><small>Gesendet: ${escapeHtml(mailQueueDate(item.sentAt))}</small><br><small>Fehler: ${escapeHtml(mailQueueDate(item.failedAt))}</small></td>
-            <td>${item.error ?`<span class="alert alert--error" style="display:block;margin:0">${escapeHtml(shortText(item.error, 130))}</span>` : "-"}</td>
-          </tr>`).join("") : `<tr><td colspan="7">${emptyText}</td></tr>`}</tbody>
+            <td>${item.error ?`<span class="alert alert--error" style="display:block;margin:0">${escapeHtml(shortText(item.error, 130))}</span>` : item.providerRejected?.length ?`<span class="alert alert--error" style="display:block;margin:0">Abgelehnt: ${escapeHtml(item.providerRejected.join(", "))}</span>` : "-"}</td>
+          </tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody>
         </table></div>
-        <p class="muted" style="margin-top:14px">Neue Mitgliedsantraege und Event-Anmeldungen erzeugen automatisch Eintraege in dieser Queue. Der Firebase-Function-Trigger versendet queued Mails per SMTP und schreibt danach den Status.</p>
+        <p class="muted" style="margin-top:14px">Neue Mitgliedsantraege und Event-Anmeldungen erzeugen automatisch Eintraege in dieser Queue. Der Firebase-Function-Trigger versendet queued Mails per SMTP, schreibt Status und direkte Zustellfehler. Oeffnungen werden per Bildabruf gemessen und koennen durch Mail-Clients blockiert oder vorab geladen werden.</p>
       </section>`));
   }
   return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, editable ?`<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>` : "")}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>${itemLabel}</th><th>Datum / Gueltigkeit</th><th>Beschreibung / Zuordnung</th><th>Status</th>${editable || manageable ?"<th>Aktionen</th>" : ""}</tr></thead><tbody>${records.length ?records.map((item) => `<tr><td>${escapeHtml(item[config[2]] || "-")}</td><td>${escapeHtml(item.publishDate || item.date || "-")}<br><small>${escapeHtml(item.validFrom || "-")} bis ${escapeHtml(item.validTo || "unendlich")}</small></td><td>${escapeHtml(item[config[3]] || "-")}</td><td>${status(item.status || item.visibility || "active")}</td>${editable || manageable ?`<td>${cmsListActionButtons(item, section, module, activeStatus, inactiveStatus, { editable, manageable })}</td>` : ""}</tr>`).join("") : `<tr><td colspan="${editable || manageable ?5 : 4}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
@@ -4124,7 +4396,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
     membershipApplications: { title: "Mitgliedsantrag", fields: [["company", "Unternehmen / Name"], ["legalForm", "Rechtsform"], ["street", "Strasse"], ["city", "PLZ / Ort"], ["country", "Land"], ["website", "Website"], ["firstName", "Vorname"], ["lastName", "Nachname"], ["position", "Position"], ["email", "E-Mail"], ["phone", "Telefon"], ["membershipType", "Mitgliedschaft: company oder individual"], ["companyDescription", "Kurzbeschreibung"], ["message", "Nachricht"], ["status", "Status"], ["submittedAt", "Eingegangen"]] },
     memberDocuments: { title: "Mitgliederdokument", fields: [["title", "Titel"], ["category", "Kategorie"], ["year", "Jahr"], ["meetingDate", "Datum"], ["description", "Beschreibung"]] },
     memberDirectories: { title: "Mitgliederverzeichnis", fields: [["title", "Titel"], ["year", "Jahr"], ["description", "Beschreibung"], ["documentUrl", "Datei-Link optional"]] },
-    users: { title: "User", fields: [["email", "E-Mail"], ["displayName", "Name"], ["role", "Rolle"], ["status", "Status"], ["memberId", "Mitglied-ID"], ["committeeRole", "Vereinsrolle"]] },
+    users: { title: "Mitglieder-Login", fields: [["email", "E-Mail"], ["displayName", "Name"], ["role", "Rolle"], ["status", "Status"], ["memberId", "Memberprofil"], ["committeeRole", "Vereinsrolle"]] },
     boardMembers: { title: "Vorstandsmitglied", fields: [["name", "Name"], ["role", "Funktion / Rolle"], ["company", "Unternehmen"], ["shortBio", "Kurzbeschreibung"], ["linkedIn", "LinkedIn"], ["website", "Website"]] },
     galleries: { title: "Bildergalerie", fields: [["title", "Titel"], ["description", "Beschreibung"]] },
     editorialContent: { title: "Redaktioneller Inhalt", fields: [["title", "Seitentitel"], ["page", "Bereich"], ["section", "Sektion"], ["key", "Inhaltsschluessel"], ["publishDate", "Datum"], ["validFrom", "Gueltig von"], ["validTo", "Gueltig bis (leer = unendlich)"], ["subtitle", "Untertitel"], ["introText", "Introtext"], ["bodyText", "Haupttext"], ["buttonText", "Button-Text"], ["buttonUrl", "Button-Link"], ["seoTitle", "SEO-Titel"], ["seoDescription", "SEO-Beschreibung"]] }
@@ -4571,6 +4843,14 @@ Ausgangstext:
       ].join("");
       return `<div class="field"><label>${label}</label><select name="memberId">${options}</select><p class="muted">Verknuepft diesen User mit dem Mitgliedsprofil, das er im Mitgliederbereich bearbeiten darf.</p></div>`;
     }
+    if (module === "users" && field === "role") {
+      const currentRole = ["admin", "editor", "member"].includes(String(item?.role || "").toLowerCase()) ?String(item.role).toLowerCase() : "member";
+      return `<div class="field"><label>${label}</label><select name="role"><option value="member" ${currentRole === "member" ?"selected" : ""}>Member</option><option value="editor" ${currentRole === "editor" ?"selected" : ""}>Editor</option><option value="admin" ${currentRole === "admin" ?"selected" : ""}>Admin</option></select></div>`;
+    }
+    if (module === "users" && field === "status") {
+      const isActive = String(item?.status || "active").toLowerCase() !== "inactive";
+      return `<div class="field"><label>${label}</label><label class="cms-switch ${isActive ?"is-active" : ""}" title="User aktivieren oder deaktivieren"><input type="checkbox" name="statusActive" ${isActive ?"checked" : ""}><span class="cms-switch__track" aria-hidden="true"></span><span class="cms-switch__text">${isActive ?"Aktiv" : "Inaktiv"}</span></label><p class="muted">Inaktive User bleiben als Datensatz erhalten, erhalten aber keinen aktiven Zugriff.</p></div>`;
+    }
     if (module === "members" && field === "membershipType") {
       const currentType = item?.membershipType || "";
       return `<div class="field"><label>${label}</label><select name="membershipType"><option value="" ${currentType ?"" : "selected"}>Nicht festgelegt</option><option value="company" ${currentType === "company" ?"selected" : ""}>Firmenmitglied</option><option value="individual" ${currentType === "individual" ?"selected" : ""}>Einzelmitglied</option></select></div>`;
@@ -4651,6 +4931,8 @@ Ausgangstext:
           </select></div>
           <div class="field"><label>Gekündigt / inaktiv ab</label><input name="membershipAccessEffectiveAt" type="date" value="${escapeHtml(timestampInputDate(item?.membershipAccessEffectiveAt))}"><p class="muted">Leer = sofort.</p></div>
         </div>
+        <label class="cms-switch ${item?.mailingDisabled || item?.notificationOptOut || item?.reminderConsent === false ?"" : "is-active"}" title="Mailabo fuer Event- und Umfragehinweise steuern"><input type="checkbox" name="mailingEnabled" ${item?.mailingDisabled || item?.notificationOptOut || item?.reminderConsent === false ?"" : "checked"}><span class="cms-switch__track" aria-hidden="true"></span><span class="cms-switch__text">${item?.mailingDisabled || item?.notificationOptOut || item?.reminderConsent === false ?"Mailabo aus" : "Mailabo aktiv"}</span></label>
+        <p class="muted">Betrifft Event-Hinweise, Umfragen und Newsletter. Systemmails wie Login oder Passwort bleiben moeglich.</p>
         <label class="checkbox"><input type="checkbox" name="notificationTestGroup" ${item?.notificationTestGroup || item?.isNotificationTestGroup || item?.testGroup ?"checked" : ""}> Teil der Benachrichtigungs-Testgruppe</label>
       </div>`
     : "";
@@ -4672,9 +4954,9 @@ Ausgangstext:
   const speakerManager = module === "topics" ?topicSpeakerManager(item, topicSpeakers) : "";
   const activeStatus = ["topics", "members", "boardMembers", "memberDirectories", "users"].includes(module) ?"active" : "published";
   const editorialBack = query.get("section") && editorialSections[query.get("section")] ?`editorial/${query.get("section")}` : item.page === "press" ?"editorial/press" : item.page === "news" ?"editorial/news" : module === "editorialContent" ?"editorial/interna" : "editorial";
-  const backSection = { boardMembers: "board", editorialContent: editorialBack, speakers: "speakers", sponsors: "sponsors", memberDocuments: "member-documents", memberDirectories: "member-directories" }[module] || module;
-  const activeSection = { topics: "cms/topics", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", memberDocuments: "cms/member-documents", memberDirectories: "cms/member-directories", users: "cms/users", boardMembers: "cms/board", editorialContent: `cms/${editorialBack}` }[module] || "cms/editorial";
-  const statusVisibilityControls = module === "members"
+  const backSection = { boardMembers: "board", editorialContent: editorialBack, speakers: "speakers", sponsors: "sponsors", memberDocuments: "member-documents", memberDirectories: "member-directories", users: "members" }[module] || module;
+  const activeSection = { topics: "cms/topics", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", memberDocuments: "cms/member-documents", memberDirectories: "cms/member-directories", users: "cms/members", boardMembers: "cms/board", editorialContent: `cms/${editorialBack}` }[module] || "cms/editorial";
+  const statusVisibilityControls = ["members", "users"].includes(module)
     ?""
     : `<div class="form-grid--two"><div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ?"selected" : ""}>Entwurf</option><option value="${activeStatus}" ${item.status === activeStatus ?"selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ?"selected" : ""}>Archiviert</option></select></div><div class="field"><label>Sichtbarkeit</label><select name="visibility"><option value="public" ${item.visibility === "public" ?"selected" : ""}>Oeffentlich</option><option value="members" ${item.visibility === "members" ?"selected" : ""}>Mitglieder</option><option value="internal" ${item.visibility === "internal" ?"selected" : ""}>Intern</option></select></div></div>`;
   const formClass = module === "members" ?"form-grid form-grid--two member-edit-form" : "form-grid";
@@ -4712,10 +4994,24 @@ Ausgangstext:
         </section>
       </div>`
     : `${fieldHtml}${imageUpload}${editorialVideoHtml}`;
+  const userInvitationControls = module === "users" && item?.invitationId
+    ?`<section class="panel" style="background:var(--pdt-bg);margin:0">
+        <h3>Einladung</h3>
+        <p class="muted">Status: ${escapeHtml(item.invitationStatus || "pending")} · Mail: ${escapeHtml(item.invitationMailStatus || "manual")}</p>
+        <div class="actions"><button class="button button--secondary button--small" type="button" data-send-member-invitation="${escapeHtml(item.invitationId)}">Einladungsmail senden</button><span data-member-invitation-send-result></span></div>
+      </section>`
+    : "";
+  const userMailingControls = module === "users"
+    ?`<section class="panel" style="background:var(--pdt-bg);margin:0">
+        <h3>Mailabo</h3>
+        <label class="cms-switch ${item?.mailingDisabled || item?.notificationOptOut || item?.reminderConsent === false ?"" : "is-active"}" title="Mailabo fuer Event- und Umfragehinweise steuern"><input type="checkbox" name="mailingEnabled" ${item?.mailingDisabled || item?.notificationOptOut || item?.reminderConsent === false ?"" : "checked"}><span class="cms-switch__track" aria-hidden="true"></span><span class="cms-switch__text">${item?.mailingDisabled || item?.notificationOptOut || item?.reminderConsent === false ?"Mailabo aus" : "Mailabo aktiv"}</span></label>
+        <p class="muted">Betrifft Event-Hinweise, Umfragen und Newsletter. Login- und Passwortmails bleiben davon getrennt.</p>
+      </section>`
+    : "";
   const saveControls = module === "members"
     ?`<div class="member-edit-savebar"><button class="button button--primary">Speichern</button><div id="content-save-result"></div></div>`
     : `<button class="button button--primary">Speichern</button><div id="content-save-result"></div>`;
-  return protect(cmsShell(activeSection, `${cmsTitle("Bearbeiten", `${definition.title} pflegen`, `<a class="button button--secondary button--small" href="#/cms/${backSection}">Zurueck</a>`)}<section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="${formClass}">${memberEditHtml}${statusVisibilityControls}${saveControls}</form></section>${speakerManager}`));
+  return protect(cmsShell(activeSection, `${cmsTitle("Bearbeiten", `${definition.title} pflegen`, `<a class="button button--secondary button--small" href="#/cms/${backSection}">Zurueck</a>`)}<section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="${formClass}">${memberEditHtml}${userInvitationControls}${userMailingControls}${statusVisibilityControls}${saveControls}</form></section>${speakerManager}`));
 }
 
 export async function audioAdminPage() {
@@ -4841,26 +5137,23 @@ function peopleContactPushState(item = {}) {
   return item.pushToken || item.pushSubscription || item.browserPushEnabled || item.pushEnabled ? "yes" : "no";
 }
 
+function peopleMailingDisabled(item = {}) {
+  return Boolean(item.mailingDisabled || item.notificationOptOut || item.reminderConsent === false || item.disabled || item.inactive);
+}
+
 function peopleContactRow(item = {}, membersByEmail = new Map(), highlightEmail = "") {
   const email = String(item.email || item.contactEmail || item.primaryEmail || "").trim();
   const member = membersByEmail.get(email.toLowerCase()) || null;
   const type = peopleContactType(item);
   const push = peopleContactPushState(item);
-  const disabled = Boolean(item.mailingDisabled || item.disabled || item.inactive);
+  const disabled = peopleMailingDisabled(item);
   const isMemberOnly = item.__peopleSource === "member";
+  const isUserOnly = item.__peopleSource === "user";
   const name = peopleContactName(item);
   const company = item.company || item.organization || item.organisation || member?.name || "";
   const position = item.position || item.role || item.function || "";
   const search = [name, company, position, email, type, member?.name].filter(Boolean).join(" ").toLowerCase();
-  return `<tr data-people-row data-name="${escapeHtml(search)}" data-type="${escapeHtml(type)}" data-push="${escapeHtml(push)}" ${email && email.toLowerCase() === highlightEmail ?"class=\"is-highlighted\"" : ""}>
-    <td><strong>${escapeHtml(name)}</strong>${company ?`<small>${escapeHtml(company)}</small>` : ""}</td>
-    <td>${escapeHtml(email || "-")}</td>
-    <td>${escapeHtml(position || "-")}</td>
-    <td>${status(type === "member" ?"member" : "contact")}</td>
-    <td>${status(push === "yes" ?"active" : "inactive")}</td>
-    <td>${status(disabled ?"inactive" : "active")}</td>
-    <td><div class="table-actions">
-      <button class="button button--secondary button--small" type="button"
+  const editableContactButton = isMemberOnly || isUserOnly ?"" : `<button class="button button--secondary button--small" type="button"
         data-people-edit-open
         data-contact-id="${escapeHtml(item.id || "")}"
         data-first-name="${escapeHtml(item.firstName || "")}"
@@ -4870,8 +5163,17 @@ function peopleContactRow(item = {}, membersByEmail = new Map(), highlightEmail 
         data-email="${escapeHtml(email)}"
         data-mobile="${escapeHtml(item.mobile || item.phone || "")}"
         data-type="${escapeHtml(type)}"
-        data-newsletter-allowed="${item.newsletterAllowed || item.newsletterConsent ? "yes" : "no"}">Bearbeiten</button>
-      ${isMemberOnly ?`<a class="button button--secondary button--small" href="#/cms/edit?module=members&id=${encodeURIComponent(item.__memberId || item.id || "")}">Mitglied oeffnen</a>` : `<button class="button button--secondary button--small" type="button" data-people-toggle-active="${escapeHtml(item.id || "")}" data-people-disabled="${disabled ? "yes" : "no"}">${disabled ?"Aktivieren" : "Pausieren"}</button>
+        data-newsletter-allowed="${item.newsletterAllowed || item.newsletterConsent ? "yes" : "no"}">Bearbeiten</button>`;
+  return `<tr data-people-row data-name="${escapeHtml(search)}" data-type="${escapeHtml(type)}" data-push="${escapeHtml(push)}" ${email && email.toLowerCase() === highlightEmail ?"class=\"is-highlighted\"" : ""}>
+    <td><strong>${escapeHtml(name)}</strong>${company ?`<small>${escapeHtml(company)}</small>` : ""}</td>
+    <td>${escapeHtml(email || "-")}</td>
+    <td>${escapeHtml(position || "-")}</td>
+    <td>${status(type === "member" ?"member" : "contact")}</td>
+    <td>${status(push === "yes" ?"active" : "inactive")}</td>
+    <td>${status(disabled ?"inactive" : "active")}<small>${disabled ?"Mailabo aus" : "Mailabo aktiv"}</small></td>
+    <td><div class="table-actions">
+      ${editableContactButton}
+      ${isUserOnly ?`<a class="button button--secondary button--small" href="#/cms/edit?module=users&id=${encodeURIComponent(item.__userId || "")}">Login oeffnen</a>${item.__memberId ?`<a class="button button--secondary button--small" href="#/cms/edit?module=members&id=${encodeURIComponent(item.__memberId)}">Mitglied</a>` : ""}` : isMemberOnly ?`<a class="button button--secondary button--small" href="#/cms/edit?module=members&id=${encodeURIComponent(item.__memberId || item.id || "")}">Mitglied oeffnen</a>` : `<button class="button button--secondary button--small" type="button" data-people-toggle-active="${escapeHtml(item.id || "")}" data-people-disabled="${disabled ? "yes" : "no"}">${disabled ?"Mailabo aktivieren" : "Mailabo pausieren"}</button>
       <button class="button button--secondary button--small" type="button" data-people-delete="contacts:${escapeHtml(item.id || "")}" data-people-name="${escapeHtml(name)}">Loeschen</button>`}
     </div></td>
   </tr>`;
@@ -4914,10 +5216,41 @@ function peopleMemberContactRows(member = {}) {
   }];
 }
 
-function mergePeopleContactsAndMembers(contacts = [], members = []) {
+function peopleUserContactRows(users = [], membersById = new Map()) {
+  return users
+    .filter((user) => user?.email && userIsActive(user))
+    .filter((user) => String(user.role || "member").toLowerCase() === "member" || user.memberId)
+    .map((user) => {
+      const member = membersById.get(String(user.memberId || ""));
+      return {
+        id: `user-${user.id}`,
+        __peopleSource: "user",
+        __userId: user.id,
+        __memberId: user.memberId || "",
+        type: "member",
+        name: user.displayName || [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email,
+        company: member?.name || user.company || "",
+        position: user.committeeRole || user.role || "member",
+        email: user.email,
+        mobile: user.mobile || user.phone || "",
+        newsletterAllowed: true,
+        mailingDisabled: user.mailingDisabled || !userIsActive(user)
+      };
+    });
+}
+
+function mergePeopleContactsAndMembers(contacts = [], members = [], users = []) {
+  const membersById = new Map(members.map((member) => [String(member.id || ""), member]).filter(([id]) => id));
   const usedEmails = new Set(contacts
     .map((contact) => String(contact.email || contact.contactEmail || contact.primaryEmail || "").trim().toLowerCase())
     .filter(Boolean));
+  const userRows = peopleUserContactRows(users, membersById)
+    .filter((contact) => {
+      const email = String(contact.email || "").trim().toLowerCase();
+      if (!email || usedEmails.has(email)) return false;
+      usedEmails.add(email);
+      return true;
+    });
   const memberRows = members
     .filter((member) => !["archived", "deleted"].includes(String(member.status || "").toLowerCase()))
     .flatMap(peopleMemberContactRows)
@@ -4927,21 +5260,23 @@ function mergePeopleContactsAndMembers(contacts = [], members = []) {
       usedEmails.add(email);
       return true;
     });
-  return [...contacts, ...memberRows];
+  return [...contacts, ...userRows, ...memberRows];
 }
 
 export async function peoplePage(query = new URLSearchParams()) {
   if (!hasCmsAccess()) return denied();
   let contacts = [];
   let members = [];
+  let users = [];
   let loadError = "";
   try {
-    [contacts, members] = await Promise.all([
+    [contacts, members, users] = await Promise.all([
       list("contacts").catch((error) => {
         loadError = error?.message || String(error);
         return [];
       }),
-      list("members").catch(() => [])
+      list("members").catch(() => []),
+      list("users").catch(() => [])
     ]);
   } catch (error) {
     loadError = error?.message || String(error);
@@ -4950,7 +5285,7 @@ export async function peoplePage(query = new URLSearchParams()) {
     .map((member) => [String(member.email || member.contactEmail || "").trim().toLowerCase(), member])
     .filter(([email]) => email));
   const highlightEmail = String(query?.get?.("email") || "").trim().toLowerCase();
-  const mailingPeople = mergePeopleContactsAndMembers(contacts, members);
+  const mailingPeople = mergePeopleContactsAndMembers(contacts, members, users);
   const sortedPeople = mailingPeople.slice().sort((a, b) => peopleContactName(a).localeCompare(peopleContactName(b), "de"));
   const activeCount = sortedPeople.filter((item) => !(item.mailingDisabled || item.disabled || item.inactive)).length;
   const memberCount = sortedPeople.filter((item) => peopleContactType(item) === "member").length;

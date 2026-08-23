@@ -1,0 +1,619 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/k8szs8",
+    "id": "k8szs8",
+    "slide": 23,
+    "layoutId": "58881d5d-6e5c-4441-b2f8-b74dd4656116",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "495f31fd-7c1a-49f8-8812-3952d45e4ba2",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#F4F8FD",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "+mn-lt"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "58881d5d-6e5c-4441-b2f8-b74dd4656116",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "495f31fd-7c1a-49f8-8812-3952d45e4ba2",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "495f31fd-7c1a-49f8-8812-3952d45e4ba2",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/54n618r6",
+      "id": "1",
+      "bbox": [
+        72,
+        54,
+        520,
+        26
+      ],
+      "geometry": "rect",
+      "text": "DATENSICHERHEIT",
+      "textPreview": "DATENSICHERHEIT",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "+mn-lt",
+        "color": "#E30613",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "DATENSICHERHEIT"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "DATENSICHERHEIT",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "color": "#E30613",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "DATENSICHERHEIT",
+              "fontSize": 15,
+              "color": "#E30613",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ihc7qdsv",
+      "id": "2",
+      "bbox": [
+        72,
+        92,
+        880,
+        90
+      ],
+      "geometry": "rect",
+      "text": "Loeschschutz und Statuslogik vermeiden Fehler",
+      "textPreview": "Loeschschutz und Statuslogik vermeiden Fehler",
+      "resolvedFontSize": 40,
+      "resolvedTextStyle": {
+        "fontSize": 40,
+        "typeface": "+mn-lt",
+        "color": "#071A33",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Loeschschutz und Statuslogik vermeiden Fehler"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Loeschschutz und Statuslogik vermeiden Fehler",
+          "resolvedTextStyle": {
+            "fontSize": 40,
+            "color": "#071A33",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Loeschschutz und Statuslogik vermeiden Fehler",
+              "fontSize": 40,
+              "color": "#071A33",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/3ilozy90",
+      "id": "3",
+      "bbox": [
+        72,
+        670,
+        360,
+        26
+      ],
+      "geometry": "rect",
+      "text": "PROdigitalTV Plattform",
+      "textPreview": "PROdigitalTV Plattform",
+      "resolvedFontSize": 13,
+      "resolvedTextStyle": {
+        "fontSize": 13,
+        "typeface": "+mn-lt",
+        "color": "#5E6B7F",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "PROdigitalTV Plattform"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "PROdigitalTV Plattform",
+          "resolvedTextStyle": {
+            "fontSize": 13,
+            "color": "#5E6B7F",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "PROdigitalTV Plattform",
+              "fontSize": 13,
+              "color": "#5E6B7F",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/s7epwnax",
+      "id": "4",
+      "bbox": [
+        1150,
+        670,
+        56,
+        26
+      ],
+      "geometry": "rect",
+      "text": "23",
+      "textPreview": "23",
+      "resolvedFontSize": 13,
+      "resolvedTextStyle": {
+        "fontSize": 13,
+        "typeface": "+mn-lt",
+        "color": "#5E6B7F",
+        "alignment": "right",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "23"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "23",
+          "resolvedTextStyle": {
+            "fontSize": 13,
+            "color": "#5E6B7F",
+            "alignment": "right"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "23",
+              "fontSize": 13,
+              "color": "#5E6B7F",
+              "alignment": "right"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/d8n65sri",
+      "id": "5",
+      "bbox": [
+        110,
+        269,
+        10,
+        10
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#E30613",
+      "lineColor": "#E30613",
+      "lineWidth": 0
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/q5w7udsr",
+      "id": "6",
+      "bbox": [
+        136,
+        260,
+        914,
+        66
+      ],
+      "geometry": "rect",
+      "text": "Nachfrage beim Loeschen ganzer Datensaetze",
+      "textPreview": "Nachfrage beim Loeschen ganzer Datensaetze",
+      "resolvedFontSize": 25,
+      "resolvedTextStyle": {
+        "fontSize": 25,
+        "typeface": "+mn-lt",
+        "color": "#2B3B52",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Nachfrage beim Loeschen ganzer Datensaetze"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Nachfrage beim Loeschen ganzer Datensaetze",
+          "resolvedTextStyle": {
+            "fontSize": 25,
+            "color": "#2B3B52",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Nachfrage beim Loeschen ganzer Datensaetze",
+              "fontSize": 25,
+              "color": "#2B3B52",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/r65o3i9c",
+      "id": "7",
+      "bbox": [
+        110,
+        327,
+        10,
+        10
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#E30613",
+      "lineColor": "#E30613",
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/0byp0nqt",
+      "id": "8",
+      "bbox": [
+        136,
+        318,
+        914,
+        66
+      ],
+      "geometry": "rect",
+      "text": "Stornierte oder geloeschte Anmeldungen blockieren keine Neuanmeldung",
+      "textPreview": "Stornierte oder geloeschte Anmeldungen blockieren keine Neuanmeldung",
+      "resolvedFontSize": 25,
+      "resolvedTextStyle": {
+        "fontSize": 25,
+        "typeface": "+mn-lt",
+        "color": "#2B3B52",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Stornierte oder geloeschte Anmeldungen blockieren keine Neuanmeldung"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Stornierte oder geloeschte Anmeldungen blockieren keine Neuanmeldung",
+          "resolvedTextStyle": {
+            "fontSize": 25,
+            "color": "#2B3B52",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Stornierte oder geloeschte Anmeldungen blockieren keine Neuanmeldung",
+              "fontSize": 25,
+              "color": "#2B3B52",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/1c7q9sre",
+      "id": "9",
+      "bbox": [
+        110,
+        385,
+        10,
+        10
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#E30613",
+      "lineColor": "#E30613",
+      "lineWidth": 0
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/tgfq1onq",
+      "id": "10",
+      "bbox": [
+        136,
+        376,
+        914,
+        66
+      ],
+      "geometry": "rect",
+      "text": "Statuslogik fuer Entwurf, aktiv, archiviert und sichtbar",
+      "textPreview": "Statuslogik fuer Entwurf, aktiv, archiviert und sichtbar",
+      "resolvedFontSize": 25,
+      "resolvedTextStyle": {
+        "fontSize": 25,
+        "typeface": "+mn-lt",
+        "color": "#2B3B52",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Statuslogik fuer Entwurf, aktiv, archiviert und sichtbar"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Statuslogik fuer Entwurf, aktiv, archiviert und sichtbar",
+          "resolvedTextStyle": {
+            "fontSize": 25,
+            "color": "#2B3B52",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Statuslogik fuer Entwurf, aktiv, archiviert und sichtbar",
+              "fontSize": 25,
+              "color": "#2B3B52",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/8f6psj65",
+      "id": "11",
+      "bbox": [
+        110,
+        443,
+        10,
+        10
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#E30613",
+      "lineColor": "#E30613",
+      "lineWidth": 0
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/7ex8ze5k",
+      "id": "12",
+      "bbox": [
+        136,
+        434,
+        914,
+        66
+      ],
+      "geometry": "rect",
+      "text": "GitHub, Dropbox und Deploy als Betriebs- und Sicherungsschritte",
+      "textPreview": "GitHub, Dropbox und Deploy als Betriebs- und Sicherungsschritte",
+      "resolvedFontSize": 25,
+      "resolvedTextStyle": {
+        "fontSize": 25,
+        "typeface": "+mn-lt",
+        "color": "#2B3B52",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "GitHub, Dropbox und Deploy als Betriebs- und Sicherungsschritte"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "GitHub, Dropbox und Deploy als Betriebs- und Sicherungsschritte",
+          "resolvedTextStyle": {
+            "fontSize": 25,
+            "color": "#2B3B52",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "GitHub, Dropbox und Deploy als Betriebs- und Sicherungsschritte",
+              "fontSize": 25,
+              "color": "#2B3B52",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    }
+  ],
+  "composeRuns": []
+}

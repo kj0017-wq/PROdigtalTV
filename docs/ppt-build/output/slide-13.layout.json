@@ -1,0 +1,645 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/l3aomc",
+    "id": "l3aomc",
+    "slide": 13,
+    "layoutId": "58881d5d-6e5c-4441-b2f8-b74dd4656116",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "495f31fd-7c1a-49f8-8812-3952d45e4ba2",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#F4F8FD",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "+mn-lt"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "58881d5d-6e5c-4441-b2f8-b74dd4656116",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "495f31fd-7c1a-49f8-8812-3952d45e4ba2",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "495f31fd-7c1a-49f8-8812-3952d45e4ba2",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/d4zit036",
+      "id": "1",
+      "bbox": [
+        72,
+        54,
+        520,
+        26
+      ],
+      "geometry": "rect",
+      "text": "ROBO-THEMEN",
+      "textPreview": "ROBO-THEMEN",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "+mn-lt",
+        "color": "#E30613",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "ROBO-THEMEN"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "ROBO-THEMEN",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "color": "#E30613",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "ROBO-THEMEN",
+              "fontSize": 15,
+              "color": "#E30613",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/qh8jyl4f",
+      "id": "2",
+      "bbox": [
+        72,
+        92,
+        880,
+        90
+      ],
+      "geometry": "rect",
+      "text": "Vortraege werden zu dauerhaften Fachbeitraegen",
+      "textPreview": "Vortraege werden zu dauerhaften Fachbeitraegen",
+      "resolvedFontSize": 40,
+      "resolvedTextStyle": {
+        "fontSize": 40,
+        "typeface": "+mn-lt",
+        "color": "#071A33",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Vortraege werden zu dauerhaften Fachbeitraegen"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Vortraege werden zu dauerhaften Fachbeitraegen",
+          "resolvedTextStyle": {
+            "fontSize": 40,
+            "color": "#071A33",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Vortraege werden zu dauerhaften Fachbeitraegen",
+              "fontSize": 40,
+              "color": "#071A33",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/bih0rql0",
+      "id": "3",
+      "bbox": [
+        72,
+        670,
+        360,
+        26
+      ],
+      "geometry": "rect",
+      "text": "PROdigitalTV Plattform",
+      "textPreview": "PROdigitalTV Plattform",
+      "resolvedFontSize": 13,
+      "resolvedTextStyle": {
+        "fontSize": 13,
+        "typeface": "+mn-lt",
+        "color": "#5E6B7F",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "PROdigitalTV Plattform"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "PROdigitalTV Plattform",
+          "resolvedTextStyle": {
+            "fontSize": 13,
+            "color": "#5E6B7F",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "PROdigitalTV Plattform",
+              "fontSize": 13,
+              "color": "#5E6B7F",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/07a14fmh",
+      "id": "4",
+      "bbox": [
+        1150,
+        670,
+        56,
+        26
+      ],
+      "geometry": "rect",
+      "text": "13",
+      "textPreview": "13",
+      "resolvedFontSize": 13,
+      "resolvedTextStyle": {
+        "fontSize": 13,
+        "typeface": "+mn-lt",
+        "color": "#5E6B7F",
+        "alignment": "right",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "13"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "13",
+          "resolvedTextStyle": {
+            "fontSize": 13,
+            "color": "#5E6B7F",
+            "alignment": "right"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "13",
+              "fontSize": 13,
+              "color": "#5E6B7F",
+              "alignment": "right"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/l8j2x032",
+      "id": "5",
+      "bbox": [
+        110,
+        250,
+        460,
+        44
+      ],
+      "geometry": "rect",
+      "text": "Keine beliebige Newsrubrik",
+      "textPreview": "Keine beliebige Newsrubrik",
+      "resolvedFontSize": 30,
+      "resolvedTextStyle": {
+        "fontSize": 30,
+        "typeface": "+mn-lt",
+        "color": "#071A33",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Keine beliebige Newsrubrik"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Keine beliebige Newsrubrik",
+          "resolvedTextStyle": {
+            "fontSize": 30,
+            "color": "#071A33",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Keine beliebige Newsrubrik",
+              "fontSize": 30,
+              "color": "#071A33",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/y58j254r",
+      "id": "6",
+      "bbox": [
+        110,
+        310,
+        460,
+        92
+      ],
+      "geometry": "rect",
+      "text": "Robo-Themen sind den Vortraegen der Medienfruehstuecke vorbehalten.",
+      "textPreview": "Robo-Themen sind den Vortraegen der Medienfruehstuecke vorbehalten.",
+      "resolvedFontSize": 23,
+      "resolvedTextStyle": {
+        "fontSize": 23,
+        "typeface": "+mn-lt",
+        "color": "#5E6B7F",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Robo-Themen sind den Vortraegen der"
+          },
+          {
+            "index": 2,
+            "text": "Medienfruehstuecke vorbehalten."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Robo-Themen sind den Vortraegen der Medienfruehstuecke vorbehalten.",
+          "resolvedTextStyle": {
+            "fontSize": 23,
+            "color": "#5E6B7F",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Robo-Themen sind den Vortraegen der Medienfruehstuecke vorbehalten.",
+              "fontSize": 23,
+              "color": "#5E6B7F",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/z61kvalw",
+      "id": "7",
+      "bbox": [
+        700,
+        250,
+        460,
+        44
+      ],
+      "geometry": "rect",
+      "text": "Dauerhaft auffindbar",
+      "textPreview": "Dauerhaft auffindbar",
+      "resolvedFontSize": 30,
+      "resolvedTextStyle": {
+        "fontSize": 30,
+        "typeface": "+mn-lt",
+        "color": "#071A33",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Dauerhaft auffindbar"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Dauerhaft auffindbar",
+          "resolvedTextStyle": {
+            "fontSize": 30,
+            "color": "#071A33",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Dauerhaft auffindbar",
+              "fontSize": 30,
+              "color": "#071A33",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/8ba18fmt",
+      "id": "8",
+      "bbox": [
+        700,
+        310,
+        460,
+        92
+      ],
+      "geometry": "rect",
+      "text": "Aus einem Vortrag wird ein teilbarer, zitierbarer Fachbeitrag.",
+      "textPreview": "Aus einem Vortrag wird ein teilbarer, zitierbarer Fachbeitrag.",
+      "resolvedFontSize": 23,
+      "resolvedTextStyle": {
+        "fontSize": 23,
+        "typeface": "+mn-lt",
+        "color": "#5E6B7F",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Aus einem Vortrag wird ein teilbarer,"
+          },
+          {
+            "index": 2,
+            "text": "zitierbarer Fachbeitrag."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Aus einem Vortrag wird ein teilbarer, zitierbarer Fachbeitrag.",
+          "resolvedTextStyle": {
+            "fontSize": 23,
+            "color": "#5E6B7F",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Aus einem Vortrag wird ein teilbarer, zitierbarer Fachbeitrag.",
+              "fontSize": 23,
+              "color": "#5E6B7F",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/9cj21k3e",
+      "id": "9",
+      "bbox": [
+        110,
+        440,
+        120,
+        6
+      ],
+      "geometry": "rect",
+      "fillColor": "#E30613",
+      "lineColor": "#E30613",
+      "lineWidth": 0
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/dgfm1gj2",
+      "id": "10",
+      "bbox": [
+        110,
+        475,
+        980,
+        46
+      ],
+      "geometry": "rect",
+      "text": "Die Plattform verlaengert die Wirkung der Medienfruehstuecke redaktionell.",
+      "textPreview": "Die Plattform verlaengert die Wirkung der Medienfruehstuecke redaktionell.",
+      "resolvedFontSize": 27,
+      "resolvedTextStyle": {
+        "fontSize": 27,
+        "typeface": "+mn-lt",
+        "color": "#071A33",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Die Plattform verlaengert die Wirkung der Medienfruehstuecke redaktionell."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Die Plattform verlaengert die Wirkung der Medienfruehstuecke redaktionell.",
+          "resolvedTextStyle": {
+            "fontSize": 27,
+            "color": "#071A33",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Die Plattform verlaengert die Wirkung der Medienfruehstuecke redaktionell.",
+              "fontSize": 27,
+              "color": "#071A33",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    }
+  ],
+  "composeRuns": []
+}

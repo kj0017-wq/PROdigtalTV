@@ -6,6 +6,7 @@ const PUBLIC_LIST_CACHE_MS = 120000;
 const PUBLIC_SESSION_CACHE_MS = 600000;
 const PUBLIC_LOCAL_CACHE_MS = 1800000;
 const PUBLIC_READ_TIMEOUT_MS = 22000;
+const MEMBER_PORTAL_READ_TIMEOUT_MS = 6500;
 const publicListCache = new Map();
 
 function cmsDataMode() {
@@ -48,11 +49,12 @@ function timeoutError(label = "Firestore") {
 }
 
 function withReadTimeout(promise, timeoutMs = PUBLIC_READ_TIMEOUT_MS, label = "Firestore") {
-  if (cmsDataMode() || memberPortalDataMode()) return promise;
+  if (cmsDataMode()) return promise;
+  const effectiveTimeoutMs = memberPortalDataMode() ? Math.min(timeoutMs, MEMBER_PORTAL_READ_TIMEOUT_MS) : timeoutMs;
   return Promise.race([
     promise,
     new Promise((_, reject) => {
-      const timer = (typeof window !== "undefined" ? window : globalThis).setTimeout(() => reject(timeoutError(label)), timeoutMs);
+      const timer = (typeof window !== "undefined" ? window : globalThis).setTimeout(() => reject(timeoutError(label)), effectiveTimeoutMs);
       promise.finally(() => (typeof window !== "undefined" ? window : globalThis).clearTimeout(timer)).catch(() => {});
     })
   ]);
@@ -117,6 +119,16 @@ function publicSessionCacheKey(key = "") {
   return `pdtv-public-list-v4:${key}`;
 }
 
+function readEmbeddedPublicCache(key = "") {
+  try {
+    const embedded = window.__PDT_PUBLIC_SNAPSHOT?.caches?.[publicSessionCacheKey(key)];
+    if (!embedded || !Array.isArray(embedded.records)) return null;
+    return embedded.records;
+  } catch {
+    return null;
+  }
+}
+
 function publicSessionCacheAllowed(collectionName, predicates = []) {
   if (!firebaseEnabled() || !realDataMode()) return false;
   if (["users", "registrations", "mailQueue"].includes(collectionName)) return false;
@@ -133,11 +145,11 @@ function readPublicSessionCache(key = "", options = {}) {
     const raw = sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
     const cached = JSON.parse(raw || "null");
     const maxAge = raw === sessionStorage.getItem(cacheKey) ? PUBLIC_SESSION_CACHE_MS : PUBLIC_LOCAL_CACHE_MS;
-    if (!cached || !Array.isArray(cached.records)) return null;
-    if (!options.allowStale && Date.now() - Number(cached.createdAt || 0) > maxAge) return null;
+    if (!cached || !Array.isArray(cached.records)) return readEmbeddedPublicCache(key);
+    if (!options.allowStale && Date.now() - Number(cached.createdAt || 0) > maxAge) return readEmbeddedPublicCache(key);
     return cached.records;
   } catch {
-    return null;
+    return readEmbeddedPublicCache(key);
   }
 }
 
@@ -371,8 +383,10 @@ export async function listPublicEvents(includeMemberEvents = false) {
     writePublicSessionCache(aggregateCacheKey, activePublicEvents);
     return activePublicEvents;
   }
-  const memberEvents = await cachedConstrainedList("events", [["accessType", "==", "members_only"]]).catch(() => []);
-  const activeMemberEvents = memberEvents.map(normalizePublicEvent).filter(isEventVisible);
+  const activeMemberEvents = publicEvents
+    .filter((event) => event.accessType === "members_only" || event.access_type === "members_only")
+    .map(normalizePublicEvent)
+    .filter(isEventVisible);
   const result = [...activePublicEvents, ...activeMemberEvents.filter((event) => !activePublicEvents.some((publicEvent) => publicEvent.id === event.id))];
   writePublicSessionCache(aggregateCacheKey, result);
   return result;
@@ -457,6 +471,10 @@ export async function listPublicContent(collectionName) {
     eventMedia: [["status", "==", "approved"], ["visibility", "==", "public"]]
   };
   if (collectionName === "members") {
+    const visibleCachedMembers = await cachedConstrainedList(collectionName, [["visible", "==", true]]).catch(() => []);
+    if (visibleCachedMembers.length) {
+      return visibleCachedMembers.filter(isPublicLiveMember);
+    }
     const batches = await Promise.all([
       cachedConstrainedList(collectionName, [["visible", "==", true], ["isLive", "==", true], ["status", "==", "active"], ["visibility", "==", "public"]]).catch(() => []),
       cachedConstrainedList(collectionName, [["visible", "==", true], ["isLive", "==", true], ["status", "==", "active"], ["visibility", "==", "portal"]]).catch(() => []),

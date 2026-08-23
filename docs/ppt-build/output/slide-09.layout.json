@@ -1,0 +1,1062 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/non8sr",
+    "id": "non8sr",
+    "slide": 9,
+    "layoutId": "58881d5d-6e5c-4441-b2f8-b74dd4656116",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "495f31fd-7c1a-49f8-8812-3952d45e4ba2",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#F4F8FD",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "+mn-lt"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "58881d5d-6e5c-4441-b2f8-b74dd4656116",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "495f31fd-7c1a-49f8-8812-3952d45e4ba2",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "495f31fd-7c1a-49f8-8812-3952d45e4ba2",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/i58zuh0j",
+      "id": "1",
+      "bbox": [
+        72,
+        54,
+        520,
+        26
+      ],
+      "geometry": "rect",
+      "text": "DESKTOP ZU HANDY",
+      "textPreview": "DESKTOP ZU HANDY",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "+mn-lt",
+        "color": "#E30613",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "DESKTOP ZU HANDY"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "DESKTOP ZU HANDY",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "color": "#E30613",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "DESKTOP ZU HANDY",
+              "fontSize": 15,
+              "color": "#E30613",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/5szy5wzu",
+      "id": "2",
+      "bbox": [
+        72,
+        92,
+        880,
+        90
+      ],
+      "geometry": "rect",
+      "text": "Der QR-Code uebertraegt den Token auf das Smartphone",
+      "textPreview": "Der QR-Code uebertraegt den Token auf das Smartphone",
+      "resolvedFontSize": 40,
+      "resolvedTextStyle": {
+        "fontSize": 40,
+        "typeface": "+mn-lt",
+        "color": "#071A33",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Der QR-Code uebertraegt den Token auf das"
+          },
+          {
+            "index": 2,
+            "text": "Smartphone"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Der QR-Code uebertraegt den Token auf das Smartphone",
+          "resolvedTextStyle": {
+            "fontSize": 40,
+            "color": "#071A33",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Der QR-Code uebertraegt den Token auf das Smartphone",
+              "fontSize": 40,
+              "color": "#071A33",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/4rqhwri9",
+      "id": "3",
+      "bbox": [
+        72,
+        670,
+        360,
+        26
+      ],
+      "geometry": "rect",
+      "text": "PROdigitalTV Plattform",
+      "textPreview": "PROdigitalTV Plattform",
+      "resolvedFontSize": 13,
+      "resolvedTextStyle": {
+        "fontSize": 13,
+        "typeface": "+mn-lt",
+        "color": "#5E6B7F",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "PROdigitalTV Plattform"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "PROdigitalTV Plattform",
+          "resolvedTextStyle": {
+            "fontSize": 13,
+            "color": "#5E6B7F",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "PROdigitalTV Plattform",
+              "fontSize": 13,
+              "color": "#5E6B7F",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/v2hgzmhs",
+      "id": "4",
+      "bbox": [
+        1150,
+        670,
+        56,
+        26
+      ],
+      "geometry": "rect",
+      "text": "09",
+      "textPreview": "09",
+      "resolvedFontSize": 13,
+      "resolvedTextStyle": {
+        "fontSize": 13,
+        "typeface": "+mn-lt",
+        "color": "#5E6B7F",
+        "alignment": "right",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "09"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "09",
+          "resolvedTextStyle": {
+            "fontSize": 13,
+            "color": "#5E6B7F",
+            "alignment": "right"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "09",
+              "fontSize": 13,
+              "color": "#5E6B7F",
+              "alignment": "right"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/u18zqh07",
+      "id": "5",
+      "bbox": [
+        72,
+        245,
+        340,
+        180
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#FFFFFF",
+      "lineColor": "#D9E4F2",
+      "lineWidth": 1
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/h4zy1wzy",
+      "id": "6",
+      "bbox": [
+        94,
+        267,
+        42,
+        42
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#E30613",
+      "lineColor": "#E30613",
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/w3qhsrid",
+      "id": "7",
+      "bbox": [
+        94,
+        274,
+        42,
+        24
+      ],
+      "geometry": "rect",
+      "text": "1",
+      "textPreview": "1",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "fontSize": 18,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "1"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "1",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "1",
+              "fontSize": 18,
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/fy10b6hw",
+      "id": "8",
+      "bbox": [
+        150,
+        267,
+        240,
+        34
+      ],
+      "geometry": "rect",
+      "text": "Desktop-Anmeldung",
+      "textPreview": "Desktop-Anmeldung",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "color": "#071A33",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Desktop-Anmeldung"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Desktop-Anmeldung",
+          "resolvedTextStyle": {
+            "fontSize": 24,
+            "color": "#071A33",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Desktop-Anmeldung",
+              "fontSize": 24,
+              "color": "#071A33",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/exsz210r",
+      "id": "9",
+      "bbox": [
+        150,
+        311,
+        240,
+        98
+      ],
+      "geometry": "rect",
+      "text": "Der Gast meldet sich am Desktop an und sieht danach einen QR-Code.",
+      "textPreview": "Der Gast meldet sich am Desktop an und sieht danach einen QR-Code.",
+      "resolvedFontSize": 17,
+      "resolvedTextStyle": {
+        "fontSize": 17,
+        "typeface": "+mn-lt",
+        "color": "#5E6B7F",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Der Gast meldet sich am"
+          },
+          {
+            "index": 2,
+            "text": "Desktop an und sieht danach"
+          },
+          {
+            "index": 3,
+            "text": "einen QR-Code."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Der Gast meldet sich am Desktop an und sieht danach einen QR-Code.",
+          "resolvedTextStyle": {
+            "fontSize": 17,
+            "color": "#5E6B7F",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Der Gast meldet sich am Desktop an und sieht danach einen QR-Code.",
+              "fontSize": 17,
+              "color": "#5E6B7F",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/0zad4b6h",
+      "id": "10",
+      "bbox": [
+        470,
+        245,
+        340,
+        180
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#FFF6F7",
+      "lineColor": "#D9E4F2",
+      "lineWidth": 1
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/l0jexg72",
+      "id": "11",
+      "bbox": [
+        492,
+        267,
+        42,
+        42
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#E30613",
+      "lineColor": "#E30613",
+      "lineWidth": 0
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/yxsv2lor",
+      "id": "12",
+      "bbox": [
+        492,
+        274,
+        42,
+        24
+      ],
+      "geometry": "rect",
+      "text": "2",
+      "textPreview": "2",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "fontSize": 18,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "2"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "2",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "2",
+              "fontSize": 18,
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 13,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/zy1wvqpc",
+      "id": "13",
+      "bbox": [
+        548,
+        267,
+        240,
+        34
+      ],
+      "geometry": "rect",
+      "text": "QR-Code scannen",
+      "textPreview": "QR-Code scannen",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "color": "#071A33",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "QR-Code scannen"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "QR-Code scannen",
+          "resolvedTextStyle": {
+            "fontSize": 24,
+            "color": "#071A33",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "QR-Code scannen",
+              "fontSize": 24,
+              "color": "#071A33",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 14,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/cbad0b6l",
+      "id": "14",
+      "bbox": [
+        548,
+        311,
+        240,
+        98
+      ],
+      "geometry": "rect",
+      "text": "Das Smartphone uebernimmt den persoenlichen Token fuer diese Anmeldung.",
+      "textPreview": "Das Smartphone uebernimmt den persoenlichen Token fuer diese Anmeldung.",
+      "resolvedFontSize": 17,
+      "resolvedTextStyle": {
+        "fontSize": 17,
+        "typeface": "+mn-lt",
+        "color": "#5E6B7F",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Das Smartphone uebernimmt"
+          },
+          {
+            "index": 2,
+            "text": "den persoenlichen Token fuer"
+          },
+          {
+            "index": 3,
+            "text": "diese Anmeldung."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Das Smartphone uebernimmt den persoenlichen Token fuer diese Anmeldung.",
+          "resolvedTextStyle": {
+            "fontSize": 17,
+            "color": "#5E6B7F",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Das Smartphone uebernimmt den persoenlichen Token fuer diese Anmeldung.",
+              "fontSize": 17,
+              "color": "#5E6B7F",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 15,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/dcjetg76",
+      "id": "15",
+      "bbox": [
+        868,
+        245,
+        340,
+        180
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#EEF5FF",
+      "lineColor": "#D9E4F2",
+      "lineWidth": 1
+    },
+    {
+      "order": 16,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/q98vy1of",
+      "id": "16",
+      "bbox": [
+        890,
+        267,
+        42,
+        42
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#E30613",
+      "lineColor": "#E30613",
+      "lineWidth": 0
+    },
+    {
+      "order": 17,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/bahcr6p0",
+      "id": "17",
+      "bbox": [
+        890,
+        274,
+        42,
+        24
+      ],
+      "geometry": "rect",
+      "text": "3",
+      "textPreview": "3",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "fontSize": 18,
+        "typeface": "+mn-lt",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "3"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "3",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "3",
+              "fontSize": 18,
+              "color": "#FFFFFF",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 18,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/o7qdwr6p",
+      "id": "18",
+      "bbox": [
+        946,
+        267,
+        240,
+        34
+      ],
+      "geometry": "rect",
+      "text": "Handy wird Ticket",
+      "textPreview": "Handy wird Ticket",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "+mn-lt",
+        "color": "#071A33",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Handy wird Ticket"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Handy wird Ticket",
+          "resolvedTextStyle": {
+            "fontSize": 24,
+            "color": "#071A33",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Handy wird Ticket",
+              "fontSize": 24,
+              "color": "#071A33",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 19,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/p8zupw7u",
+      "id": "19",
+      "bbox": [
+        946,
+        311,
+        240,
+        98
+      ],
+      "geometry": "rect",
+      "text": "Das System kann dieses Handy der konkreten Anmeldung und dem Event zuordnen.",
+      "textPreview": "Das System kann dieses Handy der konkreten Anmeldung und dem Event zuordnen.",
+      "resolvedFontSize": 17,
+      "resolvedTextStyle": {
+        "fontSize": 17,
+        "typeface": "+mn-lt",
+        "color": "#5E6B7F",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 3,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Das System kann dieses Handy"
+          },
+          {
+            "index": 2,
+            "text": "der konkreten Anmeldung und"
+          },
+          {
+            "index": 3,
+            "text": "dem Event zuordnen."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Das System kann dieses Handy der konkreten Anmeldung und dem Event zuordnen.",
+          "resolvedTextStyle": {
+            "fontSize": 17,
+            "color": "#5E6B7F",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Das System kann dieses Handy der konkreten Anmeldung und dem Event zuordnen.",
+              "fontSize": 17,
+              "color": "#5E6B7F",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 20,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/54ratszy",
+      "id": "20",
+      "bbox": [
+        190,
+        500,
+        900,
+        40
+      ],
+      "geometry": "rect",
+      "text": "Der QR-Code ist die Uebergabe, nicht das Ticket selbst.",
+      "textPreview": "Der QR-Code ist die Uebergabe, nicht das Ticket selbst.",
+      "resolvedFontSize": 28,
+      "resolvedTextStyle": {
+        "fontSize": 28,
+        "typeface": "+mn-lt",
+        "color": "#071A33",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Der QR-Code ist die Uebergabe, nicht das Ticket selbst."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Der QR-Code ist die Uebergabe, nicht das Ticket selbst.",
+          "resolvedTextStyle": {
+            "fontSize": 28,
+            "color": "#071A33",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Der QR-Code ist die Uebergabe, nicht das Ticket selbst.",
+              "fontSize": 28,
+              "color": "#071A33",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    }
+  ],
+  "composeRuns": []
+}

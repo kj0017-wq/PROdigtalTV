@@ -1,6 +1,6 @@
-import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=525";
+import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=530";
 import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=471";
-import { publicShell, logo } from "../components/layout.js?v=8";
+import { publicShell, logo } from "../components/layout.js?v=9";
 import { eventCard, topicCard } from "../components/cards.js?v=13";
 import { accessLabels, lifecycleLabels } from "../data/platformConstants.js?v=1";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
@@ -477,13 +477,7 @@ function publicSponsorLogoUrl(sponsor = {}, mediaAssets = []) {
 }
 
 async function withPublicMemberLogos(members = []) {
-  if (mobileLeanStart()) {
-    return members.map((member) => ({
-      ...member,
-      logoDisplayUrl: safeMemberLogoUrl(member, member.logoDisplayUrl || member.logoUrl || "")
-    }));
-  }
-  const mediaAssets = await list("media_assets").catch(() => []);
+  const mediaAssets = await listPublicMediaAssets().catch(() => []);
   return members.map((member) => {
     const asset = publicMemberLogoAsset(member, mediaAssets);
     return {
@@ -494,9 +488,11 @@ async function withPublicMemberLogos(members = []) {
 }
 
 function boardPortrait(person) {
-  return person.photoUrl
-    ? `<img src="${escapeHtml(person.photoUrl)}" alt="Portraet ${escapeHtml(person.name)}" ${liveImageAttrs("member")}>`
-    : initials(person.name);
+  const photo = stableImageUrl(person.photoUrl || person.imageUrl || person.thumbnailUrl || person.portraitUrl || person.profileImageUrl || person.assetUrl || "", "member");
+  const name = person.name || "Vorstand";
+  return photo
+    ? `<img src="${escapeHtml(photo)}" alt="Portraet ${escapeHtml(name)}" ${liveImageAttrs("member")}>`
+    : `<span class="avatar">${escapeHtml(initials(name))}</span>`;
 }
 
 function speakerPortrait(speaker) {
@@ -1019,34 +1015,43 @@ function internalDesktopSection(block, meta) {
 function internalOverviewPage(bereich) {
   return async function renderInternalOverview() {
     const meta = internalPageMeta[bereich];
+    const leanInternal = mobileLeanStart();
+    const cacheName = `internal-${bereich}`;
+    const cacheVariant = leanInternal ? "mobile" : "desktop";
+    const cachedInternal = readPageContentCache(cacheName, cacheVariant, 600000);
+    if (cachedInternal) return publicShell(meta.active, cachedInternal);
     const [blocks, events, board, rawMembers, topics] = bereich === "ueber_uns"
       ? await Promise.all([
-        internalBlocks(bereich),
-        listPublicEvents().catch(() => []),
-        listPublicContent("boardMembers").catch(() => []),
-        listPublicContent("members").catch(() => []),
-        listPublicContent("topics").catch(() => [])
+        fastFallback(internalBlocks(bereich).catch(() => []), [], leanInternal ? 900 : 1800),
+        leanInternal ? [] : fastFallback(listPublicEvents().catch(() => []), [], 1600),
+        leanInternal ? [] : fastFallback(listPublicContent("boardMembers").catch(() => []), [], 1600),
+        leanInternal ? [] : fastFallback(listPublicContent("members").catch(() => []), [], 1600),
+        leanInternal ? [] : fastFallback(listPublicContent("topics").catch(() => []), [], 1600)
       ])
-      : [await internalBlocks(bereich), [], [], [], []];
-    const members = mobileLeanStart() ? rawMembers : await withPublicMemberLogos(rawMembers);
+      : [await fastFallback(internalBlocks(bereich).catch(() => []), [], leanInternal ? 900 : 1800), [], [], [], []];
+    const members = leanInternal ? rawMembers : await fastFallback(withPublicMemberLogos(rawMembers).catch(() => rawMembers), rawMembers, 1200);
     const hero = blocks.find((block) => block.typ === "hero") || blocks[0];
     const cards = blocks.map((block) => internalCard(block, meta)).join("");
     const aboutCards = aboutCardGroups(blocks, meta);
     const aboutTexts = blocks.map((block) => aboutLongTextSection(block)).join("");
     const desktopSections = blocks.map((block) => internalDesktopSection(block, meta)).join("");
     if (bereich === "ueber_uns") {
-      return publicShell(meta.active, `${subhero(meta.eyebrow, meta.title, meta.intro)}
+      const content = `${subhero(meta.eyebrow, meta.title, meta.intro)}
       <section class="section internal-overview internal-overview--about"><div class="container"><div class="internal-about-layout"><div class="internal-about-main">
         <div class="internal-mobile-list internal-mobile-list--about">${aboutCards || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
         <div class="internal-about-texts">${aboutTexts}</div>
         </div>${aboutStickyContent(events, board, members, topics)}</div>
-      </div></section>`);
+      </div></section>`;
+      writePageContentCache(cacheName, cacheVariant, content);
+      return publicShell(meta.active, content);
     }
-    return publicShell(meta.active, `${subhero(meta.eyebrow, hero?.titel || meta.title, hero?.kurztext || meta.intro)}
+    const content = `${subhero(meta.eyebrow, hero?.titel || meta.title, hero?.kurztext || meta.intro)}
       <section class="section internal-overview"><div class="container">
         <div class="internal-mobile-list">${cards || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
         <div class="internal-desktop-sections">${desktopSections || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
-      </div></section>`);
+      </div></section>`;
+    writePageContentCache(cacheName, cacheVariant, content);
+    return publicShell(meta.active, content);
   };
 }
 
@@ -1775,13 +1780,30 @@ function homeVisibleRecord(item = {}) {
     && item.isLive !== false;
 }
 
+function explicitOffFlag(value) {
+  if (value === false || value === 0) return true;
+  if (typeof value !== "string") return false;
+  return ["false", "0", "no", "nein", "off", "aus", "inactive", "inaktiv"].includes(value.trim().toLowerCase());
+}
+
 function eventShowsOnHome(event = {}) {
-  return event.showOnHome !== false;
+  const homeKey = normalizeTopicType(`${event.id || ""} ${event.title || event.titel || ""} ${event.eventType || ""} ${event.series || ""}`);
+  if (homeKey.includes("vondenbestenlernen")) return false;
+  return ![
+    event.showOnHome,
+    event.show_on_home,
+    event.displayOnHome,
+    event.display_on_home,
+    event.homePage,
+    event.homepage,
+    event.startseite,
+    event.onHome
+  ].some(explicitOffFlag);
 }
 
 function homeRetrospectiveItems(events = [], editorial = []) {
   const pastEvents = events
-    .filter((event) => isPastEvent(event) && homeVisibleRecord(event))
+    .filter((event) => isPastEvent(event) && homeVisibleRecord(event) && eventShowsOnHome(event))
     .map((event) => ({ ...event, homeType: "event-retrospective", href: "#/archive", dateKey: homeDateValue(event) }));
   const articles = editorial
     .filter(isRetrospectiveArticle)
@@ -1809,7 +1831,7 @@ function homeFormatSeries(blocks = []) {
     .filter((block) => block.typ === "eventformat")
     .filter((block) => {
       const key = normalizeTopicType(`${block.slug || ""} ${block.titel || ""}`);
-      if (key.includes("vondenbestenlernen")) return block.showOnHome === true;
+      if (key.includes("vondenbestenlernen")) return false;
       return key.includes("medienfruehstueck") || key.includes("medienfruehstuecke");
     })
     .sort((a, b) => Number(a.sortierung || 0) - Number(b.sortierung || 0))
@@ -1936,7 +1958,7 @@ function homeHeroMarkup({ next, nextImageUrl, retrospective, series }) {
 }
 
 function pageContentCacheKey(name = "", variant = "public") {
-  return `pdtv-page-content-v4:${name}:${variant}`;
+  return `pdtv-page-content-v15:${name}:${variant}`;
 }
 
 function readPageContentCache(name = "", variant = "public", maxAgeMs = 600000) {
@@ -1955,6 +1977,38 @@ function writePageContentCache(name = "", variant = "public", html = "") {
   } catch {}
 }
 
+function memberProfileCacheKey(user = {}) {
+  const memberId = user.memberId || "";
+  const userKey = user.uid || user.email || "member";
+  return memberId ? `pdtv-member-profile-v2:${userKey}:${memberId}` : "";
+}
+
+function readCachedMemberProfile(user = {}, maxAgeMs = 900000) {
+  try {
+    const key = memberProfileCacheKey(user);
+    if (!key) return null;
+    const cached = JSON.parse(localStorage.getItem(key) || "null");
+    if (!cached?.member || Date.now() - Number(cached.createdAt || 0) > maxAgeMs) return null;
+    return cached.member;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedMemberProfile(user = {}, member = null) {
+  try {
+    const key = memberProfileCacheKey(user);
+    if (key && member?.id) localStorage.setItem(key, JSON.stringify({ createdAt: Date.now(), member }));
+  } catch {}
+}
+
+function fastFallback(promise, fallback = [], ms = 1500) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallback), ms))
+  ]);
+}
+
 export async function homePage() {
   const homeVariant = mobileLeanStart() ? "mobile" : "desktop";
   const cachedHome = readPageContentCache("home", homeVariant, 600000);
@@ -1965,7 +2019,7 @@ export async function homePage() {
   ]);
   const leanHome = homeVariant === "mobile";
   const [events, editorial, topics, speakers, aboutBlocks] = await Promise.all([
-    withHomeTimeout(listPublicEvents().catch(() => []), [], leanHome ? 9000 : 24000),
+    withHomeTimeout(listPublicEvents(true).catch(() => []), [], leanHome ? 9000 : 24000),
     withHomeTimeout(listPublicContent("editorialContent").catch(() => []), [], leanHome ? 9000 : 24000),
     withHomeTimeout(listPublicContent("topics").catch(() => []), [], leanHome ? 7000 : 24000),
     withHomeTimeout(listPublicContent("speakers").catch(() => []), [], leanHome ? 7000 : 24000),
@@ -1974,9 +2028,9 @@ export async function homePage() {
   const upcoming = events.filter(upcomingEventIsVisible).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const next = upcoming.find(eventShowsOnHome) || null;
   let nextImageUrl = next ? upcomingEventImageUrl(next, [], { fallback: false }) : "";
-  if (next && !nextImageUrl) {
-    const mediaAssets = await withHomeTimeout(listPublicEventMediaAssets([next]).catch(() => []), [], 5000);
-    nextImageUrl = upcomingEventImageUrl(next, mediaAssets, { fallback: false });
+  if (next) {
+    const mediaAssets = await withHomeTimeout(listPublicEventMediaAssets([next]).catch(() => []), [], leanHome ? 900 : 1400);
+    nextImageUrl = upcomingEventImageUrl(next, mediaAssets, { fallback: false }) || nextImageUrl;
   }
   const retrospective = homeRetrospectiveItems(events, editorial)[0] || null;
   const seriesItems = homeFormatSeries(aboutBlocks);
@@ -2097,14 +2151,18 @@ export async function eventsPage() {
   if (cachedEvents) return publicShell("events", cachedEvents);
   const leanEvents = mobileLeanStart();
   const [events, sponsors] = await Promise.all([
-    listPublicEvents(isMember(user)).catch(() => []),
+    listPublicEvents(true).catch(() => []),
     leanEvents ? [] : listPublicContent("sponsors").catch(() => [])
   ]);
   const visible = events.filter((event) => event.accessType !== "invitation_only" || isMember(user) || event.showPublicTeaser);
   const rawUpcoming = visible.filter(upcomingEventIsVisible);
+  const withRegistrationTimeout = (promise, fallback = []) => Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallback), leanEvents ? 700 : 1200))
+  ]);
   const myRegistrationByEventId = new Map(
     user?.email
-      ? (await listMyEventRegistrations(rawUpcoming.map((event) => event.id)).catch(() => []))
+      ? (await withRegistrationTimeout(listMyEventRegistrations(rawUpcoming.map((event) => event.id)).catch(() => [])))
         .map((registration) => [registration.eventId, registration])
       : []
   );
@@ -2114,9 +2172,23 @@ export async function eventsPage() {
     storedTicket: readStoredTicket(event.id),
     myRegistration: myRegistrationByEventId.get(event.id) || null
   }));
+  const latestRetrospectives = visible
+    .filter((event) => isPastEvent(event) && homeVisibleRecord(event))
+    .sort((a, b) => String(homeDateValue(b) || "").localeCompare(String(homeDateValue(a) || "")))
+    .slice(0, 3);
+  const retrospectiveCards = latestRetrospectives.map((event) => {
+    const imageUrl = archiveEventImageUrl(event, []) || event.imageDisplayUrl || event.imageUrl || event.thumbnail_url || event.thumbnailUrl || "";
+    const detailUrl = event.retrospectiveArticleId ? `#/retrospective/${escapeHtml(event.retrospectiveArticleId)}` : `#/event/${escapeHtml(event.id)}`;
+    const teaser = teaserText(event.retrospectiveTitle || event.description || event.publicTeaser || event.shortDescription || event.subtitle || "", 150);
+    return `<a class="card event-retrospective-card" href="${detailUrl}">
+      ${imageUrl ? `<figure class="event-retrospective-card__image"><img src="${escapeHtml(imageUrl)}" alt="Rückblick ${escapeHtml(event.title || "")}" loading="lazy" decoding="async"></figure>` : `<span class="quick-card__icon">${escapeHtml(event.eventType || "R")}</span>`}
+      <div class="card__body"><p class="eyebrow">${formatDate((event.date || "").slice(0, 10)) || "Rückblick"}</p><h3>${escapeHtml(event.retrospectiveTitle || event.title || "Rückblick")}</h3>${teaser ? `<p>${escapeHtml(teaser)}</p>` : ""}<span class="link">Rückblick ansehen -></span></div>
+    </a>`;
+  }).join("");
   const eventsContent = `${subhero("Veranstaltungen", "Events", "Kuratierte Formate für Wissenstransfer, Partnerschaften und relevante Branchenkontakte.")}
     <section class="section"><div class="container"><div class="filters"><button class="filter active">Kommende Events</button><button class="filter">Öffentlich</button><button class="filter">Mitglieder</button><a class="filter" href="#/archive">Rückblicke</a></div>
-    ${upcoming.length ? `<div class="card-grid card-grid--three">${upcoming.map((event) => eventCard(event, false, sponsors)).join("")}</div>` : `<div class="alert">Aktuell sind keine neuen Termine veröffentlicht. Im Eventarchiv finden Sie die letzten PROdigitalTV-Veranstaltungen.</div>`}</div></section>`;
+    ${upcoming.length ? `<div class="card-grid card-grid--three">${upcoming.map((event) => eventCard(event, false, sponsors)).join("")}</div>` : `<div class="alert">Aktuell sind keine neuen Termine veröffentlicht. Im Eventarchiv finden Sie die letzten PROdigitalTV-Veranstaltungen.</div>`}
+    ${retrospectiveCards ? `<div class="section-head section-head--inline events-retrospective-head"><div><p class="eyebrow">Rückblicke</p><h2>Letzte Veranstaltungen</h2></div><a class="link" href="#/archive">Alle Rückblicke -></a></div><div class="card-grid card-grid--three">${retrospectiveCards}</div>` : ""}</div></section>`;
   writePageContentCache("events", eventVariant, eventsContent);
   return publicShell("events", eventsContent);
 }
@@ -2494,22 +2566,33 @@ export async function topicDetailPage(id) {
 export const aboutPage = internalOverviewPage("ueber_uns");
 
 export async function membersPage() {
-  const members = await publicManagedMembers();
+  const memberVariant = mobileLeanStart() ? "mobile" : "desktop";
+  const cachedMembers = readPageContentCache("members", memberVariant, 600000);
+  if (cachedMembers) return publicShell("members", cachedMembers);
+  const rawMembers = await fastFallback(publicManagedMembers().catch(() => []), [], mobileLeanStart() ? 900 : 1800);
+  const members = await fastFallback(withPublicMemberLogos(rawMembers).catch(() => rawMembers), rawMembers, mobileLeanStart() ? 700 : 1200);
   const memberRows = members.map((member) => {
-    const teaser = member.description || "";
+    const teaser = member.description || member.shortDescription || "";
     const searchText = [member.name, teaser, member.city, member.country, member.website].filter(Boolean).join(" ");
-    return `<article class="member-directory-card" data-member-card data-search="${escapeHtml(searchText.toLowerCase())}"><div class="member-tile">${memberLogo(member)}</div><div class="member-directory-card__body"><h3>${escapeHtml(member.name)}</h3>${teaser ? `<p>${escapeHtml(teaser)}</p>` : ""}<span class="member-directory-card__meta">${escapeHtml(member.city || "")}${member.country ? ` · ${escapeHtml(member.country)}` : ""}</span></div>${member.website ? `<a class="button button--secondary button--small" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Website</a>` : ""}</article>`;
+    const logoUrl = safeMemberLogoUrl(member, member.logoDisplayUrl || member.logoUrl || "");
+    return `<article class="member-directory-card ${logoUrl ? "" : "member-directory-card--no-logo"}" data-member-card data-search="${escapeHtml(searchText.toLowerCase())}"><div class="member-tile">${memberLogo(member, { initialFallback: true })}</div><div class="member-directory-card__body"><h3>${escapeHtml(member.name)}</h3>${teaser ? `<p>${escapeHtml(teaser)}</p>` : ""}<span class="member-directory-card__meta">${escapeHtml(member.city || "")}${member.country ? ` · ${escapeHtml(member.country)}` : ""}</span></div>${member.website ? `<a class="button button--secondary button--small" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Website</a>` : ""}</article>`;
   }).join("");
-  return publicShell("members", `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform für Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
-    <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input data-member-search placeholder="Mitglieder suchen" aria-label="Mitglieder suchen"></div></div><div class="member-directory-list">${memberRows}</div><div class="alert" data-member-empty hidden>Keine passenden sichtbaren Mitglieder gefunden.</div></div></section>`);
-  return publicShell("members", `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform für Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
-    <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input placeholder="Mitglieder suchen"></div></div><div class="card-grid card-grid--three">${members.map((member) => `<article class="card card__body"><div class="member-tile" style="margin-bottom:16px">${memberLogo(member)}</div><h3 style="margin:15px 0 8px">${escapeHtml(member.name)}</h3><p>${escapeHtml(member.description || "")}</p><p style="margin-top:12px">${escapeHtml(member.city)}${member.country ? ` · ${escapeHtml(member.country)}` : ""}</p>${member.website ? `<a class="link" style="display:inline-block;margin-top:14px" href="${escapeHtml(member.website)}" target="_blank" rel="noopener">Zur Website →</a>` : ""}</article>`).join("")}</div></div></section>`);
+  const content = `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform für Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
+    <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input data-member-search placeholder="Mitglieder suchen" aria-label="Mitglieder suchen"></div></div><div class="member-directory-list">${memberRows}</div><div class="alert" data-member-empty hidden>Keine passenden sichtbaren Mitglieder gefunden.</div></div></section>`;
+  writePageContentCache("members", memberVariant, content);
+  return publicShell("members", content);
 }
 
 export async function boardPage() {
-  const board = await listPublicContent("boardMembers");
+  const board = (await listPublicContent("boardMembers").catch(() => []))
+    .filter((person) => {
+      const status = String(person.status || "active").toLowerCase();
+      const visibility = String(person.visibility || "public").toLowerCase();
+      return !["inactive", "draft", "archived", "deleted"].includes(status) && !["hidden", "private", "internal"].includes(visibility);
+    })
+    .sort((a, b) => Number(a.sort || a.order || 999) - Number(b.sort || b.order || 999));
   return publicShell("board", `${subhero("Vorstand", "Verantwortung und Perspektive.", "Der Vorstand repraesentiert die Vielfalt und Expertise der digitalen Medienwirtschaft.")}
-    <section class="section"><div class="container card-grid card-grid--three board-grid">${board.map((person) => `<article class="card board-card"><div class="board-photo ${person.id === "board-beate-busch" ? "board-photo--contain" : ""}">${boardPortrait(person)}</div><p class="eyebrow">${escapeHtml(person.role)}</p><h3>${escapeHtml(person.name)}</h3><p style="margin:8px 0">${escapeHtml(person.company)}</p><p>${escapeHtml(person.shortBio)}</p></article>`).join("")}</div></section>`);
+    <section class="section"><div class="container card-grid card-grid--three board-grid">${board.length ? board.map((person) => `<article class="card board-card"><div class="board-photo ${person.id === "board-beate-busch" ? "board-photo--contain" : ""}">${boardPortrait(person)}</div><p class="eyebrow">${escapeHtml(person.role || "Vorstand")}</p><h3>${escapeHtml(person.name || "Vorstandsmitglied")}</h3>${person.company ? `<p style="margin:8px 0">${escapeHtml(person.company)}</p>` : ""}${person.shortBio ? `<p>${escapeHtml(person.shortBio)}</p>` : ""}</article>`).join("") : `<div class="alert">Der Vorstand wird aktuell vorbereitet.</div>`}</div></section>`);
 }
 
 export async function archivePage() {
@@ -2711,26 +2794,40 @@ function membershipFormSection() {
 
 export async function joinPage() {
   const meta = internalPageMeta.mitglied_werden;
+  const joinVariant = mobileLeanStart() ? "mobile" : "desktop";
+  const cachedJoin = readPageContentCache("join", joinVariant, 600000);
+  if (cachedJoin) return publicShell("join", cachedJoin);
   const [blocks, downloads, editorial] = await Promise.all([
-    internalBlocks("mitglied_werden"),
-    listPublicContent("downloads").catch(() => []),
-    listPublicContent("editorialContent").catch(() => [])
+    fastFallback(internalBlocks("mitglied_werden").catch(() => []), [], mobileLeanStart() ? 900 : 1800),
+    fastFallback(listPublicContent("downloads").catch(() => []), [], mobileLeanStart() ? 700 : 1400),
+    fastFallback(listPublicContent("editorialContent").catch(() => []), [], mobileLeanStart() ? 900 : 1800)
   ]);
   const hero = blocks.find((block) => block.typ === "hero") || blocks[0];
   const cardBlocks = blocks.filter((block) => block.typ !== "hero");
   const joinCards = aboutCardGroups(cardBlocks, meta, { summary: "long", all: true, joinCta: true });
   const joinTexts = blocks.map((block) => aboutLongTextSection(block, { joinCta: block.typ !== "hero" })).join("");
-  return publicShell("join", `${subhero(meta.eyebrow, hero?.titel || meta.title, hero?.kurztext || meta.intro)}
+  const content = `${subhero(meta.eyebrow, hero?.titel || meta.title, hero?.kurztext || meta.intro)}
   <section class="section internal-overview internal-overview--join"><div class="container"><div class="internal-about-layout"><div class="internal-about-main">
     <div class="internal-mobile-list internal-mobile-list--about">${joinCards || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
     <div class="internal-about-texts">${joinTexts}</div>
-  </div>${joinAside(downloads, editorial)}</div></div></section>${membershipFormSection()}`);
+  </div>${joinAside(downloads, editorial)}</div></div></section>${membershipFormSection()}`;
+  writePageContentCache("join", joinVariant, content);
+  return publicShell("join", content);
 }
 
 export async function loginPage() {
   const user = currentUser();
   const activeSession = user ? `<div class="alert" style="margin-bottom:18px">Aktuell angemeldet als ${escapeHtml(user.email || user.displayName || user.uid || "Benutzer")} mit Rolle ${escapeHtml(user.role || "guest")}.</div><button id="logout-button" class="button button--secondary" type="button">Abmelden / Session loeschen</button>` : "";
-  return publicShell("login", `<section class="login-wrap"><div class="container"><form id="login-form" class="form-card login-card">${logo()}<p class="eyebrow">Mitgliederbereich</p><h1 style="margin-bottom:10px">Anmelden</h1><p style="margin-bottom:25px">Zugriff auf exklusive Events, Downloads und CMS-Funktionen. Nach erfolgreichem Login wird ein Firebase-ID-Token fuer die aktuelle Sitzung gespeichert.</p>${activeSession}<div class="form-grid"><button id="google-login-button" class="button button--secondary" type="button">Mit Google anmelden</button><div class="login-divider"><span>oder mit E-Mail</span></div><div class="field"><label>E-Mail</label><input name="email" type="email" value="" required></div><div class="field"><label>Passwort</label><input name="password" type="password" value="" required></div><button class="button button--primary">Einloggen</button><p class="muted">Produktiv zaehlt die Rolle aus Firestore unter <code>users/{uid}</code>. Der Token wird automatisch erneuert und beim Logout geloescht.</p><div id="login-result"></div></div></form></div></section>`);
+  return publicShell("login", `<section class="login-wrap"><div class="container"><form id="login-form" class="form-card login-card">${logo()}<p class="eyebrow">Mitgliederbereich</p><h1 style="margin-bottom:10px">Anmelden</h1><p style="margin-bottom:25px">Zugriff auf exklusive Events, Downloads und CMS-Funktionen. Nach erfolgreichem Login wird ein Firebase-ID-Token fuer die aktuelle Sitzung gespeichert.</p>${activeSession}<div class="form-grid"><div class="field"><label>E-Mail</label><input name="email" type="email" value="" required></div><div class="field"><label>Passwort</label><input name="password" type="password" value="" required></div><button class="button button--primary">Einloggen</button><p class="muted">Produktiv zaehlt die Rolle aus Firestore unter <code>users/{uid}</code>. Der Token wird automatisch erneuert und beim Logout geloescht.</p><div id="login-result"></div></div></form></div></section>`);
+}
+
+export async function userInvitationPage(invitationId = "", query = new URLSearchParams(), tokenFromPath = "") {
+  invitationId = invitationId || query.get("invitationId") || query.get("invitation") || query.get("id") || "";
+  const token = tokenFromPath || query.get("token") || "";
+  if (!invitationId || !token) {
+    return publicShell("login", `${subhero("Zugang", "Einladungslink unvollstaendig", "Bitte oeffnen Sie den vollstaendigen Link aus der E-Mail.")}`, { prompts: false, bottomNav: false });
+  }
+  return publicShell("login", `<section class="login-wrap"><div class="container"><form id="user-invitation-form" class="form-card login-card" data-invitation-id="${escapeHtml(invitationId)}" data-token="${escapeHtml(token)}">${logo()}<p class="eyebrow">Zugang aktivieren</p><h1 style="margin-bottom:10px">Passwort vergeben</h1><p style="margin-bottom:25px">Dieser Link legitimiert Sie fuer den vorbereiteten PROdigitalTV-Zugang. Nach dem Speichern werden Sie mit Ihrer Rolle am System angemeldet.</p><div class="form-grid"><div class="field"><label>Neues Passwort</label><input name="password" type="password" minlength="8" autocomplete="new-password" required></div><div class="field"><label>Passwort wiederholen</label><input name="passwordRepeat" type="password" minlength="8" autocomplete="new-password" required></div><button class="button button--primary">Zugang aktivieren</button><p class="muted">Das Passwort muss mindestens 8 Zeichen lang sein. Der Einladungslink kann nur einmal verwendet werden.</p><div id="user-invitation-result"></div></div></form></div></section>`, { prompts: false, bottomNav: false });
 }
 export async function portalPage() {
   const user = currentUser();
@@ -2899,15 +2996,7 @@ export async function memberPortalPage() {
   const user = currentUser();
   if (!user) return loginPage();
   if (!isMember(user)) return portalPage();
-  const adminMode = isAdmin(user);
   const leanPortal = mobileLeanStart();
-  const selectedMemberId = (() => {
-    try {
-      return new URLSearchParams((window.location.hash.split("?")[1] || "")).get("memberId") || "";
-    } catch {
-      return "";
-    }
-  })();
   const activeTab = (() => {
     try {
       return new URLSearchParams((window.location.hash.split("?")[1] || "")).get("tab") || "overview";
@@ -2915,16 +3004,25 @@ export async function memberPortalPage() {
       return "overview";
     }
   })();
-  const ownMember = adminMode
-    ? null
-    : user.memberId ? await getOne("members", user.memberId).catch(() => null) : null;
-  const linkedMemberBlocked = !adminMode && ownMember?.id && !memberHasPortalAccess(ownMember);
+  const cachedDirectorySection = activeTab === "directory"
+    ? readPageContentCache("member-portal-directory", "members", 900000)
+    : "";
+  const cachedOwnMember = readCachedMemberProfile(user);
+  const ownMemberPromise = user.memberId
+    ? getOne("members", user.memberId).then((member) => {
+      if (member?.id) writeCachedMemberProfile(user, member);
+      return member;
+    }).catch(() => null)
+    : Promise.resolve(null);
+  if (cachedOwnMember) ownMemberPromise.catch(() => {});
+  const ownMember = cachedOwnMember || (activeTab === "profile" ? await fastFallback(ownMemberPromise, null, 2500) : null);
+  const linkedMemberBlocked = ownMember?.id && !memberHasPortalAccess(ownMember);
   const needsEvents = activeTab === "overview" || activeTab === "events";
   const needsSponsors = needsEvents;
   const needsDocuments = activeTab === "documents";
   const needsArticles = activeTab === "overview" || activeTab === "documents";
   const needsGalleries = needsArticles;
-  const needsMembers = activeTab === "directory" || adminMode || (!leanPortal && activeTab === "overview");
+  const needsMembers = !cachedDirectorySection && (activeTab === "directory" || (!leanPortal && activeTab === "overview"));
   const [allEvents, sponsors, memberDocuments, members, memberVideos, galleries] = await Promise.all([
     needsEvents ? listPublicEvents(true).catch(() => []) : [],
     needsSponsors ? listPublicContent("sponsors").catch(() => []) : [],
@@ -2936,24 +3034,13 @@ export async function memberPortalPage() {
   const sortedMembers = members
     .slice()
     .sort((a, b) => Number(a.sortOrder || 9999) - Number(b.sortOrder || 9999) || String(a.name || "").localeCompare(String(b.name || "")));
-  const adminSelectedId = adminMode ? selectedMemberId || user.memberId || sortedMembers[0]?.id || "" : "";
-  const adminSelectedMember = adminMode && adminSelectedId
-    ? sortedMembers.find((member) => member.id === adminSelectedId) || await getOne("members", adminSelectedId).catch(() => null)
-    : null;
-  const editableMember = adminMode ? adminSelectedMember : ownMember;
-  const profileAccessNotice = !adminMode && (!ownMember?.id || linkedMemberBlocked)
+  const profileAccessNotice = activeTab === "profile" && (!ownMember?.id || linkedMemberBlocked)
     ? `<div class="alert alert--warning member-portal-link-warning">${linkedMemberBlocked
       ? `Ihr Mitgliedsprofil ist aktuell nicht fuer die Profilpflege freigeschaltet. Die Mitgliederliste bleibt sichtbar.`
       : user.memberId
         ? `Das verknuepfte Mitgliedsprofil <code>${escapeHtml(user.memberId)}</code> wurde noch nicht gefunden. Die Mitgliederliste bleibt sichtbar; die Profilpflege ist erst nach korrekter Verknuepfung moeglich.`
         : `Ihr Login ist noch keinem Mitgliedsprofil zugeordnet. Die Mitgliederliste bleibt sichtbar; die Profilpflege ist erst nach Verknuepfung mit einem Mitgliedsdatensatz moeglich.`}</div>`
     : "";
-  const adminDropdown = adminMode ? `<form class="form-card form-grid" data-admin-member-picker>
-    <p class="eyebrow">Admin</p>
-    <div class="field"><label>Mitglied auswählen</label><select name="memberId" data-admin-member-select>
-      ${sortedMembers.map((member) => `<option value="${escapeHtml(member.id)}" ${member.id === adminSelectedId ? "selected" : ""}>${escapeHtml([member.name || member.id, member.city].filter(Boolean).join(" / "))}</option>`).join("")}
-    </select></div>
-  </form>` : "";
   const events = allEvents.filter((event) => event.accessType === "members_only" && eventRegistrationIsOpen(event));
   const visibleDocuments = memberDocuments
     .filter((item) => item.status === "published" && (item.visibility || "members") === "members")
@@ -2989,14 +3076,17 @@ export async function memberPortalPage() {
     ["events", "Events"],
     ["upload", "Foto-Upload"]
   ];
-  const selectedMemberQuery = adminMode && adminSelectedId ? `&memberId=${encodeURIComponent(adminSelectedId)}` : "";
-  const tabNav = `<nav class="member-portal-tabs" aria-label="Mitgliederbereich">${tabs.map(([key, label]) => `<a href="#/portal?tab=${key}${selectedMemberQuery}" class="${activeTab === key ? "active" : ""}">${label}</a>`).join("")}</nav>`;
+  const tabNav = `<nav class="member-portal-tabs" aria-label="Mitgliederbereich">${tabs.map(([key, label]) => `<a href="#/portal?tab=${key}" class="${activeTab === key ? "active" : ""}">${label}</a>`).join("")}</nav>`;
   const documentsSection = `<section class="member-portal-section member-portal-section--documents"><div class="section-head"><div><h2>Mitglieder-Dokumente</h2><p class="muted">Freigegebene Unterlagen und Anlagen für Mitglieder.</p></div></div><div class="card-grid card-grid--three">${visibleDocuments.length ? visibleDocuments.map(documentCard).join("") : `<div class="alert">Noch keine freigegebenen Mitgliederdokumente.</div>`}</div></section>`;
   const memberInfosSection = `<section class="member-portal-section member-portal-section--infos"><div class="section-head"><h2>Member Infos</h2></div><div class="member-article-list">${visibleMemberArticles.length ? visibleMemberArticles.map((article) => memberArticleCard(article, galleries)).join("") : `<div class="alert">Noch keine Mitgliederbeitr&auml;ge sichtbar.</div>`}</div></section>`;
-  const profileSection = `<section class="member-portal-section"><div class="section-head"><h2>${adminMode ? "Mitgliedsprofil bearbeiten" : "Mein Profil"}</h2></div>${adminDropdown}${memberProfileForm(editableMember, user, { adminMode })}</section>`;
-  const directorySection = `<section class="member-portal-section"><div class="section-head"><h2>Mitgliederverzeichnis</h2></div><div class="card-grid card-grid--three member-directory-grid">${visibleMembers.length ? visibleMembers.map(memberDirectoryCard).join("") : `<div class="alert">Noch keine freigegebenen Mitglieder.</div>`}</div></section>`;
+  const profileSection = `<section class="member-portal-section"><div class="section-head"><h2>Mein Profil</h2></div>${memberProfileForm(ownMember, user, { adminMode: false })}</section>`;
+  const renderedDirectorySection = `<section class="member-portal-section"><div class="section-head"><h2>Mitgliederverzeichnis</h2></div><div class="card-grid card-grid--three member-directory-grid">${visibleMembers.length ? visibleMembers.map(memberDirectoryCard).join("") : `<div class="alert">Noch keine freigegebenen Mitglieder.</div>`}</div></section>`;
+  if (!cachedDirectorySection && activeTab === "directory" && visibleMembers.length) {
+    writePageContentCache("member-portal-directory", "members", renderedDirectorySection);
+  }
+  const directorySection = cachedDirectorySection || renderedDirectorySection;
   const eventsSection = `<section class="member-portal-section"><div class="section-head"><h2>Mitglieder-Events</h2></div><div class="card-grid card-grid--three">${events.length ? events.map((event) => eventCard(event, false, sponsors)).join("") : `<div class="alert">Aktuell keine Mitglieder-Events.</div>`}</div></section>`;
-  const uploadSection = `<section class="member-portal-section"><div class="section-head"><div><h2>Foto-Upload</h2><p class="muted">Bilder an die Redaktion senden. Die Zuordnung erfolgt spaeter im CMS.</p></div></div><form id="member-material-upload-form" class="form-card form-grid member-upload-form"><label class="button button--primary member-photo-upload-button">Fotos auswaehlen<input name="files" type="file" accept="image/*" multiple hidden></label><div class="field"><label>Hinweistext</label><textarea name="note" rows="3" placeholder="z. B. Eventname, Ort oder kurzer Hinweis"></textarea></div><label class="checkbox-line"><input type="checkbox" name="rightsConfirmed" value="1" required> Nutzungsfreigabe bestätigen</label><button class="button button--primary" type="submit">Bilder senden</button><div id="member-material-upload-result"></div></form></section>`;
+  const uploadSection = `<section class="member-portal-section member-portal-section--upload"><div class="section-head"><div><h2>Foto-Upload</h2><p class="muted">Bilder an die Redaktion senden.</p></div></div><form id="member-material-upload-form" class="form-card member-upload-form"><div class="member-upload-form__top"><label class="button button--primary member-photo-upload-button">Fotos auswaehlen<input name="files" type="file" accept="image/*" multiple hidden></label><label class="checkbox-line member-upload-form__rights"><input type="checkbox" name="rightsConfirmed" value="1" required> Nutzungsfreigabe</label></div><div class="member-photo-upload-state" data-member-photo-state>Keine Bilder ausgewaehlt.</div><div class="member-photo-preview" data-member-photo-preview hidden></div><div class="field member-upload-form__note"><label>Hinweis</label><textarea name="note" rows="2" placeholder="Event, Ort oder kurzer Hinweis"></textarea></div><button class="button button--primary member-upload-form__send" type="submit">Bilder senden</button><div id="member-material-upload-result"></div></form></section>`;
   const directoryCount = needsMembers ? visibleMembers.length : ">";
   const overviewSection = `<section class="member-portal-section"><div class="member-portal-overview"><article class="member-portal-card member-portal-card--infos"><span>${visibleMemberArticles.length}</span><h3>Member Infos</h3><p>Mitgliederbeiträge, Dokumente und Anlagen abrufen.</p><a href="#/portal?tab=documents">Öffnen</a></article><article class="member-portal-card member-portal-card--directory"><span>${escapeHtml(String(directoryCount))}</span><h3>Mitgliederliste</h3><p>Aktuelle Mitglieder und freigegebene Kontaktdaten.</p><a href="#/portal?tab=directory">Öffnen</a></article><article class="member-portal-card member-portal-card--profile"><span>1</span><h3>Mein Profil</h3><p>Eigene Mitgliedsdaten pflegen.</p><a href="#/portal?tab=profile">Bearbeiten</a></article><article class="member-portal-card member-portal-card--upload"><span>+</span><h3>Foto-Upload</h3><p>Fotos an die Redaktion senden.</p><a href="#/portal?tab=upload">Hochladen</a></article></div></section>`;
   const content = activeTab === "profile" ? profileSection
@@ -3007,7 +3097,6 @@ export async function memberPortalPage() {
     : overviewSection;
   return publicShell("login", `${subhero("Mitgliederbereich", `Willkommen, ${escapeHtml(user.displayName)}.`, "Dokumente, Mitgliederverzeichnis und eigenes Profil.")}
     <section class="section section--white member-portal-shell"><div class="container">
-      <div class="section-head member-portal-userbar"><p class="muted">Angemeldet als ${escapeHtml(user.email || "")}</p><button id="logout-button" class="button button--secondary">Abmelden</button></div>
       ${tabNav}
       ${profileAccessNotice}
       ${content}

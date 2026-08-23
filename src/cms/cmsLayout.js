@@ -75,8 +75,8 @@ const sections = [
     route: "cms/ai-access",
     title: "System",
     children: [
-      ["cms/users", "User"],
       ["cms/quality", "Qualitätsprüfung"],
+      ["cms/privacy-consents", "Datenschutz-Consents"],
       ["cms/ai-access", "KI-Zugaenge"],
       ["cms/chatgpt", "ChatGPT"],
       ["cms/ai-settings", "ChatGPT-Einstellungen"],

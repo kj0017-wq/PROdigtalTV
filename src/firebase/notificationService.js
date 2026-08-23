@@ -30,6 +30,20 @@ export async function previewEventNotification(input = {}) {
   return (await callable({ input })).data;
 }
 
+export async function getLiveSurvey(surveyId = "") {
+  const firebase = await getFirebaseServices();
+  if (!firebase) throw new Error("Firebase ist nicht erreichbar. Umfrage kann nicht geladen werden.");
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "getLiveSurvey");
+  return (await callable({ surveyId })).data;
+}
+
+export async function submitLiveSurveyResponse(input = {}) {
+  const firebase = await getFirebaseServices();
+  if (!firebase) throw new Error("Firebase ist nicht erreichbar. Antwort kann nicht gespeichert werden.");
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "submitLiveSurveyResponse");
+  return (await callable({ input })).data;
+}
+
 export async function getNotificationPushStatus(emails = []) {
   const firebase = await getFirebaseServices();
   if (!firebase) return { activeEmails: [] };

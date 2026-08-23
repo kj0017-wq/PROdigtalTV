@@ -48,7 +48,7 @@ export function header(active) {
   </div><nav class="public-mobile-menu" data-public-menu aria-label="Mobile Navigation">
     ${nav.map(menuLink).join("")}
     <div class="public-mobile-submenu" aria-label="Ueber uns Untermenue">${aboutSubnav.map(([route, label]) => `<a class="${active === route ? "active" : ""}" href="#/${route}" data-public-menu-close>${label}</a>`).join("")}</div>
-    ${showCmsLink(user) ? `<a href="/cms.html#/cms" data-public-menu-close>CMS</a>` : ""}
+    ${showCmsLink(user) ? `<a href="/cms.html#/cms/live" data-public-menu-close>Mobil-CMS</a>` : ""}
     <a href="#/${user ? "portal" : "login"}" data-public-menu-close>${user ? "Profil" : "Login"}</a>
   </nav></header>`;
 }
@@ -73,6 +73,48 @@ export function footer() {
   </div><div class="container footer__meta">ProDigitalTV e.V. 2026</div></footer>`;
 }
 
-export function publicShell(active, content) {
-  return `<div class="pdtv-mobile-shell pdtv-route-${active || "default"}">${header(active)}<main class="page pdtv-mobile-main">${content}</main>${footer()}${bottomNav(active)}</div>`;
+export function publicShell(active, content, options = {}) {
+  const prompts = options.prompts === false ? "" : pwaInstallPrompts();
+  const mobileNav = options.bottomNav === false ? "" : bottomNav(active);
+  return `<div class="pdtv-mobile-shell pdtv-route-${active || "default"}">${header(active)}<main class="page pdtv-mobile-main">${content}</main>${footer()}${prompts}${mobileNav}</div>`;
+}
+
+function pwaInstallPrompts() {
+  return `${pwaPrivacyPrompt()}${pwaInstallPrompt()}`;
+}
+
+function pwaPrivacyPrompt() {
+  return `<aside class="pwa-install-prompt" data-pwa-privacy hidden aria-label="Datenschutz fuer WebApp bestaetigen">
+      <div class="pwa-install-prompt__text">
+        <strong>Datenschutz bestaetigen</strong>
+        <span>Vor der Installation bitte bestaetigen: Die WebApp speichert lokale App-Daten auf diesem Geraet, zum Beispiel Cache, Einstellungen und Ticket-Token.</span>
+        <a class="pwa-install-prompt__privacy-link" href="#/privacy">Datenschutz oeffnen</a>
+      </div>
+      <label class="pwa-install-prompt__consent">
+        <input type="checkbox" data-pwa-privacy-consent>
+        <span>Datenschutzhinweis gelesen und lokale Speicherung verstanden.</span>
+      </label>
+      <small class="pwa-install-prompt__status" data-pwa-privacy-status hidden></small>
+      <div class="pwa-install-prompt__actions">
+        <button class="button button--primary button--small" type="button" data-pwa-privacy-confirm disabled>Weiter</button>
+        <button class="button button--secondary button--small" type="button" data-pwa-dismiss>Spaeter</button>
+      </div>
+  </aside>`;
+}
+
+function pwaInstallPrompt() {
+  return `<aside class="pwa-install-prompt" data-pwa-install hidden aria-label="WebApp zum Homescreen hinzufuegen">
+      <div class="pwa-install-prompt__text">
+        <strong data-pwa-install-title>WebApp speichern</strong>
+        <span data-pwa-ios hidden>Auf dem iPhone: Safari-Menue "Teilen" oeffnen, nach unten scrollen und "Zum Home-Bildschirm" waehlen.</span>
+        <span data-pwa-android hidden>Dieser Browser kann die WebApp direkt installieren. Danach startet PROdigitalTV wie eine App vom Homescreen.</span>
+        <span data-pwa-fallback hidden>Dieser Browser bietet keinen direkten Installieren-Button an. Oeffnen Sie das Browser-Menue und waehlen Sie "App installieren", "Zum Startbildschirm" oder "Zum Home-Bildschirm".</span>
+        <small data-pwa-status hidden></small>
+      </div>
+    <div class="pwa-install-prompt__actions">
+      <button class="button button--primary button--small" type="button" data-pwa-install-button hidden>Installieren</button>
+      <button class="button button--primary button--small" type="button" data-pwa-instruction-ok hidden>OK</button>
+      <button class="button button--secondary button--small" type="button" data-pwa-dismiss>Spaeter</button>
+    </div>
+  </aside>`;
 }
