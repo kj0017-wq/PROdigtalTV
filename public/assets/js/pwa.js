@@ -6,17 +6,26 @@
   const isIos = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent);
   const isAndroid = () => /android/i.test(window.navigator.userAgent);
   const isMobile = () => isIos() || isAndroid() || window.matchMedia("(pointer: coarse)").matches || window.innerWidth <= 820;
-  const currentCache = "prodigitaltv-pwa-v976";
+  const currentCache = "prodigitaltv-pwa-v981";
   const dismissKey = "pdtv-pwa-install-dismissed-session";
   const privacyDismissKey = "pdtv-pwa-privacy-dismissed-session";
+  const cookieSettingsOpenKey = "pdtv-cookie-settings-open-session";
   const privacyConsentKey = "pdtv-pwa-privacy-consent";
+  const cookieConsentKey = "pdtv-cookie-consent";
+  const analyticsConsentKey = "pdtv-cookie-analytics";
   const privacyConsentLogKey = "pdtv-pwa-privacy-consent-log";
   const consentEndpoint = "https://europe-west3-prodigitaltv-da47b.cloudfunctions.net/logPwaPrivacyConsent";
   let deferredPrompt = null;
+  let consentSaveInFlight = false;
 
-  function promptSuppressedForRoute() {
+  function privacyPromptSuppressedForRoute() {
     const routeKey = `${window.location.pathname || ""} ${window.location.hash || ""}`.toLowerCase();
     return /(?:^|\/|#\/)(user-invite|survey|notifications\/unsubscribe|registration\/cancel)(?:\/|\?|#|$)/.test(routeKey);
+  }
+
+  function installPromptSuppressedForRoute() {
+    const routeKey = `${window.location.pathname || ""} ${window.location.hash || ""}`.toLowerCase();
+    return /(?:^|\/|#\/)(user-invite|survey|notifications\/unsubscribe|registration\/cancel|event|events|register|registration|ticket|event-checkin)(?:\/|\?|#|$)/.test(routeKey);
   }
 
   function clearOldCaches() {
@@ -31,27 +40,42 @@
     const installPrompt = document.querySelector("[data-pwa-install]");
     if (!privacyPrompt && !installPrompt) return;
 
-    if (isStandalone() || promptSuppressedForRoute()) {
+    if (isStandalone()) {
       if (privacyPrompt) privacyPrompt.hidden = true;
       if (installPrompt) installPrompt.hidden = true;
       return;
     }
 
+    const suppressPrivacyPrompt = privacyPromptSuppressedForRoute();
+    const suppressInstallPrompt = installPromptSuppressedForRoute();
     const android = isAndroid();
     const ios = isIos();
     const canNativeInstall = android && !!deferredPrompt;
-    const privacyAccepted = localStorage.getItem(privacyConsentKey) === "1";
+    const cookieAccepted = localStorage.getItem(cookieConsentKey) === "1";
+    const analyticsAccepted = localStorage.getItem(analyticsConsentKey) === "1";
+    const cookieSettingsOpen = sessionStorage.getItem(cookieSettingsOpenKey) === "1";
 
     if (privacyPrompt) {
       const consentInput = privacyPrompt.querySelector("[data-pwa-privacy-consent]");
+      const analyticsInput = privacyPrompt.querySelector("[data-pwa-analytics-consent]");
       const confirmButton = privacyPrompt.querySelector("[data-pwa-privacy-confirm]");
-      privacyPrompt.hidden = privacyAccepted || sessionStorage.getItem(privacyDismissKey) === "1";
-      if (consentInput && privacyAccepted) consentInput.checked = true;
-      if (confirmButton) confirmButton.disabled = !privacyAccepted && !consentInput?.checked;
+      const necessaryButton = privacyPrompt.querySelector("[data-pwa-cookie-necessary]");
+      const acceptAllButton = privacyPrompt.querySelector("[data-pwa-cookie-accept-all]");
+      privacyPrompt.hidden = suppressPrivacyPrompt || (cookieAccepted && !cookieSettingsOpen) || sessionStorage.getItem(privacyDismissKey) === "1";
+      if (consentInput && (cookieAccepted || cookieSettingsOpen)) consentInput.checked = true;
+      if (analyticsInput) analyticsInput.checked = analyticsAccepted;
+      if (!consentSaveInFlight) {
+        if (necessaryButton) necessaryButton.disabled = false;
+        if (acceptAllButton) acceptAllButton.disabled = false;
+        if (confirmButton) {
+          confirmButton.disabled = !consentInput?.checked;
+          confirmButton.textContent = "Auswahl speichern";
+        }
+      }
     }
 
     if (!installPrompt) return;
-    const showInstallFlow = privacyAccepted && isMobile() && sessionStorage.getItem(dismissKey) !== "1";
+    const showInstallFlow = !suppressInstallPrompt && cookieAccepted && isMobile() && sessionStorage.getItem(dismissKey) !== "1";
     installPrompt.hidden = !showInstallFlow;
     if (!showInstallFlow) return;
     const iosText = installPrompt.querySelector("[data-pwa-ios]");
@@ -63,39 +87,50 @@
     const dismissButton = installPrompt.querySelector("[data-pwa-dismiss]");
     const installTitle = installPrompt.querySelector("[data-pwa-install-title]");
 
-    if (iosText) iosText.hidden = !privacyAccepted || !ios;
-    if (androidText) androidText.hidden = !privacyAccepted || !canNativeInstall;
-    if (fallbackText) fallbackText.hidden = !privacyAccepted || ios || canNativeInstall;
+    if (iosText) iosText.hidden = !cookieAccepted || !ios;
+    if (androidText) androidText.hidden = !cookieAccepted || !canNativeInstall;
+    if (fallbackText) fallbackText.hidden = !cookieAccepted || ios || canNativeInstall;
     if (installTitle) installTitle.textContent = canNativeInstall ? "WebApp installieren" : "WebApp zum Homescreen hinzufuegen";
     if (statusText) {
-      statusText.hidden = !privacyAccepted || !android || !canNativeInstall;
+      statusText.hidden = !cookieAccepted || !android || !canNativeInstall;
       statusText.textContent = "Chrome hat die Installation freigegeben.";
     }
     if (installButton) {
-      installButton.hidden = !privacyAccepted || !canNativeInstall;
+      installButton.hidden = !cookieAccepted || !canNativeInstall;
       installButton.disabled = false;
     }
-    if (instructionOkButton) instructionOkButton.hidden = !privacyAccepted || canNativeInstall;
-    if (dismissButton) dismissButton.hidden = privacyAccepted && !canNativeInstall;
+    if (instructionOkButton) instructionOkButton.hidden = !cookieAccepted || canNativeInstall;
+    if (dismissButton) dismissButton.hidden = cookieAccepted && !canNativeInstall;
   }
 
-  async function logPrivacyConsent() {
+  async function logPrivacyConsent({ analyticsAccepted = false, source = "webapp_cookie_consent", timeoutMs = 5000 } = {}) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
     const response = await fetch(consentEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify({
         accepted: true,
-        consentVersion: "pwa-homescreen-v1",
-        legalTextKey: "pwa-local-storage-cache-ticket-token",
-        source: "webapp_start_prompt",
+        analyticsAccepted: Boolean(analyticsAccepted),
+        consentVersion: "cookie-consent-v1",
+        legalTextKey: "local-storage-cache-ticket-token-analytics-optional",
+        source,
         path: window.location.hash || "#/home",
         pathname: window.location.pathname || "/",
         userAgent: window.navigator.userAgent || ""
       })
-    });
+    }).finally(() => window.clearTimeout(timeout));
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.ok) throw new Error(data.error || "consent_log_failed");
     return data;
+  }
+
+  function setConsentButtonsDisabled(privacyPrompt, disabled) {
+    privacyPrompt?.querySelectorAll("[data-pwa-cookie-necessary], [data-pwa-privacy-confirm], [data-pwa-cookie-accept-all]")
+      .forEach((button) => {
+        button.disabled = disabled || (button.hasAttribute("data-pwa-privacy-confirm") && !privacyPrompt.querySelector("[data-pwa-privacy-consent]")?.checked);
+      });
   }
 
   if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
@@ -121,7 +156,7 @@
   document.addEventListener("click", async (event) => {
     const installButton = event.target.closest("[data-pwa-install-button]");
     if (installButton && deferredPrompt) {
-      if (localStorage.getItem(privacyConsentKey) !== "1") {
+      if (localStorage.getItem(cookieConsentKey) !== "1") {
         updatePrompt();
         return;
       }
@@ -155,44 +190,112 @@
       return;
     }
 
+    const analyticsInput = event.target.closest("[data-pwa-analytics-consent]");
+    if (analyticsInput) {
+      updatePrompt();
+      return;
+    }
+
+    async function storeCookieConsent(privacyPrompt, analyticsAccepted, source) {
+      if (consentSaveInFlight) return;
+      consentSaveInFlight = true;
+      setConsentButtonsDisabled(privacyPrompt, true);
+      const status = privacyPrompt?.querySelector("[data-pwa-privacy-status]");
+      if (status) {
+        status.hidden = false;
+        status.textContent = "Einstellungen werden gespeichert ...";
+      }
+      const acceptedAtIso = new Date().toISOString();
+      let result = {};
+      let pendingSync = false;
+      try {
+        result = await logPrivacyConsent({ analyticsAccepted, source });
+      } catch (error) {
+        pendingSync = true;
+      }
+      localStorage.setItem(privacyConsentKey, "1");
+      localStorage.setItem(cookieConsentKey, "1");
+      localStorage.setItem(analyticsConsentKey, analyticsAccepted ? "1" : "0");
+      localStorage.setItem(privacyConsentLogKey, JSON.stringify({
+        consentId: result.consentId || "",
+        acceptedAtIso: result.acceptedAtIso || acceptedAtIso,
+        analyticsAccepted: Boolean(analyticsAccepted),
+        pendingSync,
+        source
+      }));
+      sessionStorage.removeItem(privacyDismissKey);
+      sessionStorage.removeItem(cookieSettingsOpenKey);
+      if (status && pendingSync) {
+        status.hidden = false;
+        status.textContent = "Einstellungen gespeichert. Protokollierung wird spaeter erneut versucht.";
+      }
+      consentSaveInFlight = false;
+      updatePrompt();
+      window.dispatchEvent(new CustomEvent("pdtv-cookie-consent-changed", { detail: { analyticsAccepted: Boolean(analyticsAccepted) } }));
+    }
+
     const privacyConfirm = event.target.closest("[data-pwa-privacy-confirm]");
     if (privacyConfirm) {
       const privacyPrompt = privacyConfirm.closest("[data-pwa-privacy]");
       const consentInput = privacyPrompt?.querySelector("[data-pwa-privacy-consent]");
-      const status = privacyPrompt?.querySelector("[data-pwa-privacy-status]");
+      const analyticsInput = privacyPrompt?.querySelector("[data-pwa-analytics-consent]");
       if (!consentInput?.checked) return;
       privacyConfirm.disabled = true;
       const oldText = privacyConfirm.textContent;
       privacyConfirm.textContent = "Speichere ...";
-      if (status) {
-        status.hidden = false;
-        status.textContent = "Datenschutz-Bestaetigung wird gespeichert ...";
-      }
       try {
-        const result = await logPrivacyConsent();
-        localStorage.setItem(privacyConsentKey, "1");
-        localStorage.setItem(privacyConsentLogKey, JSON.stringify({
-          consentId: result.consentId || "",
-          acceptedAtIso: result.acceptedAtIso || new Date().toISOString()
-        }));
-        sessionStorage.removeItem(privacyDismissKey);
-        updatePrompt();
+        await storeCookieConsent(privacyPrompt, !!analyticsInput?.checked, "webapp_cookie_selection");
       } catch (error) {
         privacyConfirm.disabled = false;
         privacyConfirm.textContent = oldText;
-        if (status) {
-          status.hidden = false;
-          status.textContent = "Bestaetigung konnte nicht gespeichert werden. Bitte erneut versuchen.";
-        }
       }
+      return;
+    }
+
+    const necessaryButton = event.target.closest("[data-pwa-cookie-necessary]");
+    if (necessaryButton) {
+      const privacyPrompt = necessaryButton.closest("[data-pwa-privacy]");
+      necessaryButton.disabled = true;
+      try {
+        await storeCookieConsent(privacyPrompt, false, "webapp_cookie_necessary");
+      } catch {
+        necessaryButton.disabled = false;
+      }
+      return;
+    }
+
+    const acceptAllButton = event.target.closest("[data-pwa-cookie-accept-all]");
+    if (acceptAllButton) {
+      const privacyPrompt = acceptAllButton.closest("[data-pwa-privacy]");
+      const consentInput = privacyPrompt?.querySelector("[data-pwa-privacy-consent]");
+      const analyticsInput = privacyPrompt?.querySelector("[data-pwa-analytics-consent]");
+      if (consentInput) consentInput.checked = true;
+      if (analyticsInput) analyticsInput.checked = true;
+      acceptAllButton.disabled = true;
+      try {
+        await storeCookieConsent(privacyPrompt, true, "webapp_cookie_accept_all");
+      } catch {
+        acceptAllButton.disabled = false;
+      }
+      return;
+    }
+
+    const cookieSettingsLink = event.target.closest("[data-cookie-settings]");
+    if (cookieSettingsLink) {
+      event.preventDefault();
+      sessionStorage.setItem(cookieSettingsOpenKey, "1");
+      sessionStorage.removeItem(privacyDismissKey);
+      updatePrompt();
       return;
     }
 
     const dismissButton = event.target.closest("[data-pwa-dismiss]");
     if (dismissButton) {
       const prompt = dismissButton.closest("[data-pwa-install], [data-pwa-privacy]");
-      if (prompt?.hasAttribute("data-pwa-privacy")) sessionStorage.setItem(privacyDismissKey, "1");
-      else sessionStorage.setItem(dismissKey, "1");
+      if (prompt?.hasAttribute("data-pwa-privacy")) {
+        sessionStorage.setItem(privacyDismissKey, "1");
+        sessionStorage.removeItem(cookieSettingsOpenKey);
+      } else sessionStorage.setItem(dismissKey, "1");
       if (prompt) prompt.hidden = true;
       return;
     }

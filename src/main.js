@@ -3,7 +3,7 @@ import { currentUser, canUseCms, isAdmin, login, logout, refreshAuthToken, waitF
 import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=530";
 import { escapeHtml, formatDate } from "./utils/format.js";
 import { normalizeLifecyclePhase } from "./data/platformConstants.js";
-import { publicShell } from "./components/layout.js?v=12";
+import { publicShell } from "./components/layout.js?v=13";
 
 const root = document.querySelector("#app");
 const initialWebappSplashStartedAt = root?.querySelector(".pdtv-webapp-splash") ? Date.now() : 0;
@@ -19,8 +19,8 @@ const memberProfileWarmups = new Map();
 let mobileSurveyPeopleCache = { createdAt: 0, directory: null };
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=761");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=707");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=767");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=713");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=496");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=116");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=16");
@@ -57,7 +57,7 @@ function warmMemberProfileCache(user = currentUser()) {
 const ttsService = () => lazy.ttsService ||= import("./ai/ttsService.js?v=2");
 const audioService = () => lazy.audioService ||= import("./ai/audioService.js");
 const aiSourceCatalogService = () => lazy.aiSourceCatalog ||= import("./data/aiSourceCatalog.js");
-const usageService = () => lazy.usageService ||= import("./firebase/usageService.js?v=1");
+const usageService = () => lazy.usageService ||= import("./firebase/usageService.js?v=2");
 
 const createRegistration = async (...args) => (await registrationService()).createRegistration(...args);
 const createAdminRegistration = async (...args) => (await registrationService()).createAdminRegistration(...args);
@@ -2730,7 +2730,7 @@ function eventContext(button) {
     ...formValues,
     linkedEventLabel: linkedEventOption,
     sponsorLabel: sponsorOption,
-    placeholders: ["{{firstName}}", "{{lastName}}", "{{eventTitle}}", "{{eventDate}}", "{{eventLocation}}", "{{confirmationLink}}"]
+    placeholders: ["{{firstName}}", "{{lastName}}", "{{eventTitle}}", "{{eventDate}}", "{{eventLocation}}", "{{onlineMeetingLabel}}", "{{zoomLink}}", "{{confirmationLink}}"]
   };
 }
 
@@ -8027,7 +8027,8 @@ async function autoSaveSimpleImageForm(form, status, message = "Bild wird gespei
     if (form.id === "event-topic-speaker-form") {
       await saveEventTopicSpeakerForm(form);
     } else if (form.id === "event-edit-form") {
-      await saveEventEditForm(form, { silent: true });
+      form.requestSubmit?.();
+      return;
     } else if (form.id === "event-topic-editor-form") {
       form.requestSubmit?.();
       return;
@@ -11145,10 +11146,12 @@ function wireActions() {
         value: {
           registrationConfirmation: values.registrationConfirmation || "",
           registrationWaitlist: values.registrationWaitlist || "",
+          registrationReminder: values.registrationReminder || "",
           memberLoginInvitation: values.memberLoginInvitation || ""
         },
         registrationConfirmation: values.registrationConfirmation || "",
         registrationWaitlist: values.registrationWaitlist || "",
+        registrationReminder: values.registrationReminder || "",
         memberLoginInvitation: values.memberLoginInvitation || "",
         updatedAt: new Date().toISOString()
       });
@@ -11380,6 +11383,7 @@ function wireActions() {
     const form = button.closest("form");
     const promptField = button.dataset.aiPromptField ? form?.querySelector(`[name="${button.dataset.aiPromptField}"]`) : null;
     const prompt = promptField?.value || "";
+    const targetWords = Number(form?.querySelector("[data-ai-target-words]")?.value || button.dataset.aiTargetWords || 0);
     const compactText = compactAiText(text, button.dataset.aiAction === "generateEventRetrospective" ? 9000 : 12000);
     button.disabled = true;
     button.textContent = "ChatGPT arbeitet ...";
@@ -11391,6 +11395,7 @@ function wireActions() {
         fieldName: button.dataset.aiField,
         originalText: compactText,
         prompt,
+        targetWords: Number.isFinite(targetWords) && targetWords > 0 ? targetWords : undefined,
         context: eventContext(button)
       });
       showAiDialog({ button, originalText: text, result, sourceField: field });
@@ -13623,6 +13628,20 @@ function wireActions() {
     };
     select.addEventListener("change", syncNewEventTypeField);
     syncNewEventTypeField();
+  });
+
+  document.querySelectorAll(".event-base-form input[name='isVirtualEvent']").forEach((input) => {
+    if (input.dataset.virtualEventWired === "1") return;
+    input.dataset.virtualEventWired = "1";
+    const form = input.closest("form");
+    const locationFields = form?.querySelector("[data-event-location-fields]");
+    const onlineLabel = form?.querySelector("input[name='onlineMeetingLabel']");
+    const syncVirtualEventFields = () => {
+      if (locationFields) locationFields.hidden = input.checked;
+      if (onlineLabel && input.checked && !onlineLabel.value.trim()) onlineLabel.value = "Zoom Meeting";
+    };
+    input.addEventListener("change", syncVirtualEventFields);
+    syncVirtualEventFields();
   });
 
   document.querySelectorAll(".event-base-form [data-host-create-layer]").forEach((layer) => {

@@ -25,6 +25,15 @@ function eventSummaryText(event = {}) {
   ).trim();
 }
 
+function eventOnlineLabel(event = {}) {
+  return event.onlineMeetingLabel || (event.isVirtualEvent ? "Zoom Meeting" : "");
+}
+
+function eventLocationDisplay(event = {}) {
+  if (event.isVirtualEvent) return [eventOnlineLabel(event), event.city].filter(Boolean).join(", ") || "Online";
+  return [event.locationName, event.city].filter(Boolean).join(", ") || "Ort wird bekanntgegeben";
+}
+
 export function eventCard(event, archive = false, partners = []) {
   const date = eventDateBox(event.date);
   const host = partners.find((partner) => partner.id === event.hostId);
@@ -64,7 +73,7 @@ export function eventCard(event, archive = false, partners = []) {
       ${summary ? `<p class="event-card__summary">${escapeHtml(summary)}</p>` : ""}
       <div class="event-meta"><span>${formatDate(event.date)}${event.startTime ? ` - ${event.startTime} Uhr` : ""}</span></div>
       <div class="event-showcase">
-        <div class="event-showcase__fact"><small>Veranstaltungsort</small><strong>${escapeHtml(event.locationName)}</strong><span>${escapeHtml(event.city)}</span></div>
+        <div class="event-showcase__fact"><small>${event.isVirtualEvent ? "Online-Teilnahme" : "Veranstaltungsort"}</small><strong>${escapeHtml(eventLocationDisplay(event))}</strong></div>
         <div class="event-showcase__fact event-showcase__fact--partner"><small>${promotedPartners.length ? hasDistinctSponsors ? "Gastgeber / Sponsor" : "Gastgeber / Co-Gastgeber" : "Gastgeber"}</small><strong>${escapeHtml(hostNames.join(" - "))}</strong></div>
       </div>
       ${archive ? "" : `<a class="event-card__cta" href="#/event/${event.id}">Zur Veranstaltung</a>`}

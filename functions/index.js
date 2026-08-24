@@ -732,6 +732,21 @@ function plainDate(value = "") {
 }
 
 function defaultGlobalEventRegistrationMailText(variant = "confirmation") {
+  if (variant === "reminder") {
+    return [
+      "Guten Tag {{firstName}} {{lastName}},",
+      "",
+      "dies ist eine kurze Erinnerung an \"{{eventTitle}}\".",
+      "",
+      "Termin: {{eventDate}}",
+      "Ort: {{eventLocation}}",
+      "",
+      "Falls Sie doch nicht teilnehmen koennen, sagen Sie bitte rechtzeitig ab, damit wir den Platz weitergeben und besser planen koennen.",
+      "",
+      "Viele Gruesse",
+      "PROdigitalTV"
+    ].join("\n");
+  }
   if (variant === "waitlist") {
     return [
       "Guten Tag {{firstName}} {{lastName}},",
@@ -786,8 +801,18 @@ function mailTemplateSettings(record = {}) {
   return {
     registrationConfirmation: record?.registrationConfirmation || value.registrationConfirmation || defaultGlobalEventRegistrationMailText("confirmation"),
     registrationWaitlist: record?.registrationWaitlist || value.registrationWaitlist || defaultGlobalEventRegistrationMailText("waitlist"),
+    registrationReminder: record?.registrationReminder || value.registrationReminder || defaultGlobalEventRegistrationMailText("reminder"),
     memberLoginInvitation: record?.memberLoginInvitation || value.memberLoginInvitation || defaultMemberLoginInvitationText()
   };
+}
+
+function eventOnlineLabel(eventRecord = {}) {
+  return eventRecord.onlineMeetingLabel || (eventRecord.isVirtualEvent ? "Zoom Meeting" : "");
+}
+
+function eventLocationMailText(eventRecord = {}) {
+  if (eventRecord.isVirtualEvent) return [eventOnlineLabel(eventRecord), eventRecord.city].filter(Boolean).join(", ") || "online";
+  return [eventRecord.locationName, eventRecord.city].filter(Boolean).join(", ") || "dem Veranstaltungsort";
 }
 
 function renderTemplateText(template = "", { registration = {}, eventRecord = {}, variables = {} } = {}) {
@@ -798,7 +823,9 @@ function renderTemplateText(template = "", { registration = {}, eventRecord = {}
     email: registration.email || "",
     eventTitle: eventRecord.title || registration.eventTitle || "PROdigitalTV Event",
     eventDate: plainDate(eventRecord.date || registration.eventDate),
-    eventLocation: [eventRecord.locationName, eventRecord.city].filter(Boolean).join(", ") || "dem Veranstaltungsort",
+    eventLocation: eventLocationMailText(eventRecord),
+    onlineMeetingLabel: eventOnlineLabel(eventRecord),
+    zoomLink: variables.zoomLink || eventRecord.zoomLink || "",
     eventLink: variables.eventLink || variables.link || "",
     link: variables.link || variables.eventLink || "",
     confirmationLink: variables.confirmationLink || variables.confirmationUrl || "",
@@ -2179,6 +2206,8 @@ exports.processEventNotifications = onSchedule({ region, schedule: "every 15 min
     await queueEventNotificationDelivery(notification, { id: eventSnapshot.id, ...eventSnapshot.data() });
   }
   const eventSnapshot = await db.collection("events").get();
+  const mailTemplatesSnapshot = await db.collection("settings").doc("mailTemplates").get().catch(() => null);
+  const mailTemplates = mailTemplateSettings(mailTemplatesSnapshot?.exists ? mailTemplatesSnapshot.data() : {});
   const reminders = [
     ["reminder7d", 10080, "7 Tage"],
     ["reminder1d", 1440, "1 Tag"],
@@ -2200,7 +2229,8 @@ exports.processEventNotifications = onSchedule({ region, schedule: "every 15 min
         id: notificationId,
         eventId: eventRecord.id,
         title: `${label} vorher: ${eventRecord.title || "PROdigitalTV Veranstaltung"}`,
-        shortText: `Erinnerung an ${eventRecord.title || "die PROdigitalTV Veranstaltung"} am ${eventRecord.date || ""}.`,
+        shortText: eventRecord.reminderMail || mailTemplates.registrationReminder || defaultGlobalEventRegistrationMailText("reminder"),
+        registeredText: eventRecord.reminderMail || mailTemplates.registrationReminder || defaultGlobalEventRegistrationMailText("reminder"),
         includeMembers: false,
         includeContacts: true,
         registrationStatus: "registered",

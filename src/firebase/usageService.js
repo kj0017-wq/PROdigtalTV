@@ -28,9 +28,19 @@ function routeKey(current = {}) {
   return [current.path || "home", current.id || "", current.section || ""].filter(Boolean).join("/");
 }
 
+function analyticsConsentGranted() {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem("pdtv-cookie-analytics") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export async function logUsagePageView(current = {}) {
   if (typeof window === "undefined") return null;
   if (current?.path === "cms") return null;
+  if (!analyticsConsentGranted()) return null;
   const route = routeKey(current);
   const payload = {
     type: "page_view",

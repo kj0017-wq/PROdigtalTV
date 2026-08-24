@@ -1,7 +1,7 @@
 import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=530";
 import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=471";
-import { publicShell, logo } from "../components/layout.js?v=9";
-import { eventCard, topicCard } from "../components/cards.js?v=14";
+import { publicShell, logo } from "../components/layout.js?v=13";
+import { eventCard, topicCard } from "../components/cards.js?v=15";
 import { accessLabels, lifecycleLabels } from "../data/platformConstants.js?v=1";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
 import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=1";
@@ -615,6 +615,22 @@ function eventIntroText(event = {}) {
 
 function eventLongText(event = {}) {
   return String(event.postEventSummary || event.postEventummary || event.archiveText || event.longDescription || event.bodyText || event.articleText || "").trim();
+}
+
+function eventOnlineLabel(event = {}) {
+  return event.onlineMeetingLabel || (event.isVirtualEvent ? "Zoom Meeting" : "");
+}
+
+function eventLocationDisplay(event = {}) {
+  if (event.isVirtualEvent) return [eventOnlineLabel(event), event.city].filter(Boolean).join(", ") || "Online";
+  return [event.locationName, event.city].filter(Boolean).join(", ") || "Ort wird bekanntgegeben";
+}
+
+function eventLocationDetailMarkup(event = {}) {
+  if (event.isVirtualEvent) {
+    return `<h2>${escapeHtml(eventOnlineLabel(event) || "Online")}</h2><p>Virtuelle Teilnahme per Zoom Meeting.${event.zoomLink ? "<br>Den Zugangslink erhalten angemeldete Teilnehmer separat." : ""}</p>`;
+  }
+  return `<h2>${escapeHtml(event.locationName || "Ort wird bekanntgegeben")}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p>`;
 }
 
 function archiveEventImageUrl(event = {}, mediaAssets = []) {
@@ -1869,11 +1885,20 @@ function homeFormatSeries(blocks = []) {
     .filter((block) => block.typ === "eventformat")
     .filter((block) => {
       const key = normalizeTopicType(`${block.slug || ""} ${block.titel || ""}`);
-      if (key.includes("vondenbestenlernen")) return false;
-      return key.includes("medienfruehstueck") || key.includes("medienfruehstuecke");
+      return key.includes("medienfruehstueck") || key.includes("medienfruehstuecke") || key.includes("vondenbestenlernen");
     })
     .sort((a, b) => Number(a.sortierung || 0) - Number(b.sortierung || 0))
     .slice(0, 2);
+}
+
+function homeSeriesFallback(series = {}) {
+  const key = normalizeTopicType(`${series.slug || ""} ${series.titel || ""}`);
+  if (!key.includes("vondenbestenlernen")) return {};
+  return {
+    imageUrl: "/assets/official/events/von-den-besten-lernen-bg.svg",
+    kurztext: "Das Gesprächsformat für exklusiven Erfahrungsaustausch mit prägenden Persönlichkeiten der Medien- und Digitalwirtschaft.",
+    langtext: "In persönlicher Atmosphäre sprechen Unternehmer, Führungskräfte und Branchenpersönlichkeiten über Entscheidungen, Wendepunkte und Erfahrungen, aus denen andere lernen können. Das Format schafft Nähe, Orientierung und konkrete Impulse für Mitglieder und ausgewählte Gäste."
+  };
 }
 
 function homeTalkItems(events = [], topics = [], speakers = []) {
@@ -1996,7 +2021,7 @@ function homeHeroMarkup({ next, nextImageUrl, retrospective, series }) {
 }
 
 function pageContentCacheKey(name = "", variant = "public") {
-  return `pdtv-page-content-v15:${name}:${variant}`;
+  return `pdtv-page-content-v17:${name}:${variant}`;
 }
 
 function readPageContentCache(name = "", variant = "public", maxAgeMs = 600000) {
@@ -2103,9 +2128,12 @@ export async function homePage() {
   }).join("")}</div>` : "";
 
   const seriesBody = seriesItems.length ? `<div class="pdtv-home-series-grid">${seriesItems.map((series) => {
-    const imageUrl = stableImageUrl(series.imageUrl || series.thumbnailUrl || series.assetUrl || "", "event");
+    const fallback = homeSeriesFallback(series);
+    const imageUrl = stableImageUrl(series.imageUrl || series.thumbnailUrl || series.assetUrl || fallback.imageUrl || "", "event");
+    const shortText = series.kurztext || fallback.kurztext || "";
+    const longText = series.langtext || fallback.langtext || "";
     return `<article class="pdtv-home-series-card${imageUrl ? " pdtv-home-series-card--with-bg" : ""}"${imageUrl ? ` style="--series-bg: url('${escapeHtml(imageUrl)}')"` : ""}>
-      <div class="pdtv-home-series-card__copy"><h3>${escapeHtml(series.titel)}</h3>${series.kurztext ? `<p>${escapeHtml(series.kurztext)}</p>` : ""}${series.langtext ? `<p>${escapeHtml(teaserText(series.langtext, 210))}</p>` : ""}<a class="button button--secondary button--small" href="#/ueber-uns/${encodeURIComponent(series.slug)}">Artikel öffnen</a></div>
+      <div class="pdtv-home-series-card__copy"><h3>${escapeHtml(series.titel)}</h3>${shortText ? `<p>${escapeHtml(shortText)}</p>` : ""}${longText ? `<p>${escapeHtml(teaserText(longText, 260))}</p>` : ""}<a class="button button--secondary button--small" href="#/ueber-uns/${encodeURIComponent(series.slug)}">Artikel öffnen</a></div>
     </article>`;
   }).join("")}</div>` : "";
 
@@ -2308,7 +2336,7 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
   const registrationCta = registrationAllowed
     ? `<div class="event-registration-cta"><a class="button button--primary" href="#/register/${escapeHtml(event.id)}">Zum Event anmelden</a></div>`
     : `<div class="alert event-registration-cta">${event.accessType === "invitation_only" ? "Teilnahme nur auf Einladung." : "Anmeldung derzeit nicht verfuegbar."}</div>`;
-  const eventInfoBlock = restricted ? "" : `<section class="venue-stage event-info-stage"><div class="event-info-stage__facts"><p class="eyebrow">Daten</p><div class="event-info-facts"><div class="event-info-fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>${event.startTime ? `<div class="event-info-fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}<div class="event-info-fact"><label>Status</label><strong>${escapeHtml(eventRegistrationStatusLabel(event))}</strong></div></div></div><div class="venue-stage__place"><p class="eyebrow">Adresse</p><h2>${escapeHtml(event.locationName)}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p></div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`;
+  const eventInfoBlock = restricted ? "" : `<section class="venue-stage event-info-stage"><div class="event-info-stage__facts"><p class="eyebrow">Daten</p><div class="event-info-facts"><div class="event-info-fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>${event.startTime ? `<div class="event-info-fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}<div class="event-info-fact"><label>Status</label><strong>${escapeHtml(eventRegistrationStatusLabel(event))}</strong></div></div></div><div class="venue-stage__place"><p class="eyebrow">${event.isVirtualEvent ? "Online-Teilnahme" : "Adresse"}</p>${eventLocationDetailMarkup(event)}</div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`;
   const previewNotice = previewMode ? `<div class="alert alert--warning">CMS-Vorschau: Dieses Event ist noch nicht zwingend öffentlich sichtbar.</div>` : "";
   return publicShell("events", `${subhero(event.eventType, event.title, event.subtitle)}
     <section class="section event-detail-section"><div class="container detail-grid event-detail-grid">
@@ -2322,7 +2350,7 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
         ${retrospectiveText ? `<h2>Rückblick</h2><div class="editorial-text">${articleParagraphs(retrospectiveText)}</div>` : ""}
         ${eventTalksMarkup(topics, speakers, event)}
         ${event.lunchNote ? `<div class="alert">${escapeHtml(event.lunchNote)}</div>` : ""}
-        ${restricted ? "" : `<section class="venue-stage venue-stage--event-detail"><div class="venue-stage__identity"><p class="eyebrow">Veranstaltungsort</p>${coHost && coHostLogo ? `<img class="venue-stage__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : ""}<h2>${escapeHtml(coHost?.name || event.locationName)}</h2><p>${escapeHtml(event.locationName || "")}${event.locationName ? "<br>" : ""}${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}</p></div><div class="venue-stage__description"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : `<p>${escapeHtml(coHost.name)} begleitet dieses PROdigitalTV Event als Co-Gastgeber.</p>`}` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`}
+        ${restricted ? "" : `<section class="venue-stage venue-stage--event-detail"><div class="venue-stage__identity"><p class="eyebrow">${event.isVirtualEvent ? "Online-Teilnahme" : "Veranstaltungsort"}</p>${!event.isVirtualEvent && coHost && coHostLogo ? `<img class="venue-stage__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : ""}${event.isVirtualEvent ? eventLocationDetailMarkup(event) : `<h2>${escapeHtml(coHost?.name || event.locationName || "Ort wird bekanntgegeben")}</h2><p>${escapeHtml(event.locationName || "")}${event.locationName ? "<br>" : ""}${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}</p>`}</div><div class="venue-stage__description"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : `<p>${escapeHtml(coHost.name)} begleitet dieses PROdigitalTV Event als Co-Gastgeber.</p>`}` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`}
         ${assignedGalleryImages.length ? galleryPlayCta(assignedGallery, assignedGalleryImages) : ""}
       </article>
       <aside class="detail-aside">
@@ -2334,7 +2362,7 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
         <span class="tag ${event.accessType !== "public" ? "tag--red" : ""}">${accessLabels[event.accessType]}</span>
         <div class="fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>
         ${event.startTime ? `<div class="fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}
-        <div class="fact"><label>Ort</label><strong>${escapeHtml(event.locationName)}<br>${escapeHtml(event.city)}</strong></div>
+        <div class="fact"><label>Ort</label><strong>${escapeHtml(eventLocationDisplay(event))}</strong></div>
         <div class="fact"><label>Status</label><strong>${escapeHtml(eventRegistrationStatusLabel(event))}</strong></div>
       </aside>
     </div></section>`);
@@ -2352,12 +2380,12 @@ export async function registrationPage(id) {
     return publicShell("events", `${subhero("Anmeldung", event.title, "Fuer dieses Event ist aktuell keine Anmeldung moeglich.")}
       <section class="section"><div class="container" style="max-width:820px"><div class="alert">Die Anmeldung ist derzeit geschlossen.</div><a class="button button--secondary" href="#/event/${escapeHtml(event.id)}">Zurueck zum Event</a></div></section>`);
   }
-  return publicShell("events", `${subhero("Anmeldung", event.title, `${formatDate(event.date)} · ${event.locationName}, ${event.city}`)}
+  return publicShell("events", `${subhero("Anmeldung", event.title, `${formatDate(event.date)} · ${eventLocationDisplay(event)}`)}
     <section class="section"><div class="container registration-container"><form id="registration-form" data-event-id="${event.id}" class="form-card registration-form">
       <div class="registration-summary">
         <div><span>Event</span><strong>${escapeHtml(event.title || "")}</strong></div>
         <div><span>Termin</span><strong>${escapeHtml(formatDate(event.date))}${event.startTime ?` - ${escapeHtml(event.startTime)} Uhr` : ""}</strong></div>
-        <div><span>Ort</span><strong>${escapeHtml([event.locationName, event.city].filter(Boolean).join(", "))}</strong></div>
+        <div><span>Ort</span><strong>${escapeHtml(eventLocationDisplay(event))}</strong></div>
       </div>
       <div class="alert">${event.accessType === "members_only"
         ? "Dieses Event ist fuer Mitglieder und deren eingeladene Gaeste vorgesehen. Bitte melden Sie sich einfach mit Name und E-Mail an; das System gleicht die E-Mail mit vorhandenen Datensaetzen ab."
@@ -2560,10 +2588,11 @@ export async function newsDetailPage(id) {
 }
 
 export async function topicDetailPage(id) {
-  const [topic, events, sponsors, galleries, allTopics, speakers, mediaAssets] = await Promise.all([getOne("topics", id), listPublicEvents(), listPublicContent("sponsors"), listPublicContent("galleries"), listPublicContent("topics"), listPublicContent("speakers"), listPublicMediaAssets().catch(() => [])]);
+  const [topic, events, galleries, allTopics, speakers, mediaAssets] = await Promise.all([getOne("topics", id), listPublicEvents(), listPublicContent("galleries"), listPublicContent("topics"), listPublicContent("speakers"), listPublicMediaAssets().catch(() => [])]);
   if (!topic) return notFoundPage();
   if (!topicIsReleasedAfterEvent(topic, events)) return notFoundPage();
   const linked = topicLinkedEvents(topic, events).filter(publicEventAllowsTopicRelease).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  const primaryLinkedEvent = linked[0] || {};
   const heroSpeakers = speakers.filter((speaker) => {
     const topicSpeakerIds = new Set(topic.speakerIds || [topic.speakerId].filter(Boolean));
     return topicSpeakerIds.has(speaker.id) || speaker.topicId === topic.id || (speaker.topicIds || []).includes(topic.id);
@@ -2581,9 +2610,10 @@ export async function topicDetailPage(id) {
         cardImageType: ownImage ? ownImageType : entry.cardImageType || ""
       };
     });
-  const topicIntro = "Einordnung, Hintergruende und Praxisbezug zu zentralen Begriffen der digitalen Medienwirtschaft.";
-  const topicText = topic.longDescription || topic.bodyText || topic.shortDescription || "";
-  const topicAudioText = [topic.subtitle, topic.longDescription, topic.bodyText, topic.shortDescription].filter(Boolean).join("\n\n");
+  const fallbackEventText = [eventIntroText(primaryLinkedEvent), eventLongText(primaryLinkedEvent)].filter(Boolean).join("\n\n");
+  const topicIntro = topic.subtitle || eventIntroText(primaryLinkedEvent) || "Einordnung, Hintergruende und Praxisbezug zu zentralen Begriffen der digitalen Medienwirtschaft.";
+  const topicText = topic.longDescription || topic.bodyText || topic.shortDescription || fallbackEventText || "";
+  const topicAudioText = [topic.subtitle, topic.longDescription, topic.bodyText, topic.shortDescription, fallbackEventText].filter(Boolean).join("\n\n");
   const topicVisibleText = `${topic.subtitle ? `<p class="article-subline">${escapeHtml(topic.subtitle)}</p>` : ""}${articleParagraphs(topicText)}`;
   const selectedGallery = topic.galleryId ? galleries.find((gallery) => gallery.id === topic.galleryId) : null;
   const attachedGalleryImages = Array.isArray(selectedGallery?.images)
@@ -2607,8 +2637,7 @@ export async function topicDetailPage(id) {
     </div></section>
     ${leadMedia ? `<section class="section section--flush"><div class="container">${leadMedia}</div></section>` : ""}
     ${editorialBlock}
-    ${relatedTopicsBlock}
-    <section class="section"><div class="container"><div class="section-head"><div><p class="eyebrow">Verknuepfte Events</p><h2>Im Dialog</h2></div></div><div class="card-grid card-grid--three">${linked.map((event) => eventCard(event, event.date < "2026-05-26", sponsors)).join("")}</div></div></section>`);
+    ${relatedTopicsBlock}`);
 }
 
 export const aboutPage = internalOverviewPage("ueber_uns");

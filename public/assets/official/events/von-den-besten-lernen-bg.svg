@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" role="img" aria-label="Von den Besten lernen">
+  <rect width="1200" height="760" fill="#ffffff"/>
+  <g fill="none" stroke="#092346" stroke-width="14" opacity=".16" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M248 272c0-72 58-130 130-130h258c72 0 130 58 130 130s-58 130-130 130H496l-112 78 24-78h-30c-72 0-130-58-130-130Z"/>
+    <path d="M516 488c16 58 70 100 134 100h74l94 66-20-66h24c74 0 134-60 134-134 0-63-44-116-103-130"/>
+    <path d="M392 314h230"/>
+    <path d="M392 248h304"/>
+    <path d="M392 182h178"/>
+  </g>
+  <g fill="#e30613" opacity=".16">
+    <circle cx="240" cy="600" r="54"/>
+    <circle cx="960" cy="188" r="74"/>
+    <circle cx="858" cy="612" r="38"/>
+  </g>
+  <g fill="none" stroke="#e30613" stroke-width="12" opacity=".22" stroke-linecap="round">
+    <path d="M186 660h220"/>
+    <path d="M772 128h244"/>
+  </g>
+  <g fill="#092346" opacity=".12">
+    <circle cx="264" cy="607" r="26"/>
+    <path d="M206 690c22-46 92-46 116 0"/>
+    <circle cx="944" cy="185" r="30"/>
+    <path d="M878 228c26-56 112-56 140 0"/>
+  </g>
+</svg>

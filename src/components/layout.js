@@ -69,7 +69,7 @@ export function footer() {
     <div>${logo()}<p style="margin-top:17px;max-width:360px">Das Branchennetzwerk der digitalen Medienwirtschaft. Austausch, Orientierung und relevante Verbindungen.</p></div>
     <div><h3>Verein</h3><div class="footer__links"><a href="#/join">Mitglied werden</a><a href="#/downloads">Downloads</a><a href="#/login">Log-In</a></div></div>
     <div><h3>Kontakt</h3><div class="footer__links"><a href="mailto:post@prodigitaltv.de">post@prodigitaltv.de</a><a href="tel:+494044506617">+49 40 44506617</a></div></div>
-    <div><h3>Rechtliches</h3><div class="footer__links"><a href="#/imprint">Impressum</a><a href="#/privacy">Datenschutz</a><a href="#/privacy">Cookie Einstellungen</a></div></div>
+    <div><h3>Rechtliches</h3><div class="footer__links"><a href="#/imprint">Impressum</a><a href="#/privacy">Datenschutz</a><a href="#/privacy" data-cookie-settings>Cookie Einstellungen</a></div></div>
   </div><div class="container footer__meta">ProDigitalTV e.V. 2026</div></footer>`;
 }
 
@@ -84,20 +84,25 @@ function pwaInstallPrompts() {
 }
 
 function pwaPrivacyPrompt() {
-  return `<aside class="pwa-install-prompt" data-pwa-privacy hidden aria-label="Datenschutz fuer WebApp bestaetigen">
+  return `<aside class="pwa-install-prompt pwa-cookie-consent" data-pwa-privacy hidden aria-label="Cookie und Datenschutz Einstellungen">
       <div class="pwa-install-prompt__text">
-        <strong>Datenschutz bestaetigen</strong>
-        <span>Vor der Installation bitte bestaetigen: Die WebApp speichert lokale App-Daten auf diesem Geraet, zum Beispiel Cache, Einstellungen und Ticket-Token.</span>
+        <strong>Datenschutz & Cookies</strong>
+        <span>Wir nutzen notwendige lokale Speicherung fuer Login, Cache, Einstellungen und Ticket-Token. Analytics setzen wir nur ein, wenn Sie zustimmen.</span>
         <a class="pwa-install-prompt__privacy-link" href="#/privacy">Datenschutz oeffnen</a>
       </div>
       <label class="pwa-install-prompt__consent">
         <input type="checkbox" data-pwa-privacy-consent>
-        <span>Datenschutzhinweis gelesen und lokale Speicherung verstanden.</span>
+        <span>Notwendige lokale Speicherung verstanden.</span>
+      </label>
+      <label class="pwa-install-prompt__consent pwa-install-prompt__consent--optional">
+        <input type="checkbox" data-pwa-analytics-consent>
+        <span>Optionale Nutzungsstatistik mit Google Analytics erlauben.</span>
       </label>
       <small class="pwa-install-prompt__status" data-pwa-privacy-status hidden></small>
       <div class="pwa-install-prompt__actions">
-        <button class="button button--primary button--small" type="button" data-pwa-privacy-confirm disabled>Weiter</button>
-        <button class="button button--secondary button--small" type="button" data-pwa-dismiss>Spaeter</button>
+        <button class="button button--secondary button--small" type="button" data-pwa-cookie-necessary>Nur notwendig</button>
+        <button class="button button--secondary button--small" type="button" data-pwa-privacy-confirm disabled>Auswahl speichern</button>
+        <button class="button button--primary button--small" type="button" data-pwa-cookie-accept-all>Alle akzeptieren</button>
       </div>
   </aside>`;
 }

@@ -128,6 +128,16 @@ function editorialVisibilityListStatus(item) {
   return status(isPublished && item.visible === true ?"active" : "inactive");
 }
 
+function cmsListVisibilityRank(item = {}, module = "") {
+  if (["members", "users", "mailQueue", "eventMedia"].includes(module)) return 0;
+  const recordStatus = String(item.status || "").toLowerCase();
+  const visibility = String(item.visibility || item.sichtbarkeit || "").toLowerCase();
+  const inactiveStatus = ["draft", "archived", "deleted", "hidden", "inactive", "inaktiv"].includes(recordStatus);
+  const hiddenVisibility = ["internal", "private", "hidden"].includes(visibility);
+  const explicitlyHidden = item.visible === false || item.isLive === false;
+  return inactiveStatus || hiddenVisibility || explicitlyHidden ?1 : 0;
+}
+
 function cmsBulkToolbar(records = [], { collection = "editorialContent", label = "Eintraege" } = {}) {
   return `<div class="cms-bulk-toolbar" data-cms-bulk-toolbar data-cms-bulk-collection="${escapeHtml(collection)}" data-cms-bulk-label="${escapeHtml(label)}">
     <div class="cms-bulk-toolbar__select">
@@ -507,6 +517,18 @@ function aiButton(action, target, label = "Mit ChatGPT bearbeiten", extra = {}) 
   const promptField = extra.promptField ?` data-ai-prompt-field="${escapeHtml(extra.promptField)}"` : "";
   const contextTarget = extra.contextTarget ?` data-ai-context="${escapeHtml(extra.contextTarget)}"` : "";
   return `<button type="button" class="button button--secondary button--small ai-action" data-ai-action="${action}" data-ai-target="${target}" data-ai-entity-type="${extra.entityType || "event"}" data-ai-entity-id="${extra.entityId || ""}" data-ai-field="${extra.fieldName || target}"${promptField}${contextTarget}>${label}</button>`;
+}
+
+function aiWordTargetSelect(value = 180) {
+  const current = String(value || 180);
+  const options = [
+    ["80", "sehr kurz · ca. 80 Wörter"],
+    ["140", "kurz · ca. 140 Wörter"],
+    ["180", "kompakt · ca. 180 Wörter"],
+    ["250", "mittel · ca. 250 Wörter"],
+    ["350", "ausführlich · ca. 350 Wörter"]
+  ];
+  return `<div class="field cms-ai-word-target"><label>KI-Textlänge</label><select name="aiTargetWords" data-ai-target-words>${options.map(([value, label]) => `<option value="${value}" ${current === value ?"selected" : ""}>${label}</option>`).join("")}</select><small>Gilt für neue KI-Vorschläge in diesem Event.</small></div>`;
 }
 
 function aiFieldActions(actions) {
@@ -1326,6 +1348,21 @@ function cmsEventRegistrationIsOpen(event = {}) {
 }
 
 function defaultGlobalEventRegistrationMailText(variant = "confirmation") {
+  if (variant === "reminder") {
+    return [
+      "Guten Tag {{firstName}} {{lastName}},",
+      "",
+      `dies ist eine kurze Erinnerung an "{{eventTitle}}".`,
+      "",
+      "Termin: {{eventDate}}",
+      "Ort: {{eventLocation}}",
+      "",
+      "Falls Sie doch nicht teilnehmen koennen, sagen Sie bitte rechtzeitig ab, damit wir den Platz weitergeben und besser planen koennen.",
+      "",
+      "Viele Gruesse",
+      "PROdigitalTV"
+    ].join("\n");
+  }
   if (variant === "waitlist") {
     return [
       "Guten Tag {{firstName}} {{lastName}},",
@@ -1381,8 +1418,18 @@ function mailTemplateSettings(record = {}) {
   return {
     registrationConfirmation: record.registrationConfirmation || value.registrationConfirmation || defaultGlobalEventRegistrationMailText("confirmation"),
     registrationWaitlist: record.registrationWaitlist || value.registrationWaitlist || defaultGlobalEventRegistrationMailText("waitlist"),
+    registrationReminder: record.registrationReminder || value.registrationReminder || defaultGlobalEventRegistrationMailText("reminder"),
     memberLoginInvitation: record.memberLoginInvitation || value.memberLoginInvitation || defaultMemberLoginInvitationText()
   };
+}
+
+function eventOnlineLabel(event = {}) {
+  return event.onlineMeetingLabel || (event.isVirtualEvent ? "Zoom Meeting" : "");
+}
+
+function eventLocationMailText(event = {}) {
+  if (event.isVirtualEvent) return [eventOnlineLabel(event), event.city].filter(Boolean).join(", ") || "online";
+  return [event.locationName, event.city].filter(Boolean).join(", ") || "dem Veranstaltungsort";
 }
 
 function browserPushSettings(record = {}) {
@@ -1397,13 +1444,19 @@ function renderEventMailTemplate(template = "", event = {}) {
   const replacements = {
     eventTitle: event.title || "PROdigitalTV Event",
     eventDate: event.date ?formatDate(event.date) : "dem Veranstaltungstermin",
-    eventLocation: [event.locationName, event.city].filter(Boolean).join(", ") || "dem Veranstaltungsort"
+    eventLocation: eventLocationMailText(event),
+    onlineMeetingLabel: eventOnlineLabel(event),
+    zoomLink: event.zoomLink || ""
   };
-  return String(template || "").replace(/\{\{(eventTitle|eventDate|eventLocation)\}\}/g, (_, key) => replacements[key] || "");
+  return String(template || "").replace(/\{\{(eventTitle|eventDate|eventLocation|onlineMeetingLabel|zoomLink)\}\}/g, (_, key) => replacements[key] || "");
 }
 
 function defaultEventRegistrationMailText(event = {}, variant = "confirmation", templates = {}) {
-  const template = variant === "waitlist" ?templates.registrationWaitlist : templates.registrationConfirmation;
+  const template = variant === "waitlist"
+    ? templates.registrationWaitlist
+    : variant === "reminder"
+      ? templates.registrationReminder
+      : templates.registrationConfirmation;
   return renderEventMailTemplate(template || defaultGlobalEventRegistrationMailText(variant), event);
 }
 
@@ -1900,7 +1953,8 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   } : await getOne("events", id);
   if (!event) return eventsAdminPage();
   const [topics, speakers, sponsors, registrations, media, settings, allEvents, galleries, allEditorial, mediaAssets, audioProviders, videoLibrary, downloads, members] = await Promise.all([list("topics"), list("speakers"), list("sponsors"), list("registrations"), list("eventMedia"), list("settings"), list("events"), list("galleries"), list("editorialContent"), list("media_assets").catch(() => []), getOne("settings", "audioProviders").catch(() => null), list("media_videos").catch(() => []), list("downloads").catch(() => []), list("members").catch(() => [])]);
-  const eventTypes = settingValue(settings, "eventTypes", ["Medienfruehstueck", "Summit", "Roundtable", "Panel", "Webinar", "Konferenz", "Workshop"]);
+  const defaultEventTypes = ["Medienfruehstueck", "Jahreshauptversammlung", "Summit", "Roundtable", "Panel", "Webinar", "Konferenz", "Workshop"];
+  const eventTypes = Array.from(new Set([...settingValue(settings, "eventTypes", defaultEventTypes), ...defaultEventTypes]));
   const availableGalleries = galleries
     .filter((gallery) => gallery.status !== "archived")
     .sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "de"));
@@ -1928,6 +1982,8 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   const accessTypePicker = customSelect({ name: "accessType", label: "Zugangsart", value: event.accessType, options: accessTypeOptions });
   const primaryHostPicker = customSelect({ name: "primaryHostId", label: "Gastgeber", value: event.primaryHostId || "prodigitaltv", options: primaryHostOptions });
   const coHostPicker = customSelect({ name: "hostId", label: "Co-Gastgeber", value: event.hostId || "", options: coHostOptions, note: "Der Co-Gastgeber wird im Event und in der Eventbox angezeigt." });
+  const onlineMeetingLabel = event.onlineMeetingLabel || (event.isVirtualEvent ? "Zoom Meeting" : "");
+  const virtualEventFields = `<div class="form-grid--three"><label class="cms-switch field"><input type="checkbox" name="isVirtualEvent" ${event.isVirtualEvent ?"checked" : ""}><span><strong>Virtuell / Zoom Meeting</strong><small>Event findet online statt oder hat eine Online-Teilnahme.</small></span></label><div class="field"><label>Online-Plattform</label><input name="onlineMeetingLabel" value="${escapeHtml(onlineMeetingLabel)}" placeholder="Zoom Meeting"></div><div class="field"><label>Separater Zoom-Link</label><input name="zoomLink" type="url" value="${escapeHtml(event.zoomLink || "")}" placeholder="https://..."></div></div>`;
   const hostCreateLayer = `<div class="cms-host-create-layer" data-host-create-layer hidden>
     <div class="cms-host-create-layer__panel" role="dialog" aria-modal="true" aria-labelledby="host-create-title">
       <div class="field-label-row">
@@ -1976,7 +2032,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   }
   let content;
   if (tab === "base") {
-    content = `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid is-save-aware event-base-form"><div class="field"><label>Titel</label><input name="title" value="${escapeHtml(event.title)}" required></div><div class="field"><label>Untertitel</label><input name="subtitle" value="${escapeHtml(event.subtitle)}"></div><div class="field"><div class="field-label-row"><label>Beschreibung</label>${aiButton("improveText", "description", "Mit ChatGPT bearbeiten", { entityId: event.id, fieldName: "description" })}</div><textarea name="description">${escapeHtml(event.description)}</textarea></div><div class="form-grid--four"><div class="field"><label>Location</label><input name="locationName" value="${escapeHtml(event.locationName || "")}"></div><div class="field"><label>Straße / Nr.</label><input name="address" value="${escapeHtml(event.address || "")}"></div><div class="field"><label>PLZ</label><input name="postalCode" value="${escapeHtml(event.postalCode || event.zipCode || "")}"></div><div class="field"><label>Stadt</label><input name="city" value="${escapeHtml(event.city || "")}"></div></div><div class="form-grid--four"><div class="field"><label>Datum</label><input type="date" name="date" value="${event.date}"></div><div class="field"><label>Beginn</label><input type="time" name="startTime" value="${event.startTime}"></div><div class="field"><label>Ende</label><input type="time" name="endTime" value="${event.endTime}"></div><div class="field"><label>Ablauf</label><input type="datetime-local" name="expiresAt" value="${event.expiresAt ?event.expiresAt.slice(0, 16) : ""}"></div></div><div class="form-grid--two"><div class="event-base-form__event-type-stack">${eventTypePicker}<div class="field field--nested" data-new-event-type-field hidden><label>Neuer Eventtyp</label><input name="newEventType" placeholder="z. B. Fachgespräch"></div></div>${accessTypePicker}${primaryHostPicker}${coHostPicker}${eventImageEditor(event, mediaAssets, `#/cms/event/${event.id}?tab=base`)}</div>${hostCreateLayer}<div class="actions"><button class="button button--primary">Event speichern</button>${id !== "new" ?`<button type="button" class="button button--secondary" data-delete-event="${event.id}">Event loeschen</button>` : ""}</div><div id="event-save-result"></div></form>`;
+    content = `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid is-save-aware event-base-form"><div class="field"><label>Titel</label><input name="title" value="${escapeHtml(event.title)}" required></div><div class="field"><label>Untertitel</label><input name="subtitle" value="${escapeHtml(event.subtitle)}"></div><div class="field"><div class="field-label-row"><label>Beschreibung</label>${aiButton("improveText", "description", "Mit ChatGPT bearbeiten", { entityId: event.id, fieldName: "description" })}</div><textarea name="description">${escapeHtml(event.description)}</textarea></div>${aiWordTargetSelect(event.aiTargetWords || 180)}<div class="form-grid--four" data-event-location-fields ${event.isVirtualEvent ?"hidden" : ""}><div class="field"><label>Location</label><input name="locationName" value="${escapeHtml(event.locationName || "")}"></div><div class="field"><label>Straße / Nr.</label><input name="address" value="${escapeHtml(event.address || "")}"></div><div class="field"><label>PLZ</label><input name="postalCode" value="${escapeHtml(event.postalCode || event.zipCode || "")}"></div><div class="field"><label>Stadt</label><input name="city" value="${escapeHtml(event.city || "")}"></div></div>${virtualEventFields}<div class="form-grid--four"><div class="field"><label>Datum</label><input type="date" name="date" value="${event.date}"></div><div class="field"><label>Beginn</label><input type="time" name="startTime" value="${event.startTime}"></div><div class="field"><label>Ende</label><input type="time" name="endTime" value="${event.endTime}"></div><div class="field"><label>Ablauf</label><input type="datetime-local" name="expiresAt" value="${event.expiresAt ?event.expiresAt.slice(0, 16) : ""}"></div></div><div class="form-grid--two"><div class="event-base-form__event-type-stack">${eventTypePicker}<div class="field field--nested" data-new-event-type-field hidden><label>Neuer Eventtyp</label><input name="newEventType" placeholder="z. B. Fachgespräch"></div></div>${accessTypePicker}${primaryHostPicker}${coHostPicker}${eventImageEditor(event, mediaAssets, `#/cms/event/${event.id}?tab=base`)}</div>${hostCreateLayer}<div class="actions"><button class="button button--primary">Event speichern</button>${id !== "new" ?`<button type="button" class="button button--secondary" data-delete-event="${event.id}">Event loeschen</button>` : ""}</div><div id="event-save-result"></div></form>`;
     if (isPastCmsEvent(event)) {
       content = content
         .replace(`<div class="field"><label>Telefon Location</label><input name="phone" value="${escapeHtml(event.phone || "")}"></div>`, "")
@@ -2000,14 +2056,15 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     const globalMailTemplates = mailTemplateSettings(settings.find((item) => item.id === "mailTemplates" || item.key === "mailTemplates"));
     const registrationMailText = event.mailText || defaultEventRegistrationMailText(event, "confirmation", globalMailTemplates);
     const waitlistMailText = event.waitlistMail || defaultEventRegistrationMailText(event, "waitlist", globalMailTemplates);
+    const reminderMailText = event.reminderMail || defaultEventRegistrationMailText(event, "reminder", globalMailTemplates);
     const adminAddRegistrationPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)" open><summary><strong>Person manuell hinzufuegen</strong><span>Admin-Anmeldung</span></summary><form id="admin-registration-form" data-event-id="${event.id}" class="form-grid form-grid--compact"><div class="form-grid--two"><div class="field"><label>Vorname *</label><input name="firstName" autocomplete="given-name" required></div><div class="field"><label>Nachname *</label><input name="lastName" autocomplete="family-name" required></div></div><div class="form-grid--two"><div class="field"><label>Unternehmen</label><input name="company" autocomplete="organization"></div><div class="field"><label>Position / Funktion</label><input name="position" autocomplete="organization-title"></div></div><div class="form-grid--two"><div class="field"><label>E-Mail *</label><input name="email" type="email" autocomplete="email" required></div><div class="field"><label>Telefon</label><input name="phone" autocomplete="tel"></div></div><label class="checkbox checkbox--required"><input type="checkbox" name="privacyAccepted" required> Einwilligung / Datenschutz liegt vor *</label><div class="actions"><button class="button button--primary button--small" type="submit">Person hinzufuegen</button><div id="admin-registration-result"></div></div></form></details>`;
     const registrationsToolbar = `<div class="actions" style="justify-content:space-between;margin-bottom:18px"><h2>Anmeldungen (${assigned.length})</h2><div class="actions"><button class="button button--secondary button--small" data-export-event="${event.id}">Anmeldungen als CSV herunterladen</button><button class="button button--danger button--small" data-delete-selected-registrations data-event-id="${event.id}" disabled>Ausgewaehlte loeschen</button></div></div>`;
     const registrationsTable = `<div id="registration-bulk-result"></div><div class="table-wrap"><table class="table"><thead><tr><th><input type="checkbox" data-registration-select-all aria-label="Alle Anmeldungen auswaehlen"></th><th>Teilnehmer</th><th>Unternehmen</th><th>E-Mail</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((registration) => `<tr data-registration-row="${registration.id}"><td><input type="checkbox" data-registration-select value="${registration.id}" aria-label="Anmeldung von ${escapeHtml([registration.firstName, registration.lastName].filter(Boolean).join(" ") || registration.email || "Teilnehmer")} auswaehlen"></td><td>${escapeHtml([registration.firstName, registration.lastName].filter(Boolean).join(" ") || "-")}</td><td>${escapeHtml(registration.company || "-")}</td><td>${escapeHtml(registration.email || "-")}</td><td>${status(registration.status)}</td><td><div class="table-actions table-actions--icons"><button class="icon-button icon-button--danger" type="button" data-delete-registration="${registration.id}" data-event-id="${event.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div></td></tr>`).join("")}</tbody></table></div>`;
     const checkinPanel = cmsEventHandyTicketEnabled(event)
       ? `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Einlass / Event-QR</strong><span>QR-Code anzeigen</span></summary><p>Diese Seite zeigt den QR-Code, den Teilnehmer vor Ort mit dem Handy scannen.</p><div class="actions"><a class="button button--primary button--small" href="${checkinScreenUrl}" target="_blank" rel="noreferrer">Event-QR oeffnen</a><a class="button button--secondary button--small" href="${checkinScreenUrl}">Event-QR im Browser oeffnen</a></div></details>`
       : `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Einlass / Event-QR</strong><span>deaktiviert</span></summary><p>Fuer dieses Event ist das Handy-Ticket ausgeschaltet. Die Anmeldung wird per E-Mail bestaetigt, aber es wird kein Einlass-QR benoetigt.</p></details>`;
-    const mailPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Mailtexte und Erinnerungen</strong><span>anzeigen / bearbeiten</span></summary><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="registration" class="form-grid is-save-aware"><p>KI erzeugt Mailtexte mit Platzhaltern und ohne echte Teilnehmerdaten. Der Diff-Layer zeigt den vorhandenen Text und den neuen Vorschlag; gespeichert wird erst nach Uebernehmen.</p><div id="${mailAiContextId}" hidden>${escapeHtml(JSON.stringify({ event, registrations: assigned.slice(0, 3) }))}</div><fieldset class="registration-section registration-section--compact"><legend>Automatische Erinnerungen</legend><div class="registration-consents registration-consents--inline"><label class="checkbox"><input type="checkbox" name="reminder7d" ${event.reminder7d ? "checked" : ""}> 7 Tage vorher</label><label class="checkbox"><input type="checkbox" name="reminder1d" ${event.reminder1d ? "checked" : ""}> 1 Tag vorher</label><label class="checkbox"><input type="checkbox" name="reminder2h" ${event.reminder2h ? "checked" : ""}> 2 Stunden vorher</label><label class="checkbox"><input type="checkbox" name="notifyOnEventChange" ${event.notifyOnEventChange ? "checked" : ""}> Sofort bei Termin- oder Ortsaenderung</label></div></fieldset><div class="field"><label>Bestaetigungsmail</label><textarea name="mailText" rows="10">${escapeHtml(registrationMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "mailText", contextTarget: mailAiContextId, label: "Bestaetigungsmail erzeugen", entityId: event.id, fieldName: "mailText" }])}</div><div class="field"><label>Wartelistenmail</label><textarea name="waitlistMail" rows="10">${escapeHtml(waitlistMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "waitlistMail", contextTarget: mailAiContextId, label: "Wartelistenmail erzeugen", entityId: event.id, fieldName: "waitlistMail" }])}</div><div class="actions"><button class="button button--primary button--small" type="submit">Mailtexte und Erinnerungen speichern</button></div><div id="event-save-result"></div></form></details>`;
-    content = `${eventRegistrationTogglePanel(event)}${adminAddRegistrationPanel}${registrationsToolbar}${registrationsTable}${checkinPanel}${mailPanel}`;
+    const mailPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Mailtexte und Erinnerungen</strong><span>anzeigen / bearbeiten</span></summary><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="registration" class="form-grid is-save-aware"><p>KI erzeugt Mailtexte mit Platzhaltern und ohne echte Teilnehmerdaten. Der Diff-Layer zeigt den vorhandenen Text und den neuen Vorschlag; gespeichert wird erst nach Uebernehmen.</p><div id="${mailAiContextId}" hidden>${escapeHtml(JSON.stringify({ event, registrations: assigned.slice(0, 3) }))}</div><fieldset class="registration-section registration-section--compact"><legend>Automatische Erinnerungen</legend><div class="registration-consents registration-consents--inline"><label class="checkbox"><input type="checkbox" name="reminder7d" ${event.reminder7d ? "checked" : ""}> 7 Tage vorher</label><label class="checkbox"><input type="checkbox" name="reminder1d" ${event.reminder1d ? "checked" : ""}> 1 Tag vorher</label><label class="checkbox"><input type="checkbox" name="reminder2h" ${event.reminder2h ? "checked" : ""}> 2 Stunden vorher</label><label class="checkbox"><input type="checkbox" name="notifyOnEventChange" ${event.notifyOnEventChange ? "checked" : ""}> Sofort bei Termin- oder Ortsaenderung</label></div></fieldset><div class="field"><label>Erinnerungsmail an Teilnehmer</label><textarea name="reminderMail" rows="9">${escapeHtml(reminderMailText)}</textarea><p class="muted">Dieser Text wird fuer automatische Teilnehmer-Erinnerungen verwendet. Ziel: Termin nicht vergessen und bei Verhinderung rechtzeitig absagen.</p>${aiFieldActions([{ action: "generateRegistrationMailText", target: "reminderMail", contextTarget: mailAiContextId, label: "Erinnerungsmail erzeugen", entityId: event.id, fieldName: "reminderMail" }])}</div><div class="field"><label>Bestaetigungsmail</label><textarea name="mailText" rows="10">${escapeHtml(registrationMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "mailText", contextTarget: mailAiContextId, label: "Bestaetigungsmail erzeugen", entityId: event.id, fieldName: "mailText" }])}</div><div class="field"><label>Wartelistenmail</label><textarea name="waitlistMail" rows="10">${escapeHtml(waitlistMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "waitlistMail", contextTarget: mailAiContextId, label: "Wartelistenmail erzeugen", entityId: event.id, fieldName: "waitlistMail" }])}</div><div class="actions"><button class="button button--primary button--small" type="submit">Mailtexte und Erinnerungen speichern</button></div><div id="event-save-result"></div></form></details>`;
+    content = `${eventRegistrationTogglePanel(event)}${checkinPanel}${mailPanel}${adminAddRegistrationPanel}${registrationsToolbar}${registrationsTable}`;
   } else if (tab === "pre") {
     const mailingType = event.mailingType || "save_the_date";
     const saveTheDateText = event.saveTheDateText || `Save the date: ${event.title || "PROdigitalTV Event"} am ${event.date ?formatDate(event.date) : "geplanten Termin"}.`;
@@ -2315,8 +2372,9 @@ export async function mailAdminPage() {
       <form id="mail-default-templates-form" class="form-grid">
         <div class="field"><label>Bestaetigungsmail Standard</label><textarea name="registrationConfirmation" rows="11">${escapeHtml(templates.registrationConfirmation)}</textarea></div>
         <div class="field"><label>Wartelistenmail Standard</label><textarea name="registrationWaitlist" rows="9">${escapeHtml(templates.registrationWaitlist)}</textarea></div>
+        <div class="field"><label>Erinnerungsmail Teilnehmer Standard</label><textarea name="registrationReminder" rows="9">${escapeHtml(templates.registrationReminder)}</textarea></div>
         <div class="field"><label>Einladung Mitglieder-Login</label><textarea name="memberLoginInvitation" rows="11">${escapeHtml(templates.memberLoginInvitation)}</textarea></div>
-        <p class="muted">Event-Platzhalter: <code>{{firstName}}</code>, <code>{{lastName}}</code>, <code>{{eventTitle}}</code>, <code>{{eventDate}}</code>, <code>{{eventLocation}}</code>. Login-Platzhalter: <code>{{displayName}}</code>, <code>{{role}}</code>, <code>{{memberName}}</code>, <code>{{invitationLink}}</code>. Links und Buttons werden vom System ergaenzt.</p>
+        <p class="muted">Event-Platzhalter: <code>{{firstName}}</code>, <code>{{lastName}}</code>, <code>{{eventTitle}}</code>, <code>{{eventDate}}</code>, <code>{{eventLocation}}</code>, <code>{{onlineMeetingLabel}}</code>, <code>{{zoomLink}}</code>. Login-Platzhalter: <code>{{displayName}}</code>, <code>{{role}}</code>, <code>{{memberName}}</code>, <code>{{invitationLink}}</code>. Links und Buttons werden vom System ergaenzt.</p>
         <button class="button button--primary">Standardtexte speichern</button><div id="mail-default-templates-result"></div>
       </form>
     </section>
@@ -4153,6 +4211,9 @@ export async function moduleListPage(module, section = "all") {
         if (sortA !== sortB) return sortA - sortB;
         return String(a.title || a.titel || "").localeCompare(String(b.title || b.titel || ""), "de", { sensitivity: "base" });
       }
+      const visibleRankA = cmsListVisibilityRank(a, module);
+      const visibleRankB = cmsListVisibilityRank(b, module);
+      if (visibleRankA !== visibleRankB) return visibleRankA - visibleRankB;
       const dateA = listDateSortValue(a);
       const dateB = listDateSortValue(b);
       if (dateA || dateB) return dateB - dateA;

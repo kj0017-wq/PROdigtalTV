@@ -49,6 +49,7 @@ export async function initializeRoles() {
 export async function initializeDefaultStatuses() {
   const defaults = [
     { id: "eventStatus", key: "eventStatus", group: "events", value: ["draft", "published", "archived"] },
+    { id: "eventTypes", key: "eventTypes", group: "events", value: ["Fachgespraech", "Jahreshauptversammlung", "Konferenz", "Medienfruehstueck", "Mitgliederveranstaltung", "Netzwerkveranstaltung", "Panel", "Roundtable", "Summit", "Webinar", "Workshop"] },
     { id: "lifecyclePhases", key: "lifecyclePhases", group: "events", value: ["planning", "registration_open", "registration_closed", "archived"] },
     { id: "accessTypes", key: "accessTypes", group: "events", value: ["public", "members_only", "invitation_only"] },
     { id: "registrationStatuses", key: "registrationStatuses", group: "registrations", value: ["pending_email_confirmation", "confirmed", "waitlist", "cancelled", "attended", "no_show", "expired"] }

@@ -114,7 +114,12 @@ function buildPrompt(action, payload) {
   }
   const fieldName = payload.fieldName || "";
   const context = payload.context || {};
+  const targetWords = Number(payload.targetWords || context.targetWords || 0);
   const isRetrospective = Boolean(context.isRetrospective) || action === "generateEventRetrospective";
+  const lengthControlledFields = new Set(["description", "bodyText", "longDescription", "text", "articleText", "archiveText", "postEventSummary"]);
+  const textLengthRule = targetWords > 0 && lengthControlledFields.has(fieldName)
+    ? `Laengenregel: Erzeuge einen kompakten Text mit etwa ${targetWords} Woertern. Eine Abweichung von rund 15 Prozent ist ok. Nicht kuenstlich auffuellen.`
+    : "Wenn ein Haupt- oder Beitragstext erzeugt wird, muss der neue Text mindestens 300 Woerter haben und soll idealerweise 300 bis 400 Woerter umfassen, sofern die gelieferten Informationen dafuer ausreichen.";
   const fieldRules = {
     title: isRetrospective
       ? "Feldregel: Erzeuge nur eine einzelne Rueckblick-Ueberschrift fuer ein vergangenes Event, maximal 90 Zeichen. Sie muss nachtraegliche Berichterstattung signalisieren, nicht Einladung oder Ankuendigung. Keine Subline, keinen Fliesstext."
@@ -148,7 +153,7 @@ function buildPrompt(action, payload) {
     isRetrospective ? "Kontextregel Rueckblick: Alle Texte muessen als nachtraegliche Berichterstattung ueber ein bereits vergangenes Event klingen. Verboten sind Formulierungen wie 'wir laden ein', 'melden Sie sich an', 'findet statt', 'wird stattfinden', 'wird sich beschaeftigen', 'wir freuen uns' oder andere Einladungs- und Zukunftslogik. Verwende stattdessen 'fand statt', 'stand im Mittelpunkt', 'diskutierten', 'beleuchtete', 'bot'." : "",
     "Arbeite nur mit den uebergebenen Informationen.",
     "Der sichtbare Text muss die Sache selbst erklaeren: Was ist passiert, worum geht es, warum ist es relevant, welche Einordnung ergibt sich fuer die Medienbranche.",
-    "Wenn ein Haupt- oder Beitragstext erzeugt wird, muss der neue Text mindestens 300 Woerter haben und soll idealerweise 300 bis 400 Woerter umfassen, sofern die gelieferten Informationen dafuer ausreichen.",
+    textLengthRule,
     "Den Haupttext immer neu formulieren. Keine langen Passagen aus dem Ausgangstext kopieren, keine Satz-fuer-Satz-Paraphrase. Inhalt, Reihenfolge und Einstieg eigenstaendig redaktionell strukturieren.",
     "Beim Neuformulieren den Kern der Aussagen bewahren: konkrete Akteure, Daten, Verfahren, Zahlen, Rechtsfragen, Marktfolgen und zentrale Ursache-Wirkung-Beziehungen nicht verwässern und nicht durch allgemeine Branchenfloskeln ersetzen.",
     "Verwende deutsche Umlaute und ß in sichtbaren deutschen Texten: ä, ö, ü, Ä, Ö, Ü, ß. Nicht ae, oe, ue oder ss schreiben, wenn ein deutscher Umlaut gemeint ist.",
