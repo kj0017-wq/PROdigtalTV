@@ -206,13 +206,77 @@ function memberIsNotificationTestGroup(member = {}) {
 }
 
 async function emailBelongsToMember(email = "") {
+  const match = await findPersonByEmail(email);
+  return Boolean(match.isMember);
+}
+
+async function findPersonByEmail(email = "") {
   const normalizedEmail = clean(email).toLowerCase();
-  if (!normalizedEmail) return false;
-  const membersSnapshot = await db.collection("members").get();
-  return membersSnapshot.docs.some((document) => {
+  if (!normalizedEmail) return { matched: false, isMember: false };
+  const [membersSnapshot, usersSnapshot, contactsSnapshot, speakersSnapshot] = await Promise.all([
+    db.collection("members").get(),
+    db.collection("users").where("email", "==", normalizedEmail).limit(5).get().catch(() => ({ docs: [] })),
+    db.collection("contacts").where("email", "==", normalizedEmail).limit(5).get().catch(() => ({ docs: [] })),
+    db.collection("speakers").where("email", "==", normalizedEmail).limit(5).get().catch(() => ({ docs: [] }))
+  ]);
+  const memberDocument = membersSnapshot.docs.find((document) => {
     const member = document.data() || {};
     return memberCanMatchRegistration(member) && normalizedMemberEmails(member).includes(normalizedEmail);
   });
+  if (memberDocument) {
+    const member = memberDocument.data() || {};
+    return {
+      matched: true,
+      isMember: true,
+      source: "member",
+      memberId: memberDocument.id,
+      displayName: compactNameParts(member) || member.name || normalizedEmail,
+      company: member.name || member.company || member.title || ""
+    };
+  }
+  const userDocument = usersSnapshot.docs.find((document) => {
+    const user = document.data() || {};
+    const status = clean(user.status || "active").toLowerCase();
+    return !["inactive", "archived", "deleted", "disabled"].includes(status);
+  });
+  if (userDocument) {
+    const user = userDocument.data() || {};
+    const role = clean(user.role || "member").toLowerCase();
+    return {
+      matched: true,
+      isMember: role === "member" || Boolean(clean(user.memberId)),
+      source: "user",
+      userId: userDocument.id,
+      memberId: user.memberId || "",
+      displayName: user.displayName || compactNameParts(user) || normalizedEmail,
+      company: user.company || ""
+    };
+  }
+  const contactDocument = contactsSnapshot.docs[0];
+  if (contactDocument) {
+    const contact = contactDocument.data() || {};
+    return {
+      matched: true,
+      isMember: false,
+      source: "contact",
+      contactId: contactDocument.id,
+      displayName: compactNameParts(contact) || normalizedEmail,
+      company: contact.company || ""
+    };
+  }
+  const speakerDocument = speakersSnapshot.docs[0];
+  if (speakerDocument) {
+    const speaker = speakerDocument.data() || {};
+    return {
+      matched: true,
+      isMember: false,
+      source: "speaker",
+      speakerId: speakerDocument.id,
+      displayName: compactNameParts(speaker) || normalizedEmail,
+      company: speaker.company || ""
+    };
+  }
+  return { matched: false, isMember: false };
 }
 
 async function eventNotificationTargets(eventId = "", options = {}) {
@@ -605,6 +669,19 @@ function registrationTicketUrl(token, eventId = "") {
   return publicSpaRouteUrl(`ticket/link/${encodeURIComponent(token)}`);
 }
 
+function eventUsesHandyTicket(eventRecord = {}, registration = {}) {
+  const values = [
+    eventRecord.handyTicketEnabled,
+    eventRecord.mobileTicketEnabled,
+    eventRecord.ticketEnabled,
+    eventRecord.enableHandyTicket,
+    registration.handyTicketEnabled,
+    registration.mobileTicketEnabled,
+    registration.ticketEnabled
+  ];
+  return !values.some((value) => value === false || clean(value).toLowerCase() === "false" || clean(value).toLowerCase() === "off");
+}
+
 function registrationCancelUrl(token) {
   return publicHashUrl(`registration/cancel/${encodeURIComponent(token)}`);
 }
@@ -884,6 +961,7 @@ function renderMail(mail, context = {}) {
   if (mail.template === "registration_confirmed") {
     const title = registration.eventTitle || eventRecord.title || "";
     const eventLink = eventUrl(registration.eventId || eventRecord.id || mail.eventId || "");
+    const ticketEnabled = mail.ticketEnabled !== false && eventUsesHandyTicket(eventRecord, registration);
     return {
       subject: mail.subject || `Anmeldung bestaetigt: ${registration.eventTitle || eventRecord.title || ""}`,
       text: [
@@ -891,8 +969,8 @@ function renderMail(mail, context = {}) {
         "",
         `Ihre Anmeldung${title ? ` fuer "${title}"` : ""} wurde bestaetigt.`,
         "",
-        "Wenn Sie die Anmeldung auf dem Handy bestaetigt haben, ist dieses Geraet bereits als Ticket vorbereitet.",
-        "Beim Einlass scannen Sie bitte den QR-Code des Events. Das System erkennt dann das gespeicherte Ticket auf Ihrem Handy.",
+        ticketEnabled ? "Wenn Sie die Anmeldung auf dem Handy bestaetigt haben, ist dieses Geraet bereits als Ticket vorbereitet." : "Fuer diese Veranstaltung ist kein Handy-Ticket erforderlich.",
+        ticketEnabled ? "Beim Einlass scannen Sie bitte den QR-Code des Events. Das System erkennt dann das gespeicherte Ticket auf Ihrem Handy." : "Ihre bestaetigte Anmeldung ist ausreichend; weitere Informationen erhalten Sie ueber die Veranstaltungskommunikation.",
         eventLink ? `Zum Event: ${eventLink}` : "",
         mail.cancelUrl ? `Anmeldung stornieren: ${mail.cancelUrl}` : "",
         "",
@@ -902,11 +980,12 @@ function renderMail(mail, context = {}) {
       html: mailHtmlShell("Anmeldung bestaetigt", [
         `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Guten Tag ${clean(registration.firstName)} ${clean(registration.lastName)},</p>`,
         `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Ihre Anmeldung${title ? ` fuer <strong>${title}</strong>` : ""} wurde bestaetigt.</p>`,
-        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Wenn Sie die Anmeldung auf dem Handy bestaetigt haben, ist dieses Geraet bereits als Ticket vorbereitet.</p>`,
-        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Beim Einlass scannen Sie bitte den QR-Code des Events. Das System erkennt dann das gespeicherte Ticket auf Ihrem Handy.</p>`,
+        ticketEnabled
+          ? `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Wenn Sie die Anmeldung auf dem Handy bestaetigt haben, ist dieses Geraet bereits als Ticket vorbereitet.</p><p style="font-size:17px;line-height:1.55;margin:0 0 14px">Beim Einlass scannen Sie bitte den QR-Code des Events. Das System erkennt dann das gespeicherte Ticket auf Ihrem Handy.</p>`
+          : `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Fuer diese Veranstaltung ist kein Handy-Ticket erforderlich.</p><p style="font-size:17px;line-height:1.55;margin:0 0 14px">Ihre bestaetigte Anmeldung ist ausreichend; weitere Informationen erhalten Sie ueber die Veranstaltungskommunikation.</p>`,
         mailButton("Zum Event", eventLink),
         mail.cancelUrl ? `<p style="font-size:14px;line-height:1.5;margin:18px 0 0"><a href="${mail.cancelUrl}" style="color:#0b3a66">Anmeldung stornieren</a></p>` : "",
-        `<p style="font-size:14px;color:#5f6b7c;margin:18px 0 0">Der separate Handy-Ticket-Link wird nicht mehr benoetigt, wenn die Bestaetigung bereits auf dem Smartphone erfolgt ist.</p>`
+        ticketEnabled ? `<p style="font-size:14px;color:#5f6b7c;margin:18px 0 0">Der separate Handy-Ticket-Link wird nicht mehr benoetigt, wenn die Bestaetigung bereits auf dem Smartphone erfolgt ist.</p>` : ""
       ].filter(Boolean).join(""))
     };
   }
@@ -1468,7 +1547,8 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
   const registrationRef = db.collection("registrations").doc(`registration-${randomBytes(16).toString("hex")}`);
   const lockRef = db.collection("registrationLocks").doc(registrationLockId(eventRecord.id, input.email));
   const headers = request.rawRequest?.headers || {};
-  const isMemberByEmail = await emailBelongsToMember(input.email);
+  const personMatch = await findPersonByEmail(input.email);
+  const isMemberByEmail = Boolean(personMatch.isMember);
   const confirmationToken = randomBytes(32).toString("hex");
   const confirmationExpiresAt = Timestamp.fromMillis(Date.now() + 48 * 60 * 60 * 1000);
   const registration = {
@@ -1479,6 +1559,15 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
     eventAccessType: eventRecord.accessType || "",
     ...input,
     isMember: isMemberByEmail,
+    existingPersonMatched: Boolean(personMatch.matched),
+    personMatchSource: personMatch.source || "new",
+    matchedMemberId: personMatch.memberId || "",
+    matchedUserId: personMatch.userId || "",
+    matchedContactId: personMatch.contactId || "",
+    matchedSpeakerId: personMatch.speakerId || "",
+    memberGuestAllowed: eventRecord.accessType === "members_only",
+    registrationAudienceType: isMemberByEmail ? "member" : (eventRecord.accessType === "members_only" ? "member_guest" : "guest"),
+    handyTicketEnabled: eventUsesHandyTicket(eventRecord),
     notificationConsentAccepted: Boolean(input.notifyForThisEvent || input.notifyFutureEvents),
     notificationConsentSource: "event_registration_checkbox",
     notificationConsentText: "Benachrichtigungen zu dieser Veranstaltung und optional zu zukuenftigen PROdigitalTV-Veranstaltungen.",
@@ -1580,7 +1669,8 @@ exports.adminCreateEventRegistration = onCall({ region }, async (request) => {
   const registrationRef = db.collection("registrations").doc(`registration-${randomBytes(16).toString("hex")}`);
   const lockRef = db.collection("registrationLocks").doc(registrationLockId(eventRecord.id, input.email));
   const headers = request.rawRequest?.headers || {};
-  const isMemberByEmail = await emailBelongsToMember(input.email);
+  const personMatch = await findPersonByEmail(input.email);
+  const isMemberByEmail = Boolean(personMatch.isMember);
   const confirmationToken = randomBytes(32).toString("hex");
   const confirmationExpiresAt = Timestamp.fromMillis(Date.now() + 48 * 60 * 60 * 1000);
   const registration = {
@@ -1591,6 +1681,15 @@ exports.adminCreateEventRegistration = onCall({ region }, async (request) => {
     eventAccessType: eventRecord.accessType || "",
     ...input,
     isMember: isMemberByEmail,
+    existingPersonMatched: Boolean(personMatch.matched),
+    personMatchSource: personMatch.source || "new",
+    matchedMemberId: personMatch.memberId || "",
+    matchedUserId: personMatch.userId || "",
+    matchedContactId: personMatch.contactId || "",
+    matchedSpeakerId: personMatch.speakerId || "",
+    memberGuestAllowed: eventRecord.accessType === "members_only",
+    registrationAudienceType: isMemberByEmail ? "member" : (eventRecord.accessType === "members_only" ? "member_guest" : "guest"),
+    handyTicketEnabled: eventUsesHandyTicket(eventRecord),
     privacyAccepted: Boolean(input.privacyAccepted),
     emailConfirmed: false,
     status: "pending_email_confirmation",
@@ -2133,7 +2232,7 @@ exports.onRegistrationCreated = onDocumentCreated({ document: "registrations/{re
   const token = randomBytes(32).toString("hex");
   const tokenHash = hashToken(token);
   const expiresAt = Timestamp.fromMillis(Date.now() + 48 * 60 * 60 * 1000);
-  await event.data.ref.update({ eventTitle: eventRecord.title, eventDate: eventRecord.date, eventAccessType: eventRecord.accessType, confirmationTokenHash: tokenHash, confirmationExpiresAt: expiresAt, updatedAt: FieldValue.serverTimestamp() });
+  await event.data.ref.update({ eventTitle: eventRecord.title, eventDate: eventRecord.date, eventAccessType: eventRecord.accessType, handyTicketEnabled: eventUsesHandyTicket(eventRecord, registration), confirmationTokenHash: tokenHash, confirmationExpiresAt: expiresAt, updatedAt: FieldValue.serverTimestamp() });
   await queueMail({
     type: "registration_confirmation",
     to: registration.email,
@@ -2328,24 +2427,35 @@ exports.confirmRegistrationByToken = onCall({ region, invoker: "public" }, async
     await document.ref.update({ status: "expired", updatedAt: FieldValue.serverTimestamp() });
     throw new HttpsError("deadline-exceeded", "Bestaetigungslink ist abgelaufen.");
   }
-  const ticketToken = randomBytes(32).toString("hex");
+  const eventSnapshot = registration.eventId ? await db.collection("events").doc(registration.eventId).get().catch(() => null) : null;
+  const eventRecord = eventSnapshot?.exists ? { id: eventSnapshot.id, ...eventSnapshot.data() } : {};
+  const ticketEnabled = eventUsesHandyTicket(eventRecord, registration);
+  const ticketToken = ticketEnabled ? randomBytes(32).toString("hex") : "";
   const cancelToken = randomBytes(32).toString("hex");
-  const ticketLink = registrationTicketUrl(ticketToken, registration.eventId);
+  const ticketLink = ticketEnabled ? registrationTicketUrl(ticketToken, registration.eventId) : "";
   const cancelUrl = registrationCancelUrl(cancelToken);
-  await document.ref.update({
+  const update = {
     status: "confirmed", emailConfirmed: true, confirmedAt: FieldValue.serverTimestamp(),
     confirmationTokenHash: FieldValue.delete(),
-    ticketTokenHash: hashToken(ticketToken),
+    handyTicketEnabled: ticketEnabled,
     cancelTokenHash: hashToken(cancelToken),
-    ticketIssuedAt: FieldValue.serverTimestamp(),
     cancelTokenIssuedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp()
-  });
+  };
+  if (ticketEnabled) {
+    update.ticketTokenHash = hashToken(ticketToken);
+    update.ticketIssuedAt = FieldValue.serverTimestamp();
+  } else {
+    update.ticketTokenHash = FieldValue.delete();
+    update.ticketIssuedAt = FieldValue.delete();
+    update.ticketDeviceLinked = FieldValue.delete();
+  }
+  await document.ref.update(update);
   await queueMail({
     type: "registration_confirmed", to: registration.email,
     subject: `Anmeldung bestaetigt: ${registration.eventTitle}`, template: "registration_confirmed",
     eventId: registration.eventId, registrationId: document.id,
-    ticketLink, cancelUrl, eventCheckinUrl: eventCheckinUrl(registration.eventId)
+    ticketEnabled, ticketLink, cancelUrl, eventCheckinUrl: ticketEnabled ? eventCheckinUrl(registration.eventId) : ""
   });
   return {
     confirmed: true,
@@ -2355,6 +2465,7 @@ exports.confirmRegistrationByToken = onCall({ region, invoker: "public" }, async
     eventTitle: registration.eventTitle || "",
     firstName: registration.firstName || "",
     lastName: registration.lastName || "",
+    ticketEnabled,
     ticketToken,
     ticketLink,
     cancelUrl

@@ -2,6 +2,29 @@
 import { eventDateBox, escapeHtml, formatDate } from "../utils/format.js";
 import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=1";
 
+function looksTruncatedText(text = "") {
+  return /(?:\.\.\.|…)$/u.test(String(text || "").trim());
+}
+
+function eventSummaryText(event = {}) {
+  const description = String(event.description || "").trim();
+  if (description && !looksTruncatedText(description)) return description;
+  return String(
+    event.publicTeaser
+    || event.teaserText
+    || event.shortDescription
+    || event.subtitle
+    || event.longDescription
+    || event.bodyText
+    || event.articleText
+    || event.archiveText
+    || event.postEventSummary
+    || event.postEventummary
+    || description
+    || ""
+  ).trim();
+}
+
 export function eventCard(event, archive = false, partners = []) {
   const date = eventDateBox(event.date);
   const host = partners.find((partner) => partner.id === event.hostId);
@@ -25,7 +48,7 @@ export function eventCard(event, archive = false, partners = []) {
         ? "Warteliste"
         : "Bestaetigung offen"
     : "";
-  const summary = event.description || event.publicTeaser || event.teaserText || event.shortDescription || event.subtitle || "";
+  const summary = eventSummaryText(event);
   const imageStyle = imageUrl ? ` style="--event-card-image:url(&quot;${escapeHtml(imageUrl)}&quot;)"` : "";
   return `<article class="card event-card ${imageUrl ? "event-card--with-image" : ""}"${imageStyle}>
     <div class="event-card__visual ${archive ? "event-card__visual--archive" : ""}">

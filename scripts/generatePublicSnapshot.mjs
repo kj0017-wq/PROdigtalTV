@@ -46,13 +46,14 @@ const fieldAllowList = {
     "sichtbarkeit", "visible", "lifecyclePhase", "lifecycle_phase", "phase", "registrationEnabled",
     "registrationStatus", "registration_state", "registrationState", "allowPublicRegistration",
     "allowMemberRegistration", "showPublicTeaser", "publicTeaser", "description", "shortDescription",
-    "teaserText", "subtitle", "hostId", "sponsorIds", "topicIds", "speakerIds", "imageUrl",
+    "teaserText", "subtitle", "introText", "longDescription", "bodyText", "articleText", "archiveText",
+    "postEventSummary", "postEventummary", "hostId", "sponsorIds", "topicIds", "speakerIds", "imageUrl",
     "thumbnail_url", "thumbnailUrl", "assetUrl", "mediaAssetId", "media_asset_id", "thumbnailMediaAssetId",
     "thumbnail_media_asset_id", "updatedAt", "updated_at", "validFrom"
   ]),
   topics: new Set([
     "id", "title", "headline", "shortDescription", "teaserText", "subtitle", "description",
-    "status", "visibility", "sichtbarkeit", "eventId", "eventIds", "speakerId", "speakerIds",
+    "longDescription", "bodyText", "articleText", "status", "visibility", "sichtbarkeit", "eventId", "eventIds", "speakerId", "speakerIds",
     "sortOrder", "date", "publishDate", "validFrom", "updatedAt", "updated_at", "imageUrl",
     "thumbnail_url", "thumbnailUrl", "cardImageUrl", "assetUrl", "companyLogoUrl", "logoUrl",
     "company_logo_url", "mediaAssetId", "media_asset_id", "thumbnailMediaAssetId",
@@ -65,7 +66,7 @@ const fieldAllowList = {
   ]),
   editorialContent: new Set([
     "id", "title", "headline", "subtitle", "introText", "shortDescription", "description",
-    "teaserText", "category", "section", "page", "status", "visibility", "sichtbarkeit",
+    "teaserText", "longDescription", "bodyText", "articleText", "category", "section", "page", "status", "visibility", "sichtbarkeit",
     "publishDate", "validFrom", "date", "updatedAt", "updated_at", "imageUrl", "thumbnail_url",
     "thumbnailUrl", "assetUrl", "mediaAssetId", "media_asset_id", "thumbnailMediaAssetId",
     "thumbnail_media_asset_id", "linkedEventId", "galleryEventId", "galleryId", "sponsorId"
@@ -113,6 +114,17 @@ function trimLongString(value, maxLength = 420) {
   return value.length > maxLength ? `${value.slice(0, maxLength).trim()}...` : value;
 }
 
+const longTextFields = new Set([
+  "description",
+  "introText",
+  "longDescription",
+  "bodyText",
+  "articleText",
+  "archiveText",
+  "postEventSummary",
+  "postEventummary"
+]);
+
 function compactValue(key = "", value) {
   if (key === "images" && Array.isArray(value)) {
     return value.slice(0, 12).map((image = {}) => ({
@@ -122,7 +134,7 @@ function compactValue(key = "", value) {
       sortOrder: image.sortOrder || 0
     }));
   }
-  return trimLongString(value);
+  return trimLongString(value, longTextFields.has(key) ? 6000 : 420);
 }
 
 function cleanRecord(record = {}, collectionName = "") {

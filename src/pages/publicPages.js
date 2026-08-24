@@ -1,14 +1,17 @@
 import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=530";
 import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=471";
 import { publicShell, logo } from "../components/layout.js?v=9";
-import { eventCard, topicCard } from "../components/cards.js?v=13";
+import { eventCard, topicCard } from "../components/cards.js?v=14";
 import { accessLabels, lifecycleLabels } from "../data/platformConstants.js?v=1";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
 import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=1";
 import { checkInWithStoredTicket, linkTicketDevice, listMyEventRegistrations, readStoredTicket, validateStoredTicket } from "../firebase/registrationService.js?v=16";
 
 function subhero(eyebrow, title, text) {
-  return `<section class="subhero"><div class="container">${eyebrow ? `<p class="eyebrow">${eyebrow}</p>` : ""}<h1>${title}</h1><p>${text}</p></div></section>`;
+  const cleanEyebrow = String(eyebrow || "").trim();
+  const cleanTitle = String(title || "").trim();
+  const cleanText = String(text || "").trim();
+  return `<section class="subhero"><div class="container">${cleanEyebrow ? `<p class="eyebrow">${escapeHtml(cleanEyebrow)}</p>` : ""}<h1>${escapeHtml(cleanTitle)}</h1>${cleanText ? `<p>${escapeHtml(cleanText)}</p>` : ""}</div></section>`;
 }
 
 function articleHeader({ eyebrow = "", title = "", intro = "", logoUrl = "", logoAlt = "" } = {}) {
@@ -20,6 +23,33 @@ function articleHeader({ eyebrow = "", title = "", intro = "", logoUrl = "", log
     </div>
     ${logoUrl ? `<figure class="article-header__logo"><img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(logoAlt || title)}" ${liveImageAttrs("topic")}></figure>` : ""}
   </header>`;
+}
+
+function aiDisclosureNote(item = {}) {
+  const explicitValue = item.aiDisclosure ?? item.ai_disclosure ?? item.aiUsage ?? item.ai_usage;
+  const inferredValue = [
+    item.generation_origin,
+    item.generationOrigin,
+    item.ai_log_json,
+    item.aiLogJson,
+    item.source_snapshot_json,
+    item.sources,
+    item.sourceType,
+    item.category
+  ].some((value) => /ai|ki|news-import|morning|briefing|import/i.test(String(Array.isArray(value) ? value.join(" ") : value || "")))
+    ? "partial_ai"
+    : "";
+  const value = String(explicitValue ?? inferredValue).trim();
+  if (!value || value === "none") return "";
+  const labels = {
+    text_edit: "Dieser Inhalt wurde mit KI-Unterstuetzung sprachlich bearbeitet und redaktionell geprueft.",
+    partial_ai: "Dieser Inhalt wurde mit KI-Unterstuetzung vorbereitet und redaktionell verantwortet.",
+    image_ai: "Das Bild zu diesem Inhalt wurde mithilfe von KI erstellt oder bearbeitet.",
+    audio_ai: "Die Vorlesefunktion wurde mit synthetischer Stimme erzeugt.",
+    media_ai: "Mediale Bestandteile dieses Inhalts wurden mithilfe von KI erstellt oder bearbeitet."
+  };
+  const text = labels[value] || value;
+  return `<details class="ai-disclosure-note"><summary><span>KI</span></summary><p>${escapeHtml(text)}</p></details>`;
 }
 
 function topicVisualHeader({ topic = {}, speakers = [], title = "", intro = "", mediaAssets = [] } = {}) {
@@ -575,8 +605,16 @@ function articleParagraphs(text = "") {
   return text.split(/\n+/).filter(Boolean).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("");
 }
 
+function looksTruncatedText(text = "") {
+  return /(?:\.\.\.|…)$/u.test(String(text || "").trim());
+}
+
 function eventIntroText(event = {}) {
   return String(event.description || event.publicTeaser || event.teaserText || event.shortDescription || event.introText || event.subtitle || "").trim();
+}
+
+function eventLongText(event = {}) {
+  return String(event.postEventSummary || event.postEventummary || event.archiveText || event.longDescription || event.bodyText || event.articleText || "").trim();
 }
 
 function archiveEventImageUrl(event = {}, mediaAssets = []) {
@@ -1069,7 +1107,7 @@ export async function internalDetailPage(bereich, slug) {
   if (!block) return notFoundPage();
   const cta = block.button_text ? `<div class="actions" style="margin-top:24px"><a class="button button--primary" href="${escapeHtml(block.button_ziel || `#/${meta.route}`)}">${escapeHtml(block.button_text)}</a></div>` : "";
   return publicShell(meta.active, `${subhero(meta.eyebrow, block.titel, block.kurztext)}
-    <section class="section"><div class="container internal-detail"><a class="link" href="#/${meta.route}">← Zurueck</a><article class="detail-main"><div class="editorial-text">${articleParagraphs(block.langtext)}</div>${cta}</article></div></section>`);
+    <section class="section"><div class="container internal-detail"><a class="link" href="#/${meta.route}">← Zurueck</a><article class="detail-main"><div class="editorial-text">${articleParagraphs(block.langtext)}</div>${aiDisclosureNote(block)}${cta}</article></div></section>`);
 }
 
 function articleSourcesList(item = {}) {
@@ -2258,9 +2296,15 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
     </div>
   </section>` : "";
   const eventImageUrl = eventDetailImageUrl(event, mediaAssets, [coHostLogo]);
-  const introText = eventIntroText(event);
-  const longText = event.postEventummary || event.archiveText || event.longDescription || event.bodyText || event.articleText || "";
-  const haseparateLongText = longText.trim() && longText.trim() !== introText.trim();
+  const rawIntroText = eventIntroText(event);
+  const longText = eventLongText(event);
+  const introText = looksTruncatedText(rawIntroText) && longText ? "" : rawIntroText;
+  const hasSeparateLongText = longText.trim() && longText.trim() !== introText.trim();
+  const isPast = isPastEvent(event);
+  const eventMainText = !isPast && hasSeparateLongText
+    ? [introText, longText].filter(Boolean).join("\n\n")
+    : introText || longText;
+  const retrospectiveText = isPast && hasSeparateLongText ? longText : "";
   const registrationCta = registrationAllowed
     ? `<div class="event-registration-cta"><a class="button button--primary" href="#/register/${escapeHtml(event.id)}">Zum Event anmelden</a></div>`
     : `<div class="alert event-registration-cta">${event.accessType === "invitation_only" ? "Teilnahme nur auf Einladung." : "Anmeldung derzeit nicht verfuegbar."}</div>`;
@@ -2273,9 +2317,9 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
         <figure class="event-detail-image"><img src="${escapeHtml(stableImageUrl(eventImageUrl, "event"))}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy" ${liveImageAttrs("event")}></figure>
         ${ticketStatusCard}
         ${restricted ? `<div class="alert alert--warning">Details und Anmeldung dieses Mitglieder-Events stehen nach dem Login zur Verfuegung.</div>` : ""}
-        <h2>Zum Event</h2>${introText ? `<div class="lead editorial-text">${articleParagraphs(introText)}</div>` : ""}
+        <h2>Zum Event</h2>${eventMainText ? `<div class="lead editorial-text event-detail-text">${articleParagraphs(eventMainText)}</div>` : ""}
         ${restricted ? "" : registrationCta}
-        ${haseparateLongText ? `<h2>Rückblick</h2><div class="editorial-text">${articleParagraphs(longText)}</div>` : ""}
+        ${retrospectiveText ? `<h2>Rückblick</h2><div class="editorial-text">${articleParagraphs(retrospectiveText)}</div>` : ""}
         ${eventTalksMarkup(topics, speakers, event)}
         ${event.lunchNote ? `<div class="alert">${escapeHtml(event.lunchNote)}</div>` : ""}
         ${restricted ? "" : `<section class="venue-stage venue-stage--event-detail"><div class="venue-stage__identity"><p class="eyebrow">Veranstaltungsort</p>${coHost && coHostLogo ? `<img class="venue-stage__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : ""}<h2>${escapeHtml(coHost?.name || event.locationName)}</h2><p>${escapeHtml(event.locationName || "")}${event.locationName ? "<br>" : ""}${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}</p></div><div class="venue-stage__description"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : `<p>${escapeHtml(coHost.name)} begleitet dieses PROdigitalTV Event als Co-Gastgeber.</p>`}` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`}
@@ -2315,10 +2359,12 @@ export async function registrationPage(id) {
         <div><span>Termin</span><strong>${escapeHtml(formatDate(event.date))}${event.startTime ?` - ${escapeHtml(event.startTime)} Uhr` : ""}</strong></div>
         <div><span>Ort</span><strong>${escapeHtml([event.locationName, event.city].filter(Boolean).join(", "))}</strong></div>
       </div>
-      <div class="alert">Ihre Anmeldung ist erst nach Bestaetigung Ihrer E-Mail-Adresse gueltig.</div>
+      <div class="alert">${event.accessType === "members_only"
+        ? "Dieses Event ist fuer Mitglieder und deren eingeladene Gaeste vorgesehen. Bitte melden Sie sich einfach mit Name und E-Mail an; das System gleicht die E-Mail mit vorhandenen Datensaetzen ab."
+        : "Ihre Anmeldung ist erst nach Bestaetigung Ihrer E-Mail-Adresse gueltig."}</div>
       <fieldset class="registration-section"><legend>Person und Kontakt</legend>
       <div class="form-grid--two"><div class="field"><label for="firstName">Vorname *</label><input id="firstName" name="firstName" autocomplete="given-name" required></div><div class="field"><label for="lastName">Nachname *</label><input id="lastName" name="lastName" autocomplete="family-name" required></div></div>
-      <div class="form-grid--two"><div class="field"><label for="company">Unternehmen *</label><input id="company" name="company" autocomplete="organization" required></div><div class="field"><label for="position">Position / Funktion *</label><input id="position" name="position" autocomplete="organization-title" required></div></div>
+      <div class="form-grid--two"><div class="field"><label for="company">Unternehmen</label><input id="company" name="company" autocomplete="organization"></div><div class="field"><label for="position">Position / Funktion</label><input id="position" name="position" autocomplete="organization-title"></div></div>
       <div class="form-grid--two"><div class="field"><label for="email">E-Mail *</label><input id="email" name="email" type="email" autocomplete="email" required></div><div class="field"><label for="phone">Telefon</label><input id="phone" name="phone" autocomplete="tel"></div></div>
       ${event.invitationCodeRequired ? `<div class="field"><label for="invitationCode">Einladungscode *</label><input id="invitationCode" name="invitationCode" autocomplete="one-time-code" required></div>` : ""}
       </fieldset>
@@ -2480,6 +2526,7 @@ export async function newsDetailPage(id) {
           ${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}
           ${ttsReader({ rubric: item.category || "News", title: displayTitle || "", label: "Vorlesen", text: [item.subtitle, displayText].filter(Boolean).join("\n\n"), inlineOffsetText: item.subtitle || "", audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
           <div class="editorial-text">${articleParagraphs(displayText)}</div>
+          ${aiDisclosureNote(item)}
           ${articleVideosBlock(item)}
           ${newsDetailSources(item)}
           ${newsDetailKeywords(item)}
@@ -2499,6 +2546,7 @@ export async function newsDetailPage(id) {
         <figure class="news-detail__thumb news-detail__hero-image"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${item.title || "News"}`)}" loading="eager" decoding="async" ${liveImageAttrs(isRetrospective ? "event" : "news")}></figure>
         ${ttsReader({ rubric: isRetrospective ? "Rückblick" : item.category || "News", title: item.title || "", text: [item.subtitle, text].filter(Boolean).join("\n\n"), inlineOffsetText: item.subtitle || "", audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
         <div class="editorial-text">${leadMedia}${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}${articleParagraphs(text)}</div>
+        ${aiDisclosureNote(item)}
         ${articleVideosBlock(item)}
         ${articleSourcesList(item)}
       </article>
@@ -2543,7 +2591,7 @@ export async function topicDetailPage(id) {
     : [];
   const leadMedia = attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "";
   const editorialBlock = topicText
-    ? `<section class="section section--white"><div class="container topic-article">${ttsReader({ rubric: "Thema", title: topic.title || "", text: topicAudioText || topicText, inlineOffsetText: topic.subtitle || "", audio: topic.audio || {}, audioProvider: topic.audioProvider || "", audioUrl: topic.audioUrl || "", audioAccessibleUrl: topic.audioAccessibleUrl || "", audioNaturalUrl: topic.audioNaturalUrl || "", timingUrl: topic.timingUrl || "", audioStatus: topic.audioStatus || "", audioAccessibleStatus: topic.audioAccessibleStatus || "", audioNaturalStatus: topic.audioNaturalStatus || "" })}${topicVisibleText}</div></section>`
+    ? `<section class="section section--white"><div class="container topic-article">${ttsReader({ rubric: "Thema", title: topic.title || "", text: topicAudioText || topicText, inlineOffsetText: topic.subtitle || "", audio: topic.audio || {}, audioProvider: topic.audioProvider || "", audioUrl: topic.audioUrl || "", audioAccessibleUrl: topic.audioAccessibleUrl || "", audioNaturalUrl: topic.audioNaturalUrl || "", timingUrl: topic.timingUrl || "", audioStatus: topic.audioStatus || "", audioAccessibleStatus: topic.audioAccessibleStatus || "", audioNaturalStatus: topic.audioNaturalStatus || "" })}${topicVisibleText}${aiDisclosureNote(topic)}</div></section>`
     : "";
   const relatedTopicsBlock = relatedTopics.length
     ? `<section class="section section--white section--related-topics"><div class="container"><div class="section-head"><div><p class="eyebrow">Weitere Themen</p><h2>Mehr aus der Rubrik</h2></div></div><div class="card-grid card-grid--four editorial-list editorial-list--topics">${relatedTopics.map(topicCard).join("")}</div></div></section>`
@@ -3076,7 +3124,7 @@ export async function memberPortalPage() {
     ["events", "Events"],
     ["upload", "Foto-Upload"]
   ];
-  const tabNav = `<nav class="member-portal-tabs" aria-label="Mitgliederbereich">${tabs.map(([key, label]) => `<a href="#/portal?tab=${key}" class="${activeTab === key ? "active" : ""}">${label}</a>`).join("")}</nav>`;
+  const tabNav = `<nav class="member-portal-tabs" aria-label="Mitgliederbereich">${tabs.map(([key, label]) => `<a href="#/portal?tab=${key}" class="${activeTab === key ? "active" : ""}">${label}</a>`).join("")}<button class="member-portal-logout-tab" type="button" data-logout-button>Abmelden</button></nav>`;
   const documentsSection = `<section class="member-portal-section member-portal-section--documents"><div class="section-head"><div><h2>Mitglieder-Dokumente</h2><p class="muted">Freigegebene Unterlagen und Anlagen für Mitglieder.</p></div></div><div class="card-grid card-grid--three">${visibleDocuments.length ? visibleDocuments.map(documentCard).join("") : `<div class="alert">Noch keine freigegebenen Mitgliederdokumente.</div>`}</div></section>`;
   const memberInfosSection = `<section class="member-portal-section member-portal-section--infos"><div class="section-head"><h2>Member Infos</h2></div><div class="member-article-list">${visibleMemberArticles.length ? visibleMemberArticles.map((article) => memberArticleCard(article, galleries)).join("") : `<div class="alert">Noch keine Mitgliederbeitr&auml;ge sichtbar.</div>`}</div></section>`;
   const profileSection = `<section class="member-portal-section"><div class="section-head"><h2>Mein Profil</h2></div>${memberProfileForm(ownMember, user, { adminMode: false })}</section>`;

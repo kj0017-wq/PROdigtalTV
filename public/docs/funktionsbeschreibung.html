@@ -58,6 +58,11 @@
           <li>Bilder werden hochgeladen, gecroppt, optimiert und als WebP-Varianten bereitgestellt.</li>
           <li>Audiofassungen mit Mitlese- und Karaokefunktion machen Beitraege besser nutzbar.</li>
           <li>Mitglieder erhalten einen geschuetzten Bereich fuer Events, Dokumente, Verzeichnis und Profil.</li>
+          <li>Das Mobile CMS stellt unterwegs reduzierte Admin-Funktionen fuer Eventbetrieb, Umfragen und Einlass bereit.</li>
+          <li>Live-Umfragen und Voting koennen per Mail oder Push versendet und in Echtzeit ausgewertet werden.</li>
+          <li>Einlass-QR-Codes koennen mobil abgerufen und als PDF geteilt werden.</li>
+          <li>Mailabo, Abmeldung, Zustellstatus und Oeffnungsquote unterstuetzen professionellere Kommunikation.</li>
+          <li>Nutzer, Mitglieder, Referenten und Mailingkontakte werden besser zusammengefuehrt.</li>
           <li>Das CMS prueft fehlende Bilder, Texte, Links und andere Qualitaetsprobleme.</li>
           <li>Startseite, Events, Themen, News und Referenten lassen sich gezielt steuern.</li>
         </ul>
@@ -93,6 +98,9 @@
           <a href="#referenten">Referenten</a>
           <a href="#news">News und KI</a>
           <a href="#mitglieder">Mitgliederbereich</a>
+          <a href="#mobilecms">Mobile CMS</a>
+          <a href="#voting">Umfrage und Voting</a>
+          <a href="#datenschutz">Datenschutz und Installation</a>
           <a href="#betrieb">Betrieb</a>
         </nav>
 
@@ -198,6 +206,10 @@
         </ul>
         <p>Schon bei der ersten Einladung kann festgelegt werden, welcher Besucherkreis angesprochen werden soll. So kann ein Event breit an den gesamten Adressbestand kommuniziert werden oder bewusst nur an Vereinsmitglieder, bestimmte Teilnehmergruppen, Partner oder ausgewaehlte Kontakte gehen.</p>
         <p>Nach dem Event wird Mailing zum redaktionellen Nachlauf: Teilnehmer koennen gezielt Rueckblicke, Galerien, Robo-Themen, Referenteninformationen, Sponsorenhinweise und Einladungen zu passenden Folgeformaten erhalten. Damit wird die Veranstaltung ueber den eigentlichen Termin hinaus weiter genutzt.</p>
+        <h3>Mailabo, Tracking und Rueckmeldungen</h3>
+        <p>Empfaenger sollen Veranstaltungshinweise und Umfragen selbst abbestellen koennen. Das Mailabo wird in der Mitglieder- und Userpflege sichtbar, damit Redaktion und Administration erkennen, ob ein Kontakt fuer Einladungen, Umfragen und Newsletter erreichbar bleiben moechte.</p>
+        <p>Fuer den Mailversand sind zusaetzlich Auswertungen vorgesehen: Oeffnungen koennen ueber ein Zaehlpixel gemessen werden, Klicks ueber eindeutige Links und unzustellbare E-Mails ueber Ruecklaeufer oder Provider-Status. Daraus entstehen Oeffnungsquote, Klickverhalten, Bounces und eine bessere Pflege der Adressliste.</p>
+        <p>Diese Daten dienen nicht der Bewertung einzelner Personen, sondern der Qualitaet der Kommunikation: Sind Einladungen angekommen, wurden sie geoeffnet, muessen Adressen korrigiert werden und welche Zielgruppe reagiert auf welches Thema?</p>
         <h3>Push-Nachrichten</h3>
         <p>Ergaenzend zur E-Mail-Kommunikation kann die Plattform Push-Nachrichten fuer mobile Nutzer einsetzen. Push ist besonders sinnvoll fuer kurze, zeitnahe Hinweise rund um ein Event.</p>
         <ul>
@@ -273,14 +285,53 @@
         <h2 id="mitglieder">9. Mitgliederbereich</h2>
         <p>Der Mitgliederbereich ist nach Login erreichbar und gehoert zur Webseite, nicht zum mobilen CMS. Er enthaelt Mitglieder-Events, Mitgliederinformationen, Dokumente, Mitgliederverzeichnis, Profilpflege und Uploadmoeglichkeiten.</p>
         <p>Mitglieder-Events muessen fuer berechtigte Mitglieder sichtbar sein, auch wenn sie nicht oeffentlich auf der Eventseite beworben werden.</p>
+        <h3>Mitglieder, User und Login</h3>
+        <p>User und Mitglieder werden fachlich als zusammengehoerende Datensaetze verstanden. Im CMS sollen sie deshalb in einem gemeinsamen Mitgliederbereich gepflegt werden: mit Auswahl zwischen Mitgliederliste und Userliste, Rollen wie Admin, Editor oder Member, Aktiv-Schalter, Memberprofil, E-Mail-Adresse und Loginstatus.</p>
+        <p>Neue User koennen manuell angelegt oder aus vorhandenen Mailadressen uebernommen werden, ohne automatisch einen Versand auszulösen. Wird ein Zugang eingeladen, erhaelt der Nutzer eine Login-Mail mit einem zeitlich begrenzten Link. Ueber diesen Link legitimiert er sich, setzt sein Passwort und gelangt danach in die Web-App.</p>
+        <p>Unternehmensmitglieder koennen mehrere zugeordnete Personen haben. Normale Mitglieder sollen ihr eigenes Profil bearbeiten koennen, waehrend Admins und Editoren zusaetzliche Verwaltungsrechte erhalten. Der CMS-Button wird nur fuer Admins oder Editoren angezeigt.</p>
+        <p>Wenn sich jemand zu einem Event anmeldet, manuell als Teilnehmer angelegt wird oder als Referent gepflegt wird, sollen Name und E-Mail mit der Mailingliste abgeglichen werden. Fehlt die Person dort, kann sie als neuer Kontakt angelegt werden. Pro Event kann dadurch nachvollzogen werden, wie viele neue Kontakte entstanden sind.</p>
+        <h3>Mitgliederverzeichnis</h3>
+        <p>Das Mitgliederverzeichnis zeigt Unternehmen und Personen mit Logo, Kurzprofil, Ort, Land und Weblink. Fuer Mitglieder mit Webseite koennen knappe Profiltexte gepflegt werden. Die Texte sollen sachlich beschreiben, was das Mitglied anbietet, ohne eine Bewertung in Bezug auf PROdigitalTV abzugeben.</p>
         <h3>Foto-Upload waehrend Veranstaltungen</h3>
         <p>Mitglieder koennen waehrend einer Veranstaltung oder direkt danach Fotos an PROdigitalTV senden. Diese Uploads werden nicht automatisch ungeprueft veroeffentlicht, sondern dienen der Redaktion als Materialpool.</p>
         <p>Die Redaktion kann eingereichte Bilder sichten, freigeben, einer Galerie zuordnen, fuer Rueckblicke verwenden oder aussortieren. So koennen Mitglieder zur Eventdokumentation beitragen, waehrend die redaktionelle Kontrolle erhalten bleibt.</p>
 
-        <h2 id="betrieb">10. Betrieb, Qualitaet und Sicherheit</h2>
+        <h2 id="mobilecms">10. Mobile CMS fuer Veranstaltungen</h2>
+        <p>Das Mobile CMS ist eine reduzierte Admin-Oberflaeche fuer unterwegs. Es ersetzt nicht das Desktop-CMS, sondern stellt waehrend Veranstaltungen schnelle Funktionen bereit, die auf dem Smartphone sinnvoll sind.</p>
+        <ul>
+          <li>Eventauswahl fuer den aktuellen Veranstaltungskontext</li>
+          <li>Einlass-QR-Code mobil anzeigen</li>
+          <li>Einlass-QR als PDF erzeugen und teilen</li>
+          <li>Live-Einlassstatistik mit angemeldeten, bestaetigten und eingecheckten Personen</li>
+          <li>Live-Umfrage erstellen und an Teilnehmer, Mitglieder oder Listen senden</li>
+          <li>Umfrage-Auswertung mit Live-Balken, Stimmen und Teilnehmerstatus ansehen</li>
+          <li>klappbare Bereiche, damit die Oberflaeche auf dem Handy kompakt bleibt</li>
+          <li>Ruecksprung zur normalen Webseite</li>
+        </ul>
+        <h3 id="voting">Umfrage und Voting</h3>
+        <p>Eine Live-Umfrage besteht aus einer frei editierbaren Frage und ein bis sechs Antwortmoeglichkeiten. Im Editor kann festgelegt werden, ob nur eine Antwort oder mehrere Antworten erlaubt sind. Pro Teilnehmer soll nur eine Stimmabgabe zaehlen.</p>
+        <p>Der Versand heisst bewusst Live-Umfrage. Der Mailtext fuehrt nicht zur Veranstaltung, sondern zur Umfrage. Die Ansprache betont, dass die Meinung des Empfaengers wichtig ist. Der Button oeffnet die Abstimmungsseite als normale Webseite, nicht als Web-App-Oberflaeche.</p>
+        <p>Die Auswertung zeigt Antwortoptionen, Stimmen, Prozentwerte und eine Liste, wer abgestimmt hat. Eine Liveansicht kann in kurzen Abstaenden aktualisieren, sodass sich Balken und Zahlen waehrend einer Veranstaltung laufend veraendern.</p>
+        <p>Das Voting ist der eigentliche Abstimmungsprozess fuer Teilnehmer, Mitglieder oder ausgewaehlte Mailinglisten. Jeder Empfaenger erhaelt einen persoenlichen Link zur Umfrage. Ueber diesen Link kann er seine Antwort direkt auf einer einfachen Webseite abgeben. Dadurch ist keine App-Installation erforderlich und die Teilnahme funktioniert auch aus einer E-Mail heraus.</p>
+        <p>Damit eine Abstimmung nicht mehrfach gewertet wird, wird jede Antwort mit einem eindeutigen Teilnehmer- oder Einladungstoken verbunden. Das System kann dadurch erkennen, ob dieselbe Person bereits abgestimmt hat. Bei Single-Choice-Fragen wird nur eine Antwort zugelassen, bei Multiple-Choice-Fragen koennen mehrere Antworten gespeichert werden.</p>
+        <p>Im Mobile CMS kann die Redaktion oder das Eventteam nachsehen, welche Personen abgestimmt haben und welche noch nicht reagiert haben. Die Live-Auswertung eignet sich fuer den Einsatz auf Veranstaltungen, zum Beispiel bei der Frage, welcher Vortrag dem Publikum am besten gefallen hat, welches Thema vertieft werden soll oder welche Erwartung die Teilnehmer an ein Folgeformat haben.</p>
+        <h3>Einlass-QR und Live-Einlass</h3>
+        <p>Der Einlass-QR gehoert zum Veranstaltungsteam. Er kann im Mobile CMS abgerufen und als PDF geteilt werden, zum Beispiel fuer den Empfang oder mehrere Check-in-Punkte. Die Einlassstatistik zeigt live, wie viele Personen angemeldet, bestaetigt und bereits eingecheckt sind.</p>
+        <p>So kann das Team waehrend einer professionellen Eventdurchfuehrung jederzeit sehen, wie der Einlass laeuft, ob noch viele Gaeste offen sind und welche Personen zuletzt eingecheckt wurden.</p>
+
+        <h2 id="datenschutz">11. Datenschutz, Consent und Web-App-Installation</h2>
+        <p>Die Web-App fragt Datenschutz und Installation getrennt und nacheinander ab. Zuerst wird der Datenschutz-Consent eingeholt. Erst danach erscheint, falls sinnvoll, der Hinweis zur Installation oder zur manuellen Ablage auf dem Homescreen.</p>
+        <p>Der Datenschutz-Consent wird auf Mobilgeraeten und Desktop angezeigt. Aus rechtlichen Gruenden soll die Bestaetigung mit Datum, Uhrzeit und IP-Adresse gespeichert und im CMS abrufbar sein. Damit ist nachvollziehbar, wann ein Nutzer der lokalen Speicherung und den Hinweisen zugestimmt hat.</p>
+        <p>Die Installation wird nur angeboten, wenn das Geraet sie technisch unterstuetzt. Auf iPhone/Safari gibt es keinen echten Installieren-Button. Dort zeigt die App stattdessen eine kurze Anleitung: Teilen-Menue oeffnen, nach unten scrollen und "Zum Home-Bildschirm" waehlen. In diesem Fall gibt es nur einen OK-Button.</p>
+        <p>Nach Login am Desktop soll die normale Webseite geladen werden, nicht die Web-App-Installationsstrecke. Die Web-App-Aufforderung ist fuer mobile Nutzung gedacht.</p>
+
+        <h2 id="betrieb">12. Betrieb, Qualitaet und Sicherheit</h2>
         <h3>Mobile-first Web-App und Desktop-Variante</h3>
         <p>Die oeffentliche Webseite ist als mobile-first Web-App konzipiert. Sie soll auf dem Smartphone besonders schnell und klar funktionieren: Startseite, Events, Themen, News, Login, Mitgliederbereich, Handy-Ticket, QR-Code und Burger-Menue stehen im Mittelpunkt.</p>
         <p>Die Desktop-Variante ist fuer komplexere Arbeit gedacht. Im CMS werden groessere Tabellen, Medienbearbeitung, Eventorganisation, Teilnehmerverwaltung, Galeriepflege, Redaktion und Qualitaetssicherung auf einem grossen Bildschirm deutlich besser bedienbar.</p>
+        <h3>Analytics und Nutzungsstatistik</h3>
+        <p>Google Analytics kann fuer die Auswertung der Nutzung eingebunden werden. Im CMS-Dashboard soll eine kleine Statistik sichtbar sein, zum Beispiel Seitenaufrufe, aktive Nutzer, wichtigste Seiten, geraetebezogene Nutzung und Entwicklung ueber die Zeit. Zusaetzlich fuehrt ein Link direkt zur Google-Analytics-Oberflaeche.</p>
+        <p>Die Statistik dient der redaktionellen Steuerung: Welche Inhalte werden gelesen, welche Events interessieren, welche Seiten laden langsam und welche Bereiche sollten besser platziert oder technisch optimiert werden?</p>
         <h3>Qualitaetssicherung</h3>
         <p>Die Qualitaetssicherung prueft fehlende Bilder, Alt-Texte, Links, Eventbilder, Sponsorenlogos, leere Galerien, fehlerhafte Sichtbarkeit und fehlende Video-Poster.</p>
         <h3>Deployment und Cache</h3>
@@ -319,6 +370,17 @@
           <li>Ausschnitt uebernehmen.</li>
           <li>System erzeugt WebP-Varianten.</li>
           <li>Vorschau in Liste und Detailseite pruefen.</li>
+        </ol>
+        <h3>Live-Umfrage durchfuehren</h3>
+        <ol>
+          <li>Mobile CMS im Burger-Menue oeffnen.</li>
+          <li>Passendes Event auswaehlen.</li>
+          <li>Frage und ein bis sechs Antworten eintragen.</li>
+          <li>Festlegen, ob eine oder mehrere Antworten moeglich sind.</li>
+          <li>Empfaengerkreis waehlen, zum Beispiel Teilnehmer, Mitglieder oder Liste.</li>
+          <li>Mail- und Push-Vorschau pruefen.</li>
+          <li>Live-Umfrage versenden.</li>
+          <li>Umfrage-Auswertung oeffnen und Ergebnisse live verfolgen.</li>
         </ol>
       </article>
     </main>

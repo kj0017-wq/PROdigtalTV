@@ -6,13 +6,18 @@
   const isIos = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent);
   const isAndroid = () => /android/i.test(window.navigator.userAgent);
   const isMobile = () => isIos() || isAndroid() || window.matchMedia("(pointer: coarse)").matches || window.innerWidth <= 820;
-  const currentCache = "prodigitaltv-pwa-v970";
+  const currentCache = "prodigitaltv-pwa-v976";
   const dismissKey = "pdtv-pwa-install-dismissed-session";
   const privacyDismissKey = "pdtv-pwa-privacy-dismissed-session";
   const privacyConsentKey = "pdtv-pwa-privacy-consent";
   const privacyConsentLogKey = "pdtv-pwa-privacy-consent-log";
   const consentEndpoint = "https://europe-west3-prodigitaltv-da47b.cloudfunctions.net/logPwaPrivacyConsent";
   let deferredPrompt = null;
+
+  function promptSuppressedForRoute() {
+    const routeKey = `${window.location.pathname || ""} ${window.location.hash || ""}`.toLowerCase();
+    return /(?:^|\/|#\/)(user-invite|survey|notifications\/unsubscribe|registration\/cancel)(?:\/|\?|#|$)/.test(routeKey);
+  }
 
   function clearOldCaches() {
     if (!("caches" in window)) return Promise.resolve();
@@ -26,7 +31,7 @@
     const installPrompt = document.querySelector("[data-pwa-install]");
     if (!privacyPrompt && !installPrompt) return;
 
-    if (isStandalone()) {
+    if (isStandalone() || promptSuppressedForRoute()) {
       if (privacyPrompt) privacyPrompt.hidden = true;
       if (installPrompt) installPrompt.hidden = true;
       return;

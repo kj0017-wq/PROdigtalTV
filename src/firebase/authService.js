@@ -99,8 +99,15 @@ export async function login(email, password, requestedRole = "member") {
     const credential = await firebase.authLib.signInWithEmailAndPassword(firebase.auth, email, password);
     return userFromCredential(firebase, credential.user, requestedRole);
   } catch (error) {
+    if (error?.code === "auth/too-many-requests") {
+      const nextError = new Error("Firebase hat zu viele Loginversuche erkannt. Bitte 15 bis 30 Minuten warten und dann normal einloggen. Den Link in dieser Zeit bitte nicht mehrfach neu versuchen.");
+      nextError.code = error.code;
+      throw nextError;
+    }
     if (error?.code === "auth/invalid-credential") {
-      throw new Error("Firebase kennt diese E-Mail/Passwort-Kombination nicht. Bitte E-Mail und Passwort pruefen oder einen neuen Zugangslink anfordern.");
+      const nextError = new Error("Firebase kennt diese E-Mail/Passwort-Kombination nicht. Bitte E-Mail und Passwort pruefen oder einen neuen Zugangslink anfordern.");
+      nextError.code = error.code;
+      throw nextError;
     }
     throw error;
   }

@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="de">
   <head>
     <meta charset="UTF-8">
@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#071a33">
     <meta name="description" content="PROdigitalTV CMS">
     <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/src/styles/main.css?v=1015">
+    <link rel="stylesheet" href="/src/styles/main.css?v=1018">
     <title>PROdigitalTV | CMS</title>
   </head>
   <body>
@@ -39,7 +39,7 @@
         window.__pdtvCmsMobileBlocked = true;
         const app = document.getElementById("app");
         if (app) {
-          app.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS</p><h1>CMS nur am Desktop</h1><p style="margin:14px 0 24px">Das volle CMS bleibt am Desktop. Fuer Veranstaltungen gibt es mobil das schlanke Mobil-CMS.</p><div class="actions"><a class="button button--primary" href="/cms.html#/cms/live" onclick="event.preventDefault(); window.location.href = '/cms.html#/cms/live';">Mobil-CMS</a><a class="button button--secondary" href="/website.html?v=1019" onclick="event.preventDefault(); window.location.href = '/website.html?v=1019';">Zur Website</a></div></div></section>`;
+          app.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">CMS</p><h1>CMS nur am Desktop</h1><p style="margin:14px 0 24px">Das volle CMS bleibt am Desktop. Fuer Veranstaltungen gibt es mobil das schlanke Mobile CMS.</p><div class="actions"><a class="button button--primary" href="/cms.html?mobileCms=1#/cms/live" onclick="event.preventDefault(); window.location.href = '/cms.html?mobileCms=1#/cms/live';">Mobile CMS</a><a class="button button--secondary" href="/website.html?v=1019" onclick="event.preventDefault(); window.location.href = '/website.html?v=1019';">Zur Website</a></div></div></section>`;
         }
       }
       if (!window.location.hash || window.location.hash === "#") {
@@ -50,7 +50,7 @@
       if (!window.__pdtvCmsMobileBlocked) {
         const script = document.createElement("script");
         script.type = "module";
-        script.src = "/src/main.js?v=1175";
+        script.src = "/src/main.js?v=1182";
         document.body.appendChild(script);
       }
     </script>

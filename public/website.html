@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#071a33">
-    <meta http-equiv="refresh" content="1; url=/?v=1019">
+    <meta http-equiv="refresh" content="1; url=/?v=1021">
     <title>PROdigitalTV | Website wird geoeffnet</title>
     <link rel="stylesheet" href="/src/styles/main.css?v=988">
   </head>
@@ -14,12 +14,14 @@
         <p class="eyebrow">PROdigitalTV</p>
         <h1>Website wird geoeffnet ...</h1>
         <p style="margin:14px 0 24px">Falls nichts passiert, bitte den Button antippen.</p>
-        <a class="button button--primary" href="/?v=1019">Startseite oeffnen</a>
+        <a class="button button--primary" href="/?v=1021">Startseite oeffnen</a>
       </div>
     </section>
     <script>
+      const target = `/?v=1021${window.location.hash || "#/home"}`;
+      document.querySelector("a.button")?.setAttribute("href", target);
       window.setTimeout(() => {
-        window.location.href = "/?v=1019";
+        window.location.href = target;
       }, 250);
     </script>
   </body>

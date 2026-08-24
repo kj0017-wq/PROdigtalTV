@@ -11,13 +11,26 @@
     <link rel="preload" href="/assets/official/brand/prodigitaltv-logo-claim.png" as="image" fetchpriority="high">
     <link rel="manifest" href="/manifest.json">
     <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/src/styles/main.css?v=1031">
+    <link rel="stylesheet" href="/src/styles/main.css?v=1038">
     <title>PROdigitalTV | Branchennetzwerk der digitalen Medienwirtschaft</title>
   </head>
   <body>
-    <div id="app" aria-live="polite"></div>
-    <script src="/assets/js/pwa.js?v=970" defer></script>
-    <script type="module" src="/src/main.js?v=1175"></script>
+    <div id="app" aria-live="polite">
+      <section class="pdtv-webapp-splash" aria-label="PROdigitalTV wird geladen">
+        <div class="pdtv-webapp-splash__center">
+          <img src="/assets/official/brand/prodigitaltv-logo-claim.png" alt="PROdigitalTV">
+          <span class="pdtv-webapp-splash__line" aria-hidden="true"></span>
+          <p>Netzwerk für <strong>digitale Medien</strong></p>
+        </div>
+        <div class="pdtv-webapp-splash__community" aria-hidden="true">
+          <span class="pdtv-webapp-splash__people"><i></i><i></i><i></i></span>
+          <p>Gemeinsam.<br>Digitalisieren. Gestalten.</p>
+        </div>
+        <footer>PROdigitalTV e.V.</footer>
+      </section>
+    </div>
+    <script src="/assets/js/pwa.js?v=976" defer></script>
+    <script type="module" src="/src/main.js?v=1192"></script>
   </body>
 </html>
 

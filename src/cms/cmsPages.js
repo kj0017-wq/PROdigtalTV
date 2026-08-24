@@ -1,4 +1,4 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=474";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=475";
 import { list, getOne } from "../firebase/dataService.js?v=504";
 import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=471";
 import { accessLabels, lifecycleLabels, normalizeLifecyclePhase } from "../data/platformConstants.js";
@@ -513,6 +513,31 @@ function aiFieldActions(actions) {
   return `<div class="ai-field-actions">${actions.map((item) => aiButton(item.action, item.target, item.label, item)).join("")}</div>`;
 }
 
+function aiDisclosureField(item = {}, hint = "Dezenter Transparenzhinweis am Ende des Inhalts. Bei bestehenden KI-/News-Importen wird er automatisch vorgeschlagen.") {
+  const inferredDisclosure = [
+    item.generation_origin,
+    item.generationOrigin,
+    item.ai_log_json,
+    item.aiLogJson,
+    item.source_snapshot_json,
+    item.sources,
+    item.sourceType,
+    item.category
+  ].some((value) => /ai|ki|news-import|morning|briefing|import/i.test(String(Array.isArray(value) ? value.join(" ") : value || "")))
+    ? "partial_ai"
+    : "";
+  const currentDisclosure = item.aiDisclosure ?? item.ai_disclosure ?? inferredDisclosure;
+  const options = [
+    ["none", "Keine Kennzeichnung"],
+    ["text_edit", "KI sprachlich bearbeitet"],
+    ["partial_ai", "KI vorbereitet, redaktionell geprueft"],
+    ["image_ai", "KI-Bild"],
+    ["audio_ai", "KI-Audio / Vorlesen"],
+    ["media_ai", "KI-Medienbestandteile"]
+  ].map(([value, label]) => `<option value="${value}" ${currentDisclosure === value ?"selected" : ""}>${label}</option>`).join("");
+  return `<div class="field"><label>KI-Kennzeichnung</label><select name="aiDisclosure">${options}</select><p class="muted">${escapeHtml(hint)}</p></div>`;
+}
+
 function cleanAudioTextPart(value = "") {
   return String(value || "")
     .replace(/<[^>]*>/g, " ")
@@ -928,12 +953,16 @@ function usageEventTime(event = {}) {
 }
 
 function usageStatsPanel(usageEvents = [], mails = []) {
+  const gaPropertyId = "550849714";
+  const gaLink = `https://analytics.google.com/analytics/web/#/p${gaPropertyId}`;
   const now = Date.now();
   const today = new Date().toISOString().slice(0, 10);
   const pageViews = usageEvents.filter((event) => (event.type || "page_view") === "page_view");
   const todayViews = pageViews.filter((event) => event.day === today).length;
   const weekViews = pageViews.filter((event) => usageEventTime(event) >= now - 7 * 86400000).length;
   const monthViews = pageViews.filter((event) => usageEventTime(event) >= now - 30 * 86400000).length;
+  const weekSessions = new Set(pageViews.filter((event) => usageEventTime(event) >= now - 7 * 86400000).map((event) => event.sessionHash).filter(Boolean)).size;
+  const monthSessions = new Set(pageViews.filter((event) => usageEventTime(event) >= now - 30 * 86400000).map((event) => event.sessionHash).filter(Boolean)).size;
   const mobileViews = pageViews.filter((event) => event.viewport === "mobile").length;
   const desktopViews = pageViews.filter((event) => event.viewport === "desktop").length;
   const sentMails = mails.filter((mail) => mail.status === "sent");
@@ -964,20 +993,32 @@ function usageStatsPanel(usageEvents = [], mails = []) {
   const desktopPercent = Math.round((desktopViews / deviceTotal) * 100);
   return `<section class="panel cms-usage-panel">
     <div class="actions" style="justify-content:space-between;align-items:flex-start;gap:16px">
-      <div><h2>Nutzung der Website</h2><p class="muted">Eigene Schnellstatistik ohne Namen oder E-Mail-Adressen. Google Analytics ist separat direkt verlinkt.</p></div>
-      <a class="button button--primary button--small" href="https://analytics.google.com/analytics/web/" target="_blank" rel="noopener">Google Analytics direkt oeffnen</a>
+      <div><p class="eyebrow">Analytics</p><h2>Nutzung der Website</h2><p class="muted">Kombinierte Uebersicht aus eigener WebApp-Messung und Google Analytics. Die eigene Messung zaehlt Seitenaufrufe und anonyme Sitzungen ohne Namen oder E-Mail-Adressen.</p></div>
+      <a class="button button--primary button--small" href="${gaLink}" target="_blank" rel="noopener">Google Analytics oeffnen</a>
+    </div>
+    <div class="cms-analytics-overview">
+      <article class="cms-analytics-source cms-analytics-source--internal">
+        <span>Eigene Messung</span>
+        <strong>Firestore usageEvents</strong>
+        <p>Direkt aus der WebApp: Seitenaufrufe, Top-Seiten, mobile/desktop und anonymisierte Sitzungen.</p>
+      </article>
+      <article class="cms-analytics-source cms-analytics-source--ga">
+        <span>Google Analytics 4</span>
+        <strong>Property ${gaPropertyId}</strong>
+        <p>Professionelle GA4-Auswertung mit Nutzern, Sitzungen, Quellen, Geraeten und Zeitvergleichen.</p>
+      </article>
     </div>
     <div class="setup-steps" style="margin-top:18px">
-      <div class="setup-step"><span>Heute</span><strong>${todayViews}</strong></div>
-      <div class="setup-step"><span>7 Tage</span><strong>${weekViews}</strong></div>
-      <div class="setup-step"><span>30 Tage</span><strong>${monthViews}</strong></div>
-      <div class="setup-step"><span>Mobil-Anteil</span><strong>${pageViews.length ? Math.round((mobileViews / pageViews.length) * 100) : 0}%</strong></div>
+      <div class="setup-step"><span>Seitenaufrufe heute</span><strong>${todayViews}</strong></div>
+      <div class="setup-step"><span>Seitenaufrufe 7 Tage</span><strong>${weekViews}</strong><small>${weekSessions} anonyme Sitzungen</small></div>
+      <div class="setup-step"><span>Seitenaufrufe 30 Tage</span><strong>${monthViews}</strong><small>${monthSessions} anonyme Sitzungen</small></div>
+      <div class="setup-step"><span>Mobil-Anteil</span><strong>${pageViews.length ? Math.round((mobileViews / pageViews.length) * 100) : 0}%</strong><small>nach Seitenaufrufen</small></div>
       <div class="setup-step"><span>Mail-Oeffnungsquote</span><strong>${mailOpenRate}%</strong><small>${openedMails.length}/${sentMails.length} geoeffnet</small></div>
       <div class="setup-step"><span>Nicht zugestellt</span><strong>${failedMails.length}</strong></div>
     </div>
     <div class="cms-usage-grid">
       <article class="cms-usage-card">
-        <h3>Besuche 7 Tage</h3>
+        <h3>Seitenaufrufe 7 Tage</h3>
         <div class="cms-usage-bars">${last7Days.map((item) => `<div class="cms-usage-bar"><span style="height:${Math.max(6, Math.round((item.count / maxDayViews) * 100))}%"></span><strong>${item.count}</strong><small>${escapeHtml(item.label)}</small></div>`).join("")}</div>
       </article>
       <article class="cms-usage-card">
@@ -989,6 +1030,9 @@ function usageStatsPanel(usageEvents = [], mails = []) {
         <div class="cms-usage-device"><span style="width:${mobilePercent}%"></span><i style="width:${desktopPercent}%"></i></div>
         <p><strong>${mobilePercent}% Mobil</strong><br><small>${desktopPercent}% Desktop</small></p>
       </article>
+    </div>
+    <div class="alert cms-analytics-note">
+      <strong>Hinweis:</strong> Die Zahlen hier sind schnelle CMS-Indikatoren. Verbindliche Nutzer-, Sitzungs- und Quellenanalysen bitte in Google Analytics Property ${gaPropertyId} auswerten.
     </div>
   </section>`;
 }
@@ -1382,9 +1426,19 @@ function cmsEventShowsOnHome(event = {}) {
   ].some(explicitOffFlag);
 }
 
+function cmsEventHandyTicketEnabled(event = {}) {
+  return ![
+    event.handyTicketEnabled,
+    event.mobileTicketEnabled,
+    event.ticketEnabled,
+    event.enableHandyTicket
+  ].some(explicitOffFlag);
+}
+
 function eventRegistrationTogglePanel(event = {}) {
   const isOpen = cmsEventRegistrationIsOpen(event);
   const showOnHome = cmsEventShowsOnHome(event);
+  const handyTicketEnabled = cmsEventHandyTicketEnabled(event);
   return `<section class="panel" style="background:var(--pdt-bg);margin-bottom:18px">
     <div class="actions" style="justify-content:space-between;align-items:center;gap:18px">
       <div>
@@ -1402,6 +1456,11 @@ function eventRegistrationTogglePanel(event = {}) {
           <input type="checkbox" data-event-home-toggle="${escapeHtml(event.id || "")}" ${showOnHome ?"checked" : ""}>
           <span class="cms-switch__track" aria-hidden="true"></span>
           <span class="cms-switch__text">Startseite</span>
+        </label>
+        <label class="cms-switch ${handyTicketEnabled ?"is-active" : ""}" title="Handy-Ticket und Einlass-QR verwenden">
+          <input type="checkbox" data-event-mobile-ticket-toggle="${escapeHtml(event.id || "")}" ${handyTicketEnabled ?"checked" : ""}>
+          <span class="cms-switch__track" aria-hidden="true"></span>
+          <span class="cms-switch__text">Handy-Ticket</span>
         </label>
       </div>
     </div>
@@ -1944,7 +2003,9 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     const adminAddRegistrationPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)" open><summary><strong>Person manuell hinzufuegen</strong><span>Admin-Anmeldung</span></summary><form id="admin-registration-form" data-event-id="${event.id}" class="form-grid form-grid--compact"><div class="form-grid--two"><div class="field"><label>Vorname *</label><input name="firstName" autocomplete="given-name" required></div><div class="field"><label>Nachname *</label><input name="lastName" autocomplete="family-name" required></div></div><div class="form-grid--two"><div class="field"><label>Unternehmen</label><input name="company" autocomplete="organization"></div><div class="field"><label>Position / Funktion</label><input name="position" autocomplete="organization-title"></div></div><div class="form-grid--two"><div class="field"><label>E-Mail *</label><input name="email" type="email" autocomplete="email" required></div><div class="field"><label>Telefon</label><input name="phone" autocomplete="tel"></div></div><label class="checkbox checkbox--required"><input type="checkbox" name="privacyAccepted" required> Einwilligung / Datenschutz liegt vor *</label><div class="actions"><button class="button button--primary button--small" type="submit">Person hinzufuegen</button><div id="admin-registration-result"></div></div></form></details>`;
     const registrationsToolbar = `<div class="actions" style="justify-content:space-between;margin-bottom:18px"><h2>Anmeldungen (${assigned.length})</h2><div class="actions"><button class="button button--secondary button--small" data-export-event="${event.id}">Anmeldungen als CSV herunterladen</button><button class="button button--danger button--small" data-delete-selected-registrations data-event-id="${event.id}" disabled>Ausgewaehlte loeschen</button></div></div>`;
     const registrationsTable = `<div id="registration-bulk-result"></div><div class="table-wrap"><table class="table"><thead><tr><th><input type="checkbox" data-registration-select-all aria-label="Alle Anmeldungen auswaehlen"></th><th>Teilnehmer</th><th>Unternehmen</th><th>E-Mail</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((registration) => `<tr data-registration-row="${registration.id}"><td><input type="checkbox" data-registration-select value="${registration.id}" aria-label="Anmeldung von ${escapeHtml([registration.firstName, registration.lastName].filter(Boolean).join(" ") || registration.email || "Teilnehmer")} auswaehlen"></td><td>${escapeHtml([registration.firstName, registration.lastName].filter(Boolean).join(" ") || "-")}</td><td>${escapeHtml(registration.company || "-")}</td><td>${escapeHtml(registration.email || "-")}</td><td>${status(registration.status)}</td><td><div class="table-actions table-actions--icons"><button class="icon-button icon-button--danger" type="button" data-delete-registration="${registration.id}" data-event-id="${event.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div></td></tr>`).join("")}</tbody></table></div>`;
-    const checkinPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Einlass / Event-QR</strong><span>QR-Code anzeigen</span></summary><p>Diese Seite zeigt den QR-Code, den Teilnehmer vor Ort mit dem Handy scannen.</p><div class="actions"><a class="button button--primary button--small" href="${checkinScreenUrl}" target="_blank" rel="noreferrer">Event-QR oeffnen</a><a class="button button--secondary button--small" href="${checkinScreenUrl}">Event-QR im Browser oeffnen</a></div></details>`;
+    const checkinPanel = cmsEventHandyTicketEnabled(event)
+      ? `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Einlass / Event-QR</strong><span>QR-Code anzeigen</span></summary><p>Diese Seite zeigt den QR-Code, den Teilnehmer vor Ort mit dem Handy scannen.</p><div class="actions"><a class="button button--primary button--small" href="${checkinScreenUrl}" target="_blank" rel="noreferrer">Event-QR oeffnen</a><a class="button button--secondary button--small" href="${checkinScreenUrl}">Event-QR im Browser oeffnen</a></div></details>`
+      : `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Einlass / Event-QR</strong><span>deaktiviert</span></summary><p>Fuer dieses Event ist das Handy-Ticket ausgeschaltet. Die Anmeldung wird per E-Mail bestaetigt, aber es wird kein Einlass-QR benoetigt.</p></details>`;
     const mailPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Mailtexte und Erinnerungen</strong><span>anzeigen / bearbeiten</span></summary><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="registration" class="form-grid is-save-aware"><p>KI erzeugt Mailtexte mit Platzhaltern und ohne echte Teilnehmerdaten. Der Diff-Layer zeigt den vorhandenen Text und den neuen Vorschlag; gespeichert wird erst nach Uebernehmen.</p><div id="${mailAiContextId}" hidden>${escapeHtml(JSON.stringify({ event, registrations: assigned.slice(0, 3) }))}</div><fieldset class="registration-section registration-section--compact"><legend>Automatische Erinnerungen</legend><div class="registration-consents registration-consents--inline"><label class="checkbox"><input type="checkbox" name="reminder7d" ${event.reminder7d ? "checked" : ""}> 7 Tage vorher</label><label class="checkbox"><input type="checkbox" name="reminder1d" ${event.reminder1d ? "checked" : ""}> 1 Tag vorher</label><label class="checkbox"><input type="checkbox" name="reminder2h" ${event.reminder2h ? "checked" : ""}> 2 Stunden vorher</label><label class="checkbox"><input type="checkbox" name="notifyOnEventChange" ${event.notifyOnEventChange ? "checked" : ""}> Sofort bei Termin- oder Ortsaenderung</label></div></fieldset><div class="field"><label>Bestaetigungsmail</label><textarea name="mailText" rows="10">${escapeHtml(registrationMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "mailText", contextTarget: mailAiContextId, label: "Bestaetigungsmail erzeugen", entityId: event.id, fieldName: "mailText" }])}</div><div class="field"><label>Wartelistenmail</label><textarea name="waitlistMail" rows="10">${escapeHtml(waitlistMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "waitlistMail", contextTarget: mailAiContextId, label: "Wartelistenmail erzeugen", entityId: event.id, fieldName: "waitlistMail" }])}</div><div class="actions"><button class="button button--primary button--small" type="submit">Mailtexte und Erinnerungen speichern</button></div><div id="event-save-result"></div></form></details>`;
     content = `${eventRegistrationTogglePanel(event)}${adminAddRegistrationPanel}${registrationsToolbar}${registrationsTable}${checkinPanel}${mailPanel}`;
   } else if (tab === "pre") {
@@ -4389,7 +4450,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
   if (!hasCmsAccess()) return denied();
   if (module === "users" && !hasCmsAccess(true)) return denied(true);
   const definitions = {
-    topics: { title: "Redaktionelles Thema", fields: [["title", "Thema"], ["shortDescription", "Kurze Beschreibung"]] },
+    topics: { title: "Redaktionelles Thema", fields: [["title", "Thema"], ["shortDescription", "Kurze Beschreibung"], ["aiDisclosure", "KI-Hinweis"]] },
     speakers: { title: "Referent", fields: [["name", "Referent Name"], ["company", "Firma"], ["position", "Position"], ["website", "Website"], ["email", "E-Mail"], ["phone", "Telefon"], ["shortBio", "Kurzvita"], ["longBio", "Ausfuehrliche Vita"]] },
     sponsors: { title: "Sponsor / Gastgeber", fields: [["name", "Name"], ["role", "Sponsor / Gastgeber"], ["address", "Adresse"], ["website", "Webseite"]] },
     members: { title: "Mitglied", fields: [["membershipType", "Mitgliedstyp"], ["name", "Firma / Name"], ["description", "Beschreibung"], ["website", "Website"], ["street", "Strasse"], ["houseNumber", "Hausnummer"], ["postalCode", "PLZ"], ["city", "Ort"], ["country", "Land"]] },
@@ -4399,7 +4460,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
     users: { title: "Mitglieder-Login", fields: [["email", "E-Mail"], ["displayName", "Name"], ["role", "Rolle"], ["status", "Status"], ["memberId", "Memberprofil"], ["committeeRole", "Vereinsrolle"]] },
     boardMembers: { title: "Vorstandsmitglied", fields: [["name", "Name"], ["role", "Funktion / Rolle"], ["company", "Unternehmen"], ["shortBio", "Kurzbeschreibung"], ["linkedIn", "LinkedIn"], ["website", "Website"]] },
     galleries: { title: "Bildergalerie", fields: [["title", "Titel"], ["description", "Beschreibung"]] },
-    editorialContent: { title: "Redaktioneller Inhalt", fields: [["title", "Seitentitel"], ["page", "Bereich"], ["section", "Sektion"], ["key", "Inhaltsschluessel"], ["publishDate", "Datum"], ["validFrom", "Gueltig von"], ["validTo", "Gueltig bis (leer = unendlich)"], ["subtitle", "Untertitel"], ["introText", "Introtext"], ["bodyText", "Haupttext"], ["buttonText", "Button-Text"], ["buttonUrl", "Button-Link"], ["seoTitle", "SEO-Titel"], ["seoDescription", "SEO-Beschreibung"]] }
+    editorialContent: { title: "Redaktioneller Inhalt", fields: [["title", "Seitentitel"], ["page", "Bereich"], ["section", "Sektion"], ["key", "Inhaltsschluessel"], ["publishDate", "Datum"], ["validFrom", "Gueltig von"], ["validTo", "Gueltig bis (leer = unendlich)"], ["subtitle", "Untertitel"], ["introText", "Introtext"], ["bodyText", "Haupttext"], ["aiDisclosure", "KI-Hinweis"], ["buttonText", "Button-Text"], ["buttonUrl", "Button-Link"], ["seoTitle", "SEO-Titel"], ["seoDescription", "SEO-Beschreibung"]] }
   };
   const definition = definitions[module];
   if (!definition) return dashboardPage();
@@ -4591,6 +4652,7 @@ Ausgangstext:
           <aside class="editorial-tools">
             <section class="editorial-meta-panel">
               <div class="editorial-tools__head"><p class="eyebrow">Meta</p><h3>Veroeffentlichung</h3></div>
+              ${aiDisclosureField(item)}
               <div class="field"><label>Kategorie</label><select name="category">${categoryOptions.map((category) => `<option value="${escapeHtml(category)}" ${category === categoryValue ?"selected" : ""}>${escapeHtml(category)}</option>`).join("")}</select></div>
               ${sectionKey === "news" ?`<div class="field"><label>Tags</label><input name="tags" value="${escapeHtml(tagsValue)}" placeholder="Streaming, KI, Vermarktung"></div>` : ""}
               <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ?"selected" : ""}>Entwurf</option><option value="published" ${item.status === "published" ?"selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ?"selected" : ""}>Archiviert</option></select></div>
@@ -4674,6 +4736,7 @@ Ausgangstext:
           <aside class="editorial-tools">
             <section class="editorial-meta-panel">
               <div class="editorial-tools__head"><p class="eyebrow">Meta</p><h3>Veroeffentlichung</h3></div>
+              ${aiDisclosureField(item)}
               <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(item.category || "Thema")}"></div>
               <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ?"selected" : ""}>Entwurf</option><option value="active" ${item.status === "active" ?"selected" : ""}>Veroeffentlicht / Aktiv</option><option value="inactive" ${item.status === "inactive" ?"selected" : ""}>Inaktiv</option><option value="archived" ${item.status === "archived" ?"selected" : ""}>Archiviert</option></select></div>
               <div class="meta-date-row"><div class="field"><label>Veroeffentlichungsdatum</label><input type="date" name="publishDate" value="${escapeHtml(item.publishDate || "")}"></div><div class="field"><label>Enddatum</label><input type="date" name="validTo" value="${escapeHtml(item.validTo || "")}"></div></div>
@@ -4813,6 +4876,7 @@ Ausgangstext:
               <div class="field"><label>Baustein</label><input value="${escapeHtml(item.key || [item.page, item.section].filter(Boolean).join(" / ") || item.id)}" readonly></div>
               <div class="field"><label>Seite</label><input value="${escapeHtml(item.page || "-")}" readonly></div>
               <div class="field"><label>Abschnitt</label><input value="${escapeHtml(item.section || "-")}" readonly></div>
+              ${aiDisclosureField(item, "Wird dezent am Ende der Seite angezeigt.")}
               <p class="muted">Sichtbarkeit und Status werden in der Liste ueber das Auge gesteuert.</p>
               </div>
             </details>
@@ -4854,6 +4918,9 @@ Ausgangstext:
     if (module === "members" && field === "membershipType") {
       const currentType = item?.membershipType || "";
       return `<div class="field"><label>${label}</label><select name="membershipType"><option value="" ${currentType ?"" : "selected"}>Nicht festgelegt</option><option value="company" ${currentType === "company" ?"selected" : ""}>Firmenmitglied</option><option value="individual" ${currentType === "individual" ?"selected" : ""}>Einzelmitglied</option></select></div>`;
+    }
+    if (["editorialContent", "topics"].includes(module) && field === "aiDisclosure") {
+      return aiDisclosureField(item);
     }
     return `<div class="field"><label>${label}</label>${long ?`<textarea name="${field}">${escapeHtml(item?.[field] || "")}</textarea>` : `<input name="${field}" value="${escapeHtml(item?.[field] || "")}">`}${ai}</div>`;
   }).join("");

@@ -1,6 +1,9 @@
 export function route() {
   const hashRoute = window.location.hash.replace(/^#\/?/, "");
-  const rawPathRoute = window.location.pathname.replace(/^\/+/, "");
+  const rawPathRoute = window.location.pathname
+    .replace(/^\/+/, "")
+    .replace(/^(index|website)\.html\/?/i, "")
+    .replace(/^user-invite\.html\/?/i, "user-invite/");
   const pathRoute = window.location.hash ? "" : `${rawPathRoute}${window.location.search || ""}`;
   const hash = hashRoute || pathRoute;
   const [path = "", query = ""] = hash.split("?");

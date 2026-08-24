@@ -1,4 +1,4 @@
-import { currentUser, canUseCms } from "../firebase/authService.js?v=471";
+import { currentUser, isAdmin } from "../firebase/authService.js?v=472";
 
 const nav = [
   ["home", "Start"], ["events", "Events"], ["topics", "Themen"], ["news", "News"], ["about", "Ueber uns"],
@@ -23,7 +23,7 @@ export function logo() {
 }
 
 function showCmsLink(user) {
-  return canUseCms(user) || ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+  return isAdmin(user);
 }
 
 export function header(active) {
@@ -48,7 +48,7 @@ export function header(active) {
   </div><nav class="public-mobile-menu" data-public-menu aria-label="Mobile Navigation">
     ${nav.map(menuLink).join("")}
     <div class="public-mobile-submenu" aria-label="Ueber uns Untermenue">${aboutSubnav.map(([route, label]) => `<a class="${active === route ? "active" : ""}" href="#/${route}" data-public-menu-close>${label}</a>`).join("")}</div>
-    ${showCmsLink(user) ? `<a href="/cms.html#/cms/live" data-public-menu-close>Mobil-CMS</a>` : ""}
+    ${showCmsLink(user) ? `<a href="/cms.html#/cms/live" data-public-menu-close>Mobile CMS</a>` : ""}
     <a href="#/${user ? "portal" : "login"}" data-public-menu-close>${user ? "Profil" : "Login"}</a>
   </nav></header>`;
 }

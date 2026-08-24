@@ -1,11 +1,14 @@
-import { route, onRouteChange, go } from "./utils/router.js?v=3";
-import { currentUser, canUseCms, isAdmin, login, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=472";
+import { route, onRouteChange, go } from "./utils/router.js?v=4";
+import { currentUser, canUseCms, isAdmin, login, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=473";
 import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=530";
 import { escapeHtml, formatDate } from "./utils/format.js";
 import { normalizeLifecyclePhase } from "./data/platformConstants.js";
-import { publicShell } from "./components/layout.js?v=11";
+import { publicShell } from "./components/layout.js?v=12";
 
 const root = document.querySelector("#app");
+const initialWebappSplashStartedAt = root?.querySelector(".pdtv-webapp-splash") ? Date.now() : 0;
+const initialWebappSplashMinMs = 3000;
+let initialWebappSplashPending = Boolean(initialWebappSplashStartedAt);
 const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const mediaProxyFunctionUrl = "https://europe-west3-prodigitaltv-da47b.cloudfunctions.net/mediaAssetProxy";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
@@ -13,10 +16,11 @@ let renderGeneration = 0;
 let mobileCmsLiveResultsTimer = null;
 let mobileCheckinStatsTimer = null;
 const memberProfileWarmups = new Map();
+let mobileSurveyPeopleCache = { createdAt: 0, directory: null };
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=752");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=701");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=761");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=707");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=496");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=116");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=16");
@@ -126,8 +130,8 @@ function mobileCmsPlaceholder() {
   return `<section class="login-wrap"><div class="form-card login-card">
     <p class="eyebrow">CMS</p>
     <h1>CMS nur am Desktop</h1>
-    <p style="margin:14px 0 24px">Das volle CMS bleibt am Desktop. Fuer Veranstaltungen gibt es mobil das schlanke Mobil-CMS.</p>
-    <div class="actions"><a class="button button--primary" href="#/cms/live">Mobil-CMS</a><a class="button button--secondary" href="/website.html?v=1019">Zur Website</a></div>
+    <p style="margin:14px 0 24px">Das volle CMS bleibt am Desktop. Fuer Veranstaltungen gibt es mobil das schlanke Mobile CMS.</p>
+    <div class="actions"><a class="button button--primary" href="/cms.html?mobileCms=1#/cms/live">Mobile CMS</a><a class="button button--secondary" href="/website.html?v=1019">Zur Website</a></div>
   </div></section>`;
 }
 
@@ -248,6 +252,15 @@ function mobileLiveEventIsRelevant(event = {}, registrations = []) {
   return Number.isFinite(parsed) ? parsed >= Date.now() - 12 * 60 * 60 * 1000 : true;
 }
 
+function mobileEventHandyTicketEnabled(event = {}) {
+  return ![
+    event.handyTicketEnabled,
+    event.mobileTicketEnabled,
+    event.ticketEnabled,
+    event.enableHandyTicket
+  ].some((value) => value === false || String(value || "").trim().toLowerCase() === "false" || String(value || "").trim().toLowerCase() === "off");
+}
+
 function mobileEventSpeakerCount(event = {}, speakers = [], topics = []) {
   const speakerIds = new Set([...(event.speakerIds || []), event.speakerId].filter(Boolean));
   const topicIds = new Set([...(event.topicIds || []), event.topicId].filter(Boolean));
@@ -308,12 +321,152 @@ function renderMobileCheckinStats(eventId = "", registrations = []) {
   </div>`;
 }
 
-function renderMobileSurveyResults(liveSurveys = [], liveSurveyResponses = [], events = []) {
+function surveyIdentityKey(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function surveyTimeValue(item = {}) {
+  const value = item.createdAtIso || item.createdAt || item.updatedAtIso || item.updatedAt || "";
+  if (!value) return 0;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  if (typeof value === "number") return value;
+  if (typeof value.toMillis === "function") return value.toMillis();
+  if (typeof value.seconds === "number") return value.seconds * 1000 + Math.floor(Number(value.nanoseconds || 0) / 1000000);
+  return 0;
+}
+
+function buildSurveyInviteIdentity(liveSurveyInvites = []) {
+  const byInviteId = new Map();
+  const byEmail = new Map();
+  liveSurveyInvites.forEach((invite) => {
+    const identity = {
+      personName: invite.personName || [invite.firstName, invite.lastName].filter(Boolean).join(" ") || invite.name || invite.displayName || "",
+      firstName: invite.firstName || "",
+      lastName: invite.lastName || "",
+      email: invite.email || "",
+      company: invite.company || "",
+      audienceType: invite.audienceType || ""
+    };
+    if (invite.id) byInviteId.set(invite.id, identity);
+    const emailKey = surveyIdentityKey(invite.email);
+    if (emailKey) byEmail.set(emailKey, identity);
+  });
+  return { byInviteId, byEmail };
+}
+
+function personDisplayName(person = {}) {
+  return person.personName || person.displayName || person.name || [person.firstName, person.lastName].filter(Boolean).join(" ") || "";
+}
+
+function personEmailCandidates(person = {}) {
+  const values = [
+    person.email,
+    person.mail,
+    person.contactEmail,
+    person.billingEmail,
+    person.loginEmail,
+    person.primaryEmail
+  ];
+  if (Array.isArray(person.emails)) values.push(...person.emails);
+  if (Array.isArray(person.eventContacts)) person.eventContacts.forEach((contact) => values.push(contact?.email));
+  if (Array.isArray(person.contacts)) person.contacts.forEach((contact) => values.push(contact?.email));
+  return values.map(surveyIdentityKey).filter((email) => email && email.includes("@"));
+}
+
+function buildSurveyPeopleDirectory(sources = {}) {
+  const byEmail = new Map();
+  const add = (email = "", person = {}, source = "") => {
+    const key = surveyIdentityKey(email);
+    if (!key || !key.includes("@")) return;
+    const existing = byEmail.get(key) || {};
+    const incoming = {
+      personName: personDisplayName(person),
+      firstName: person.firstName || existing.firstName || "",
+      lastName: person.lastName || existing.lastName || "",
+      email: key,
+      company: person.company || person.organization || person.organisation || person.memberName || person.title || existing.company || "",
+      audienceType: source || existing.audienceType || ""
+    };
+    byEmail.set(key, {
+      ...existing,
+      ...Object.fromEntries(Object.entries(incoming).filter(([, value]) => value !== ""))
+    });
+  };
+  (sources.members || []).forEach((member) => {
+    personEmailCandidates(member).forEach((email) => add(email, {
+      ...member,
+      personName: personDisplayName(member),
+      company: member.name || member.company || member.title || ""
+    }, "member"));
+  });
+  (sources.users || []).forEach((user) => {
+    personEmailCandidates(user).forEach((email) => add(email, {
+      ...user,
+      personName: user.displayName || personDisplayName(user),
+      company: user.company || ""
+    }, "user"));
+  });
+  (sources.contacts || []).forEach((contact) => {
+    personEmailCandidates(contact).forEach((email) => add(email, contact, "contact"));
+  });
+  (sources.registrations || []).forEach((registration) => {
+    personEmailCandidates(registration).forEach((email) => add(email, {
+      ...registration,
+      personName: personDisplayName(registration) || [registration.firstName, registration.lastName].filter(Boolean).join(" ")
+    }, "registration"));
+  });
+  (sources.speakers || []).forEach((speaker) => {
+    personEmailCandidates(speaker).forEach((email) => add(email, {
+      ...speaker,
+      personName: personDisplayName(speaker) || [speaker.firstName, speaker.lastName].filter(Boolean).join(" ")
+    }, "speaker"));
+  });
+  return { byEmail };
+}
+
+async function loadSurveyPeopleDirectory({ maxAge = 60000 } = {}) {
+  if (mobileSurveyPeopleCache.directory && Date.now() - mobileSurveyPeopleCache.createdAt < maxAge) {
+    return mobileSurveyPeopleCache.directory;
+  }
+  const [members, users, contacts, registrations, speakers] = await Promise.all([
+    list("members").catch(() => []),
+    list("users").catch(() => []),
+    list("contacts").catch(() => []),
+    list("registrations").catch(() => []),
+    list("speakers").catch(() => [])
+  ]);
+  const directory = buildSurveyPeopleDirectory({ members, users, contacts, registrations, speakers });
+  mobileSurveyPeopleCache = { createdAt: Date.now(), directory };
+  return directory;
+}
+
+function enrichSurveyResponseIdentity(response = {}, inviteIdentity = {}, peopleDirectory = {}) {
+  const invite = inviteIdentity.byInviteId?.get(response.surveyInviteId || "") || inviteIdentity.byEmail?.get(surveyIdentityKey(response.email)) || {};
+  const emailKey = surveyIdentityKey(response.email || invite.email);
+  const person = peopleDirectory.byEmail?.get(emailKey) || {};
+  return {
+    ...person,
+    ...invite,
+    ...response,
+    personName: response.personName || invite.personName || person.personName || [response.firstName || invite.firstName || person.firstName, response.lastName || invite.lastName || person.lastName].filter(Boolean).join(" ") || response.displayName || invite.displayName || "",
+    firstName: response.firstName || invite.firstName || person.firstName || "",
+    lastName: response.lastName || invite.lastName || person.lastName || "",
+    email: response.email || invite.email || person.email || "",
+    company: response.company || invite.company || person.company || "",
+    audienceType: response.audienceType || invite.audienceType || person.audienceType || ""
+  };
+}
+
+function renderMobileSurveyResults(liveSurveys = [], liveSurveyResponses = [], events = [], liveSurveyInvites = [], peopleDirectory = {}) {
   const eventById = new Map(events.map((event) => [event.id, event]));
+  const inviteIdentity = buildSurveyInviteIdentity(liveSurveyInvites);
   const uniqueSurveys = [];
   const seenSurveys = new Set();
   liveSurveys
-    .sort((a, b) => String(b.createdAtIso || b.createdAt || "").localeCompare(String(a.createdAtIso || a.createdAt || "")))
+    .sort((a, b) => surveyTimeValue(b) - surveyTimeValue(a))
     .forEach((survey) => {
       const key = [survey.eventId || "", survey.question || survey.title || ""].map((value) => String(value).trim().toLowerCase()).join("::");
       if (seenSurveys.has(key)) return;
@@ -327,7 +480,8 @@ function renderMobileSurveyResults(liveSurveys = [], liveSurveyResponses = [], e
       const options = Array.isArray(survey.options) ? survey.options : [];
       const surveyResponses = liveSurveyResponses
         .filter((response) => response.surveyId === survey.id)
-        .sort((a, b) => String(b.createdAtIso || "").localeCompare(String(a.createdAtIso || "")));
+        .map((response) => enrichSurveyResponseIdentity(response, inviteIdentity, peopleDirectory))
+        .sort((a, b) => surveyTimeValue(b) - surveyTimeValue(a));
       const responseCounts = surveyResponses.reduce((counts, response) => {
         const ids = Array.isArray(response.optionIds) ? response.optionIds : [response.optionId];
         ids.map((id) => String(id || "").trim()).filter(Boolean).forEach((id) => {
@@ -339,10 +493,10 @@ function renderMobileSurveyResults(liveSurveys = [], liveSurveyResponses = [], e
       const counts = Object.values(storedCounts).some((value) => Number(value || 0) > 0) ? storedCounts : responseCounts;
       const total = surveyResponses.length || Number(survey.responseCount || Object.values(counts).reduce((sum, value) => sum + Number(value || 0), 0));
       const voters = surveyResponses
-        .sort((a, b) => String(b.createdAtIso || "").localeCompare(String(a.createdAtIso || "")))
+        .sort((a, b) => surveyTimeValue(b) - surveyTimeValue(a))
         .slice(0, 20)
         .map((response) => {
-          const person = response.personName || [response.firstName, response.lastName].filter(Boolean).join(" ") || response.email || "Teilnehmer";
+          const person = response.personName || [response.firstName, response.lastName].filter(Boolean).join(" ") || response.email || response.audienceType || "Teilnehmer";
           const answer = response.optionLabel || (Array.isArray(response.optionLabels) ? response.optionLabels.join(", ") : "") || response.optionId || "";
           const meta = [response.email, response.company].filter(Boolean).join(" · ");
           return `<div class="mobile-live-vote-row"><strong>${escapeHtml(person)}</strong><span>${escapeHtml(answer)}</span>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}</div>`;
@@ -400,12 +554,14 @@ async function refreshMobileCmsLiveResults({ silent = false } = {}) {
   }
   if (!silent && status) status.textContent = "Aktualisiere ...";
   try {
-    const [events, liveSurveys, liveSurveyResponses] = await Promise.all([
+    const [events, liveSurveys, liveSurveyResponses, liveSurveyInvites] = await Promise.all([
       list("events").catch(() => []),
       list("liveSurveys").catch(() => []),
-      list("liveSurveyResponses").catch(() => [])
+      list("liveSurveyResponses").catch(() => []),
+      list("liveSurveyInvites").catch(() => [])
     ]);
-    const html = renderMobileSurveyResults(liveSurveys, liveSurveyResponses, events);
+    const peopleDirectory = await loadSurveyPeopleDirectory();
+    const html = renderMobileSurveyResults(liveSurveys, liveSurveyResponses, events, liveSurveyInvites, peopleDirectory);
     container.innerHTML = html || `<p class="muted">Noch keine Umfrage-Auswertung vorhanden.</p>`;
     if (status) status.textContent = `Aktualisiert: ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
   } catch (error) {
@@ -422,21 +578,23 @@ function startMobileCmsLiveResults() {
 async function mobileLiveResultsPage() {
   const user = currentUser();
   if (!canUseCms(user)) {
-    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobil-CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
   }
-  const [events, liveSurveys, liveSurveyResponses] = await Promise.all([
+  const [events, liveSurveys, liveSurveyResponses, liveSurveyInvites] = await Promise.all([
     list("events").catch(() => []),
     list("liveSurveys").catch(() => []),
-    list("liveSurveyResponses").catch(() => [])
+    list("liveSurveyResponses").catch(() => []),
+    list("liveSurveyInvites").catch(() => [])
   ]);
-  const surveyResultRows = renderMobileSurveyResults(liveSurveys, liveSurveyResponses, events);
+  const peopleDirectory = await loadSurveyPeopleDirectory({ maxAge: 0 });
+  const surveyResultRows = renderMobileSurveyResults(liveSurveys, liveSurveyResponses, events, liveSurveyInvites, peopleDirectory);
   return `<main class="mobile-live-admin mobile-live-results-screen">
     <section class="mobile-live-hero mobile-live-results-hero">
       <p class="eyebrow">Umfrage-Auswertung</p>
       <h1>Umfragen live auswerten</h1>
       <p>Dieser Bildschirm aktualisiert die Umfrage jede Sekunde und zeigt Antworten, Balken und Stimmen live an.</p>
       <div class="actions">
-        <a class="button button--secondary" href="#/cms/live">Zurück zum Mobil-CMS</a>
+        <a class="button button--secondary" href="#/cms/live">Zurück zum Mobile CMS</a>
         <a class="button button--secondary" href="/website.html?v=1020#/home">Website</a>
       </div>
     </section>
@@ -459,7 +617,7 @@ async function mobileLiveResultsPage() {
 async function mobileLiveAdminPage() {
   const user = currentUser();
   if (!canUseCms(user)) {
-    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobil-CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
   }
   const [events, registrations, speakers, topics, notifications] = await Promise.all([
     list("events").catch(() => []),
@@ -471,7 +629,9 @@ async function mobileLiveAdminPage() {
   const eventRows = events
     .filter((event) => mobileLiveEventIsRelevant(event, registrations))
     .sort((a, b) => String(a.date || a.startDate || "").localeCompare(String(b.date || b.startDate || "")));
+  const checkinEventRows = eventRows.filter(mobileEventHandyTicketEnabled);
   const firstEvent = eventRows[0] || {};
+  const firstCheckinEvent = checkinEventRows[0] || {};
   const publicBaseUrl = "https://prodigitaltv-da47b.web.app";
   const eventOptions = eventRows.map((event) => {
     const registrationCount = registrations.filter((registration) => registration.eventId === event.id && !["cancelled", "expired", "deleted"].includes(String(registration.status || "").toLowerCase())).length;
@@ -494,6 +654,11 @@ async function mobileLiveAdminPage() {
     }));
     return `<option value="${escapeHtml(event.id)}" data-event-title="${escapeHtml(event.title || event.id)}" data-event-link="${publicBaseUrl}/event/${escapeHtml(event.id)}?v=943" data-checkin-url="${publicBaseUrl}/?v=1021#/event-checkin/${escapeHtml(event.id)}" data-checkin-screen-url="${publicBaseUrl}/?v=1021#/event-checkin-screen/${escapeHtml(event.id)}" data-event-payload="${payload}">${escapeHtml(label)}</option>`;
   }).join("");
+  const checkinEventOptions = checkinEventRows.map((event) => {
+    const registrationCount = registrations.filter((registration) => registration.eventId === event.id && !["cancelled", "expired", "deleted"].includes(String(registration.status || "").toLowerCase())).length;
+    const label = [event.date ? formatDate(event.date) : "", event.title || event.id, `${registrationCount} T`].filter(Boolean).join(" · ");
+    return `<option value="${escapeHtml(event.id)}" data-event-title="${escapeHtml(event.title || event.id)}" data-checkin-url="${publicBaseUrl}/?v=1021#/event-checkin/${escapeHtml(event.id)}" data-checkin-screen-url="${publicBaseUrl}/?v=1021#/event-checkin-screen/${escapeHtml(event.id)}">${escapeHtml(label)}</option>`;
+  }).join("");
   const recentRows = notifications
     .filter((item) => !firstEvent.id || item.eventId === firstEvent.id)
     .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
@@ -510,21 +675,21 @@ async function mobileLiveAdminPage() {
     })
     .join("");
   const eventLink = firstEvent.id ? `${publicBaseUrl}/event/${firstEvent.id}?v=943` : "";
-  const firstCheckinUrl = firstEvent.id ? `${publicBaseUrl}/?v=1021#/event-checkin/${firstEvent.id}` : "";
-  const firstCheckinScreenUrl = firstEvent.id ? `${publicBaseUrl}/?v=1021#/event-checkin-screen/${firstEvent.id}` : "";
-  const firstCheckinPdfUrl = firstEvent.id ? `${publicBaseUrl}/?v=1021#/event-checkin-screen/${firstEvent.id}?print=1` : "";
+  const firstCheckinUrl = firstCheckinEvent.id ? `${publicBaseUrl}/?v=1021#/event-checkin/${firstCheckinEvent.id}` : "";
+  const firstCheckinScreenUrl = firstCheckinEvent.id ? `${publicBaseUrl}/?v=1021#/event-checkin-screen/${firstCheckinEvent.id}` : "";
+  const firstCheckinPdfUrl = firstCheckinEvent.id ? `${publicBaseUrl}/?v=1021#/event-checkin-screen/${firstCheckinEvent.id}?print=1` : "";
   const firstCheckinQrUrl = firstCheckinUrl ? `https://api.qrserver.com/v1/create-qr-code/?size=720x720&margin=2&data=${encodeURIComponent(firstCheckinUrl)}` : "";
   return `<main class="mobile-live-admin">
     <section class="mobile-live-hero">
-      <p class="eyebrow">Mobil-CMS</p>
+      <p class="eyebrow">Mobile CMS</p>
       <h1>Veranstaltungs-Cockpit</h1>
       <p>Für schnelle Aktionen während einer Veranstaltung: Teilnehmer und Referenten per Mail oder Push erreichen.</p>
       <details class="mobile-cms-menu" data-mobile-cms-menu>
-        <summary aria-label="Mobil-CMS Menü öffnen">
+        <summary aria-label="Mobile CMS Menü öffnen">
           <span>Menü</span>
           <i aria-hidden="true"></i>
         </summary>
-        <nav aria-label="Mobil-CMS Funktionen">
+        <nav aria-label="Mobile CMS Funktionen">
           <button type="button" data-mobile-cms-scroll="mobile-cms-checkin-qr">Einlass-QR</button>
           <button type="button" data-mobile-cms-scroll="mobile-cms-send">Live-Umfrage</button>
           <a href="#/cms/live-results">Umfrage-Auswertung</a>
@@ -537,16 +702,16 @@ async function mobileLiveAdminPage() {
     <details class="panel mobile-live-panel mobile-live-collapsible mobile-checkin-qr-panel" id="mobile-cms-checkin-qr" open>
       <summary><span>Einlass-QR</span><small>QR-Code für Empfang und Check-in</small></summary>
       <p class="muted">Diesen QR-Code am Empfang anzeigen. Teilnehmer scannen ihn mit dem Handy-Ticket.</p>
-      <div class="field"><label>Veranstaltung</label><select data-mobile-checkin-event ${eventRows.length ? "" : "disabled"}>${eventOptions}</select></div>
+      <div class="field"><label>Veranstaltung</label><select data-mobile-checkin-event ${checkinEventRows.length ? "" : "disabled"}>${checkinEventOptions}</select></div>
       ${firstCheckinQrUrl ? `<figure class="mobile-checkin-qr">
         <img data-mobile-checkin-qr-img src="${escapeHtml(firstCheckinQrUrl)}" alt="Einlass-QR-Code">
-        <figcaption data-mobile-checkin-qr-title>${escapeHtml(firstEvent.title || "Veranstaltung")}</figcaption>
+        <figcaption data-mobile-checkin-qr-title>${escapeHtml(firstCheckinEvent.title || "Veranstaltung")}</figcaption>
       </figure>
-      <div data-mobile-checkin-stats-wrap>${renderMobileCheckinStats(firstEvent.id, registrations)}</div>
+      <div data-mobile-checkin-stats-wrap>${renderMobileCheckinStats(firstCheckinEvent.id, registrations)}</div>
       <p class="webapp-qr-card__url" data-mobile-checkin-url>${escapeHtml(firstCheckinUrl)}</p>
       <div class="actions">
         <a class="button button--primary" data-mobile-checkin-screen-link href="${escapeHtml(firstCheckinScreenUrl)}" target="_blank" rel="noreferrer">QR Vollbild öffnen</a>
-        <a class="button button--secondary" data-mobile-checkin-pdf-link href="${escapeHtml(firstCheckinPdfUrl)}" target="_blank" rel="noreferrer">PDF teilen</a>
+        <button class="button button--secondary" type="button" data-mobile-checkin-pdf-link data-print-url="${escapeHtml(firstCheckinPdfUrl)}">PDF teilen</button>
         <button class="button button--secondary" type="button" data-mobile-checkin-copy>Link kopieren</button>
       </div>` : `<p class="muted">Keine Veranstaltung mit Einlassdaten gefunden.</p>`}
       <div class="alert" data-mobile-checkin-status hidden></div>
@@ -566,6 +731,7 @@ async function mobileLiveAdminPage() {
           <option value="event_speakers">Nur Referenten</option>
           <option value="members">Alle Mitglieder</option>
           <option value="members_contacts">Gesamte Mailingliste</option>
+          <option value="test_group">Testgruppe</option>
           <option value="test_person">Test an einzelne Mailadresse</option>
         </select></div>
         <div class="registration-section registration-section--compact" data-notification-test-field hidden>
@@ -579,7 +745,7 @@ async function mobileLiveAdminPage() {
         <div class="field"><label>Nachricht / Frage / Voting</label><textarea name="shortText" rows="5" data-notification-shorttext placeholder="Kurze Frage oder Voting-Link einfuegen">Bitte nehmen Sie kurz an unserer Live-Abfrage teil.</textarea></div>
         <section class="panel mobile-live-subpanel" data-live-survey-fields hidden>
           <div class="mobile-live-subpanel__head"><div><strong>Umfrage-Editor</strong><small>Freie Frage und 1 bis 6 Antworten.</small></div><button class="button button--secondary button--small" type="button" data-live-survey-fill-topics>Vorträge übernehmen</button></div>
-          <div class="field"><label>Frage</label><input name="surveyQuestion" data-live-survey-question value="Welcher Vortrag hat Ihnen am besten gefallen?" placeholder="Frage frei formulieren"></div>
+          <div class="field"><label>Frage</label><textarea name="surveyQuestion" data-live-survey-question rows="3" placeholder="Frage frei formulieren">Welcher Vortrag hat Ihnen am besten gefallen?</textarea></div>
           <div class="field"><label>Antwortmodus</label><select name="surveyAllowMultiple" data-live-survey-answer-mode>
             <option value="false">Nur eine Antwort möglich</option>
             <option value="true">Mehrere Antworten möglich</option>
@@ -758,18 +924,31 @@ function publicActiveRoute(current = {}) {
 
 function publicRouteLoadingHtml(current = {}) {
   const labels = {
-    home: "Startseite wird geladen ...",
-    events: "Events werden geladen ...",
-    topics: "Themen werden geladen ...",
-    news: "News werden geladen ...",
-    portal: "Profil wird geladen ...",
-    login: "Login wird geladen ..."
+    home: "Startseite wird geladen",
+    events: "Events werden geladen",
+    topics: "Themen werden geladen",
+    news: "News werden geladen",
+    portal: "Profil wird geladen",
+    login: "Login wird geladen"
   };
   const active = publicActiveRoute(current);
-  return publicShell(active, `<section class="login-wrap route-loading-screen"><div class="form-card login-card">
-    <p class="eyebrow">PROdigitalTV</p>
-    <h1>${escapeHtml(labels[active] || "Seite wird geladen ...")}</h1>
-  </div></section>`);
+  return `<div class="route-inline-loading" role="status">${escapeHtml(labels[active] || "Inhalte werden geladen")} ...</div>`;
+}
+
+function webappSplashHtml(status = "WebApp wird geladen") {
+  return `<section class="pdtv-webapp-splash pdtv-webapp-splash--route" aria-label="${escapeHtml(status)}">
+    <div class="pdtv-webapp-splash__center">
+      <img src="/assets/official/brand/prodigitaltv-logo-claim.png" alt="PROdigitalTV">
+      <span class="pdtv-webapp-splash__line" aria-hidden="true"></span>
+      <p>Netzwerk für <strong>digitale Medien</strong></p>
+      <small>${escapeHtml(status)} ...</small>
+    </div>
+    <div class="pdtv-webapp-splash__community" aria-hidden="true">
+      <span class="pdtv-webapp-splash__people"><i></i><i></i><i></i></span>
+      <p>Gemeinsam.<br>Digitalisieren. Gestalten.</p>
+    </div>
+    <footer>PROdigitalTV e.V.</footer>
+  </section>`;
 }
 
 function plainVotingShell(content = "") {
@@ -805,7 +984,7 @@ async function render() {
       const loadingTitle = isCmsRoute ? "Lade Inhalte ..." : "Website laedt ...";
       root.innerHTML = isCmsRoute
         ? `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">${loadingEyebrow}</p><h1>${loadingTitle}</h1></div></section>`
-        : publicRouteLoadingHtml(currentRoute);
+        : `<div class="route-inline-loading" role="status">${loadingTitle}</div>`;
     } else if (root && !isCmsRoute) {
       showRoutePending({ getAttribute: () => `#/${publicActiveRoute(currentRoute)}` });
     }
@@ -819,6 +998,14 @@ async function render() {
     ]);
     if (loadingTimer) window.clearTimeout(loadingTimer);
     if (generation !== renderGeneration) return;
+    if (!isCmsRoute && initialWebappSplashPending) {
+      initialWebappSplashPending = false;
+      const remainingSplashMs = initialWebappSplashMinMs - (Date.now() - initialWebappSplashStartedAt);
+      if (remainingSplashMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remainingSplashMs));
+        if (generation !== renderGeneration) return;
+      }
+    }
     root.innerHTML = viewHtml;
     wireActions();
     initCheckinScreenWatcher();
@@ -1432,7 +1619,6 @@ document.addEventListener("click", (event) => {
     const nav = link.closest("nav");
     nav?.querySelectorAll("a.active").forEach((item) => item.classList.remove("active"));
     link.classList.add("active");
-    if (root) root.innerHTML = publicRouteLoadingHtml(publicRouteFromHashValue(targetHash));
     window.requestAnimationFrame(() => {
       window.location.hash = targetHash;
     });
@@ -2795,6 +2981,27 @@ function postLoginRouteForUser(user = {}) {
   if (mobileCmsDisabled() && canUseCms(user)) return "cms/live";
   if (!mobileCmsDisabled()) return "home";
   return "portal";
+}
+
+function delay(ms = 350) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function loginAfterInvitation(email = "", password = "", role = "member") {
+  let lastError;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await login(email, password, role);
+    } catch (error) {
+      lastError = error;
+      if (error?.code === "auth/too-many-requests") throw error;
+      const message = String(error?.message || error || "");
+      if (/too many|zu viele loginversuche|zu viele anfragen/i.test(message)) throw error;
+      if (!/firebase kennt|passwort-kombination|invalid|credential/i.test(message)) throw error;
+      await delay(900 + attempt * 900);
+    }
+  }
+  throw lastError;
 }
 
 function cleanEditorialSentence(value = "") {
@@ -10613,7 +10820,127 @@ function updateMobileCheckinQr() {
   if (caption) caption.textContent = title;
   if (urlText) urlText.textContent = checkinUrl;
   if (screenLink && screenUrl) screenLink.href = screenUrl;
-  if (pdfLink && screenUrl) pdfLink.href = `${screenUrl}?print=1`;
+  if (pdfLink && screenUrl) pdfLink.dataset.printUrl = `${screenUrl}?print=1`;
+}
+
+function pdfAscii(text = "") {
+  return String(text || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pdfEscape(text = "") {
+  return pdfAscii(text).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
+function pdfBytes(text = "") {
+  return new TextEncoder().encode(text);
+}
+
+function concatPdfParts(parts = []) {
+  const length = parts.reduce((sum, part) => sum + part.length, 0);
+  const output = new Uint8Array(length);
+  let offset = 0;
+  parts.forEach((part) => {
+    output.set(part, offset);
+    offset += part.length;
+  });
+  return output;
+}
+
+function wrapPdfText(text = "", max = 76) {
+  const words = pdfAscii(text).split(" ").filter(Boolean);
+  const lines = [];
+  let line = "";
+  words.forEach((word) => {
+    const next = line ? `${line} ${word}` : word;
+    if (next.length > max && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  });
+  if (line) lines.push(line);
+  return lines.slice(0, 5);
+}
+
+async function fetchCheckinQrJpeg(url = "") {
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=900x900&margin=2&format=jpg&data=${encodeURIComponent(url)}`;
+  const response = await fetch(qrUrl, { mode: "cors", cache: "no-store" });
+  if (!response.ok) throw new Error("QR-Code konnte nicht geladen werden.");
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+function createCheckinQrPdf({ title = "PROdigitalTV Veranstaltung", checkinUrl = "", imageBytes = new Uint8Array() } = {}) {
+  const objects = [];
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const qrSize = 330;
+  const qrX = Math.round((pageWidth - qrSize) / 2);
+  const qrY = 315;
+  const titleText = pdfEscape(title || "PROdigitalTV Veranstaltung");
+  const urlLines = wrapPdfText(checkinUrl, 68).map((line, index) => `BT /F1 9 Tf 72 ${130 - index * 14} Td (${pdfEscape(line)}) Tj ET`).join("\n");
+  const content = [
+    "BT /F1 16 Tf 72 780 Td (PROdigitalTV) Tj ET",
+    "BT /F1 30 Tf 72 730 Td (Einlass-QR) Tj ET",
+    `BT /F1 18 Tf 72 696 Td (${titleText}) Tj ET`,
+    "BT /F1 11 Tf 72 666 Td (Diesen QR-Code am Empfang anzeigen. Teilnehmer scannen ihn mit dem Handy-Ticket.) Tj ET",
+    `q ${qrSize} 0 0 ${qrSize} ${qrX} ${qrY} cm /Im1 Do Q`,
+    "BT /F1 13 Tf 72 158 Td (Einlass-Link:) Tj ET",
+    urlLines
+  ].filter(Boolean).join("\n");
+  objects.push("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+  objects.push("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+  objects.push(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 4 0 R >> /XObject << /Im1 5 0 R >> >> /Contents 6 0 R >>\nendobj\n`);
+  objects.push("4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n");
+  const imageHeader = pdfBytes(`5 0 obj\n<< /Type /XObject /Subtype /Image /Width 900 /Height 900 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n`);
+  const imageFooter = pdfBytes("\nendstream\nendobj\n");
+  const contentBytes = pdfBytes(content);
+  objects.push({ bytes: concatPdfParts([imageHeader, imageBytes, imageFooter]) });
+  objects.push(`6 0 obj\n<< /Length ${contentBytes.length} >>\nstream\n${content}\nendstream\nendobj\n`);
+  const parts = [pdfBytes("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n")];
+  const offsets = [0];
+  objects.forEach((object) => {
+    offsets.push(parts.reduce((sum, part) => sum + part.length, 0));
+    parts.push(object.bytes || pdfBytes(object));
+  });
+  const xrefOffset = parts.reduce((sum, part) => sum + part.length, 0);
+  const xref = [
+    "xref",
+    `0 ${objects.length + 1}`,
+    "0000000000 65535 f ",
+    ...offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n `),
+    "trailer",
+    `<< /Size ${objects.length + 1} /Root 1 0 R >>`,
+    "startxref",
+    String(xrefOffset),
+    "%%EOF"
+  ].join("\n");
+  parts.push(pdfBytes(xref));
+  return new Blob([concatPdfParts(parts)], { type: "application/pdf" });
+}
+
+async function shareOrDownloadCheckinPdf({ blob, title = "PROdigitalTV Einlass-QR" } = {}) {
+  const safeTitle = pdfAscii(title || "Einlass-QR").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "einlass-qr";
+  const fileName = `prodigitaltv-${safeTitle}.pdf`;
+  const file = new File([blob], fileName, { type: "application/pdf" });
+  if (navigator.canShare?.({ files: [file] })) {
+    await navigator.share({ title: "Einlass-QR", text: title, files: [file] });
+    return "PDF wurde zum Teilen vorbereitet.";
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+  return "PDF wurde heruntergeladen.";
 }
 
 function wireActions() {
@@ -10637,6 +10964,42 @@ function wireActions() {
         status.className = "alert alert--warning";
         status.textContent = url || "Link konnte nicht kopiert werden.";
       }
+    }
+  });
+  document.querySelector("[data-mobile-checkin-pdf-link]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const status = document.querySelector("[data-mobile-checkin-status]");
+    const option = document.querySelector("[data-mobile-checkin-event]")?.selectedOptions?.[0];
+    const checkinUrl = option?.dataset?.checkinUrl || document.querySelector("[data-mobile-checkin-url]")?.textContent || "";
+    const title = option?.dataset?.eventTitle || document.querySelector("[data-mobile-checkin-qr-title]")?.textContent || "PROdigitalTV Veranstaltung";
+    const printUrl = button.dataset.printUrl || "";
+    const previous = button.textContent;
+    button.disabled = true;
+    button.textContent = "PDF wird erstellt ...";
+    if (status) {
+      status.hidden = false;
+      status.className = "alert";
+      status.textContent = "PDF wird vorbereitet ...";
+    }
+    try {
+      const imageBytes = await fetchCheckinQrJpeg(checkinUrl);
+      const blob = createCheckinQrPdf({ title, checkinUrl, imageBytes });
+      const message = await shareOrDownloadCheckinPdf({ blob, title });
+      if (status) {
+        status.className = "alert alert--success";
+        status.textContent = message;
+      }
+    } catch (error) {
+      if (status) {
+        status.className = "alert alert--warning";
+        status.textContent = "PDF konnte nicht direkt erzeugt werden. Ich oeffne die Druckansicht.";
+      }
+      if (printUrl) window.open(printUrl, "_blank", "noopener,noreferrer");
+      else if (checkinUrl) window.open(checkinUrl, "_blank", "noopener,noreferrer");
+      console.warn("Check-in PDF fallback", error);
+    } finally {
+      button.disabled = false;
+      button.textContent = previous || "PDF teilen";
     }
   });
   updateMobileCheckinQr();
@@ -13545,6 +13908,20 @@ function wireActions() {
     const liveSurveyAddAnswer = eventNotificationForm.querySelector("[data-live-survey-add-answer]");
     const liveSurveyRemoveAnswer = eventNotificationForm.querySelector("[data-live-survey-remove-answer]");
     const notificationResult = eventNotificationForm.querySelector("#event-notification-result");
+    const rememberedTestRecipientsKey = "pdtv-mobile-cms-test-recipients";
+    const rememberTestRecipients = () => {
+      const testRecipientInput = testField?.querySelector("[name='testRecipients']");
+      const value = String(testRecipientInput?.value || "").trim();
+      if (!value) return;
+      try { localStorage.setItem(rememberedTestRecipientsKey, value); } catch {}
+    };
+    const restoreTestRecipients = () => {
+      const testRecipientInput = testField?.querySelector("[name='testRecipients']");
+      if (!testRecipientInput || testRecipientInput.value) return;
+      try {
+        testRecipientInput.value = localStorage.getItem(rememberedTestRecipientsKey) || "";
+      } catch {}
+    };
     const notificationErrorText = (error) => {
       const message = String(error?.message || error || "").trim();
       if (/^internal$/i.test(message) || error?.code === "functions/internal") {
@@ -13615,6 +13992,7 @@ function wireActions() {
       if (sendMode?.value === "auto_before_event" && isMemberMessage) sendMode.value = "now";
       if (testField) testField.hidden = !isTestPerson;
       const testRecipientInput = testField?.querySelector("[name='testRecipients']");
+      if (isTestPerson) restoreTestRecipients();
       if (testRecipientInput) testRecipientInput.required = isTestPerson;
       if (testOnlyInput) testOnlyInput.value = String(isTestPerson);
       if (includeMembers) includeMembers.value = String(["members", "members_contacts", "test_group"].includes(recipientGroup?.value || ""));
@@ -13676,6 +14054,7 @@ function wireActions() {
     });
     sendMode?.addEventListener("change", syncNotificationMode);
     recipientGroup?.addEventListener("change", syncNotificationMode);
+    testField?.querySelector("[name='testRecipients']")?.addEventListener("input", rememberTestRecipients);
     liveActionMode?.addEventListener("change", () => {
       const isSurvey = liveActionMode.value === "survey";
       if (isSurvey) {
@@ -13730,7 +14109,7 @@ function wireActions() {
           submitButton.textContent = "Sende ...";
         }
         const response = await createEventNotification(confirmedPayload);
-        const surveyHint = response.surveyId ? `<p style="margin:10px 0 0">Umfrage wurde angelegt. Die Auswertung erscheint im Mobil-CMS nach dem Neuladen dieses Bereichs.</p>` : "";
+        const surveyHint = response.surveyId ? `<p style="margin:10px 0 0">Umfrage wurde angelegt. Die Auswertung erscheint im Mobile CMS nach dem Neuladen dieses Bereichs.</p>` : "";
         notificationResult.innerHTML = response.scheduled
           ? `<div class="alert alert--success">Benachrichtigung wurde geplant.</div>`
           : `<div class="alert alert--success">Versand wurde fuer ${Number(response.targetCount || 0)} Empfaenger angestossen. E-Mail in Warteschlange: ${Number(response.queuedMailCount || 0)}, Push gesendet: ${Number(response.pushedCount || 0)}.${surveyHint}</div>`;
@@ -13769,6 +14148,7 @@ function wireActions() {
           if (!liveSurveyAnswers().length) throw new Error("Bitte mindestens eine Antwortmoeglichkeit eintragen.");
         }
         payload.testOnly = recipientGroup?.value === "test_person";
+        if (payload.testOnly) rememberTestRecipients();
         if (!payload.testOnly) payload.testRecipients = "";
         const previewResponse = await previewEventNotification(payload);
         confirmedPayload = payload;
@@ -13938,6 +14318,7 @@ function wireActions() {
     }
     if (button) button.disabled = true;
     if (result) result.innerHTML = `<div class="alert">Zugang wird aktiviert ...</div>`;
+    let data = {};
     try {
       const firebase = await import("./firebase/firebaseClient.js").then((module) => module.getFirebaseServices());
       if (!firebase) throw new Error("Firebase ist nicht erreichbar.");
@@ -13947,11 +14328,29 @@ function wireActions() {
         token: form.dataset.token,
         password: values.password
       });
-      const data = response.data || {};
-      await login(data.email, values.password, data.role || "member");
-      if (result) result.innerHTML = `<div class="alert alert--success">Zugang aktiviert. Sie werden weitergeleitet ...</div>`;
-      window.setTimeout(() => go(postLoginRouteForUser(currentUser() || data)), 350);
+      data = response.data || {};
     } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div>`;
+      if (button) button.disabled = false;
+      return;
+    }
+
+    try {
+      const user = await loginAfterInvitation(data.email, values.password, data.role || "member");
+      if (result) result.innerHTML = `<div class="alert alert--success">Zugang aktiviert. Sie werden weitergeleitet ...</div>`;
+      window.setTimeout(() => go(postLoginRouteForUser(user || currentUser() || data)), 350);
+    } catch (error) {
+      const message = String(error?.message || error || "");
+      if (error?.code === "auth/too-many-requests" || /too many|zu viele loginversuche|zu viele anfragen/i.test(message)) {
+        if (result) {
+          result.innerHTML = `
+            <div class="alert alert--success">Zugang aktiviert. Das Passwort wurde gespeichert.</div>
+            <div class="alert alert--warning">Firebase hat zu viele Loginversuche erkannt. Bitte 15 bis 30 Minuten warten und dann ueber den normalen Login mit E-Mail und Passwort einloggen.</div>
+            <a class="button button--secondary" href="#/login">Zum Login</a>
+          `;
+        }
+        return;
+      }
       if (result) result.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div>`;
       if (button) button.disabled = false;
     }
@@ -14097,10 +14496,10 @@ function wireActions() {
   });
   syncMemberLoginBulkState();
 
-  document.querySelector("#logout-button")?.addEventListener("click", async () => {
+  document.querySelectorAll("#logout-button, [data-logout-button]").forEach((button) => button.addEventListener("click", async () => {
     await logout();
     go("home");
-  });
+  }));
 
   document.querySelectorAll("[data-event-tab]").forEach((button) => button.addEventListener("click", async () => {
     const form = document.querySelector("#event-edit-form");
@@ -16163,6 +16562,34 @@ function wireActions() {
     }
   }));
 
+  document.querySelectorAll("[data-event-mobile-ticket-toggle]").forEach((button) => button.addEventListener("change", async (event) => {
+    const target = event.currentTarget;
+    const eventId = target.dataset.eventMobileTicketToggle;
+    const enabled = target.checked;
+    const result = document.querySelector("#event-registration-toggle-result");
+    if (!eventId) return;
+    const originalChecked = !enabled;
+    target.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Handy-Ticket wird ${enabled ? "aktiviert" : "deaktiviert"} ...</div>`;
+    try {
+      const existing = await getOne("events", eventId);
+      if (!existing) throw new Error("Event wurde nicht gefunden.");
+      await upsert("events", {
+        ...existing,
+        handyTicketEnabled: enabled,
+        mobileTicketEnabled: enabled,
+        ticketEnabled: enabled,
+        updatedAt: new Date().toISOString()
+      });
+      if (result) result.innerHTML = `<div class="alert alert--success">Handy-Ticket wurde ${enabled ? "aktiviert" : "deaktiviert"}.</div>`;
+      await render();
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Handy-Ticket konnte nicht geaendert werden: ${escapeHtml(error.message || String(error))}</div>`;
+      target.checked = originalChecked;
+      target.disabled = false;
+    }
+  }));
+
   document.querySelectorAll("[data-export-event]").forEach((button) => button.addEventListener("click", async () => {
     const event = await getOne("events", button.dataset.exportEvent);
     const registrations = (await list("registrations")).filter((item) => item.eventId === event.id);
@@ -16638,7 +17065,7 @@ async function resetInstalledAppCachesIfRequested() {
 
 async function refreshInstalledAppShellIfNeeded() {
   if (["localhost", "127.0.0.1"].includes(location.hostname) || location.protocol === "file:") return false;
-  const version = "1130";
+  const version = "1135";
   const key = "prodigitaltv-live-shell-version";
   try {
     if (localStorage.getItem(key) === version) return false;
