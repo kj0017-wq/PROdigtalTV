@@ -848,6 +848,24 @@ function textToHtml(text = "") {
     .join("");
 }
 
+function agendaLineText(item = {}) {
+  const time = clean(item.time || item.startTime || item.startsAt || "");
+  const person = clean(item.person || item.speaker || item.speakerName || item.presenter || "");
+  const title = clean(item.title || item.topicTitle || item.label || item.type || "");
+  const parts = [];
+  if (time) parts.push(time);
+  if (person && title && person !== title) parts.push(`${person}: ${title}`);
+  else if (title) parts.push(title);
+  else if (person) parts.push(person);
+  return parts.join(" - ");
+}
+
+function eventAgendaMailText(eventRecord = {}) {
+  const items = Array.isArray(eventRecord.scheduleItems) ? eventRecord.scheduleItems : [];
+  const itemLines = items.map(agendaLineText).filter(Boolean);
+  if (itemLines.length) return itemLines.join("\n");
+  return clean(eventRecord.agendaText || eventRecord.scheduleText || eventRecord.agenda || eventRecord.programText || "");
+}
 function mailHtmlShell(title = "", body = "") {
   return `<!doctype html><html><body style="margin:0;background:#f3f6fb;font-family:Arial,sans-serif;color:#071b34"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f6fb;padding:28px 12px"><tr><td align="center"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:18px;border:1px solid #dbe4f1;overflow:hidden"><tr><td style="padding:28px 30px"><div style="font-size:30px;font-weight:800;color:#e30613;margin-bottom:6px">PRO<span style="color:#e30613;font-weight:400">digital</span>TV</div><p style="margin:0 0 22px;color:#5f6b7c">Interessengemeinschaft Digitale Medien e.V.</p><h1 style="font-size:26px;line-height:1.25;margin:0 0 18px;color:#071b34">${title}</h1>${body}</td></tr></table></td></tr></table></body></html>`;
 }
@@ -1017,6 +1035,36 @@ function renderMail(mail, context = {}) {
     };
   }
 
+  if (mail.template === "checkin_agenda") {
+    const title = registration.eventTitle || eventRecord.title || "PROdigitalTV Event";
+    const eventLink = eventUrl(registration.eventId || eventRecord.id || mail.eventId || "");
+    const agendaText = eventAgendaMailText(eventRecord);
+    const salutationName = clean(`${registration.firstName || ""} ${registration.lastName || ""}`);
+    const salutation = salutationName ? `Guten Tag ${salutationName},` : "Guten Tag,";
+    const text = [
+      salutation,
+      "",
+      `willkommen bei ${title}. Schoen, dass Sie da sind.`,
+      "",
+      agendaText ? "Hier ist die Agenda fuer die Veranstaltung:" : "Die Agenda zur Veranstaltung wird vor Ort kommuniziert.",
+      agendaText,
+      "",
+      eventLink ? `Zur Veranstaltung: ${eventLink}` : "",
+      "",
+      "Viele Gruesse",
+      "PROdigitalTV"
+    ].filter(Boolean).join("\n");
+    return {
+      subject: mail.subject || `Willkommen: ${title}`,
+      text,
+      html: mailHtmlShell("Willkommen zur Veranstaltung", [
+        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${salutation}</p>`,
+        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">willkommen bei <strong>${clean(title)}</strong>. Schoen, dass Sie da sind.</p>`,
+        agendaText ? `<h2 style="font-size:20px;line-height:1.3;margin:24px 0 12px;color:#071b34">Agenda</h2>${textToHtml(agendaText)}` : `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Die Agenda zur Veranstaltung wird vor Ort kommuniziert.</p>`,
+        mailButton("Zur Veranstaltung", eventLink)
+      ].filter(Boolean).join(""))
+    };
+  }
   if (mail.template === "admin_notification") {
     return {
       subject: mail.subject || "Neue Anmeldung",
@@ -1082,7 +1130,7 @@ function renderMail(mail, context = {}) {
       html: mailHtmlShell(title, [
         `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${salutation}</p>`,
         `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${intro}</p>`,
-        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${textToHtml(body)}</p>`,
+        `${textToHtml(body)}`,
         mailButton(linkLabel, link),
         optOutUrl ? `<p style="font-size:12px;line-height:1.5;color:#7a8493;margin:24px 0 0;border-top:1px solid #dbe4f1;padding-top:14px">Sie erhalten diese Nachricht, weil Sie PROdigitalTV-Veranstaltungs- und Umfragehinweise aktiviert haben. <a href="${optOutUrl}" style="color:#5f6b7c">Umfrage- und Veranstaltungshinweise abbestellen</a>.</p>` : ""
       ].filter(Boolean).join(""))
@@ -2539,6 +2587,8 @@ exports.checkInRegistrationByDevice = onCall({ region, invoker: "public" }, asyn
   if (!["confirmed", "checked_in"].includes(String(registration.status || ""))) {
     throw new HttpsError("failed-precondition", "Diese Anmeldung ist nicht bestaetigt.");
   }
+  const eventSnapshot = await db.collection("events").doc(eventId).get().catch(() => null);
+  const eventRecord = eventSnapshot?.exists ? { id: eventSnapshot.id, ...eventSnapshot.data() } : {};
   const alreadyCheckedIn = registration.status === "checked_in" && registration.checkedInEventId === eventId;
   await document.ref.update({
     status: "checked_in",
@@ -2555,6 +2605,20 @@ exports.checkInRegistrationByDevice = onCall({ region, invoker: "public" }, asyn
     checkedInAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp()
   }, { merge: true });
+  const checkinWelcomeMailEnabled = eventRecord.checkinWelcomeMailEnabled === true || (eventRecord.checkinWelcomeMailEnabled == null && eventRecord.checkinAgendaMailEnabled === true);
+  if (!alreadyCheckedIn && checkinWelcomeMailEnabled && registration.email) {
+    await queueMail({
+      type: "checkin_agenda",
+      template: "checkin_agenda",
+      to: registration.email,
+      subject: `Willkommen: ${eventRecord.title || registration.eventTitle || "PROdigitalTV Event"}`,
+      registrationId: document.id,
+      eventId,
+      source: "checkin"
+    }).catch((error) => {
+      console.warn("Check-in agenda mail could not be queued", document.id, error);
+    });
+  }
   return {
     checkedIn: true,
     alreadyCheckedIn,

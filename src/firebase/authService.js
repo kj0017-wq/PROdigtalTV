@@ -90,6 +90,25 @@ async function userFromCredential(firebase, firebaseUser, fallbackRole = "guest"
   return user;
 }
 
+function authUserMessage(error = {}) {
+  const code = String(error?.code || "");
+  const message = String(error?.message || error || "");
+  const normalized = `${code} ${message}`.toLowerCase();
+  if (code === "auth/too-many-requests" || /too many|zu viele loginversuche|zu viele anfragen/.test(normalized)) {
+    return "Firebase hat zu viele Loginversuche erkannt. Bitte 15 bis 30 Minuten warten und dann normal einloggen. Den Link in dieser Zeit bitte nicht mehrfach neu versuchen.";
+  }
+  if (code === "auth/quota-exceeded" || /quota.*exceeded|quota has been exceeded|kontingent.*ueberschritten|kontingent.*überschritten/.test(normalized)) {
+    return "Das Firebase-Login-Kontingent ist aktuell ausgeschöpft. Bitte später erneut versuchen. Falls das im Produktivbetrieb passiert, muss im Firebase-Projekt das Authentication-Kontingent oder Billing geprüft werden.";
+  }
+  if (code === "auth/invalid-credential" || code === "auth/user-not-found" || code === "auth/wrong-password") {
+    return "Firebase kennt diese E-Mail/Passwort-Kombination nicht. Bitte E-Mail und Passwort pruefen oder einen neuen Zugangslink anfordern.";
+  }
+  if (code === "auth/network-request-failed" || /network|netzwerk|offline/.test(normalized)) {
+    return "Firebase-Login ist momentan nicht erreichbar. Bitte Verbindung pruefen und erneut versuchen.";
+  }
+  return message || "Login fehlgeschlagen.";
+}
+
 export async function login(email, password, requestedRole = "member") {
   const firebase = await getFirebaseServices();
   if (!firebase) {
@@ -99,17 +118,9 @@ export async function login(email, password, requestedRole = "member") {
     const credential = await firebase.authLib.signInWithEmailAndPassword(firebase.auth, email, password);
     return userFromCredential(firebase, credential.user, requestedRole);
   } catch (error) {
-    if (error?.code === "auth/too-many-requests") {
-      const nextError = new Error("Firebase hat zu viele Loginversuche erkannt. Bitte 15 bis 30 Minuten warten und dann normal einloggen. Den Link in dieser Zeit bitte nicht mehrfach neu versuchen.");
-      nextError.code = error.code;
-      throw nextError;
-    }
-    if (error?.code === "auth/invalid-credential") {
-      const nextError = new Error("Firebase kennt diese E-Mail/Passwort-Kombination nicht. Bitte E-Mail und Passwort pruefen oder einen neuen Zugangslink anfordern.");
-      nextError.code = error.code;
-      throw nextError;
-    }
-    throw error;
+    const nextError = new Error(authUserMessage(error));
+    nextError.code = error?.code || "auth/login-failed";
+    throw nextError;
   }
 }
 

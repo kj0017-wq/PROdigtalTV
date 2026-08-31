@@ -6,10 +6,19 @@ function looksTruncatedText(text = "") {
   return /(?:\.\.\.|…)$/u.test(String(text || "").trim());
 }
 
+function limitWords(text = "", maxWords = 50) {
+  const value = String(text || "").trim();
+  if (!value) return "";
+  const words = value.split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return value;
+  return `${words.slice(0, maxWords).join(" ").replace(/[,:;.-]\s*$/, "")}...`;
+}
+
 function eventSummaryText(event = {}) {
   const description = String(event.description || "").trim();
-  if (description && !looksTruncatedText(description)) return description;
-  return String(
+  const summary = description && !looksTruncatedText(description)
+    ? description
+    : String(
     event.publicTeaser
     || event.teaserText
     || event.shortDescription
@@ -23,6 +32,7 @@ function eventSummaryText(event = {}) {
     || description
     || ""
   ).trim();
+  return limitWords(summary, 50);
 }
 
 function eventOnlineLabel(event = {}) {

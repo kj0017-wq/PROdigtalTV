@@ -1,5 +1,5 @@
-const CACHE = "pdt-platform-v958";
-const IMAGE_CACHE = "pdt-platform-images-v958";
+const CACHE = "pdt-platform-v959";
+const IMAGE_CACHE = "pdt-platform-images-v959";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -67,6 +67,18 @@ function cacheFirstWithRefresh(request, cacheName) {
   });
 }
 
+function networkFirstWithCache(request, cacheName) {
+  return fetch(request, { cache: "no-store" })
+    .then((response) => {
+      if (response && response.ok) {
+        const copy = response.clone();
+        caches.open(cacheName).then((cache) => cache.put(request, copy)).catch(() => undefined);
+      }
+      return response;
+    })
+    .catch(() => caches.match(request));
+}
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
@@ -95,7 +107,12 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (/\.(?:js|css|png|jpg|jpeg|webp|svg|gif|ico|woff2?)$/i.test(url.pathname)) {
+  if (/\.(?:js|css)$/i.test(url.pathname)) {
+    event.respondWith(networkFirstWithCache(event.request, CACHE));
+    return;
+  }
+
+  if (/\.(?:png|jpg|jpeg|webp|svg|gif|ico|woff2?)$/i.test(url.pathname)) {
     event.respondWith(cacheFirstWithRefresh(event.request, isImageRequest ? IMAGE_CACHE : CACHE));
     return;
   }

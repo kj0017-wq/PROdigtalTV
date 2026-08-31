@@ -1,6 +1,6 @@
 import { route, onRouteChange, go } from "./utils/router.js?v=4";
-import { currentUser, canUseCms, isAdmin, login, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=473";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=530";
+import { currentUser, canUseCms, isAdmin, login, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=474";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=532";
 import { escapeHtml, formatDate } from "./utils/format.js";
 import { normalizeLifecyclePhase } from "./data/platformConstants.js";
 import { publicShell } from "./components/layout.js?v=13";
@@ -19,9 +19,9 @@ const memberProfileWarmups = new Map();
 let mobileSurveyPeopleCache = { createdAt: 0, directory: null };
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=767");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=713");
-const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=496");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=778");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=736");
+const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=498");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=116");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=16");
 const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=8");
@@ -1645,6 +1645,218 @@ function formObject(form) {
   return data;
 }
 
+function scheduleTimeToMinutes(value = "") {
+  const match = String(value || "").match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours * 60 + minutes;
+}
+
+function scheduleMinutesToTime(minutes) {
+  const safe = Math.min(23 * 60 + 59, Math.max(0, Number(minutes) || 0));
+  return `${String(Math.floor(safe / 60)).padStart(2, "0")}:${String(safe % 60).padStart(2, "0")}`;
+}
+
+function eventScheduleRowsFromControls({ startTime = "", endTime = "", talkDurationMinutes = 30, topics = [] } = {}) {
+  const start = scheduleTimeToMinutes(startTime) ?? 10 * 60;
+  const plannedEnd = scheduleTimeToMinutes(endTime) ?? Math.min(start + 315, 23 * 60 + 59);
+  const talkDuration = Math.min(180, Math.max(5, Math.round(Number(talkDurationMinutes) || 30)));
+  const rows = [
+    { type: "Einlass", time: scheduleMinutesToTime(Math.max(0, start - 30)), duration: 30, person: "Einlass", title: "Empfang, Registrierung und Ankommen" },
+    { type: "Begruessung", time: scheduleMinutesToTime(start), duration: 15, person: "Moderation", title: "Begruessung durch PROdigitalTV und organisatorische Hinweise" }
+  ];
+  let cursor = start + 15;
+  for (let index = 0; index < 6; index += 1) {
+    const topic = topics[index];
+    const topicData = typeof topic === "string" ? { title: topic, person: "Referent wird ergaenzt" } : topic || {};
+    rows.push({
+      type: `Vortrag ${index + 1}`,
+      time: scheduleMinutesToTime(cursor),
+      duration: talkDuration,
+      person: topicData.person || "Referent wird ergaenzt",
+      title: topicData.title || `Vortrag ${index + 1} wird ergaenzt`
+    });
+    cursor += talkDuration;
+    if (index === 1) {
+      rows.push({ type: "Pause", time: scheduleMinutesToTime(cursor), duration: 15, person: "Pause", title: "Kurze Pause und Austausch" });
+      cursor += 15;
+    }
+    if (index === 3) {
+      rows.push({ type: "Laengere Pause", time: scheduleMinutesToTime(cursor), duration: 30, person: "Pause", title: "Laengere Pause, Lunch oder Networking" });
+      cursor += 30;
+    }
+  }
+  rows.push({ type: "Networking", time: scheduleMinutesToTime(cursor), duration: 30, person: "Networking", title: "Networking und informeller Austausch" });
+  cursor += 30;
+  rows.push({ type: "Ende", time: scheduleMinutesToTime(Math.max(plannedEnd, cursor)), duration: 0, person: "Moderation", title: "Ende der Veranstaltung" });
+  return rows;
+}
+
+function eventScheduleRowsToText(rows = []) {
+  return rows
+    .map((row) => `${row.time || ""} | ${row.person || row.type || "Programmpunkt"} | ${row.title || ""}`.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function eventScheduleFieldsWithTopic(event = {}, topic = {}, speaker = {}) {
+  if (!topic?.id) return {};
+  const sourceRows = Array.isArray(event.scheduleItems) && event.scheduleItems.length
+    ? event.scheduleItems.map((row) => ({ ...row }))
+    : eventScheduleRowsFromControls({
+      startTime: event.startTime,
+      endTime: event.endTime,
+      talkDurationMinutes: event.talkDurationMinutes,
+      topics: []
+    });
+  const speakerName = String(speaker.name || [speaker.firstName, speaker.lastName].filter(Boolean).join(" ") || "").trim();
+  const topicTitle = String(topic.title || "").trim();
+  if (!topicTitle) return {};
+  const isTalkRow = (row = {}) => /^Vortrag(?:\s+\d+)?$/i.test(String(row.type || "").trim());
+  const isPlaceholder = (row = {}) => isTalkRow(row)
+    && (!row.topicId || row.topicId === topic.id)
+    && (/wird ergaenzt/i.test(String(row.title || "")) || /wird ergaenzt/i.test(String(row.person || "")));
+  let rowIndex = sourceRows.findIndex((row) => row.topicId === topic.id);
+  if (rowIndex < 0) rowIndex = sourceRows.findIndex(isPlaceholder);
+  if (rowIndex < 0) {
+    const insertBefore = sourceRows.findIndex((row) => ["Networking", "Ende"].includes(String(row.type || "")));
+    rowIndex = insertBefore >= 0 ? insertBefore : sourceRows.length;
+    const talkNumber = sourceRows.filter(isTalkRow).length + 1;
+    sourceRows.splice(rowIndex, 0, {
+      type: `Vortrag ${talkNumber}`,
+      time: "",
+      duration: event.talkDurationMinutes || 30,
+      person: "",
+      title: ""
+    });
+  }
+  const currentRow = sourceRows[rowIndex] || {};
+  const talkNumber = sourceRows.slice(0, rowIndex + 1).filter(isTalkRow).length || 1;
+  sourceRows[rowIndex] = {
+    ...currentRow,
+    type: /^Vortrag\s+\d+$/i.test(String(currentRow.type || "")) ? currentRow.type : `Vortrag ${talkNumber}`,
+    person: speakerName || currentRow.person || "Referent wird ergaenzt",
+    title: topicTitle,
+    topicId: topic.id,
+    speakerId: speaker.id || currentRow.speakerId || "",
+    speakerIds: Array.from(new Set([...(Array.isArray(currentRow.speakerIds) ? currentRow.speakerIds : []), speaker.id].filter(Boolean)))
+  };
+  const scheduleText = eventScheduleRowsToText(sourceRows);
+  return {
+    scheduleItems: sourceRows,
+    scheduleText,
+    agendaText: scheduleText,
+    scheduleSchemaVersion: 1
+  };
+}
+
+function eventScheduleCheckIssueLabels(row = {}, index = 0, previousMinutes = null) {
+  const issues = [];
+  const time = String(row.time || "").trim();
+  const duration = Number(row.duration || 0);
+  const person = String(row.person || row.type || "").trim();
+  const title = String(row.title || "").trim();
+  const placeholderText = `${person} ${title}`;
+  const minutes = scheduleTimeToMinutes(time);
+  if (!time) issues.push("Uhrzeit fehlt");
+  else if (previousMinutes != null && minutes != null && minutes < previousMinutes) issues.push("Zeit springt zurück");
+  if (!title) issues.push("Titel fehlt");
+  if (!person) issues.push("Person/Rolle fehlt");
+  if (/wird\s+erg(?:aenzt|änzt)|offen|tbd|platzhalter/i.test(placeholderText)) issues.push("Platzhalter offen");
+  if (Number.isFinite(duration) && duration > 180) issues.push("Laenge pruefen");
+  return { issues, minutes };
+}
+
+function eventScheduleCheckListHtml(rows = []) {
+  let previousMinutes = null;
+  let totalDuration = 0;
+  const checked = rows.map((row, index) => {
+    const check = eventScheduleCheckIssueLabels(row, index, previousMinutes);
+    if (check.minutes != null) previousMinutes = check.minutes;
+    const duration = Number(row.duration || 0);
+    if (Number.isFinite(duration)) totalDuration += Math.max(0, duration);
+    return { row, ...check };
+  });
+  const warningCount = checked.reduce((count, item) => count + item.issues.length, 0);
+  const items = checked.map(({ row, issues }, index) => {
+    const ok = issues.length === 0;
+    const person = row.person || row.type || "Programmpunkt";
+    return `<li class="event-schedule-check__item ${ok ?"is-ok" : "has-warning"}"><span class="event-schedule-check__badge" aria-hidden="true">${ok ?"✓" : "!"}</span><div><strong>${escapeHtml(row.time || "--:--")} · ${escapeHtml(person)}</strong><p>${escapeHtml(row.title || `Programmpunkt ${index + 1}`)}</p>${issues.length ?`<small>${escapeHtml(issues.join(" · "))}</small>` : `<small>vollständig</small>`}</div></li>`;
+  }).join("");
+  return `<div class="event-schedule-check__head"><div><p class="eyebrow">Check</p><h4>Listenansicht</h4></div><span class="status ${warningCount ?"status--draft" : ""}">${warningCount ?`${warningCount} Hinweise` : "OK"}</span></div><div class="event-schedule-check__stats"><span>${rows.length} Punkte</span><span>${totalDuration} Min.</span></div><ol>${items || `<li class="event-schedule-check__item has-warning"><span class="event-schedule-check__badge" aria-hidden="true">!</span><div><strong>Ablauf fehlt</strong><p>Noch keine Programmpunkte vorhanden.</p><small>Bitte Ablauf erzeugen oder Zeilen anlegen.</small></div></li>`}</ol>`;
+}
+
+function updateEventScheduleCheckList(form, rows = []) {
+  const target = form?.querySelector("[data-event-schedule-check-list]");
+  if (target) target.innerHTML = eventScheduleCheckListHtml(rows);
+}
+function eventScheduleHeadHtml() {
+  return `<div class="event-schedule-editor__head" aria-hidden="true">
+    <span></span>
+    <span>Uhrzeit</span>
+    <span>Laenge</span>
+    <span>Referent / Moderator</span>
+    <span>Titel des Vortrages / Programmpunkt</span>
+    <span></span>
+  </div>`;
+}
+
+function eventScheduleTrashIcon() {
+  return `<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAlElEQVR4AeyUXQqAIBCE2y7iWbp5R1lP0s/DQLQTjpFEZCCj267fOoLj0Pj7CSCltCQyFHeDRTUbKbkBoHRVkxMAOWfDBvtcGcd8zKEBgB9PqQSA14Ce14gzlQCsUI11QNGpbtFHLMJzgXbPa8SZvnvJeBJKyjpHjJ7AzCYkqGoXNRTg7jN8VtW3GtYMBbDEu7HmgBUAAP//nstLKAAAAAZJREFUAwAtM3oxRhnWAgAAAABJRU5ErkJggg==" alt="" loading="lazy">`;
+}
+
+function eventScheduleRowHtml(row = {}) {
+  const type = row.type || "Programmpunkt";
+  return `<article class="event-schedule-editor__row" draggable="true" data-event-schedule-row>
+    <button type="button" class="event-schedule-editor__drag" aria-label="Programmpunkt verschieben">::</button>
+    <div class="field"><label>Uhrzeit</label><input type="time" data-schedule-time value="${escapeHtml(row.time || "")}"></div>
+    <div class="field"><label>Laenge</label><input type="number" data-schedule-duration min="0" max="240" step="5" value="${escapeHtml(row.duration ?? "")}" placeholder="Min."></div>
+    <div class="field"><label>Referent / Moderator</label><input data-schedule-person value="${escapeHtml(row.person || type || "")}" placeholder="Referent, Moderator, Pause"></div>
+    <div class="field event-schedule-editor__title"><label>Titel des Vortrages / Programmpunkt</label><input data-schedule-title value="${escapeHtml(row.title || "")}" placeholder="Titel oder Beschreibung"></div>
+    <input type="hidden" data-schedule-type value="${escapeHtml(type)}">
+    <button type="button" class="icon-button icon-button--danger event-schedule-editor__remove" data-remove-event-schedule-row aria-label="Programmpunkt entfernen">${eventScheduleTrashIcon()}</button>
+  </article>`;
+}
+
+function collectEventScheduleRows(form) {
+  return Array.from(form.querySelectorAll("[data-event-schedule-row]")).map((row) => ({
+    type: row.querySelector("[data-schedule-type]")?.value || "Programmpunkt",
+    time: row.querySelector("[data-schedule-time]")?.value || "",
+    duration: row.querySelector("[data-schedule-duration]")?.value || "",
+    person: row.querySelector("[data-schedule-person]")?.value || "",
+    title: row.querySelector("[data-schedule-title]")?.value || ""
+  }));
+}
+
+function syncEventScheduleHiddenFields(form) {
+  const rows = collectEventScheduleRows(form);
+  const textField = form.querySelector("[data-event-schedule-text]");
+  const jsonField = form.querySelector("[data-event-schedule-items-json]");
+  if (textField) textField.value = eventScheduleRowsToText(rows);
+  if (jsonField) jsonField.value = JSON.stringify(rows);
+  updateEventScheduleCheckList(form, rows);
+  return rows;
+}
+
+function recalculateEventScheduleTimes(form, anchorRow = null) {
+  const rows = Array.from(form?.querySelectorAll("[data-event-schedule-row]") || []);
+  if (!rows.length) return [];
+  const anchorIndex = anchorRow ? Math.max(0, rows.indexOf(anchorRow)) : 0;
+  const anchorTimeInput = rows[anchorIndex]?.querySelector("[data-schedule-time]");
+  let cursor = scheduleTimeToMinutes(anchorTimeInput?.value);
+  if (cursor == null) cursor = scheduleTimeToMinutes(rows[0]?.querySelector("[data-schedule-time]")?.value) ?? 10 * 60;
+  if (anchorTimeInput && !anchorTimeInput.value) anchorTimeInput.value = scheduleMinutesToTime(cursor);
+  for (let index = anchorIndex + 1; index < rows.length; index += 1) {
+    const previousDuration = Number(rows[index - 1]?.querySelector("[data-schedule-duration]")?.value || 0);
+    cursor = Math.min(23 * 60 + 59, cursor + (Number.isFinite(previousDuration) ? Math.max(0, previousDuration) : 0));
+    const timeInput = rows[index].querySelector("[data-schedule-time]");
+    if (timeInput) timeInput.value = scheduleMinutesToTime(cursor);
+  }
+  return syncEventScheduleHiddenFields(form);
+}
+
 function youtubeVideoIdFromValue(value = "") {
   const text = String(value || "").trim();
   if (!text) return "";
@@ -1701,6 +1913,19 @@ function countWords(value = "") {
     .trim()
     .split(/\s+/)
     .filter((word) => /[\p{L}\p{N}]/u.test(word)).length;
+}
+
+function limitTextToApproxWords(value = "", targetWords = 0) {
+  const target = Number(targetWords || 0);
+  if (!Number.isFinite(target) || target <= 0) return String(value || "");
+  const text = String(value || "").trim();
+  const words = text.split(/\s+/).filter(Boolean);
+  const maxWords = Math.max(40, Math.round(target * 1.15));
+  if (words.length <= maxWords) return text;
+  const clipped = words.slice(0, maxWords).join(" ");
+  const sentenceEnd = Math.max(clipped.lastIndexOf("."), clipped.lastIndexOf("!"), clipped.lastIndexOf("?"));
+  if (sentenceEnd > Math.round(clipped.length * 0.65)) return clipped.slice(0, sentenceEnd + 1).trim();
+  return `${clipped.replace(/[,:;–-]\s*$/, "").trim()}.`;
 }
 
 function normalizeFourKeywords(values = "", fallbackText = "") {
@@ -2718,16 +2943,39 @@ function findAiSource(button) {
 function eventContext(button) {
   const form = button.closest("form");
   const formValues = form ? formObject(form) : {};
-  const linkedEventOption = form?.elements.linkedEventId?.selectedOptions?.[0]?.textContent || "";
-  const sponsorOption = form?.elements.sponsorId?.selectedOptions?.[0]?.textContent || "";
+  const compactSelectLabel = (name) => {
+    const field = form?.elements?.[name];
+    return field?.selectedOptions?.[0]?.textContent
+      || field?.closest?.("[data-compact-select]")?.querySelector("[data-compact-select-trigger]")?.textContent
+      || "";
+  };
+  const linkedEventOption = compactSelectLabel("linkedEventId");
+  const sponsorOption = compactSelectLabel("sponsorId") || compactSelectLabel("hostId");
+  const accessLabel = compactSelectLabel("accessType");
+  const eventTypeLabel = compactSelectLabel("eventType");
+  const primaryHostLabel = compactSelectLabel("primaryHostId");
   const hiddenContext = document.getElementById(button.dataset.aiContext || button.dataset.aiTarget)?.textContent;
   let parsedContext = {};
   if (hiddenContext) {
     try { parsedContext = JSON.parse(hiddenContext); } catch { parsedContext = { notes: hiddenContext }; }
   }
+  const currentEvent = {
+    ...(parsedContext.event || {}),
+    ...formValues,
+    accessLabel,
+    eventTypeLabel,
+    primaryHostLabel,
+    linkedEventLabel: linkedEventOption,
+    sponsorLabel: sponsorOption
+  };
   return {
     ...parsedContext,
     ...formValues,
+    event: currentEvent,
+    currentFormValues: formValues,
+    accessLabel,
+    eventTypeLabel,
+    primaryHostLabel,
     linkedEventLabel: linkedEventOption,
     sponsorLabel: sponsorOption,
     placeholders: ["{{firstName}}", "{{lastName}}", "{{eventTitle}}", "{{eventDate}}", "{{eventLocation}}", "{{onlineMeetingLabel}}", "{{zoomLink}}", "{{confirmationLink}}"]
@@ -3373,7 +3621,7 @@ const mediaUsagePresets = {
   upload: { aspect: "16x9", width: 1600, height: 900, portal: "Allgemein / responsive", mobile: "Responsive mit Bildfokus" },
   ai: { aspect: "16x9", width: 1600, height: 900, portal: "Redaktionelle Grafik", mobile: "Responsive 16:9" },
   news: { aspect: "16x9", width: 1600, height: 900, portal: "News-Teaser und Artikelkopf", mobile: "Mobile News-Teaser 16:9" },
-  event: { aspect: "16x9", width: 1600, height: 900, portal: "Event-Teaser und Detailkopf", mobile: "Mobile Eventkarte 16:9" },
+  event: { aspect: "16x9", width: 2400, height: 1350, portal: "Event-Teaser und Detailkopf", mobile: "Mobile Eventkarte 16:9" },
   article: { aspect: "16x9", width: 2400, height: 1350, portal: "Artikel / Redaktion hochaufloesend", mobile: "Mobile Artikelkarte 16:9" },
   topic: { aspect: "16x9", width: 1600, height: 900, portal: "Themenkarte / Themenkopf", mobile: "Mobile Themenkarte 16:9" },
   board: { aspect: "4x5", width: 1200, height: 1500, portal: "Vorstandsprofil", mobile: "Mobile Profilkarte 4:5" },
@@ -3388,12 +3636,12 @@ const MEDIA_VARIANT_DEFINITIONS = Object.freeze({
   news_desktop: { key: "news_desktop", label: "News Desktop", width: 1200, height: 675, aspect: "16x9", format: "image/webp", quality: .86, usage: "news_header", storageSuffix: "news-desktop" },
   news_mobile: { key: "news_mobile", label: "News Mobile", width: 800, height: 1000, aspect: "4x5", format: "image/webp", quality: .86, usage: "news_mobile", storageSuffix: "news-mobile" },
   hero_desktop: { key: "hero_desktop", label: "Hero Desktop", width: 1920, height: 800, aspect: "12x5", format: "image/webp", quality: .88, usage: "hero", storageSuffix: "hero-desktop" },
-  thumbnail: { key: "thumbnail", label: "Thumbnail", width: 480, height: 320, aspect: "3x2", format: "image/webp", quality: .82, usage: "thumbnail", storageSuffix: "thumbnail" },
+  thumbnail: { key: "thumbnail", label: "Thumbnail", width: 1200, height: 800, aspect: "3x2", format: "image/webp", quality: .88, usage: "thumbnail", storageSuffix: "thumbnail" },
   square: { key: "square", label: "Square", width: 800, height: 800, aspect: "1x1", format: "image/webp", quality: .84, usage: "square", storageSuffix: "square" },
-  event_header: { key: "event_header", label: "Event Header", width: 1600, height: 700, aspect: "16x7", format: "image/webp", quality: .86, usage: "event_header", storageSuffix: "event-header" },
+  event_header: { key: "event_header", label: "Event Header", width: 2400, height: 1050, aspect: "16x7", format: "image/webp", quality: .9, usage: "event_header", storageSuffix: "event-header" },
   member_teaser: { key: "member_teaser", label: "Member Teaser", width: 900, height: 600, aspect: "3x2", format: "image/webp", quality: .84, usage: "member_teaser", storageSuffix: "member-teaser" },
   sponsor_logo: { key: "sponsor_logo", label: "Sponsor Logo", width: 600, height: 300, aspect: "2x1", format: "image/webp", quality: .9, usage: "sponsor_logo", storageSuffix: "sponsor-logo" },
-  social_share: { key: "social_share", label: "Social Share", width: 1200, height: 630, aspect: "social", format: "image/webp", quality: .86, usage: "social_share", storageSuffix: "social-share" }
+  social_share: { key: "social_share", label: "Social Share", width: 1800, height: 945, aspect: "social", format: "image/webp", quality: .88, usage: "social_share", storageSuffix: "social-share" }
 });
 
 const MEDIA_VARIANT_ORDER = Object.freeze(Object.keys(MEDIA_VARIANT_DEFINITIONS));
@@ -3462,8 +3710,8 @@ function mediaVariantCanvasSize(format = "16x9", asset = {}) {
   if (clean === "4x3") return { width: 1200, height: 900, aspect: "4x3", key: "legacy_4x3" };
   if (clean === "3x2") return { width: 900, height: 600, aspect: "3x2", key: "member_teaser" };
   if (clean === "12x5") return { width: 1920, height: 800, aspect: "12x5", key: "hero_desktop" };
-  if (clean === "16x7") return { width: 1600, height: 700, aspect: "16x7", key: "event_header" };
-  if (clean === "social") return { width: 1200, height: 630, aspect: "social", key: "social_share" };
+  if (clean === "16x7") return { width: 2400, height: 1050, aspect: "16x7", key: "event_header" };
+  if (clean === "social") return { width: 1800, height: 945, aspect: "social", key: "social_share" };
   const fallback = mediaVariantDefinition("", asset);
   return { width: fallback.width, height: fallback.height, aspect: fallback.aspect, key: fallback.key };
 }
@@ -4109,7 +4357,7 @@ async function createOptimizedMediaUploads(file, { filename = "", path = "", med
     mediaType,
     maxWidth: preset.width || 1600,
     maxHeight: preset.height || 900,
-    quality: mediaType === "logo" ? .9 : .82
+    quality: mediaType === "logo" || mediaType === "event" ? .9 : .82
   });
   const thumb = await optimizedMediaFile(file, {
     filename: thumbFilename,
@@ -6445,16 +6693,36 @@ function submitFormAndWait(form) {
   });
 }
 
-function showAiDialog({ button, originalText, result, sourceField }) {
+function showAiDialog({ button, originalText, result, sourceField, targetWords: requestedTargetWords = 0 }) {
   document.querySelector(".ai-dialog-backdrop")?.remove();
-  const suggestedText = normalizeAiSuggestion(result.suggestedText || structuredToText(result.structured), button, sourceField);
+  let suggestedText = normalizeAiSuggestion(result.suggestedText || structuredToText(result.structured), button, sourceField);
+  const form = button.closest("form");
+  const currentTargetWords = Number(
+    requestedTargetWords
+      || button.dataset.aiTargetWordsOverride
+      || form?.querySelector("[data-ai-target-words]")?.value
+      || button.dataset.aiTargetWords
+      || countWords(suggestedText)
+      || 180
+  );
+  const targetWords = Number.isFinite(currentTargetWords) && currentTargetWords > 0 ? Math.round(currentTargetWords) : 180;
+  if (targetWords > 0 && ["description", "bodyText", "longDescription", "text", "articleText", "archiveText", "postEventSummary"].includes(button.dataset.aiField || button.dataset.aiTarget || "")) {
+    suggestedText = limitTextToApproxWords(suggestedText, targetWords);
+  }
   const wrapper = document.createElement("div");
   wrapper.className = "ai-dialog-backdrop";
   wrapper.innerHTML = `<div class="ai-dialog" role="dialog" aria-modal="true">
     <div class="actions" style="justify-content:space-between"><div><p class="eyebrow">ChatGPT-Vorschlag</p><h2>${escapeHtml(button.textContent.trim())}</h2></div><button type="button" class="link-button" data-ai-close>Schliessen</button></div>
+    <div class="ai-dialog-controls">
+      <label class="field">
+        <span>Wortanzahl fuer neue Vorschlaege</span>
+        <input type="number" min="40" max="900" step="10" value="${escapeHtml(String(targetWords))}" data-ai-dialog-target-words>
+        <small>Gilt beim Klick auf „Neu generieren“.</small>
+      </label>
+    </div>
     <div class="ai-dialog-grid">
-      <div class="field"><label>Originaltext</label><textarea readonly>${escapeHtml(originalText)}</textarea></div>
-      <div class="field"><label>KI-Vorschlag</label><textarea data-ai-suggestion>${escapeHtml(suggestedText)}</textarea></div>
+      <div class="field"><label>Originaltext <span>${countWords(originalText)} Wörter</span></label><textarea readonly>${escapeHtml(originalText)}</textarea></div>
+      <div class="field"><label>KI-Vorschlag <span data-ai-suggestion-count>${countWords(suggestedText)} Wörter</span></label><textarea data-ai-suggestion>${escapeHtml(suggestedText)}</textarea></div>
     </div>
     ${result.structured ? `<pre class="ai-structured">${escapeHtml(JSON.stringify(result.structured, null, 2))}</pre>` : ""}
     <div class="actions"><button type="button" class="button button--primary" data-ai-accept>Uebernehmen</button><button type="button" class="button button--secondary" data-ai-save-draft>Als Entwurf speichern</button><button type="button" class="button button--secondary" data-ai-regenerate>Neu generieren</button><button type="button" class="button button--secondary" data-ai-close>Verwerfen</button></div>
@@ -6462,6 +6730,13 @@ function showAiDialog({ button, originalText, result, sourceField }) {
   </div>`;
   document.body.append(wrapper);
   wrapper.querySelectorAll("[data-ai-close]").forEach((item) => item.addEventListener("click", () => wrapper.remove()));
+  const suggestionField = wrapper.querySelector("[data-ai-suggestion]");
+  const suggestionCount = wrapper.querySelector("[data-ai-suggestion-count]");
+  const updateSuggestionWordCount = () => {
+    if (suggestionCount) suggestionCount.textContent = `${countWords(suggestionField?.value || "")} Wörter`;
+  };
+  suggestionField?.addEventListener("input", updateSuggestionWordCount);
+  updateSuggestionWordCount();
   wrapper.querySelector("[data-ai-accept]").addEventListener("click", async (event) => {
     const acceptButton = event.currentTarget;
     const value = normalizeAiSuggestion(wrapper.querySelector("[data-ai-suggestion]").value, button, sourceField);
@@ -6507,6 +6782,11 @@ function showAiDialog({ button, originalText, result, sourceField }) {
     wrapper.querySelector(".muted").textContent = "KI-Entwurf wurde in aiDrafts gespeichert.";
   });
   wrapper.querySelector("[data-ai-regenerate]").addEventListener("click", () => {
+    const wordsInput = wrapper.querySelector("[data-ai-dialog-target-words]");
+    const nextWords = Math.max(40, Math.min(900, Number(wordsInput?.value || 0)));
+    if (Number.isFinite(nextWords) && nextWords > 0) {
+      button.dataset.aiTargetWordsOverride = String(Math.round(nextWords));
+    }
     wrapper.remove();
     button.click();
   });
@@ -6678,20 +6958,106 @@ function rawImportHeadlineFromUrl(url = "") {
   }
 }
 
+function stripInlineMarkdown(value = "") {
+  return String(value || "")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^#{1,6}\s*/gm, "")
+    .trim();
+}
+
+function markdownUrlFromLine(value = "") {
+  const text = String(value || "");
+  const markdownMatch = text.match(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/i);
+  if (markdownMatch) return markdownMatch[2];
+  return text.match(/https?:\/\/\S+/i)?.[0]?.replace(/[)\].,;]+$/, "") || "";
+}
+
+function parseImportedNewsBlock(rawText = "", fallbackTitle = "Importierte News") {
+  const cleanedRawText = cleanRawImportText(rawText);
+  const lines = cleanedRawText.split(/\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !/^@@NEWS_SPLIT@@$/i.test(line) && !/^(?:-{3,}|={3,}|\*{3,})$/.test(line));
+  const headingLine = lines.find((line) => /^#{1,6}\s+\S/.test(line)) || lines[0] || fallbackTitle;
+  const headline = stripUnfilledEditorialPlaceholders(limitText(stripInlineMarkdown(headingLine)
+    .replace(/^(?:news|meldung|thema)\s+\d{1,2}\s*[:.-]\s*/i, "")
+    .replace(/^\d{1,2}[.)]\s+/, "")
+    .replace(/^Pressemitteilung[:\s-]*/i, "")
+    .trim(), 90) || fallbackTitle);
+  const sourceIndex = lines.findIndex((line) => /^(?:\*\*)?\s*(quelle|source)\s*:/i.test(line));
+  const sourceLine = sourceIndex >= 0 ? lines[sourceIndex] : "";
+  const sourceUrl = markdownUrlFromLine(sourceLine) || (sourceIndex >= 0 ? markdownUrlFromLine(lines[sourceIndex + 1] || "") : "");
+  const sourceTitle = sourceLine
+    ? stripInlineMarkdown(sourceLine.replace(/^(?:\*\*)?\s*(quelle|source)\s*:\s*(?:\*\*)?/i, ""))
+      .replace(/https?:\/\/\S+/gi, "")
+      .replace(/[–-]\s*$/, "")
+      .trim()
+    : "";
+  const bodyLines = lines.filter((line, index) => {
+    if (index === lines.indexOf(headingLine)) return false;
+    if (sourceIndex >= 0 && (index === sourceIndex || index === sourceIndex + 1 && /^https?:\/\//i.test(line))) return false;
+    if (/^(?:-{3,}|={3,}|\*{3,})$/.test(line)) return false;
+    return true;
+  });
+  const bodyText = stripInlineMarkdown(bodyLines.join("\n\n"));
+  const teaserSource = bodyLines.find((line) => !/^(?:\*\*)?\s*(quelle|source)\s*:/i.test(line)) || "";
+  const teaserText = limitText(stripInlineMarkdown(teaserSource), 210);
+  const sourceSnapshot = sourceLine || sourceUrl ? [{
+    title: sourceTitle || (sourceUrl ? domainFromUrl(sourceUrl) : "Importquelle"),
+    publisher: sourceTitle || (sourceUrl ? domainFromUrl(sourceUrl) : "Importquelle"),
+    url: sourceUrl,
+    source_type: "Textquelle"
+  }] : [];
+  return {
+    headline,
+    teaserText,
+    shortText: teaserText,
+    introText: teaserText,
+    bodyText: bodyText || stripInlineMarkdown(cleanedRawText),
+    sourceSnapshot,
+    sourceUrl
+  };
+}
+
 function splitImportedNewsBlocks(rawText = "") {
   const text = cleanRawImportText(rawText);
   if (!text) return [];
-  const withExplicitMarkers = text
-    .replace(/\n\s*(?:-{3,}|={3,}|\*{3,})\s*\n/g, "\n\n@@NEWS_SPLIT@@\n\n")
-    .replace(/\n\s*(?:#{2,6}\s+|NEWS\s*:|MELDUNG\s+\d+\s*:|THEMA\s+\d+\s*:|(?:\*\*)?\d{1,2}[.)]\s+\S)/gi, "\n\n@@NEWS_SPLIT@@\n\n$&");
-  let blocks = withExplicitMarkers
-    .split(/\n\s*@@NEWS_SPLIT@@\s*\n/g)
+
+  const cleanupBlock = (block = "") => cleanRawImportText(block)
+    .split(/\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => !/^@@NEWS_SPLIT@@$/i.test(line.trim()))
+    .filter((line) => !/^(?:-{3,}|={3,}|\*{3,})$/.test(line.trim()))
+    .join("\n")
+    .replace(/^(?:branchen-news|morgenbriefing|wochenbriefing)\s*[-–].*?(?:\n{2,}|$)/i, "")
+    .trim();
+
+  const lines = text.split(/\n/).map((line) => line.trim());
+  const explicitHeadingIndexes = [];
+  lines.forEach((line, index) => {
+    const normalizedLine = line.replace(/^\*+|\*+$/g, "").trim();
+    const markdownHeading = /^#{2,6}\s+\S.{6,180}$/.test(line);
+    const numberedHeading = /^(?:\*\*)?\d{1,2}[.)]\s+\S.{6,180}(?:\*\*)?$/.test(line);
+    const labeledHeading = /^(?:news|meldung|thema)\s+\d{1,2}\s*[:.-]\s+\S.{6,180}$/i.test(normalizedLine);
+    if (markdownHeading || numberedHeading || labeledHeading) explicitHeadingIndexes.push(index);
+  });
+  if (explicitHeadingIndexes.length > 1) {
+    const headingBlocks = explicitHeadingIndexes.map((start, index) => {
+      const end = explicitHeadingIndexes[index + 1] ?? lines.length;
+      return cleanupBlock(lines.slice(start, end).join("\n"));
+    }).filter((block) => block.length >= 80);
+    if (headingBlocks.length > 1) return headingBlocks.slice(0, 30);
+  }
+
+  let blocks = text
+    .split(/\n\s*(?:-{3,}|={3,}|\*{3,}|@@NEWS_SPLIT@@)\s*\n/g)
     .map(cleanRawImportText)
-    .map((block) => block.replace(/^(?:branchen-news|morgenbriefing|wochenbriefing)\s*[-–].*?(?:\n{2,}|$)/i, "").trim())
+    .map(cleanupBlock)
     .filter((block) => block.length >= 80 && !/^(?:branchen-news|morgenbriefing|wochenbriefing)\s*[-–]/i.test(block));
   if (blocks.length > 1) return blocks.slice(0, 30);
 
-  const lines = text.split(/\n/).map((line) => line.trim());
   const startIndexes = [];
   lines.forEach((line, index) => {
     const previousBlank = index === 0 || !lines[index - 1];
@@ -6706,8 +7072,8 @@ function splitImportedNewsBlocks(rawText = "") {
   if (startIndexes.length < 2) return [text];
   blocks = startIndexes.map((start, index) => {
     const end = startIndexes[index + 1] ?? lines.length;
-    return cleanRawImportText(lines.slice(start, end).join("\n"));
-  }).filter((block) => block.length >= 80);
+    return cleanupBlock(lines.slice(start, end).join("\n"));
+  }).filter((block) => block.length >= 80 && !/^@@NEWS_SPLIT@@$/i.test(block.trim()));
   return blocks.length > 1 ? blocks.slice(0, 30) : [text];
 }
 
@@ -6725,17 +7091,27 @@ async function saveImportedNewsArticle({
   importMeta = {}
 } = {}) {
   const articleId = `news-import-${crypto.randomUUID()}`;
-  const cleanedRawText = cleanRawImportText(rawText);
-  const headline = stripUnfilledEditorialPlaceholders(cleanHeadline || rawImportHeadline(cleanedRawText || "Importierte News"));
+  const parsedBlock = parseImportedNewsBlock(rawText, cleanHeadline || "Importierte News");
+  const cleanedRawText = parsedBlock.bodyText || cleanRawImportText(rawText);
+  const headline = stripUnfilledEditorialPlaceholders(cleanHeadline || parsedBlock.headline || rawImportHeadline(cleanedRawText || "Importierte News"));
+  if (/^@@NEWS_SPLIT@@$/i.test(headline.trim())) return "";
+  const mergedSourceSnapshot = [
+    ...parsedBlock.sourceSnapshot,
+    ...sourceSnapshot
+  ].filter((source, index, all) => {
+    const key = `${source.url || ""}|${source.title || source.publisher || ""}`.toLowerCase();
+    return key !== "|" && all.findIndex((item) => `${item.url || ""}|${item.title || item.publisher || ""}`.toLowerCase() === key) === index;
+  });
+  const effectiveSourceUrl = parsedBlock.sourceUrl || sourceUrl;
   await upsert("editorialContent", cleanEditorialImportedRecordValues({
     id: articleId,
     title: headline,
     headline,
-    subtitle: "",
-    subline: "",
-    introText: "",
-    shortText: "",
-    teaserText: "",
+    subtitle: parsedBlock.teaserText || "",
+    subline: parsedBlock.teaserText || "",
+    introText: parsedBlock.introText || "",
+    shortText: parsedBlock.shortText || "",
+    teaserText: parsedBlock.teaserText || "",
     bodyText: cleanedRawText,
     ai_original_suggested_text: cleanedRawText,
     source_suggested_text: cleanedRawText,
@@ -6745,13 +7121,13 @@ async function saveImportedNewsArticle({
     section: "news",
     key: `news.${articleId}`,
     slug: slugify(headline),
-    category: "News-Import",
+    category: "News",
     tags: [],
     primary_keyword: "",
     keyword_json: [],
-    source_snapshot_json: sourceSnapshot,
-    original_url: sourceUrl,
-    source_url: sourceUrl,
+    source_snapshot_json: mergedSourceSnapshot,
+    original_url: effectiveSourceUrl,
+    source_url: effectiveSourceUrl,
     thumbnail_idea: "",
     thumbnail_prompt: "",
     thumbnail_alt: headline,
@@ -6781,7 +7157,7 @@ async function saveImportedNewsArticle({
       no_ai_interpretation: true,
       no_status_logic: true,
       visible: true,
-      sourceUrl,
+      sourceUrl: effectiveSourceUrl,
       ...importMeta,
       unsupportedTextFiles
     },
@@ -6790,7 +7166,7 @@ async function saveImportedNewsArticle({
     createdAt: now,
     updatedAt: now
   }));
-  await Promise.all(sourceSnapshot.map((source, index) => upsert("article_sources", {
+  await Promise.all(mergedSourceSnapshot.map((source, index) => upsert("article_sources", {
     id: `article-source-${crypto.randomUUID()}`,
     article_id: articleId,
     title: source.title || `Quelle ${index + 1}`,
@@ -6878,6 +7254,29 @@ function wireImageDropzones() {
     const selectedSize = () => {
       const [width, height] = String(sizeSelect?.value || "240x180").split("x").map((value) => Number(value));
       return { width: width || 240, height: height || 180 };
+    };
+    const highResolutionCropSize = (size = selectedSize()) => {
+      const naturalWidth = Number(crop.img?.naturalWidth || size.width || 1);
+      const naturalHeight = Number(crop.img?.naturalHeight || size.height || 1);
+      const targetAspect = (size.width || 1) / Math.max(1, size.height || 1);
+      const sourceAspect = naturalWidth / Math.max(1, naturalHeight);
+      const zoom = Math.max(.05, Number(crop.scale || 1));
+      let width;
+      let height;
+      if (sourceAspect > targetAspect) {
+        height = naturalHeight / zoom;
+        width = height * targetAspect;
+      } else {
+        width = naturalWidth / zoom;
+        height = width / targetAspect;
+      }
+      width = Math.max(size.width || 1, Math.min(naturalWidth, Math.round(width)));
+      height = Math.max(size.height || 1, Math.min(naturalHeight, Math.round(height)));
+      if (Math.abs(width / Math.max(1, height) - targetAspect) > .01) {
+        if (width / Math.max(1, height) > targetAspect) width = Math.round(height * targetAspect);
+        else height = Math.round(width / targetAspect);
+      }
+      return { width: Math.max(1, width), height: Math.max(1, height) };
     };
     const updateResolution = () => {
       const size = selectedSize();
@@ -6991,9 +7390,10 @@ function wireImageDropzones() {
     const applyCropToInput = async () => {
       if (!crop.img || !crop.file) return null;
       const size = selectedSize();
+      const outputSize = highResolutionCropSize(size);
       const canvas = document.createElement("canvas");
-      canvas.width = size.width;
-      canvas.height = size.height;
+      canvas.width = outputSize.width;
+      canvas.height = outputSize.height;
       const ctx = canvas.getContext("2d");
       ctx.fillStyle = "#fff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -7004,12 +7404,12 @@ function wireImageDropzones() {
       const offsetX = crop.x * (canvas.width / Math.max(1, previewRect.width));
       const offsetY = crop.y * (canvas.height / Math.max(1, previewRect.height));
       ctx.drawImage(crop.img, (canvas.width - width) / 2 + offsetX, (canvas.height - height) / 2 + offsetY, width, height);
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", .86));
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", .92));
       if (!blob) throw new Error("WebP-Zuschnitt konnte nicht erzeugt werden.");
-      const croppedFile = new File([blob], crop.file.name.replace(/\.[^.]+$/, "") + `-${size.width}x${size.height}.webp`, { type: "image/webp" });
+      const croppedFile = new File([blob], crop.file.name.replace(/\.[^.]+$/, "") + `-${outputSize.width}x${outputSize.height}.webp`, { type: "image/webp" });
       fileToInput(input, croppedFile);
       crop.file = croppedFile;
-      crop.src = canvas.toDataURL("image/webp", .86);
+      crop.src = canvas.toDataURL("image/webp", .92);
       if (dataInput) dataInput.value = crop.src;
       if (fileNameInput) fileNameInput.value = croppedFile.name;
       preview.innerHTML = `<img src="${crop.src}" alt="">`;
@@ -7022,7 +7422,7 @@ function wireImageDropzones() {
       crop.scale = 1;
       if (zoom) zoom.value = "1";
       renderCrop();
-      return { file: croppedFile, size };
+      return { file: croppedFile, size: outputSize };
     };
     const showFile = (file, options = {}) => {
       if (!file || !file.type.startsWith("image/")) return;
@@ -8047,8 +8447,9 @@ async function autoSaveSimpleImageForm(form, status, message = "Bild wird gespei
 async function saveEventTopicSpeakerForm(form) {
   if (!ensureSimpleImageCropsApplied(form, "#event-topic-speaker-result")) return false;
   const existingEvent = await getOne("events", form.dataset.eventId);
-  const speakerId = form.dataset.speakerId || `speakers-${crypto.randomUUID()}`;
-  const existingSpeaker = form.dataset.speakerId ? await getOne("speakers", speakerId) : { id: speakerId, status: "published", visibility: "public", createdAt: new Date().toISOString() };
+  const selectedExistingSpeakerId = String(form.elements.existingSpeakerId?.value || "").trim();
+  const speakerId = selectedExistingSpeakerId || form.dataset.speakerId || `speakers-${crypto.randomUUID()}`;
+  const existingSpeaker = await (selectedExistingSpeakerId || form.dataset.speakerId ? getOne("speakers", speakerId).catch(() => null) : Promise.resolve(null)) || { id: speakerId, status: "published", visibility: "public", createdAt: new Date().toISOString() };
   const result = form.querySelector("#event-topic-speaker-result");
   const firstName = String(form.elements.speakerFirstName?.value || "").trim();
   const lastName = String(form.elements.speakerLastName?.value || "").trim();
@@ -8104,7 +8505,7 @@ async function saveEventTopicSpeakerForm(form) {
     imageUpdate.company_logo_media_asset_id = renderedUpload.mediaAssetId;
     imageUpdate.companyLogoMediaAssetId = renderedUpload.selectedAssetId;
   }
-  await upsert("speakers", {
+  const savedSpeaker = {
     ...existingSpeaker,
     id: speakerId,
     firstName,
@@ -8123,8 +8524,20 @@ async function saveEventTopicSpeakerForm(form) {
     topicIds: Array.from(topicIdsForSpeaker),
     eventIds: Array.from(eventIdsForSpeaker),
     updatedAt: new Date().toISOString()
-  });
-  await upsert("events", { ...existingEvent, speakerIds: eventSpeakerIds, updatedAt: new Date().toISOString() });
+  };
+  await upsert("speakers", savedSpeaker);
+  const linkedTopic = await getOne("topics", form.dataset.topicId).catch(() => null);
+  const topicSpeakerIds = new Set(linkedTopic?.speakerIds || [linkedTopic?.speakerId].filter(Boolean));
+  topicSpeakerIds.add(speakerId);
+  const linkedTopicUpdate = linkedTopic ? {
+    ...linkedTopic,
+    speakerId: linkedTopic.speakerId || speakerId,
+    speakerIds: Array.from(topicSpeakerIds),
+    updatedAt: new Date().toISOString()
+  } : null;
+  if (linkedTopicUpdate) await upsert("topics", linkedTopicUpdate);
+  const scheduleUpdate = linkedTopicUpdate ? eventScheduleFieldsWithTopic(existingEvent, linkedTopicUpdate, savedSpeaker) : {};
+  await upsert("events", { ...existingEvent, speakerIds: eventSpeakerIds, ...scheduleUpdate, updatedAt: new Date().toISOString() });
   form.dataset.speakerId = speakerId;
   if (result) result.innerHTML = `<div class="alert alert--success">Referent wurde gespeichert.${image ? " Bildvarianten wurden automatisch gerendert und zugeordnet." : ""}</div>`;
   const imageStatus = form.querySelector("[data-image-status]");
@@ -8821,6 +9234,7 @@ async function createMediaAssetFromEntityImage({ collection = "", entity = {}, f
 function autoVariantKeysForEntityUpload(collection = "", field = "imageUrl") {
   const normalizedField = String(field || "imageUrl");
   if (/logo/i.test(normalizedField)) return ["sponsor_logo", "thumbnail"];
+  if (collection === "events") return ["event_header", "thumbnail"];
   if (collection === "topics") return ["article_xl", "news_desktop", "thumbnail", "social_share"];
   if (collection === "speakers") return ["news_mobile", "thumbnail", "square"];
   if (["members", "sponsors"].includes(collection)) return ["sponsor_logo", "thumbnail"];
@@ -8829,6 +9243,7 @@ function autoVariantKeysForEntityUpload(collection = "", field = "imageUrl") {
 
 function activeVariantForEntityUpload(collection = "", field = "imageUrl") {
   if (/logo/i.test(field)) return "sponsor_logo";
+  if (collection === "events") return "event_header";
   if (collection === "topics") return "news_desktop";
   if (collection === "speakers") return "news_mobile";
   return "news_desktop";
@@ -11349,6 +11764,25 @@ function wireActions() {
     });
     form.addEventListener("cms-form-saved", () => markSaveAwareFormClean(form));
   });
+  document.querySelectorAll("[data-existing-speaker-select]").forEach((select) => {
+    if (select.dataset.existingSpeakerWired === "1") return;
+    select.dataset.existingSpeakerWired = "1";
+    select.addEventListener("change", () => {
+      const form = select.closest("form");
+      const eventId = form?.dataset.eventId || "";
+      const topicId = form?.dataset.topicId || "";
+      if (!eventId) return;
+      const hashParts = String(location.hash || "").replace(/^#\/?/, "").split("?");
+      const params = new URLSearchParams(hashParts[1] || "");
+      const mode = params.get("mode") || form.dataset.topicMode || (form.id === "event-topic-speaker-form" ? "referent" : "edit");
+      params.set("tab", "topics");
+      params.set("mode", mode);
+      if (topicId) params.set("topic", topicId);
+      if (select.value) params.set("speaker", select.value);
+      else params.delete("speaker");
+      location.hash = `#/cms/event/${eventId}?${params.toString()}`;
+    });
+  });
   if (!window.__pdtSaveAwareLeaveGuard) {
     window.__pdtSaveAwareLeaveGuard = true;
     window.addEventListener("beforeunload", (event) => {
@@ -11383,7 +11817,7 @@ function wireActions() {
     const form = button.closest("form");
     const promptField = button.dataset.aiPromptField ? form?.querySelector(`[name="${button.dataset.aiPromptField}"]`) : null;
     const prompt = promptField?.value || "";
-    const targetWords = Number(form?.querySelector("[data-ai-target-words]")?.value || button.dataset.aiTargetWords || 0);
+    const targetWords = Number(button.dataset.aiTargetWordsOverride || form?.querySelector("[data-ai-target-words]")?.value || button.dataset.aiTargetWords || 0);
     const compactText = compactAiText(text, button.dataset.aiAction === "generateEventRetrospective" ? 9000 : 12000);
     button.disabled = true;
     button.textContent = "ChatGPT arbeitet ...";
@@ -11398,7 +11832,7 @@ function wireActions() {
         targetWords: Number.isFinite(targetWords) && targetWords > 0 ? targetWords : undefined,
         context: eventContext(button)
       });
-      showAiDialog({ button, originalText: text, result, sourceField: field });
+      showAiDialog({ button, originalText: text, result, sourceField: field, targetWords });
     } catch (error) {
       alert(error.message || String(error));
     } finally {
@@ -11722,7 +12156,7 @@ function wireActions() {
         section: "news",
         key: `news.${articleId}`,
         slug: slugify(cleanHeadline),
-        category: "News-Import",
+        category: "News",
         tags,
         primary_keyword: tags[0] || "",
         keyword_json: tags.map((tag, index) => ({ keyword: tag, relevance_score: index === 0 ? 90 : 70 })),
@@ -11831,6 +12265,21 @@ function wireActions() {
   });
   document.querySelector("[data-ai-news-add-source]")?.addEventListener("click", () => {
     document.querySelector("#ai-news-import-form textarea[name='sourceText']")?.focus();
+  });
+  document.querySelector("[data-ai-news-copy-research-prompt]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const promptField = document.querySelector("[data-ai-news-research-prompt]");
+    const prompt = promptField?.value || "";
+    if (!prompt) return;
+    try {
+      await navigator.clipboard.writeText(prompt);
+      const originalLabel = button.textContent;
+      button.textContent = "Kopiert";
+      window.setTimeout(() => { button.textContent = originalLabel; }, 1800);
+    } catch {
+      promptField.focus();
+      promptField.select();
+    }
   });
   document.querySelectorAll("[data-ai-news-dropzone]").forEach((dropzone) => {
     const form = dropzone.closest("form");
@@ -13596,23 +14045,6 @@ function wireActions() {
     });
   });
 
-  document.querySelectorAll(".event-base-form input[type='date'], .event-base-form input[type='time'], .event-base-form input[type='datetime-local']").forEach((input) => {
-    if (input.dataset.nativePickerWired === "1") return;
-    input.dataset.nativePickerWired = "1";
-    const openNativePicker = () => {
-      if (typeof input.showPicker !== "function") return;
-      try {
-        input.showPicker();
-      } catch {}
-    };
-    input.addEventListener("click", openNativePicker);
-    input.closest(".field")?.addEventListener("click", (event) => {
-      if (event.target === input) return;
-      input.focus();
-      openNativePicker();
-    });
-  });
-
   document.querySelectorAll("[data-event-type-select]").forEach((select) => {
     const form = select.closest("form");
     const field = form?.querySelector("[data-new-event-type-field]");
@@ -13635,12 +14067,24 @@ function wireActions() {
     input.dataset.virtualEventWired = "1";
     const form = input.closest("form");
     const locationFields = form?.querySelector("[data-event-location-fields]");
+    const virtualFields = form?.querySelector("[data-event-virtual-fields]");
+    const eventTypeInput = form?.querySelector("input[name='eventType']");
     const onlineLabel = form?.querySelector("input[name='onlineMeetingLabel']");
+    const zoomLink = form?.querySelector("input[name='zoomLink']");
+    const allowsZoomForEventType = () => /jahreshauptversammlung/i.test(String(eventTypeInput?.value || ""));
     const syncVirtualEventFields = () => {
-      if (locationFields) locationFields.hidden = input.checked;
-      if (onlineLabel && input.checked && !onlineLabel.value.trim()) onlineLabel.value = "Zoom Meeting";
+      const allowed = allowsZoomForEventType();
+      if (virtualFields) virtualFields.hidden = !allowed;
+      if (!allowed) {
+        input.checked = false;
+        if (onlineLabel) onlineLabel.value = "";
+        if (zoomLink) zoomLink.value = "";
+      }
+      if (locationFields) locationFields.hidden = allowed && input.checked;
+      if (onlineLabel && allowed && input.checked && !onlineLabel.value.trim()) onlineLabel.value = "Zoom Meeting";
     };
     input.addEventListener("change", syncVirtualEventFields);
+    eventTypeInput?.addEventListener("change", syncVirtualEventFields);
     syncVirtualEventFields();
   });
 
@@ -13815,6 +14259,21 @@ function wireActions() {
     });
   });
 
+  document.querySelectorAll("[data-insert-invitation-talk]").forEach((button) => button.addEventListener("click", () => {
+    const form = button.closest("form");
+    const targetName = button.dataset.insertInvitationTalk || "invitationText";
+    const target = form?.elements?.[targetName];
+    const hint = String(button.dataset.talkHint || "").trim();
+    if (!target || !hint) return;
+    const current = String(target.value || "").trim();
+    if (current.includes(hint)) {
+      target.focus();
+      return;
+    }
+    target.value = current ? `${current}\n\n${hint}` : hint;
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    target.focus();
+  }));
   document.querySelectorAll("[data-mailing-type-select]").forEach((select) => {
     const form = select.closest("form");
     const syncMailingTypePanels = () => {
@@ -14315,13 +14774,30 @@ function wireActions() {
   document.querySelector("#login-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
+    const result = form.querySelector("#login-result");
+    const button = form.querySelector("button[type='submit'], button:not([type])");
+    if (form.dataset.pending === "1") return;
+    form.dataset.pending = "1";
+    if (button) {
+      button.disabled = true;
+      button.dataset.originalText = button.textContent || "Einloggen";
+      button.textContent = "Login laeuft ...";
+    }
+    if (result) result.innerHTML = "";
     try {
       const values = formObject(form);
       const user = await login(values.email, values.password, values.role);
       const returnTarget = loginReturnTarget();
       go(returnTarget || postLoginRouteForUser(user));
     } catch (error) {
-      form.querySelector("#login-result").innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message)}</div>`;
+      if (result) result.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || "Login fehlgeschlagen.")}</div>`;
+    } finally {
+      delete form.dataset.pending;
+      if (button) {
+        button.disabled = false;
+        button.textContent = button.dataset.originalText || "Einloggen";
+        delete button.dataset.originalText;
+      }
     }
   });
 
@@ -14735,6 +15211,22 @@ function wireActions() {
         form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: { id: form.dataset.eventId, section: "pre" } }));
         return true;
       }
+      if (form.dataset.eventFormSection === "schedule") {
+        const scheduleItems = syncEventScheduleHiddenFields(form);
+        const scheduleText = eventScheduleRowsToText(scheduleItems);
+        await upsert("events", {
+          ...existing,
+          scheduleItems,
+          scheduleText,
+          agendaText: scheduleText,
+          scheduleSchemaVersion: 1,
+          talkDurationMinutes: Math.min(180, Math.max(5, Math.round(Number(values.talkDurationMinutes) || 30))),
+          updatedAt: new Date().toISOString()
+        });
+        if (result && !silent) result.innerHTML = `<div class="alert alert--success">Ablaufplan wurde gespeichert.</div>`;
+        form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: { id: form.dataset.eventId, section: "schedule" } }));
+        return true;
+      }
       const image = imageFileFromDropzone(form, "eventImage", form.dataset.eventId);
       const removeEventImageRequested = values.removeEventImage === "1";
       const newEventType = values.newEventType?.trim();
@@ -14745,31 +15237,31 @@ function wireActions() {
         throw new Error("Bitte legen Sie den neuen Gastgeber zuerst im Eingabelayer an.");
       }
       if (image) {
-        const asset = await uploadEntityImage("events", form.dataset.eventId, image);
-        values.imageUrl = asset.url;
-        values.assetStoragePath = asset.storagePath;
-        const mediaAsset = await createMediaAssetFromEntityImage({
-          collection: "events",
+        const renderedUpload = await uploadEntityImageWithRenderedVariants("events", form.dataset.eventId, image, {
           entity: { ...existing, ...values, id: form.dataset.eventId },
-          file: image,
-          uploaded: asset,
           field: "imageUrl",
-          mediaType: "event"
+          mediaType: "event",
+          result
         });
-        if (mediaAsset?.id) {
-          values.thumbnail_media_asset_id = mediaAsset.id;
-          values.mediaAssetId = mediaAsset.id;
-          values.thumbnail_url = asset.url;
-          values.thumbnailUrl = asset.url;
-          values.assetUrl = asset.url;
-          values.assetType = "image";
-        }
+        const detailUrl = renderedUpload.variantUrls?.event_header || renderedUpload.variantUrls?.news_desktop || renderedUpload.variantUrls?.social_share || renderedUpload.url;
+        const thumbUrl = renderedUpload.variantUrls?.thumbnail || renderedUpload.url;
+        values.imageUrl = detailUrl;
+        values.assetStoragePath = renderedUpload.storagePath;
+        values.thumbnail_media_asset_id = renderedUpload.variantAssetIdsByKey?.thumbnail || renderedUpload.selectedAssetId || renderedUpload.mediaAssetId || "";
+        values.article_media_asset_id = renderedUpload.variantAssetIdsByKey?.event_header || renderedUpload.variantAssetIdsByKey?.news_desktop || renderedUpload.selectedAssetId || renderedUpload.mediaAssetId || "";
+        values.mediaAssetId = values.article_media_asset_id || values.thumbnail_media_asset_id;
+        values.thumbnail_url = thumbUrl;
+        values.thumbnailUrl = thumbUrl;
+        values.assetUrl = detailUrl;
+        values.assetType = "image";
+        values.thumbnail_variant_asset_ids = renderedUpload.variantAssetIds || [];
       }
       if (removeEventImageRequested) {
         values.imageUrl = "";
         values.assetStoragePath = "";
         values.thumbnail_media_asset_id = "";
         values.mediaAssetId = "";
+        values.article_media_asset_id = "";
       }
       if (newEventType) {
         const eventTypesSetting = (await getOne("settings", "eventTypes")) || {
@@ -14786,6 +15278,13 @@ function wireActions() {
           description: "Eventtypen fuer CMS-Auswahl"
         });
         values.eventType = newEventType;
+      }
+      if (!/jahreshauptversammlung/i.test(String(values.eventType || ""))) {
+        values.isVirtualEvent = false;
+        values.onlineMeetingLabel = "";
+        values.zoomLink = "";
+      } else {
+        values.isVirtualEvent = Boolean(values.isVirtualEvent);
       }
       delete values.eventImage;
       delete values.removeEventImage;
@@ -14839,6 +15338,117 @@ function wireActions() {
     event.preventDefault();
     await saveEventEditForm(event.currentTarget);
   });
+
+  document.querySelectorAll("[data-regenerate-event-schedule]").forEach((button) => button.addEventListener("click", () => {
+    const editor = button.closest("[data-event-schedule-editor]");
+    const form = button.closest("form");
+    const list = editor?.querySelector("[data-event-schedule-list]");
+    if (!editor || !form || !list) return;
+    let topics = [];
+    try {
+      topics = JSON.parse(editor.dataset.eventScheduleTopics || "[]");
+    } catch {
+      topics = [];
+    }
+    const values = formObject(form);
+    const rows = eventScheduleRowsFromControls({
+      startTime: values.startTime,
+      endTime: values.endTime,
+      talkDurationMinutes: editor.querySelector("[data-event-schedule-duration]")?.value || values.talkDurationMinutes,
+      topics
+    });
+    list.innerHTML = `${eventScheduleHeadHtml()}${rows.map(eventScheduleRowHtml).join("")}`;
+    wireEventScheduleEditor(form);
+    recalculateEventScheduleTimes(form);
+  }));
+
+  function wireEventScheduleEditor(form) {
+    form.querySelectorAll("[data-event-schedule-view]").forEach((button) => {
+      if (button.dataset.scheduleViewWired === "1") return;
+      button.dataset.scheduleViewWired = "1";
+      button.addEventListener("click", () => {
+        const view = button.dataset.eventScheduleView || "editor";
+        form.querySelectorAll("[data-event-schedule-view]").forEach((item) => {
+          const active = item.dataset.eventScheduleView === view;
+          item.classList.toggle("is-active", active);
+          item.setAttribute("aria-selected", active ? "true" : "false");
+        });
+        form.querySelectorAll("[data-event-schedule-panel]").forEach((panel) => {
+          const active = panel.dataset.eventSchedulePanel === view;
+          panel.hidden = !active;
+          panel.classList.toggle("is-active", active);
+        });
+      });
+    });
+    const list = form.querySelector("[data-event-schedule-list]");
+    if (!list || list.dataset.scheduleWired === "1") return;
+    list.dataset.scheduleWired = "1";
+    let dragged = null;
+    const sync = () => syncEventScheduleHiddenFields(form);
+    list.addEventListener("input", (event) => {
+      const target = event.target;
+      if (target?.matches?.("[data-schedule-duration]")) {
+        recalculateEventScheduleTimes(form);
+        return;
+      }
+      if (target?.matches?.("[data-schedule-time]")) {
+        recalculateEventScheduleTimes(form, target.closest("[data-event-schedule-row]"));
+        return;
+      }
+      sync();
+    });
+    list.addEventListener("click", (event) => {
+      const remove = event.target.closest("[data-remove-event-schedule-row]");
+      if (!remove) return;
+      const row = remove.closest("[data-event-schedule-row]");
+      row?.remove();
+      recalculateEventScheduleTimes(form);
+    });
+    list.addEventListener("dragstart", (event) => {
+      const row = event.target.closest("[data-event-schedule-row]");
+      if (!row) return;
+      dragged = row;
+      row.classList.add("is-dragging");
+      event.dataTransfer.effectAllowed = "move";
+    });
+    list.addEventListener("dragend", () => {
+      dragged?.classList.remove("is-dragging");
+      dragged = null;
+      list.querySelectorAll("[data-event-schedule-row]").forEach((row) => row.classList.remove("is-drop-target"));
+      recalculateEventScheduleTimes(form);
+    });
+    list.addEventListener("dragover", (event) => {
+      const target = event.target.closest("[data-event-schedule-row]");
+      if (!dragged || !target || target === dragged) return;
+      event.preventDefault();
+      const rect = target.getBoundingClientRect();
+      const after = event.clientY > rect.top + rect.height / 2;
+      target.classList.add("is-drop-target");
+      list.insertBefore(dragged, after ?target.nextSibling : target);
+    });
+    list.addEventListener("dragleave", (event) => {
+      event.target.closest("[data-event-schedule-row]")?.classList.remove("is-drop-target");
+    });
+    form.querySelectorAll("[data-add-event-schedule-row]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const type = button.dataset.addEventScheduleRow || "Programmpunkt";
+        const presets = {
+          Pause: { type: "Pause", duration: 15, person: "Pause", title: "Austausch und Networking" },
+          Lunch: { type: "Lunch", duration: 45, person: "Lunch", title: "Gemeinsame Mittagspause und Gespraeche" },
+          Fruehstueck: { type: "Fruehstueck", duration: 30, person: "Fruehstueck", title: "Fruehstueck und Networking" },
+          Programmpunkt: { type: "Programmpunkt", duration: 15, person: "", title: "" }
+        };
+        list.insertAdjacentHTML("beforeend", eventScheduleRowHtml({
+          time: "",
+          ...(presets[type] || presets.Programmpunkt)
+        }));
+        recalculateEventScheduleTimes(form);
+      });
+    });
+    recalculateEventScheduleTimes(form);
+  }
+
+  document.querySelectorAll("form[data-event-form-section='schedule']").forEach(wireEventScheduleEditor);
 
   document.querySelector("#event-speakers-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -14924,6 +15534,7 @@ function wireActions() {
       return;
     }
     const topicIds = Array.from(new Set([...(existingEvent.topicIds || []), topicId]));
+    const selectedExistingSpeakerId = String(form.elements.existingSpeakerId?.value || "").trim();
     const speakerFirstName = String(form.elements.speakerFirstName?.value || "").trim();
     const speakerLastName = String(form.elements.speakerLastName?.value || "").trim();
     const speakerName = [speakerFirstName, speakerLastName].filter(Boolean).join(" ").trim();
@@ -14931,8 +15542,8 @@ function wireActions() {
       form.querySelector("#event-topic-editor-result").innerHTML = `<div class="alert alert--error">Bitte Vorname und Nachname des Referenten eintragen.</div>`;
       return;
     }
-    const speakerId = form.dataset.speakerId || `speakers-${crypto.randomUUID()}`;
-    const existingSpeaker = form.dataset.speakerId ? await getOne("speakers", speakerId).catch(() => null) : null;
+    const speakerId = selectedExistingSpeakerId || form.dataset.speakerId || `speakers-${crypto.randomUUID()}`;
+    const existingSpeaker = selectedExistingSpeakerId || form.dataset.speakerId ? await getOne("speakers", speakerId).catch(() => null) : null;
     const topicIdsForSpeaker = new Set(existingSpeaker?.topicIds || []);
     topicIdsForSpeaker.add(topicId);
     const eventIdsForSpeaker = new Set(existingSpeaker?.eventIds || []);
@@ -14940,7 +15551,37 @@ function wireActions() {
     const eventSpeakerIds = Array.from(new Set([...(existingEvent.speakerIds || []), speakerId]));
     const image = imageFileFromDropzone(form, "topicImage", topicId);
     const companyLogo = imageFileFromDropzone(form, "topicCompanyLogo", `${topicId}-company-logo`);
+    const speakerImage = imageFileFromDropzone(form, "speakerImage", speakerId);
     const imageUpdate = {};
+    const speakerImageUpdate = {};
+    if (form.elements.removeSpeakerImage?.value === "1") {
+      await deleteStoredAsset(existingSpeaker);
+      speakerImageUpdate.photoUrl = "";
+      speakerImageUpdate.assetStoragePath = "";
+      speakerImageUpdate.mediaAssetId = "";
+      speakerImageUpdate.thumbnail_media_asset_id = "";
+      speakerImageUpdate.thumbnailMediaAssetId = "";
+      speakerImageUpdate.thumbnail_variant_asset_ids = [];
+    }
+    if (speakerImage) {
+      await deleteStoredAsset(existingSpeaker);
+      const renderedUpload = await uploadEntityImageWithRenderedVariants("speakers", speakerId, speakerImage, {
+        entity: {
+          ...(existingSpeaker || {}),
+          id: speakerId,
+          name: speakerName
+        },
+        field: "photoUrl",
+        mediaType: "person",
+        result: form.querySelector("#event-topic-editor-result")
+      });
+      speakerImageUpdate.photoUrl = renderedUpload.url;
+      speakerImageUpdate.assetStoragePath = renderedUpload.storagePath;
+      speakerImageUpdate.mediaAssetId = renderedUpload.mediaAssetId;
+      speakerImageUpdate.thumbnail_media_asset_id = renderedUpload.selectedAssetId;
+      speakerImageUpdate.thumbnailMediaAssetId = renderedUpload.selectedAssetId;
+      speakerImageUpdate.thumbnail_variant_asset_ids = renderedUpload.variantAssetIds;
+    }
     if (form.elements.removeTopicImage?.value === "1") {
       await deleteStoredAsset({ storagePath: existingTopic.assetStoragePath });
       imageUpdate.imageUrl = "";
@@ -15000,7 +15641,7 @@ function wireActions() {
       imageUpdate.company_logo_media_asset_id = renderedUpload.mediaAssetId;
       imageUpdate.companyLogoMediaAssetId = renderedUpload.selectedAssetId;
     }
-    await upsert("topics", {
+    const savedTopic = {
       ...existingTopic,
       id: topicId,
       title: form.elements.title.value,
@@ -15014,9 +15655,12 @@ function wireActions() {
       documentId: form.elements.downloadId?.value || "",
       presentationId: form.elements.downloadId?.value || "",
       galleryId: form.elements.galleryId?.value || "",
+      speakerId: existingTopic.speakerId || speakerId,
+      speakerIds: Array.from(new Set([...(existingTopic.speakerIds || []), speakerId].filter(Boolean))),
       updatedAt: new Date().toISOString()
-    });
-    await upsert("speakers", {
+    };
+    await upsert("topics", savedTopic);
+    const savedSpeaker = {
       ...(existingSpeaker || { id: speakerId, status: "published", visibility: "public", createdAt: new Date().toISOString() }),
       id: speakerId,
       firstName: speakerFirstName,
@@ -15030,12 +15674,15 @@ function wireActions() {
       shortBio: form.elements.speakerShortBio?.value || "",
       longBio: form.elements.speakerLongBio?.value || "",
       vita: form.elements.speakerLongBio?.value || "",
+      ...speakerImageUpdate,
       topicId: existingSpeaker?.topicId || topicId,
       topicIds: Array.from(topicIdsForSpeaker),
       eventIds: Array.from(eventIdsForSpeaker),
       updatedAt: new Date().toISOString()
-    });
-    await upsert("events", { ...existingEvent, topicIds, speakerIds: eventSpeakerIds, updatedAt: new Date().toISOString() });
+    };
+    await upsert("speakers", savedSpeaker);
+    const scheduleUpdate = eventScheduleFieldsWithTopic(existingEvent, savedTopic, savedSpeaker);
+    await upsert("events", { ...existingEvent, topicIds, speakerIds: eventSpeakerIds, ...scheduleUpdate, updatedAt: new Date().toISOString() });
     form.dataset.speakerId = speakerId;
     form.querySelector("#event-topic-editor-result").innerHTML = `<div class="alert alert--success">Referent und Vortrag wurden gespeichert.</div>`;
     const imageStatus = form.querySelector("[data-image-status]");
@@ -15046,6 +15693,9 @@ function wireActions() {
     }
     if (Object.prototype.hasOwnProperty.call(imageUpdate, "companyLogoUrl")) {
       updateDropzoneSavedImage(form, imageUpdate.companyLogoUrl, "topicCompanyLogo");
+    }
+    if (Object.prototype.hasOwnProperty.call(speakerImageUpdate, "photoUrl")) {
+      updateDropzoneSavedImage(form, speakerImageUpdate.photoUrl, "speakerImage");
     }
     if (form.dataset.topicMode === "new") {
       go(`cms/event/${form.dataset.eventId}?tab=topics`);
@@ -16528,14 +17178,12 @@ function wireActions() {
     try {
       const existing = await getOne("events", eventId);
       if (!existing) throw new Error("Event wurde nicht gefunden.");
-      const nextStatus = shouldOpen && ["draft", "inactive", "inaktiv", "hidden"].includes(String(existing.status || "").toLowerCase())
-        ? "active"
-        : existing.status || (shouldOpen ? "active" : "draft");
+      const nextStatus = shouldOpen ? "active" : "inactive";
       await upsert("events", {
         ...existing,
         status: nextStatus,
-        visible: shouldOpen ? true : existing.visible,
-        isLive: shouldOpen ? true : existing.isLive,
+        visible: shouldOpen,
+        isLive: shouldOpen,
         registrationEnabled: shouldOpen,
         registrationStatus: shouldOpen ? "open" : "closed",
         registration_state: shouldOpen ? "open" : "closed",
@@ -16545,7 +17193,7 @@ function wireActions() {
         lifecyclePhase: shouldOpen ? "registration_open" : "registration_closed",
         updatedAt: new Date().toISOString()
       });
-      if (result) result.innerHTML = `<div class="alert alert--success">${shouldOpen ?"Event wurde aktiviert und die Anmeldung geoeffnet." : "Anmeldung wurde geschlossen. Das Event bleibt sichtbar."}</div>`;
+      if (result) result.innerHTML = `<div class="alert alert--success">${shouldOpen ?"Event wurde aktiviert, sichtbar geschaltet und die Anmeldung geoeffnet." : "Event wurde deaktiviert und aus der oeffentlichen Eventliste ausgeblendet."}</div>`;
       await render();
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--error">Anmeldestatus konnte nicht geaendert werden: ${escapeHtml(error.message || String(error))}</div>`;
@@ -17076,7 +17724,7 @@ async function resetInstalledAppCachesIfRequested() {
   if (!params.has("resetApp")) return false;
   await clearPreviewCaches();
   params.delete("resetApp");
-  params.set("v", "1018");
+  params.set("v", "1221");
   const nextSearch = params.toString();
   location.replace(`${location.origin}${location.pathname}${nextSearch ? `?${nextSearch}` : ""}${location.hash || "#/home"}`);
   return true;
@@ -17084,7 +17732,7 @@ async function resetInstalledAppCachesIfRequested() {
 
 async function refreshInstalledAppShellIfNeeded() {
   if (["localhost", "127.0.0.1"].includes(location.hostname) || location.protocol === "file:") return false;
-  const version = "1135";
+  const version = "1221";
   const key = "prodigitaltv-live-shell-version";
   try {
     if (localStorage.getItem(key) === version) return false;
@@ -17114,4 +17762,7 @@ resetInstalledAppCachesIfRequested().then((didReset) => {
     }
   });
 });
+
+
+
 

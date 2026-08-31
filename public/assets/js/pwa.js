@@ -6,7 +6,8 @@
   const isIos = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent);
   const isAndroid = () => /android/i.test(window.navigator.userAgent);
   const isMobile = () => isIos() || isAndroid() || window.matchMedia("(pointer: coarse)").matches || window.innerWidth <= 820;
-  const currentCache = "prodigitaltv-pwa-v981";
+  const currentCache = "prodigitaltv-pwa-v985";
+  const activeCacheNames = new Set([currentCache, "pdt-platform-v959", "pdt-platform-images-v959"]);
   const dismissKey = "pdtv-pwa-install-dismissed-session";
   const privacyDismissKey = "pdtv-pwa-privacy-dismissed-session";
   const cookieSettingsOpenKey = "pdtv-cookie-settings-open-session";
@@ -17,6 +18,8 @@
   const consentEndpoint = "https://europe-west3-prodigitaltv-da47b.cloudfunctions.net/logPwaPrivacyConsent";
   let deferredPrompt = null;
   let consentSaveInFlight = false;
+  let lastFooterTouchHref = "";
+  let lastFooterTouchAt = 0;
 
   function privacyPromptSuppressedForRoute() {
     const routeKey = `${window.location.pathname || ""} ${window.location.hash || ""}`.toLowerCase();
@@ -31,7 +34,7 @@
   function clearOldCaches() {
     if (!("caches" in window)) return Promise.resolve();
     return caches.keys().then((keys) => Promise.all(keys
-      .filter((key) => (key.startsWith("prodigitaltv-pwa-") || key.startsWith("pdt-platform-")) && key !== currentCache)
+      .filter((key) => (key.startsWith("prodigitaltv-pwa-") || key.startsWith("pdt-platform-")) && !activeCacheNames.has(key))
       .map((key) => caches.delete(key))));
   }
 
@@ -61,7 +64,7 @@
       const confirmButton = privacyPrompt.querySelector("[data-pwa-privacy-confirm]");
       const necessaryButton = privacyPrompt.querySelector("[data-pwa-cookie-necessary]");
       const acceptAllButton = privacyPrompt.querySelector("[data-pwa-cookie-accept-all]");
-      privacyPrompt.hidden = suppressPrivacyPrompt || (cookieAccepted && !cookieSettingsOpen) || sessionStorage.getItem(privacyDismissKey) === "1";
+      privacyPrompt.hidden = (!cookieSettingsOpen && suppressPrivacyPrompt) || (cookieAccepted && !cookieSettingsOpen) || sessionStorage.getItem(privacyDismissKey) === "1";
       if (consentInput && (cookieAccepted || cookieSettingsOpen)) consentInput.checked = true;
       if (analyticsInput) analyticsInput.checked = analyticsAccepted;
       if (!consentSaveInFlight) {
@@ -75,7 +78,7 @@
     }
 
     if (!installPrompt) return;
-    const showInstallFlow = !suppressInstallPrompt && cookieAccepted && isMobile() && sessionStorage.getItem(dismissKey) !== "1";
+    const showInstallFlow = !cookieSettingsOpen && !suppressInstallPrompt && cookieAccepted && isMobile() && sessionStorage.getItem(dismissKey) !== "1";
     installPrompt.hidden = !showInstallFlow;
     if (!showInstallFlow) return;
     const iosText = installPrompt.querySelector("[data-pwa-ios]");
@@ -133,6 +136,48 @@
       });
   }
 
+  function openCookieSettingsFromEvent(event) {
+    const link = event.target?.closest?.("[data-cookie-settings]");
+    if (!link) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    sessionStorage.setItem(cookieSettingsOpenKey, "1");
+    sessionStorage.setItem(dismissKey, "1");
+    sessionStorage.removeItem(privacyDismissKey);
+    const installPrompt = document.querySelector("[data-pwa-install]");
+    if (installPrompt) installPrompt.hidden = true;
+    updatePrompt();
+    window.setTimeout(updatePrompt, 0);
+    return true;
+  }
+
+  function handleFooterLinkFromEvent(event) {
+    const link = event.target?.closest?.(".footer a[href]");
+    if (!link) return false;
+    if (link.hasAttribute("data-cookie-settings")) return openCookieSettingsFromEvent(event);
+    const href = link.getAttribute("href");
+    if (!href) return false;
+    const now = Date.now();
+    if (event.type === "click" && href === lastFooterTouchHref && now - lastFooterTouchAt < 700) {
+      event.preventDefault();
+      event.stopPropagation();
+      return true;
+    }
+    if (event.type === "touchend") {
+      lastFooterTouchHref = href;
+      lastFooterTouchAt = now;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (href.startsWith("#/")) {
+      window.location.hash = href;
+      window.setTimeout(updatePrompt, 0);
+      return true;
+    }
+    window.location.href = href;
+    return true;
+  }
+
   if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
     window.addEventListener("load", () => {
       clearOldCaches()
@@ -152,6 +197,11 @@
     deferredPrompt = null;
     updatePrompt();
   });
+
+  document.addEventListener("click", openCookieSettingsFromEvent, true);
+  document.addEventListener("touchend", openCookieSettingsFromEvent, { capture: true, passive: false });
+  document.addEventListener("click", handleFooterLinkFromEvent, true);
+  document.addEventListener("touchend", handleFooterLinkFromEvent, { capture: true, passive: false });
 
   document.addEventListener("click", async (event) => {
     const installButton = event.target.closest("[data-pwa-install-button]");
@@ -282,10 +332,7 @@
 
     const cookieSettingsLink = event.target.closest("[data-cookie-settings]");
     if (cookieSettingsLink) {
-      event.preventDefault();
-      sessionStorage.setItem(cookieSettingsOpenKey, "1");
-      sessionStorage.removeItem(privacyDismissKey);
-      updatePrompt();
+      openCookieSettingsFromEvent(event);
       return;
     }
 

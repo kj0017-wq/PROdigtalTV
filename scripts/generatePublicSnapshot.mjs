@@ -2,14 +2,14 @@ import { initializeApp, applicationDefault, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
 const projectId = "prodigitaltv-da47b";
-const snapshotVersion = "v1";
+const snapshotVersion = "v2";
 
 function cacheKey(collectionName, predicates = []) {
   return `${collectionName}:${JSON.stringify(predicates || [])}`;
 }
 
 function publicSessionCacheKey(key = "") {
-  return `pdtv-public-list-v4:${key}`;
+  return `pdtv-public-list-v5:${key}`;
 }
 
 function normalizeFirestoreValue(value) {
@@ -61,8 +61,11 @@ const fieldAllowList = {
   ]),
   speakers: new Set([
     "id", "name", "firstName", "lastName", "company", "position", "role", "status", "visibility",
-    "photoUrl", "imageUrl", "portraitUrl", "companyLogoUrl", "logoUrl", "company_logo_url",
-    "topicId", "topicIds", "eventId", "eventIds", "shortBio", "updatedAt", "updated_at"
+    "photoUrl", "imageUrl", "thumbnailUrl", "thumbnail_url", "assetUrl", "portraitUrl", "profileImageUrl",
+    "companyLogoUrl", "logoUrl", "company_logo_url", "mediaAssetId", "media_asset_id", "thumbnailMediaAssetId",
+    "thumbnail_media_asset_id", "topicId", "topicIds", "eventId", "eventIds", "shortBio", "bio",
+    "introText", "description", "shortDescription", "teaserText", "longBio", "vita", "biography",
+    "bodyText", "longDescription", "profileText", "website", "linkedIn", "updatedAt", "updated_at"
   ]),
   editorialContent: new Set([
     "id", "title", "headline", "subtitle", "introText", "shortDescription", "description",
@@ -117,12 +120,20 @@ function trimLongString(value, maxLength = 420) {
 const longTextFields = new Set([
   "description",
   "introText",
+  "shortBio",
+  "bio",
+  "shortDescription",
+  "teaserText",
+  "longBio",
+  "vita",
+  "biography",
   "longDescription",
   "bodyText",
   "articleText",
   "archiveText",
   "postEventSummary",
-  "postEventummary"
+  "postEventummary",
+  "profileText"
 ]);
 
 function compactValue(key = "", value) {
@@ -236,7 +247,7 @@ function relevantPublicMediaAsset(asset = {}, publicIdsByCollection = {}) {
   if (!publicGeneric(asset)) return false;
   const preset = String(asset.usage_preset || asset.variant_key || "").toLowerCase();
   const allowedPreset = !preset || [
-    "thumbnail", "thumb", "topic", "speaker", "portrait", "profile", "logo", "event", "news", "news_mobile"
+    "thumbnail", "thumb", "topic", "speaker", "person", "portrait", "profile", "logo", "event", "news", "news_mobile"
   ].includes(preset);
   if (!allowedPreset) return false;
   const collection = mediaAssetTargetCollection(asset);

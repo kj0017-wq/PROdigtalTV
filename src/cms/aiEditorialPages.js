@@ -24,6 +24,44 @@ const publicationModes = {
   auto_publish: "automatisch veroeffentlichen bei bestandener Prüfung"
 };
 
+const newsImportResearchPrompt = `Recherchiere die 5 wichtigsten aktuellen News der deutschen Medienwirtschaft aus den letzten 7 Tagen.
+
+Berücksichtige seriöse Quellen wie DWDL, MEEDIA, Horizont, kress, turi2, Broadband TV News, Digitalfernsehen, VAUNET, Medienanstalten, Bundesnetzagentur, EU-Kommission, Reuters und relevante internationale Fachmedien, sofern die Meldung für den deutschen oder europäischen Medienmarkt wichtig ist.
+
+Themenschwerpunkte:
+Streaming, OTT, Fernsehen, FAST Channels, Smart-TV, Connected TV, Video-on-Demand, YouTube, Creator Economy, Medienplattformen, Künstliche Intelligenz, Regulierung, Werbung, Vermarktung, Sportrechte, Content, Produktion, Distribution, CDN, Medienpolitik, Kooperationen, Übernahmen, Konsolidierung und neue Geschäftsmodelle.
+
+Wähle nur die 5 redaktionell wichtigsten Themen aus. Vermeide Boulevardmeldungen, reine Personalien ohne Branchenrelevanz und Wiederholungen ohne neue Entwicklung.
+
+Wichtig:
+Alle Informationen müssen aktuell recherchiert und mit Quellen belegt sein. Keine Meldung darf ausschließlich auf Modellwissen beruhen. Wenn mehrere Medien über dasselbe Ereignis berichten, fasse sie zu einem Thema zusammen.
+
+Gib das Ergebnis exakt in folgendem Format aus:
+
+### Prägnante Überschrift der News
+
+Kurz-Teaser:
+2 bis 3 Sätze, die das Thema verständlich zusammenfassen.
+
+Branchen-News:
+Ein redaktionell formulierter Beitrag mit etwa 150 bis 220 Wörtern. Der Text soll sachlich, journalistisch und verständlich sein. Er soll erklären, was passiert ist, welche Unternehmen oder Institutionen beteiligt sind und warum die Entwicklung für TV-, Streaming- und Medienunternehmen relevant ist.
+
+Einordnung:
+Ein kurzer Satz zur Bedeutung für die Medienwirtschaft.
+
+**Quelle:** Name des Mediums, Veröffentlichungsdatum – Titel der Quelle
+[URL zur Quelle](URL zur Quelle)
+
+---
+
+Am Ende zusätzlich:
+
+### Die drei wichtigsten Themen der Woche
+
+1. Thema – ein Satz, warum besonders wichtig.
+2. Thema – ein Satz, warum besonders wichtig.
+3. Thema – ein Satz, warum besonders wichtig.`;
+
 const promptTypes = [
   "Themenrecherche",
   "Quellenhinweise",
@@ -1344,6 +1382,17 @@ function newsImportPageContent(active) {
         <div class="ai-news-import-badge">News-Import</div>
       </div>
       <form id="ai-news-import-form" class="form-grid">
+        <details class="ai-news-import-prompt">
+          <summary>
+            <span>Recherche-Prompt fuer 5 Wochen-News</span>
+            <button class="button button--secondary button--small" type="button" data-ai-news-copy-research-prompt>Prompt kopieren</button>
+          </summary>
+          <div class="field">
+            <label>Prompt fuer externe Recherche</label>
+            <textarea readonly rows="10" data-ai-news-research-prompt>${escapeHtml(newsImportResearchPrompt)}</textarea>
+            <p class="muted">Diesen Prompt in ChatGPT mit Websuche verwenden, Ergebnis hier unter Textquelle einfuegen und dann als einzelne News importieren.</p>
+          </div>
+        </details>
         <div class="field editorial-text-field editorial-text-field--body">
           <label>Textquelle einfuegen</label>
           <textarea name="sourceText" placeholder="Pressemitteilung, Webseiten-Text, Notizen, Interview, E-Mail oder andere Textquelle hier einfuegen ..."></textarea>

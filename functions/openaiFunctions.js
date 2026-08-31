@@ -62,6 +62,12 @@ function compactText(value = "", maxLength = 10000) {
   return `${clean.slice(0, headLength).trim()}\n\n[Text gekuerzt]\n\n${clean.slice(-tailLength).trim()}`;
 }
 
+function truthyFlag(value) {
+  if (value === true) return true;
+  const text = String(value || "").trim().toLowerCase();
+  return ["true", "1", "yes", "ja", "on", "virtual", "online"].includes(text);
+}
+
 async function profileFor(request) {
   if (!request.auth) throw new HttpsError("unauthenticated", "Login erforderlich.");
   const profile = (await db.collection("users").doc(request.auth.uid).get()).data();
@@ -100,6 +106,33 @@ async function requireAiAccess(request) {
   return { profile, settings };
 }
 
+function currentEventPromptFacts(context = {}) {
+  const event = context.event || context.currentEvent || context;
+  const accessType = String(event.accessType || event.access_type || "").trim();
+  const accessLabel = String(event.accessLabel || event.access_label || "").trim();
+  const isMembersOnly = accessType === "members_only" || /nur mitglied|mitglieder/i.test(accessLabel);
+  const targetGroup = isMembersOnly
+    ? "Zielgruppe: ausschliesslich Mitglieder sowie von Mitgliedern eingeladene Gaeste, falls Gaeste im Event vorgesehen sind. Nicht 'Interessierte', 'Brancheninteressierte' oder 'alle Interessierten' schreiben."
+    : "Zielgruppe: oeffentlich beziehungsweise fuer Interessierte, sofern die Eventdaten das so ausweisen.";
+  const isVirtual = truthyFlag(event.isVirtualEvent || event.virtualEvent) || String(event.eventMode || "").trim().toLowerCase() === "virtual";
+  const mode = isVirtual
+    ? "Durchfuehrung: virtuell/online. Keine physische Location erfinden."
+    : "Durchfuehrung: vor Ort, sofern Locationdaten vorhanden sind.";
+  const facts = [
+    event.title ?`Titel: ${event.title}` : "",
+    event.subtitle ?`Untertitel: ${event.subtitle}` : "",
+    event.eventType ?`Eventtyp: ${event.eventType}` : "",
+    event.date ?`Datum: ${event.date}` : "",
+    event.startTime || event.endTime ?`Uhrzeit: ${[event.startTime, event.endTime].filter(Boolean).join(" bis ")}` : "",
+    event.locationName || event.city ?`Ort/Location: ${[event.locationName, event.city].filter(Boolean).join(", ")}` : "",
+    event.zoomLink ? "Online-Link vorhanden: ja" : "",
+    event.accessType ?`Zugangsart: ${event.accessType}` : "",
+    targetGroup,
+    mode
+  ].filter(Boolean);
+  return facts.length ?`Aktuelle Eventdaten aus dem Formular sind massgeblich und haben Vorrang vor aelterem Ausgangstext:\n${facts.join("\n")}` : "";
+}
+
 function buildPrompt(action, payload) {
   const actionConfig = ACTIONS[action];
   if (!actionConfig) throw new HttpsError("invalid-argument", "Unbekannte ChatGPT-Aktion.");
@@ -115,10 +148,21 @@ function buildPrompt(action, payload) {
   const fieldName = payload.fieldName || "";
   const context = payload.context || {};
   const targetWords = Number(payload.targetWords || context.targetWords || 0);
+  const currentEventFacts = currentEventPromptFacts(context);
+  const eventContextData = context.event || context;
+  const eventAccess = String(eventContextData.accessType || context.accessType || "").trim();
+  const eventAccessLabel = String(eventContextData.accessLabel || context.accessLabel || "").trim();
+  const membersOnly = eventAccess === "members_only" || /nur\s+f(?:ü|ue)r\s+mitglieder|nur\s+mitglied|mitglieder/i.test(eventAccessLabel);
+  const targetGroupRule = membersOnly
+    ? "Zielgruppenregel verbindlich: Dieses Event ist nur fuer Mitglieder. Schreibe nicht 'Mitglieder und Interessierte', nicht 'Brancheninteressierte', nicht 'alle Interessierten' und nicht 'Entscheider und Experten', sofern diese Oeffnung nicht ausdruecklich in den Eventdaten steht. Nutze klare Formulierungen wie 'PROdigitalTV laedt seine Mitglieder ein' oder 'die Mitglieder von PROdigitalTV'."
+    : "";
+  const isVirtualEvent = truthyFlag(eventContextData.isVirtualEvent || eventContextData.virtualEvent) || String(eventContextData.eventMode || "").trim().toLowerCase() === "virtual";
+  const virtualEventRule = isVirtualEvent
+    ? "Durchfuehrungsregel verbindlich: Die Veranstaltung findet virtuell beziehungsweise online statt. Das muss im sichtbaren Text ausdruecklich genannt werden. Schreibe nicht so, als gaebe es einen physischen Veranstaltungsort oder Einlass vor Ort. Wenn ein Zoom-Link oder Online-Meeting-Hinweis vorhanden ist, darf Zoom/Online-Meeting sachlich genannt werden."
+    : "";
   const isRetrospective = Boolean(context.isRetrospective) || action === "generateEventRetrospective";
-  const lengthControlledFields = new Set(["description", "bodyText", "longDescription", "text", "articleText", "archiveText", "postEventSummary"]);
-  const textLengthRule = targetWords > 0 && lengthControlledFields.has(fieldName)
-    ? `Laengenregel: Erzeuge einen kompakten Text mit etwa ${targetWords} Woertern. Eine Abweichung von rund 15 Prozent ist ok. Nicht kuenstlich auffuellen.`
+  const textLengthRule = targetWords > 0
+    ? `Laengenregel verbindlich: Ziel sind etwa ${targetWords} Woerter. Der sichtbare Text muss im Korridor ${Math.max(40, Math.round(targetWords * 0.85))} bis ${Math.round(targetWords * 1.15)} Woerter liegen. Wenn du mehr Material hast, verdichte. Wenn du weniger Material hast, erfinde nichts, aber bleibe so nah wie moeglich am Ziel. Ignoriere aeltere Standardregeln zu 300 bis 400 Woertern.`
     : "Wenn ein Haupt- oder Beitragstext erzeugt wird, muss der neue Text mindestens 300 Woerter haben und soll idealerweise 300 bis 400 Woerter umfassen, sofern die gelieferten Informationen dafuer ausreichen.";
   const fieldRules = {
     title: isRetrospective
@@ -130,7 +174,7 @@ function buildPrompt(action, payload) {
     shortDescription: "Feldregel: Erzeuge nur einen kurzen Teasertext, maximal 180 Zeichen, keine Artikelstruktur.",
     introText: "Feldregel: Erzeuge nur einen kurzen Intro-/Teasertext, maximal 220 Zeichen, keine Artikelstruktur.",
     saveTheDateText: "Feldregel: Schreibe einen kurzen Save-the-date-Mailtext. Der Text kuendigt Termin und Anlass an, ohne umfangreiche Agenda und ohne verbindliche Details zu erfinden. Verwende passende Platzhalter wie {{firstName}}, {{eventTitle}}, {{eventDate}} und {{eventLocation}}.",
-    invitationText: "Feldregel: Schreibe einen vollstaendigen Einladungstext mit freundlicher Begruessung, Anlass, Termin, Ort und klarem Bestaetigungsbutton-Hinweis. Verwende {{confirmationLink}} fuer den Bestaetigungslink.",
+    invitationText: "Feldregel verbindlich: Schreibe einen ausfuehrlichen, direkt versendbaren Einladungstext. Aufbau: persoenliche Anrede mit {{firstName}} {{lastName}}, Eventname frueh nennen, Datum, Uhrzeit und Ort frueh nennen, Veranstaltungstyp erklaeren. Bei Medienfruehstueck: kompaktes persoenliches Vormittags-/Tagesformat mit Fruehstueck, fachlichen Impulsen, Dialog und Networking beschreiben. Falls im vorhandenen Ausgangstext bereits konkrete Vortraege oder Referenten stehen, diese sachlich integrieren, zum Beispiel Unter anderem erwartet Sie ein Vortrag von ... zum Thema .... Keine Vortraege oder Referenten erfinden. Anmeldung klar formulieren: Zur Anmeldung klicken Sie bitte auf den folgenden Link: {{confirmationLink}}. Abschluss warm formulieren: Wir wuerden uns sehr freuen, Sie ... persoenlich begruessen zu duerfen. Keine Keyword-Zeile, keine Meta-Hinweise.",
     invitationUpdateText: "Feldregel: Schreibe ein Einladungsupdate. Nenne knapp, dass es neue oder aktualisierte Informationen zur Veranstaltung gibt. Keine neue Einladung vortaeuschen, wenn es nur ein Update ist. Verwende passende Platzhalter.",
     bodyText: isRetrospective
       ? "Feldregel: Formuliere als nachtraeglichen Rueckblick auf ein vergangenes Event im Fliesstext. Verwende Praeteritum oder Perfekt. Ersetze Einladungs-, Anmelde-, Ankuendigungs- und Zukunftsformulierungen durch Vergangenheit. Keine Bulletpoints."
@@ -151,6 +195,9 @@ function buildPrompt(action, payload) {
     actionConfig.instruction,
     fieldRules[fieldName] || "",
     isRetrospective ? "Kontextregel Rueckblick: Alle Texte muessen als nachtraegliche Berichterstattung ueber ein bereits vergangenes Event klingen. Verboten sind Formulierungen wie 'wir laden ein', 'melden Sie sich an', 'findet statt', 'wird stattfinden', 'wird sich beschaeftigen', 'wir freuen uns' oder andere Einladungs- und Zukunftslogik. Verwende stattdessen 'fand statt', 'stand im Mittelpunkt', 'diskutierten', 'beleuchtete', 'bot'." : "",
+    currentEventFacts,
+    targetGroupRule,
+    virtualEventRule,
     "Arbeite nur mit den uebergebenen Informationen.",
     "Der sichtbare Text muss die Sache selbst erklaeren: Was ist passiert, worum geht es, warum ist es relevant, welche Einordnung ergibt sich fuer die Medienbranche.",
     textLengthRule,
@@ -195,6 +242,10 @@ async function callOpenAi(action, payload, settings) {
   const actionConfig = ACTIONS[action];
   const imageUrl = String(payload.imageUrl || payload.context?.imageUrl || "").trim();
   const isImageAltText = action === "generateImageAltText" && imageUrl;
+  const requestedWords = Math.max(0, Math.min(900, Number(payload.targetWords || payload.context?.targetWords || 0)));
+  const maxOutputTokens = requestedWords > 0
+    ? Math.max(Number(settings.maxTokens ?? 900), Math.ceil(requestedWords * 2.2) + 250)
+    : Number(settings.maxTokens ?? 900);
   const input = [
     action === "rewritePressRetrospective" ? null : { role: "system", content: SYSTEM_PROMPT },
     {
@@ -210,7 +261,7 @@ async function callOpenAi(action, payload, settings) {
   const body = {
     model: settings.model || "gpt-4.1-mini",
     temperature: Number(settings.temperature ?? 0.3),
-    max_output_tokens: Number(settings.maxTokens ?? 900),
+    max_output_tokens: Math.min(6500, maxOutputTokens),
     input
   };
   if (actionConfig.mode === "json") {
@@ -2493,3 +2544,4 @@ exports.testOpenAiConnection = onCall({ region, secrets: [openAiApiKey] }, async
   const result = await callOpenAi("improveText", { originalText: "Verbindungstest PROdigitalTV", context: { purpose: "connection_test" } }, settings);
   return { ok: true, preview: preview(result.text) };
 });
+

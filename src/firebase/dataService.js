@@ -1,4 +1,4 @@
-﻿import { getFirebaseServices, getFirestoreServices, firebaseEnabled, realDataMode } from "./firebaseClient.js?v=3";
+import { getFirebaseServices, getFirestoreServices, firebaseEnabled, realDataMode } from "./firebaseClient.js?v=3";
 
 import { normalizeLifecyclePhase } from "../data/platformConstants.js";
 
@@ -116,7 +116,7 @@ function publicCacheKey(collectionName, predicates) {
 }
 
 function publicSessionCacheKey(key = "") {
-  return `pdtv-public-list-v4:${key}`;
+  return `pdtv-public-list-v5:${key}`;
 }
 
 function readEmbeddedPublicCache(key = "") {
@@ -472,9 +472,8 @@ export async function listPublicContent(collectionName) {
   };
   if (collectionName === "members") {
     const visibleCachedMembers = await cachedConstrainedList(collectionName, [["visible", "==", true]]).catch(() => []);
-    if (visibleCachedMembers.length) {
-      return visibleCachedMembers.filter(isPublicLiveMember);
-    }
+    const liveVisibleMembers = visibleCachedMembers.filter(isPublicLiveMember);
+    if (liveVisibleMembers.length) return liveVisibleMembers;
     const batches = await Promise.all([
       cachedConstrainedList(collectionName, [["visible", "==", true], ["isLive", "==", true], ["status", "==", "active"], ["visibility", "==", "public"]]).catch(() => []),
       cachedConstrainedList(collectionName, [["visible", "==", true], ["isLive", "==", true], ["status", "==", "active"], ["visibility", "==", "portal"]]).catch(() => []),

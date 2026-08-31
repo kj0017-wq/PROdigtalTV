@@ -189,6 +189,15 @@ function timestampInputDate(value) {
   return Number.isNaN(parsed.getTime()) ?String(value).slice(0, 10) : parsed.toISOString().slice(0, 10);
 }
 
+function timestampInputDateTime(value) {
+  if (!value) return "";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) return value.slice(0, 16);
+  const date = value.seconds ?new Date(value.seconds * 1000) : value instanceof Date ?value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
 function memberAccessBlocked(item = {}, now = new Date()) {
   if (!["inactive", "cancelled"].includes(item.membershipAccessStatus)) return false;
   const effective = item.membershipAccessEffectiveAt;
@@ -517,18 +526,6 @@ function aiButton(action, target, label = "Mit ChatGPT bearbeiten", extra = {}) 
   const promptField = extra.promptField ?` data-ai-prompt-field="${escapeHtml(extra.promptField)}"` : "";
   const contextTarget = extra.contextTarget ?` data-ai-context="${escapeHtml(extra.contextTarget)}"` : "";
   return `<button type="button" class="button button--secondary button--small ai-action" data-ai-action="${action}" data-ai-target="${target}" data-ai-entity-type="${extra.entityType || "event"}" data-ai-entity-id="${extra.entityId || ""}" data-ai-field="${extra.fieldName || target}"${promptField}${contextTarget}>${label}</button>`;
-}
-
-function aiWordTargetSelect(value = 180) {
-  const current = String(value || 180);
-  const options = [
-    ["80", "sehr kurz · ca. 80 Wörter"],
-    ["140", "kurz · ca. 140 Wörter"],
-    ["180", "kompakt · ca. 180 Wörter"],
-    ["250", "mittel · ca. 250 Wörter"],
-    ["350", "ausführlich · ca. 350 Wörter"]
-  ];
-  return `<div class="field cms-ai-word-target"><label>KI-Textlänge</label><select name="aiTargetWords" data-ai-target-words>${options.map(([value, label]) => `<option value="${value}" ${current === value ?"selected" : ""}>${label}</option>`).join("")}</select><small>Gilt für neue KI-Vorschläge in diesem Event.</small></div>`;
 }
 
 function aiFieldActions(actions) {
@@ -1122,9 +1119,9 @@ export async function dashboardPage() {
     list("usageEvents").catch(() => [])
   ]);
   const events = rawEvents.map(normalizeCmsEventRecord).filter(hasLiveCmsEventIdentity);
-  const upcoming = events.filter((event) => event.status !== "inactive" && !isPastCmsEvent(event));
+  const upcoming = events.filter((event) => !isPastCmsEvent(event));
   const pending = registrations.filter((item) => item.status === "pending_email_confirmation").length;
-  const postEvents = events.filter((event) => event.status !== "inactive" && isPastCmsEvent(event));
+  const postEvents = events.filter((event) => isPastCmsEvent(event));
   const openPost = postEvents.length + media.filter((item) => item.status === "in_review").length;
   return protect(cmsShell("cms", `${cmsTitle("CMS Dashboard", "Uebersicht", `<a href="#/cms/events/new" class="button button--primary button--small">Neues Event</a>`)}
     <div class="stat-grid">
@@ -1203,9 +1200,13 @@ function hasLiveCmsEventIdentity(event = {}) {
   return Boolean(title) && !isCmsDemoRecord(event);
 }
 
+function cmsEventIsInactive(event = {}) {
+  return [event.status, event.visible, event.isLive].some(explicitOffFlag);
+}
+
 function eventTable(events, { showThumb = false, mediaAssets = [], registrations = [], returnTo = "#/cms/events" } = {}) {
   const registrationCount = (eventId) => registrations.filter((item) => item.eventId === eventId && item.status !== "cancelled").length;
-  return `<section class="panel"><div class="table-wrap"><table class="table ${showThumb ?"table--event-followup" : ""}"><thead><tr>${showThumb ?"<th>Bild</th>" : ""}<th>Event</th><th>Datum</th><th>Ablauf</th><th>Zugang</th><th>Anmeldungen</th><th>Neue Kontakte</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${events.map((event) => `<tr>${showThumb ?`<td><div class="topic-thumb topic-thumb--table editorial-thumb--table event-thumb--table">${eventThumb(event, mediaAssets, returnTo)}</div></td>` : ""}<td><a class="link" href="#/cms/event/${event.id}">${escapeHtml(event.title)}</a></td><td>${formatDate(event.date)}</td><td>${event.expiresAt ?formatDateTime(event.expiresAt) : "-"}</td><td>${accessLabels[event.accessType]}</td><td><strong>${registrationCount(event.id)}</strong></td><td><strong>${Number(event.newMailingContactsCount || 0)}</strong></td><td>${status(cmsEventRegistrationIsOpen(event) ?"offen" : "geschlossen")}</td><td>${eventActionButtons(event)}</td></tr>`).join("")}</tbody></table></div></section>`;
+  return `<section class="panel"><div class="table-wrap"><table class="table ${showThumb ?"table--event-followup" : ""}"><thead><tr>${showThumb ?"<th>Bild</th>" : ""}<th>Event</th><th>Datum</th><th>Ablauf</th><th>Zugang</th><th>Anmeldungen</th><th>Neue Kontakte</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${events.map((event) => `<tr>${showThumb ?`<td><div class="topic-thumb topic-thumb--table editorial-thumb--table event-thumb--table">${eventThumb(event, mediaAssets, returnTo)}</div></td>` : ""}<td><a class="link" href="#/cms/event/${event.id}">${escapeHtml(event.title)}</a></td><td>${formatDate(event.date)}</td><td>${event.expiresAt ?formatDateTime(event.expiresAt) : "-"}</td><td>${accessLabels[event.accessType]}</td><td><strong>${registrationCount(event.id)}</strong></td><td><strong>${Number(event.newMailingContactsCount || 0)}</strong></td><td>${status(cmsEventIsInactive(event) ?"inaktiv" : cmsEventRegistrationIsOpen(event) ?"offen" : "geschlossen")}</td><td>${eventActionButtons(event)}</td></tr>`).join("")}</tbody></table></div></section>`;
 }
 
 function settingValue(settings, id, fallback = []) {
@@ -1219,7 +1220,6 @@ export async function eventsAdminPage() {
   const events = allEvents
     .map(normalizeCmsEventRecord)
     .filter(hasLiveCmsEventIdentity)
-    .filter((event) => event.status !== "inactive")
     .filter((event) => !isPastCmsEvent(event))
     .sort((a, b) => (a.date || "9999-12-31").localeCompare(b.date || "9999-12-31"));
   return protect(cmsShell("cms/events", `${cmsTitle("Event-Management", "Events", `<a class="button button--primary button--small" href="#/cms/event/new">Neues Event erstellen</a>`)}
@@ -1232,7 +1232,6 @@ export async function eventFollowUpPage() {
   const events = allEvents
     .map(normalizeCmsEventRecord)
     .filter(hasLiveCmsEventIdentity)
-    .filter((event) => event.status !== "inactive")
     .filter((event) => isPastCmsEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
   return protect(cmsShell("cms/followup", `${cmsTitle("Event-Management", "Event Rückblick")}
@@ -1240,7 +1239,7 @@ export async function eventFollowUpPage() {
 }
 
 function eventTabs(id, active) {
-  return `<nav class="tabs">${[["base", "Stammdaten"], ["pre", "Einladung"], ["topics", "Vortraege / Referenten"], ["registration", "Anmeldung"], ["post", "Rückblick"], ["media", "Fotogalerie / Downloads"]].map(([key, label]) => `<button data-event-tab="${key}" data-event-id="${id}" class="${active === key ?"active" : ""}">${label}</button>`).join("")}</nav>`;
+  return `<nav class="tabs">${[["base", "Stammdaten"], ["topics", "Vortraege/Referenten"], ["pre", "Einladung"], ["registration", "Anmeldung"], ["schedule", "Ablauf"], ["post", "Rückblick"], ["media", "Foto"]].map(([key, label]) => `<button data-event-tab="${key}" data-event-id="${id}" class="${active === key ?"active" : ""}">${label}</button>`).join("")}</nav>`;
 }
 
 function shortText(value = "", length = 112) {
@@ -1579,6 +1578,8 @@ function mediaLibraryHref({ collection = "", id = "", field = "imageUrl", altFie
 
 function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", defaultSize = "240x180", aiCollage = false, simple = false, mediaHref = "" }) {
   const [defaultWidth, defaultHeight] = String(defaultSize || "240x180").split("x").map((value) => Number(value) || 1);
+  const dimensionLabel = `${defaultWidth} x ${defaultHeight} px`;
+  const ratioLabel = `${defaultWidth / gcd(defaultWidth, defaultHeight)}:${defaultHeight / gcd(defaultWidth, defaultHeight)}`;
   const simpleStyle = simple ?` style="--image-dropzone-aspect:${defaultWidth} / ${defaultHeight}"` : "";
   return `<div class="image-dropzone ${simple ?"image-dropzone--simple" : ""}" data-image-dropzone ${simple ?"data-simple-image-dropzone" : ""}${simpleStyle}>
     <input type="hidden" name="${removeName}" value="">
@@ -1595,6 +1596,7 @@ function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", d
     </div>
     <div class="image-dropzone__preview ${imageUrl ?"has-image" : ""}" data-image-preview>
       ${imageUrl ?`<img src="${escapeHtml(imageUrl)}" alt="">` : `<span>${escapeHtml(label)} per Drag-and-drop oder Klick hochladen</span>`}
+      ${simple ?`<small class="image-dropzone__dimension-badge">${escapeHtml(dimensionLabel)} · ${escapeHtml(ratioLabel)}</small>` : ""}
     </div>
     </div>
     <button type="button" class="image-dropzone__remove" data-image-remove aria-label="Bild-Verknuepfung loesen" title="Bild-Verknuepfung loesen" ${imageUrl ?"" : "hidden"}>${iconImage("trash")}</button>
@@ -1612,7 +1614,7 @@ function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", d
       </select></label>
       <button type="button" class="button button--secondary button--small" data-image-crop>Crop anwenden</button>
     </div>
-    <p class="muted" data-image-resolution>Ausgabeformat: ${escapeHtml(defaultSize.replace("x", " x "))} px.</p>
+    <p class="muted" data-image-resolution>Ausgabeformat: ${escapeHtml(dimensionLabel)} · ${escapeHtml(ratioLabel)}.</p>
     ${aiCollage ?`<div class="image-dropzone__ai" data-image-mode-panel="ai" hidden>
       <label>KI-Collage erzeugen</label>
       <textarea name="${inputName}AiPrompt" data-ai-image-prompt placeholder="Optional: Motiv, Stil oder Schwerpunkt für die Collage beschreiben. Leer lassen = aus Titel, Subtitel und Text ableiten."></textarea>
@@ -1620,6 +1622,17 @@ function imageDropzone({ inputName, removeName, imageUrl = "", label = "Bild", d
     </div>` : ""}
     <p class="image-dropzone__status" data-image-status>${imageUrl ?"Bild ist gespeichert." : "Kein Bild gespeichert."}</p>
   </div>`;
+}
+
+function gcd(a = 1, b = 1) {
+  let x = Math.abs(Number(a) || 1);
+  let y = Math.abs(Number(b) || 1);
+  while (y) {
+    const next = x % y;
+    x = y;
+    y = next;
+  }
+  return x || 1;
 }
 
 function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altField = "thumbnail_alt", returnTo = "", label = "Thumb", assetId = "" } = {}) {
@@ -1635,7 +1648,7 @@ function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altF
 function eventImageEditor(event = {}, mediaAssets = [], returnTo = "") {
   const imageUrl = eventImageUrl(event, mediaAssets);
   return `<div class="field"><label>Eventbild / Thumb</label>
-    ${imageDropzone({ inputName: "eventImage", removeName: "removeEventImage", imageUrl, label: "Eventbild", defaultSize: "1200x675", simple: true, mediaHref: mediaLibraryHref({ collection: "events", id: event.id, field: "imageUrl", altField: "thumbnail_alt", returnTo }) })}
+    ${imageDropzone({ inputName: "eventImage", removeName: "removeEventImage", imageUrl, label: "Eventbild", defaultSize: "1536x1024", simple: true, mediaHref: mediaLibraryHref({ collection: "events", id: event.id, field: "imageUrl", altField: "thumbnail_alt", returnTo }) })}
   </div>`;
 }
 
@@ -1750,6 +1763,20 @@ function speakerNameParts(speaker = {}) {
   const parts = String(speaker.name || "").trim().split(/\s+/).filter(Boolean);
   return { firstName: parts.slice(0, -1).join(" "), lastName: parts.slice(-1).join(" ") };
 }
+function speakerProfileSelect(speakers = [], selectedSpeakerId = "") {
+  const options = [
+    `<option value="">Neues Referentenprofil anlegen</option>`,
+    ...speakers
+      .filter((speaker) => speaker?.id && (speaker.name || speaker.firstName || speaker.lastName))
+      .slice()
+      .sort((a, b) => String(a.name || `${a.firstName || ""} ${a.lastName || ""}`).localeCompare(String(b.name || `${b.firstName || ""} ${b.lastName || ""}`), "de", { sensitivity: "base" }))
+      .map((speaker) => {
+        const label = [speaker.name || [speaker.firstName, speaker.lastName].filter(Boolean).join(" "), speaker.company, speaker.position].filter(Boolean).join(" - ");
+        return `<option value="${escapeHtml(speaker.id)}" ${speaker.id === selectedSpeakerId ?"selected" : ""}>${escapeHtml(label)}</option>`;
+      })
+  ].join("");
+  return `<div class="field"><label>Bestehendes Referentenprofil zuordnen</label><select name="existingSpeakerId" data-existing-speaker-select>${options}</select><p class="muted">Vorhandenes Profil auswählen, wenn dieselbe Person einen neuen Vortrag hält. Foto, Vita und Kontaktdaten werden übernommen.</p></div>`;
+}
 
 function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [], mediaAssets = [], mode, selectedTopicId, selectedSpeakerId) {
   if (!mode) return "";
@@ -1763,12 +1790,15 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
   }
   if (mode === "referent" && selectedTopic) {
     const topicSpeakers = topicSpeakersForEvent(selectedTopic, event, speakers);
-    const selectedSpeaker = speakers.find((speaker) => speaker.id === selectedSpeakerId) || { id: "", name: "", company: "", position: "", photoUrl: "" };
+    const speakerEntityId = selectedSpeakerId || `speakers-${crypto.randomUUID()}`;
+    const existingSelectedSpeaker = speakers.find((speaker) => speaker.id === selectedSpeakerId);
+    const selectedSpeaker = existingSelectedSpeaker || { id: speakerEntityId, name: "", company: "", position: "", photoUrl: "" };
     const speakerParts = speakerNameParts(selectedSpeaker);
-    return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">Referent</p><h2>${selectedSpeaker.id ?"Referent bearbeiten" : "Referent anlegen"}</h2></div><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${selectedTopic.id}">Vortrag bearbeiten</a></div>
-      <form id="event-topic-speaker-form" data-event-id="${event.id}" data-topic-id="${selectedTopic.id}" data-speaker-id="${selectedSpeaker.id || ""}" class="form-grid is-save-aware">
+    return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">Referent</p><h2>${existingSelectedSpeaker ?"Referent bearbeiten" : "Referent anlegen"}</h2></div><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${selectedTopic.id}">Vortrag bearbeiten</a></div>
+      <form id="event-topic-speaker-form" data-event-id="${event.id}" data-topic-id="${selectedTopic.id}" data-speaker-id="${speakerEntityId}" class="form-grid is-save-aware">
         <section class="panel" style="background:var(--pdt-bg)">
           <h3>Referent</h3>
+          ${speakerProfileSelect(speakers, existingSelectedSpeaker?.id || "")}
           <div class="form-grid--two">
             <div class="field"><label>Vorname</label><input name="speakerFirstName" value="${escapeHtml(speakerParts.firstName || "")}" required></div>
             <div class="field"><label>Nachname</label><input name="speakerLastName" value="${escapeHtml(speakerParts.lastName || "")}" required></div>
@@ -1782,8 +1812,8 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
         <div class="field"><label>Kurzvita</label><textarea name="speakerShortBio" rows="4">${escapeHtml(selectedSpeaker.shortBio || selectedSpeaker.bio || "")}</textarea></div>
         <div class="field"><label>Ausfuehrliche Vita</label><textarea name="speakerLongBio" rows="8">${escapeHtml(selectedSpeaker.longBio || selectedSpeaker.vita || selectedSpeaker.biography || "")}</textarea></div>
         <div class="form-grid--two">
-          <div class="field"><label>Unternehmenslogo</label>${imageDropzone({ inputName: "speakerCompanyLogo", removeName: "removeSpeakerCompanyLogo", imageUrl: selectedSpeaker.companyLogoUrl || selectedSpeaker.logoUrl || "", label: "Unternehmenslogo", defaultSize: "600x300", simple: true })}</div>
-          <div class="field"><label>Referentenfoto</label>${imageDropzone({ inputName: "speakerImage", removeName: "removeSpeakerImage", imageUrl: selectedSpeaker.photoUrl || "", label: "Referentenfoto", defaultSize: "800x1000", simple: true, mediaHref: selectedSpeaker.id ?mediaLibraryHref({ collection: "speakers", id: selectedSpeaker.id, field: "photoUrl", altField: "altText", returnTo: `#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}&speaker=${selectedSpeaker.id}` }) : "" })}</div>
+          <div class="field"><label>Unternehmenslogo</label>${imageDropzone({ inputName: "speakerCompanyLogo", removeName: "removeSpeakerCompanyLogo", imageUrl: selectedSpeaker.companyLogoUrl || selectedSpeaker.logoUrl || "", label: "Unternehmenslogo", defaultSize: "600x300", simple: true, mediaHref: mediaLibraryHref({ collection: "speakers", id: speakerEntityId, field: "companyLogoUrl", altField: "companyLogoAltText", returnTo: `#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}&speaker=${speakerEntityId}` }) })}</div>
+          <div class="field"><label>Referentenfoto</label>${imageDropzone({ inputName: "speakerImage", removeName: "removeSpeakerImage", imageUrl: selectedSpeaker.photoUrl || "", label: "Referentenfoto", defaultSize: "800x1000", simple: true, mediaHref: mediaLibraryHref({ collection: "speakers", id: speakerEntityId, field: "photoUrl", altField: "altText", returnTo: `#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}&speaker=${speakerEntityId}` }) })}</div>
         </div>
         <div class="actions"><button class="button button--secondary" type="button" onclick="location.hash='#/cms/event/${event.id}?tab=topics&mode=edit&topic=${selectedTopic.id}'">Abbrechen</button><button class="button button--primary">Speichern</button></div>
         <div id="event-topic-speaker-result"></div>
@@ -1796,6 +1826,7 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
   const firstTopicSpeaker = topicSpeakers[0];
   const speakerForForm = speakers.find((speaker) => speaker.id === selectedSpeakerId) || firstTopicSpeaker || {};
   const speakerParts = speakerNameParts(speakerForForm);
+  const speakerEntityIdForTopicForm = speakerForForm.id || `speakers-${crypto.randomUUID()}`;
   const topicHeadActions = selectedTopic.id
     ?`<div class="topic-panel-actions">${firstTopicSpeaker ?`<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}&speaker=${firstTopicSpeaker.id}">Referent bearbeiten</a>` : `<a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${selectedTopic.id}">Referent hinzufuegen</a>`}<button class="button button--secondary button--small" type="button" data-copy-talk-to-topic="${selectedTopic.id}" data-event-id="${event.id}">Themenartikel erzeugen</button><a class="link-button" href="#/cms/event/${event.id}?tab=topics">Schliessen</a></div>`
     : `<a class="link-button" href="#/cms/event/${event.id}?tab=topics">Schliessen</a>`;
@@ -1810,9 +1841,10 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
     .sort((a, b) => String(a.title || a.fileName || "").localeCompare(String(b.title || b.fileName || ""), "de"))
     .map((document) => `<option value="${escapeHtml(document.id)}" ${(selectedTopic.downloadId || selectedTopic.documentId || selectedTopic.presentationId) === document.id ?"selected" : ""}>${escapeHtml(document.title || document.fileName || document.id)}</option>`)].join("");
   return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">${mode === "new" ?"Neu" : "Vortrag bearbeiten"}</p><h2>${mode === "new" ?"Neuer Vortrag" : escapeHtml(selectedTopic.title || "")}</h2></div>${topicHeadActions}</div>
-    <form id="event-topic-editor-form" data-event-id="${event.id}" data-topic-id="${topicEntityId}" data-topic-mode="${mode}" data-speaker-id="${speakerForForm.id || ""}" class="form-grid">
+    <form id="event-topic-editor-form" data-event-id="${event.id}" data-topic-id="${topicEntityId}" data-topic-mode="${mode}" data-speaker-id="${speakerEntityIdForTopicForm}" class="form-grid">
       <section class="panel" style="background:var(--pdt-bg)">
         <h3>1. Referent</h3>
+        ${speakerProfileSelect(speakers, speakerForForm.id || "")}
         <div class="form-grid--two">
           <div class="field"><label>Vorname</label><input name="speakerFirstName" value="${escapeHtml(speakerParts.firstName || "")}" required></div>
           <div class="field"><label>Nachname</label><input name="speakerLastName" value="${escapeHtml(speakerParts.lastName || "")}" required></div>
@@ -1824,6 +1856,7 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
         </div>
         <div class="field"><label>Kurzvita</label><textarea name="speakerShortBio" rows="4">${escapeHtml(speakerForForm.shortBio || speakerForForm.bio || "")}</textarea></div>
         <div class="field"><label>Ausfuehrliche Vita</label><textarea name="speakerLongBio" rows="7">${escapeHtml(speakerForForm.longBio || speakerForForm.vita || speakerForForm.biography || "")}</textarea></div>
+        <div class="field"><label>Referentenfoto</label>${imageDropzone({ inputName: "speakerImage", removeName: "removeSpeakerImage", imageUrl: speakerForForm.photoUrl || "", label: "Referentenfoto", defaultSize: "800x1000", simple: true, mediaHref: mediaLibraryHref({ collection: "speakers", id: speakerEntityIdForTopicForm, field: "photoUrl", altField: "altText", returnTo: `#/cms/event/${event.id}?tab=topics&mode=${mode}&topic=${topicEntityId}&speaker=${speakerEntityIdForTopicForm}` }) })}</div>
       </section>
       <section class="panel">
         <h3>2. Vortrag</h3>
@@ -1927,6 +1960,271 @@ function eventTopicsEditor(event, topics, speakers, allEvents, galleries = [], d
   </div>`;
 }
 
+function eventTimeToMinutes(value = "") {
+  const match = String(value || "").match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return Math.min(23 * 60 + 59, Math.max(0, hours * 60 + minutes));
+}
+
+function eventMinutesToTime(minutes) {
+  const safe = Math.min(23 * 60 + 59, Math.max(0, Number(minutes) || 0));
+  return `${String(Math.floor(safe / 60)).padStart(2, "0")}:${String(safe % 60).padStart(2, "0")}`;
+}
+
+function eventTalkDurationMinutes(event = {}) {
+  const parsed = Number(event.talkDurationMinutes || event.defaultTalkDurationMinutes || 30);
+  if (!Number.isFinite(parsed)) return 30;
+  return Math.min(180, Math.max(5, Math.round(parsed)));
+}
+
+function eventAssignedTopics(event = {}, topics = []) {
+  const orderedIds = Array.isArray(event.topicIds) ? event.topicIds : [];
+  const orderedTopics = orderedIds.map((topicId) => topics.find((topic) => topic.id === topicId)).filter(Boolean);
+  if (orderedTopics.length) return orderedTopics;
+  return topics
+    .filter((topic) => topic.eventId === event.id || topic.linkedEventId === event.id || (Array.isArray(topic.eventIds) && topic.eventIds.includes(event.id)))
+    .sort((a, b) => Number(a.sortOrder ?? a.order ?? 999) - Number(b.sortOrder ?? b.order ?? 999));
+}
+
+function eventTopicSpeakerNames(event = {}, topic = {}, speakers = []) {
+  return eventTopicSpeakers(event, topic, speakers)
+    .map((speaker) => speaker.name)
+    .filter(Boolean);
+}
+
+function eventTopicSpeakers(event = {}, topic = {}, speakers = []) {
+  const topicSpeakerIds = new Set([
+    ...(Array.isArray(topic.speakerIds) ? topic.speakerIds : []),
+    ...(Array.isArray(topic.speakers) ? topic.speakers : [])
+  ]);
+  return speakers
+    .filter((speaker) => topicSpeakerIds.has(speaker.id)
+      || speaker.topicId === topic.id
+      || (Array.isArray(speaker.topicIds) && speaker.topicIds.includes(topic.id)))
+    .filter((speaker) => !Array.isArray(event.speakerIds) || !event.speakerIds.length || event.speakerIds.includes(speaker.id) || topicSpeakerIds.has(speaker.id) || speaker.topicId === topic.id);
+}
+
+function invitationSpeakerDisplayName(speaker = {}) {
+  const name = String(speaker.name || [speaker.firstName, speaker.lastName].filter(Boolean).join(" ") || "").trim();
+  const position = String(speaker.position || speaker.function || speaker.role || "").trim();
+  if (!name) return "";
+  if (/\b(ra|rechtsanw[aä]ltin|rechtsanwalt)\b/i.test(position) && !/\b(ra|rechtsanw[aä]ltin|rechtsanwalt)\b/i.test(name)) {
+    return `RA ${name}`;
+  }
+  return name;
+}
+
+function eventScheduleTopicLabel(event = {}, topic = {}, speakers = []) {
+  const speakerNames = eventTopicSpeakerNames(event, topic, speakers);
+  return `${topic.title || "Programmpunkt"}${speakerNames.length ?` (${speakerNames.join(", ")})` : ""}`;
+}
+
+function eventInvitationTalkHints(event = {}, topics = [], speakers = []) {
+  const assignedTopics = eventAssignedTopics(event, topics);
+  return assignedTopics.map((topic) => {
+    const names = eventTopicSpeakers(event, topic, speakers).map(invitationSpeakerDisplayName).filter(Boolean);
+    const title = String(topic.title || topic.headline || "").trim();
+    if (!title || !names.length) return "";
+    const speakerText = names.length === 1 ? names[0] : names.slice(0, -1).join(", ") + " und " + names.slice(-1);
+    return `Unter anderem erwartet Sie ein Vortrag von ${speakerText} zum Thema "${title}".`;
+  }).filter(Boolean).slice(0, 6);
+}
+
+function eventInvitationTalkHintPanel(event = {}, topics = [], speakers = []) {
+  const hints = eventInvitationTalkHints(event, topics, speakers);
+  if (!hints.length) return "";
+  return `<section class="panel invitation-talk-hints" style="background:var(--pdt-bg)"><div class="field-label-row"><div><p class="eyebrow">Vorträge</p><h3>Hinweise für die Einladung</h3></div><span class="muted">lokal aus Themen/Referenten</span></div><div class="invitation-talk-hints__list">${hints.map((hint) => `<article><p>${escapeHtml(hint)}</p><div class="actions"><button type="button" class="button button--secondary button--small" data-insert-invitation-talk="invitationText" data-talk-hint="${escapeHtml(hint)}">In Einladung</button><button type="button" class="button button--secondary button--small" data-insert-invitation-talk="invitationUpdateText" data-talk-hint="${escapeHtml(hint)}">In Update</button></div></article>`).join("")}</div></section>`;
+}
+function eventScheduleTopicData(event = {}, topic = {}, speakers = []) {
+  const speakerNames = eventTopicSpeakerNames(event, topic, speakers);
+  return {
+    type: "Vortrag",
+    person: speakerNames.join(", ") || "Referent wird ergaenzt",
+    title: topic.title || "Vortrag wird ergaenzt"
+  };
+}
+
+function defaultEventScheduleItems(event = {}, topics = [], speakers = []) {
+  const start = eventTimeToMinutes(event.startTime) ?? 10 * 60;
+  const plannedEnd = eventTimeToMinutes(event.endTime) ?? Math.min(start + 315, 23 * 60 + 59);
+  const talkDuration = eventTalkDurationMinutes(event);
+  const assignedTopics = eventAssignedTopics(event, topics);
+  const rows = [
+    { type: "Einlass", time: eventMinutesToTime(Math.max(0, start - 30)), duration: 30, person: "Einlass", title: "Empfang, Registrierung und Ankommen" },
+    { type: "Begruessung", time: eventMinutesToTime(start), duration: 15, person: "Moderation", title: "Begruessung durch PROdigitalTV und organisatorische Hinweise" }
+  ];
+  let cursor = start + 15;
+  for (let index = 0; index < 6; index += 1) {
+    const topicData = assignedTopics[index] ? eventScheduleTopicData(event, assignedTopics[index], speakers) : null;
+    rows.push({
+      type: `Vortrag ${index + 1}`,
+      time: eventMinutesToTime(cursor),
+      duration: talkDuration,
+      person: topicData?.person || "Referent wird ergaenzt",
+      title: topicData?.title || `Vortrag ${index + 1} wird ergaenzt`
+    });
+    cursor += talkDuration;
+    if (index === 1) {
+      rows.push({ type: "Pause", time: eventMinutesToTime(cursor), duration: 15, person: "Pause", title: "Kurze Pause und Austausch" });
+      cursor += 15;
+    }
+    if (index === 3) {
+      rows.push({ type: "Laengere Pause", time: eventMinutesToTime(cursor), duration: 30, person: "Pause", title: "Laengere Pause, Lunch oder Networking" });
+      cursor += 30;
+    }
+  }
+  rows.push({ type: "Networking", time: eventMinutesToTime(cursor), duration: 30, person: "Networking", title: "Networking und informeller Austausch" });
+  cursor += 30;
+  rows.push({ type: "Ende", time: eventMinutesToTime(Math.max(plannedEnd, cursor)), duration: 0, person: "Moderation", title: "Ende der Veranstaltung" });
+  return rows;
+}
+
+function scheduleItemsToText(items = []) {
+  return items
+    .map((item) => `${item.time || ""} | ${item.person || item.type || "Programmpunkt"} | ${item.title || ""}`.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function parseEventScheduleText(value = "") {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split("|").map((part) => part.trim());
+      return {
+        type: parts[1] || "Programmpunkt",
+        time: parts[0] || "",
+        duration: "",
+        person: parts[1] || "",
+        title: parts.slice(2).join(" | ") || parts[1] || ""
+      };
+    });
+}
+
+function isLegacyEventScheduleItems(items = []) {
+  if (!Array.isArray(items) || !items.length) return false;
+  const types = items.map((item) => String(item?.type || "").trim());
+  const hasNumberedTalks = types.some((type) => /^Vortrag\s+\d+$/i.test(type));
+  if (hasNumberedTalks) return false;
+  return types.includes("Vortrag") || types.includes("Moderation") || types.includes("Lunch");
+}
+
+function eventScheduleCheckIssues(item = {}, index = 0, previousMinutes = null) {
+  const issues = [];
+  const time = String(item.time || "").trim();
+  const duration = Number(item.duration || 0);
+  const person = String(item.person || item.type || "").trim();
+  const title = String(item.title || "").trim();
+  const placeholderText = `${person} ${title}`;
+  const minutes = eventTimeToMinutes(time);
+  if (!time) issues.push("Uhrzeit fehlt");
+  else if (previousMinutes != null && minutes != null && minutes < previousMinutes) issues.push("Zeit springt zurück");
+  if (!title) issues.push("Titel fehlt");
+  if (!person) issues.push("Person/Rolle fehlt");
+  if (/wird\s+erg(?:aenzt|änzt)|offen|tbd|platzhalter/i.test(placeholderText)) issues.push("Platzhalter offen");
+  if (Number.isFinite(duration) && duration > 180) issues.push("Laenge pruefen");
+  return { index, issues, minutes };
+}
+
+function eventScheduleCheckList(items = []) {
+  let previousMinutes = null;
+  let totalDuration = 0;
+  const checked = items.map((item, index) => {
+    const check = eventScheduleCheckIssues(item, index, previousMinutes);
+    if (check.minutes != null) previousMinutes = check.minutes;
+    const duration = Number(item.duration || 0);
+    if (Number.isFinite(duration)) totalDuration += Math.max(0, duration);
+    return { item, ...check };
+  });
+  const warningCount = checked.reduce((count, row) => count + row.issues.length, 0);
+  const rows = checked.map(({ item, issues }, index) => {
+    const ok = issues.length === 0;
+    const person = item.person || item.type || "Programmpunkt";
+    return `<li class="event-schedule-check__item ${ok ?"is-ok" : "has-warning"}"><span class="event-schedule-check__badge" aria-hidden="true">${ok ?"✓" : "!"}</span><div><strong>${escapeHtml(item.time || "--:--")} · ${escapeHtml(person)}</strong><p>${escapeHtml(item.title || `Programmpunkt ${index + 1}`)}</p>${issues.length ?`<small>${escapeHtml(issues.join(" · "))}</small>` : `<small>vollständig</small>`}</div></li>`;
+  }).join("");
+  return `<aside class="event-schedule-check" data-event-schedule-check-list><div class="event-schedule-check__head"><div><p class="eyebrow">Check</p><h4>Listenansicht</h4></div><span class="status ${warningCount ?"status--draft" : ""}">${warningCount ?`${warningCount} Hinweise` : "OK"}</span></div><div class="event-schedule-check__stats"><span>${items.length} Punkte</span><span>${totalDuration} Min.</span></div><ol>${rows || `<li class="event-schedule-check__item has-warning"><span class="event-schedule-check__badge" aria-hidden="true">!</span><div><strong>Ablauf fehlt</strong><p>Noch keine Programmpunkte vorhanden.</p><small>Bitte Ablauf erzeugen oder Zeilen anlegen.</small></div></li>`}</ol></aside>`;
+}
+function eventScheduleItems(event = {}, topics = [], speakers = []) {
+  const savedItems = Array.isArray(event.scheduleItems) ?event.scheduleItems : [];
+  if (savedItems.length && !isLegacyEventScheduleItems(savedItems)) return savedItems;
+  return defaultEventScheduleItems(event, topics, speakers);
+}
+
+function eventScheduleEditor(event = {}, topics = [], speakers = []) {
+  const scheduleItems = eventScheduleItems(event, topics, speakers);
+  const scheduleText = scheduleItemsToText(scheduleItems);
+  const assignedTopicData = eventAssignedTopics(event, topics).map((topic) => eventScheduleTopicData(event, topic, speakers));
+  const rowMarkup = scheduleItems.map((item) => eventScheduleEditorRow(item)).join("");
+  return `<section class="panel event-schedule-editor" style="background:var(--pdt-bg)" data-event-schedule-editor data-event-schedule-topics="${escapeHtml(JSON.stringify(assignedTopicData))}">
+    <div class="field-label-row">
+      <div><p class="eyebrow">Ablaufplan</p><h3>Uhrzeitliche Planung</h3></div>
+      <span class="muted">Container per Griff verschieben</span>
+    </div>
+    <div class="event-schedule-editor__meta">
+      <div><span>Veranstaltung</span><strong>${escapeHtml(event.title || "Veranstaltung ohne Titel")}</strong></div>
+      <div><span>Datum</span><strong>${escapeHtml(event.date || "Datum offen")}</strong></div>
+      <div><span>Moderation</span><strong>im Ablauf editierbar</strong></div>
+    </div>
+    <div class="event-schedule-view-tabs" role="tablist" aria-label="Ablaufplan Ansicht">
+      <button type="button" class="is-active" data-event-schedule-view="editor" aria-selected="true">Editor</button>
+      <button type="button" data-event-schedule-view="list" aria-selected="false">Listenansicht</button>
+    </div>
+    <div class="event-schedule-view is-active" data-event-schedule-panel="editor">
+      <div class="form-grid--two">
+        <div class="field">
+          <label>Vortragslaenge in Minuten</label>
+          <input type="number" name="talkDurationMinutes" data-event-schedule-duration min="5" max="180" step="5" value="${escapeHtml(eventTalkDurationMinutes(event))}">
+          <p class="muted">Standard sind 30 Minuten. Gilt beim Neuaufbau des Ablaufplans.</p>
+        </div>
+        <div class="field">
+          <label>Ablauf aus Vortraegen erzeugen</label>
+          <button type="button" class="button button--secondary" data-regenerate-event-schedule>Aus Vortraegen neu aufbauen</button>
+          <p class="muted">Ersetzt die aktuelle Tabelle durch Einlass, Moderation, Vortraege, Pausen und Ende. Danach koennen die Zeilen frei verschoben und bearbeitet werden.</p>
+        </div>
+      </div>
+      <div class="event-schedule-editor__table" data-event-schedule-list>
+        <div class="event-schedule-editor__head" aria-hidden="true">
+          <span></span>
+          <span>Uhrzeit</span>
+          <span>Laenge</span>
+          <span>Referent / Moderator</span>
+          <span>Titel des Vortrages / Programmpunkt</span>
+          <span></span>
+        </div>
+        ${rowMarkup}
+      </div>
+      <div class="actions event-schedule-editor__quick-actions">
+        <button type="button" class="button button--secondary button--small" data-add-event-schedule-row="Programmpunkt">Programmpunkt hinzufuegen</button>
+        <button type="button" class="button button--secondary button--small" data-add-event-schedule-row="Pause">Pause</button>
+        <button type="button" class="button button--secondary button--small" data-add-event-schedule-row="Lunch">Lunch</button>
+        <button type="button" class="button button--secondary button--small" data-add-event-schedule-row="Fruehstueck">Fruehstueck</button>
+      </div>
+    </div>
+    <div class="event-schedule-view" data-event-schedule-panel="list" hidden>
+      ${eventScheduleCheckList(scheduleItems)}
+    </div>
+    <input type="hidden" name="scheduleText" data-event-schedule-text value="${escapeHtml(scheduleText)}">
+    <input type="hidden" name="scheduleItemsJson" data-event-schedule-items-json value="${escapeHtml(JSON.stringify(scheduleItems))}">
+  </section>`;
+}
+
+function eventScheduleEditorRow(item = {}) {
+  return `<article class="event-schedule-editor__row" draggable="true" data-event-schedule-row>
+    <button type="button" class="event-schedule-editor__drag" aria-label="Programmpunkt verschieben">::</button>
+    <div class="field"><label>Uhrzeit</label><input type="time" data-schedule-time value="${escapeHtml(item.time || "")}"></div>
+    <div class="field"><label>Laenge</label><input type="number" data-schedule-duration min="0" max="240" step="5" value="${escapeHtml(item.duration ?? "")}" placeholder="Min."></div>
+    <div class="field"><label>Referent / Moderator</label><input data-schedule-person value="${escapeHtml(item.person || item.type || "")}" placeholder="Referent, Moderator, Pause"></div>
+    <div class="field event-schedule-editor__title"><label>Titel des Vortrages / Programmpunkt</label><input data-schedule-title value="${escapeHtml(item.title || "")}" placeholder="Titel oder Beschreibung"></div>
+    <input type="hidden" data-schedule-type value="${escapeHtml(item.type || "Programmpunkt")}">
+    <button type="button" class="icon-button icon-button--danger event-schedule-editor__remove" data-remove-event-schedule-row aria-label="Programmpunkt entfernen">${iconImage("trash")}</button>
+  </article>`;
+}
+
 function eventPartnersEditor(event, sponsors, mediaAssets = []) {
   const selectedPartner = sponsors.find((item) => item.id === event.hostId) || null;
   const selectedAsset = selectedPartner ?recordMediaAsset(selectedPartner, mediaAssets, "sponsors", "logoUrl") : null;
@@ -1983,7 +2281,8 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   const primaryHostPicker = customSelect({ name: "primaryHostId", label: "Gastgeber", value: event.primaryHostId || "prodigitaltv", options: primaryHostOptions });
   const coHostPicker = customSelect({ name: "hostId", label: "Co-Gastgeber", value: event.hostId || "", options: coHostOptions, note: "Der Co-Gastgeber wird im Event und in der Eventbox angezeigt." });
   const onlineMeetingLabel = event.onlineMeetingLabel || (event.isVirtualEvent ? "Zoom Meeting" : "");
-  const virtualEventFields = `<div class="form-grid--three"><label class="cms-switch field"><input type="checkbox" name="isVirtualEvent" ${event.isVirtualEvent ?"checked" : ""}><span><strong>Virtuell / Zoom Meeting</strong><small>Event findet online statt oder hat eine Online-Teilnahme.</small></span></label><div class="field"><label>Online-Plattform</label><input name="onlineMeetingLabel" value="${escapeHtml(onlineMeetingLabel)}" placeholder="Zoom Meeting"></div><div class="field"><label>Separater Zoom-Link</label><input name="zoomLink" type="url" value="${escapeHtml(event.zoomLink || "")}" placeholder="https://..."></div></div>`;
+  const allowsZoomMeeting = /jahreshauptversammlung/i.test(String(event.eventType || ""));
+  const virtualEventFields = `<div class="form-grid--three" data-event-virtual-fields ${allowsZoomMeeting ? "" : "hidden"}><label class="cms-switch field"><input type="checkbox" name="isVirtualEvent" ${event.isVirtualEvent && allowsZoomMeeting ?"checked" : ""}><span><strong>Virtuell / Zoom Meeting</strong><small>Nur fuer Jahreshauptversammlungen: Event findet online statt oder hat eine Online-Teilnahme.</small></span></label><div class="field"><label>Online-Plattform</label><input name="onlineMeetingLabel" value="${escapeHtml(allowsZoomMeeting ? onlineMeetingLabel : "")}" placeholder="Zoom Meeting"></div><div class="field"><label>Separater Zoom-Link</label><input name="zoomLink" type="url" value="${escapeHtml(allowsZoomMeeting ? event.zoomLink || "" : "")}" placeholder="https://..."></div></div>`;
   const hostCreateLayer = `<div class="cms-host-create-layer" data-host-create-layer hidden>
     <div class="cms-host-create-layer__panel" role="dialog" aria-modal="true" aria-labelledby="host-create-title">
       <div class="field-label-row">
@@ -2004,7 +2303,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   const galleryPicker = customSelect({ name: "galleryId", label: "Bildergalerie", value: selectedGalleryId, options: galleryPickerOptions, note: "Bilder werden im Bereich Bildergalerien freigegeben und dieser Galerie zugeordnet." });
   const eventGalleryCreateButton = `<button class="button button--secondary button--small" type="button" data-create-event-gallery>Event-Galerie anlegen</button>`;
   const galleryManageButton = `<a class="button button--secondary button--small" href="#/cms/galleries">Galerien verwalten</a>`;
-  if (!["base", "pre", "topics", "partners", "registration", "post", "media", "ai"].includes(tab)) tab = "base";
+  if (!["base", "pre", "schedule", "topics", "partners", "registration", "post", "media", "ai"].includes(tab)) tab = "base";
   const retrospectiveArticle = allEditorial.find((item) => {
     const category = String(item.category || "").toLowerCase();
     return retrospectiveMatchesEvent(item, event)
@@ -2032,7 +2331,8 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   }
   let content;
   if (tab === "base") {
-    content = `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid is-save-aware event-base-form"><div class="field"><label>Titel</label><input name="title" value="${escapeHtml(event.title)}" required></div><div class="field"><label>Untertitel</label><input name="subtitle" value="${escapeHtml(event.subtitle)}"></div><div class="field"><div class="field-label-row"><label>Beschreibung</label>${aiButton("improveText", "description", "Mit ChatGPT bearbeiten", { entityId: event.id, fieldName: "description" })}</div><textarea name="description">${escapeHtml(event.description)}</textarea></div>${aiWordTargetSelect(event.aiTargetWords || 180)}<div class="form-grid--four" data-event-location-fields ${event.isVirtualEvent ?"hidden" : ""}><div class="field"><label>Location</label><input name="locationName" value="${escapeHtml(event.locationName || "")}"></div><div class="field"><label>Straße / Nr.</label><input name="address" value="${escapeHtml(event.address || "")}"></div><div class="field"><label>PLZ</label><input name="postalCode" value="${escapeHtml(event.postalCode || event.zipCode || "")}"></div><div class="field"><label>Stadt</label><input name="city" value="${escapeHtml(event.city || "")}"></div></div>${virtualEventFields}<div class="form-grid--four"><div class="field"><label>Datum</label><input type="date" name="date" value="${event.date}"></div><div class="field"><label>Beginn</label><input type="time" name="startTime" value="${event.startTime}"></div><div class="field"><label>Ende</label><input type="time" name="endTime" value="${event.endTime}"></div><div class="field"><label>Ablauf</label><input type="datetime-local" name="expiresAt" value="${event.expiresAt ?event.expiresAt.slice(0, 16) : ""}"></div></div><div class="form-grid--two"><div class="event-base-form__event-type-stack">${eventTypePicker}<div class="field field--nested" data-new-event-type-field hidden><label>Neuer Eventtyp</label><input name="newEventType" placeholder="z. B. Fachgespräch"></div></div>${accessTypePicker}${primaryHostPicker}${coHostPicker}${eventImageEditor(event, mediaAssets, `#/cms/event/${event.id}?tab=base`)}</div>${hostCreateLayer}<div class="actions"><button class="button button--primary">Event speichern</button>${id !== "new" ?`<button type="button" class="button button--secondary" data-delete-event="${event.id}">Event loeschen</button>` : ""}</div><div id="event-save-result"></div></form>`;
+    const expiresAtInput = timestampInputDateTime(event.expiresAt);
+    content = `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid is-save-aware event-base-form"><div class="field"><label>Titel</label><input name="title" value="${escapeHtml(event.title)}" required></div><div class="field"><label>Untertitel</label><input name="subtitle" value="${escapeHtml(event.subtitle)}"></div><div class="field"><div class="field-label-row"><label>Beschreibung</label>${aiButton("improveText", "description", "Mit ChatGPT bearbeiten", { entityId: event.id, fieldName: "description" })}</div><textarea name="description">${escapeHtml(event.description)}</textarea></div><div class="form-grid--four" data-event-location-fields ${event.isVirtualEvent && allowsZoomMeeting ?"hidden" : ""}><div class="field"><label>Location</label><input name="locationName" value="${escapeHtml(event.locationName || "")}"></div><div class="field"><label>Straße / Nr.</label><input name="address" value="${escapeHtml(event.address || "")}"></div><div class="field"><label>PLZ</label><input name="postalCode" value="${escapeHtml(event.postalCode || event.zipCode || "")}"></div><div class="field"><label>Stadt</label><input name="city" value="${escapeHtml(event.city || "")}"></div></div>${virtualEventFields}<div class="form-grid--four"><div class="field"><label>Datum</label><input type="date" name="date" value="${escapeHtml(event.date || "")}"></div><div class="field"><label>Beginn</label><input type="time" name="startTime" value="${escapeHtml(event.startTime || "")}"></div><div class="field"><label>Ende</label><input type="time" name="endTime" value="${escapeHtml(event.endTime || "")}"></div><div class="field"><label>Ablaufdatum</label><input type="datetime-local" name="expiresAt" value="${escapeHtml(expiresAtInput)}"></div></div><div class="form-grid--two"><div class="event-base-form__event-type-stack">${eventTypePicker}<div class="field field--nested" data-new-event-type-field hidden><label>Neuer Eventtyp</label><input name="newEventType" placeholder="z. B. Fachgespräch"></div></div>${accessTypePicker}${primaryHostPicker}${coHostPicker}${eventImageEditor(event, mediaAssets, `#/cms/event/${event.id}?tab=base`)}</div>${hostCreateLayer}<div class="actions"><button class="button button--primary">Event speichern</button>${id !== "new" ?`<button type="button" class="button button--secondary" data-delete-event="${event.id}">Event loeschen</button>` : ""}<a class="button button--secondary" href="#/cms/event/${event.id}?tab=schedule">Ablauf planen</a></div><div id="event-save-result"></div></form>`;
     if (isPastCmsEvent(event)) {
       content = content
         .replace(`<div class="field"><label>Telefon Location</label><input name="phone" value="${escapeHtml(event.phone || "")}"></div>`, "")
@@ -2040,6 +2340,8 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
         .replace(`<div class="field"><label>Zugangsart</label><select name="accessType">${Object.entries(accessLabels).map(([key, value]) => `<option value="${key}" ${key === event.accessType ?"selected" : ""}>${value}</option>`).join("")}</select></div>`, "")
         .replace(`<div class="field"><label>Lifecycle</label><select name="lifecyclePhase">${Object.entries(lifecycleLabels).map(([key, value]) => `<option value="${key}" ${key === event.lifecyclePhase ?"selected" : ""}>${value}</option>`).join("")}</select></div>`, "");
     }
+  } else if (tab === "schedule") {
+    content = `<form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="schedule" class="form-grid is-save-aware"><input type="hidden" name="date" value="${escapeHtml(event.date || "")}"><input type="hidden" name="startTime" value="${escapeHtml(event.startTime || "")}"><input type="hidden" name="endTime" value="${escapeHtml(event.endTime || "")}">${eventScheduleEditor(event, topics, speakers)}<div class="actions"><button class="button button--primary">Ablauf speichern</button><a class="button button--secondary" href="#/cms/event/${event.id}?tab=topics">Vortraege / Referenten uebernehmen</a></div><div id="event-save-result"></div></form>`;
   } else if (tab === "topics") {
     content = eventTopicsEditor(event, topics, speakers, allEvents, galleries, downloads, mediaAssets, query, sponsors, members);
   } else if (tab === "__old_topics") {
@@ -2063,15 +2365,26 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     const checkinPanel = cmsEventHandyTicketEnabled(event)
       ? `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Einlass / Event-QR</strong><span>QR-Code anzeigen</span></summary><p>Diese Seite zeigt den QR-Code, den Teilnehmer vor Ort mit dem Handy scannen.</p><div class="actions"><a class="button button--primary button--small" href="${checkinScreenUrl}" target="_blank" rel="noreferrer">Event-QR oeffnen</a><a class="button button--secondary button--small" href="${checkinScreenUrl}">Event-QR im Browser oeffnen</a></div></details>`
       : `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Einlass / Event-QR</strong><span>deaktiviert</span></summary><p>Fuer dieses Event ist das Handy-Ticket ausgeschaltet. Die Anmeldung wird per E-Mail bestaetigt, aber es wird kein Einlass-QR benoetigt.</p></details>`;
-    const mailPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Mailtexte und Erinnerungen</strong><span>anzeigen / bearbeiten</span></summary><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="registration" class="form-grid is-save-aware"><p>KI erzeugt Mailtexte mit Platzhaltern und ohne echte Teilnehmerdaten. Der Diff-Layer zeigt den vorhandenen Text und den neuen Vorschlag; gespeichert wird erst nach Uebernehmen.</p><div id="${mailAiContextId}" hidden>${escapeHtml(JSON.stringify({ event, registrations: assigned.slice(0, 3) }))}</div><fieldset class="registration-section registration-section--compact"><legend>Automatische Erinnerungen</legend><div class="registration-consents registration-consents--inline"><label class="checkbox"><input type="checkbox" name="reminder7d" ${event.reminder7d ? "checked" : ""}> 7 Tage vorher</label><label class="checkbox"><input type="checkbox" name="reminder1d" ${event.reminder1d ? "checked" : ""}> 1 Tag vorher</label><label class="checkbox"><input type="checkbox" name="reminder2h" ${event.reminder2h ? "checked" : ""}> 2 Stunden vorher</label><label class="checkbox"><input type="checkbox" name="notifyOnEventChange" ${event.notifyOnEventChange ? "checked" : ""}> Sofort bei Termin- oder Ortsaenderung</label></div></fieldset><div class="field"><label>Erinnerungsmail an Teilnehmer</label><textarea name="reminderMail" rows="9">${escapeHtml(reminderMailText)}</textarea><p class="muted">Dieser Text wird fuer automatische Teilnehmer-Erinnerungen verwendet. Ziel: Termin nicht vergessen und bei Verhinderung rechtzeitig absagen.</p>${aiFieldActions([{ action: "generateRegistrationMailText", target: "reminderMail", contextTarget: mailAiContextId, label: "Erinnerungsmail erzeugen", entityId: event.id, fieldName: "reminderMail" }])}</div><div class="field"><label>Bestaetigungsmail</label><textarea name="mailText" rows="10">${escapeHtml(registrationMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "mailText", contextTarget: mailAiContextId, label: "Bestaetigungsmail erzeugen", entityId: event.id, fieldName: "mailText" }])}</div><div class="field"><label>Wartelistenmail</label><textarea name="waitlistMail" rows="10">${escapeHtml(waitlistMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "waitlistMail", contextTarget: mailAiContextId, label: "Wartelistenmail erzeugen", entityId: event.id, fieldName: "waitlistMail" }])}</div><div class="actions"><button class="button button--primary button--small" type="submit">Mailtexte und Erinnerungen speichern</button></div><div id="event-save-result"></div></form></details>`;
+    const mailPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Mailtexte und Erinnerungen</strong><span>anzeigen / bearbeiten</span></summary><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="registration" class="form-grid is-save-aware"><p>KI erzeugt Mailtexte mit Platzhaltern und ohne echte Teilnehmerdaten. Der Diff-Layer zeigt den vorhandenen Text und den neuen Vorschlag; gespeichert wird erst nach Uebernehmen.</p><div id="${mailAiContextId}" hidden>${escapeHtml(JSON.stringify({ event, registrations: assigned.slice(0, 3) }))}</div><fieldset class="registration-section registration-section--compact"><legend>Automatische Erinnerungen</legend><div class="registration-consents registration-consents--inline"><label class="checkbox"><input type="checkbox" name="reminder7d" ${event.reminder7d ? "checked" : ""}> 7 Tage vorher</label><label class="checkbox"><input type="checkbox" name="reminder1d" ${event.reminder1d ? "checked" : ""}> 1 Tag vorher</label><label class="checkbox"><input type="checkbox" name="reminder2h" ${event.reminder2h ? "checked" : ""}> 2 Stunden vorher</label><label class="checkbox"><input type="checkbox" name="notifyOnEventChange" ${event.notifyOnEventChange ? "checked" : ""}> Sofort bei Termin- oder Ortsaenderung</label><label class="checkbox"><input type="checkbox" name="checkinWelcomeMailEnabled" ${(event.checkinWelcomeMailEnabled ?? event.checkinAgendaMailEnabled) ? "checked" : ""}> Welcome-Mail beim Check-in</label></div></fieldset><div class="field"><label>Erinnerungsmail an Teilnehmer</label><textarea name="reminderMail" rows="9">${escapeHtml(reminderMailText)}</textarea><p class="muted">Dieser Text wird fuer automatische Teilnehmer-Erinnerungen verwendet. Ziel: Termin nicht vergessen und bei Verhinderung rechtzeitig absagen.</p>${aiFieldActions([{ action: "generateRegistrationMailText", target: "reminderMail", contextTarget: mailAiContextId, label: "Erinnerungsmail erzeugen", entityId: event.id, fieldName: "reminderMail" }])}</div><div class="field"><label>Bestaetigungsmail</label><textarea name="mailText" rows="10">${escapeHtml(registrationMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "mailText", contextTarget: mailAiContextId, label: "Bestaetigungsmail erzeugen", entityId: event.id, fieldName: "mailText" }])}</div><div class="field"><label>Wartelistenmail</label><textarea name="waitlistMail" rows="10">${escapeHtml(waitlistMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "waitlistMail", contextTarget: mailAiContextId, label: "Wartelistenmail erzeugen", entityId: event.id, fieldName: "waitlistMail" }])}</div><div class="actions"><button class="button button--primary button--small" type="submit">Mailtexte und Erinnerungen speichern</button></div><div id="event-save-result"></div></form></details>`;
     content = `${eventRegistrationTogglePanel(event)}${checkinPanel}${mailPanel}${adminAddRegistrationPanel}${registrationsToolbar}${registrationsTable}`;
   } else if (tab === "pre") {
     const mailingType = event.mailingType || "save_the_date";
     const saveTheDateText = event.saveTheDateText || `Save the date: ${event.title || "PROdigitalTV Event"} am ${event.date ?formatDate(event.date) : "geplanten Termin"}.`;
-    const invitationText = event.invitationText || `Wir laden Sie herzlich zum ${event.title || "PROdigitalTV Event"} ein.`;
+        const invitationText = event.invitationText || `Sehr geehrte {{firstName}} {{lastName}},
+
+wir laden Sie herzlich zum ${event.title || "PROdigitalTV Event"} ein.
+
+Die Veranstaltung findet am {{eventDate}} in {{eventLocation}} statt und bietet einen persönlichen Rahmen für fachlichen Austausch, aktuelle Impulse und Gespräche innerhalb der digitalen Medienwirtschaft.
+
+Zur Anmeldung klicken Sie bitte auf den folgenden Link: {{confirmationLink}}
+
+Wir würden uns sehr freuen, Sie persönlich begrüßen zu dürfen.
+
+Mit freundlichen Grüßen
+Ihr PROdigitalTV-Team`;
     const invitationUpdateText = event.invitationUpdateText || `Update zur Einladung: ${event.title || "PROdigitalTV Event"}.`;
     const mailingTextPanel = (key, label, field, text, aiLabel) => `<div class="field" data-mailing-text-panel="${key}" ${mailingType === key ?"" : "hidden"}><label>${label}</label><textarea name="${field}" rows="10">${escapeHtml(text)}</textarea>${aiFieldActions([{ action: "generateEventInvitation", target: field, label: aiLabel, entityId: event.id, fieldName: field }])}</div>`;
-    content = `<h2>Einladung</h2><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="pre" class="form-grid is-save-aware"><div class="alert">Der Anmeldestatus wird zentral im Reiter Anmeldung geoeffnet oder geschlossen. Dieser Bereich speichert die Einladungstexte.</div><div class="field"><label>Mailing-Art</label><select name="mailingType" data-mailing-type-select><option value="save_the_date" ${mailingType === "save_the_date" ?"selected" : ""}>Save the date</option><option value="invitation" ${mailingType === "invitation" ?"selected" : ""}>Einladung</option><option value="invitation_update" ${mailingType === "invitation_update" ?"selected" : ""}>Einladungsupdate</option></select></div>${mailingTextPanel("save_the_date", "Save-the-date-Text", "saveTheDateText", saveTheDateText, "Save-the-date Vorschlag erzeugen")}${mailingTextPanel("invitation", "Einladungstext", "invitationText", invitationText, "Einladungsvorschlag erzeugen")}${mailingTextPanel("invitation_update", "Einladungsupdate", "invitationUpdateText", invitationUpdateText, "Update-Vorschlag erzeugen")}<div class="actions"><button class="button button--primary">Einladung speichern</button></div><div id="event-save-result"></div></form>`;
+    content = `<h2>Einladung</h2><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="pre" class="form-grid is-save-aware"><div class="alert">Der Anmeldestatus wird zentral im Reiter Anmeldung geoeffnet oder geschlossen. Dieser Bereich speichert die Einladungstexte.</div>${eventInvitationTalkHintPanel(event, topics, speakers)}<div class="field"><label>Mailing-Art</label><select name="mailingType" data-mailing-type-select><option value="save_the_date" ${mailingType === "save_the_date" ?"selected" : ""}>Save the date</option><option value="invitation" ${mailingType === "invitation" ?"selected" : ""}>Einladung</option><option value="invitation_update" ${mailingType === "invitation_update" ?"selected" : ""}>Einladungsupdate</option></select></div>${mailingTextPanel("save_the_date", "Save-the-date-Text", "saveTheDateText", saveTheDateText, "Save-the-date Vorschlag erzeugen")}${mailingTextPanel("invitation", "Einladungstext", "invitationText", invitationText, "Einladungsvorschlag erzeugen")}${mailingTextPanel("invitation_update", "Einladungsupdate", "invitationUpdateText", invitationUpdateText, "Update-Vorschlag erzeugen")}<div class="actions"><button class="button button--primary">Einladung speichern</button></div><div id="event-save-result"></div></form>`;
   } else if (tab === "ai") {
     const eventMedia = media.filter((item) => item.eventId === event.id);
     content = `<h2>KI-Prüfung</h2><p class="muted" style="margin-bottom:18px">Diese Prüfung erzeugt redaktionelle Empfehlungen. Blocker kommen weiterhin aus der regelbasierten Pipeline-Validierung.</p><div class="ai-quality-card"><button type="button" class="button button--primary ai-action" data-ai-action="analyzeEventPipelineQuality" data-ai-target="ai-quality-context" data-ai-entity-type="event" data-ai-entity-id="${event.id}" data-ai-field="pipelineQuality">Pipeline mit ChatGPT prüfen</button><div id="ai-quality-context" hidden>${escapeHtml(JSON.stringify({ event, media: eventMedia }))}</div></div><div class="setup-steps" style="margin-top:20px"><div class="setup-step"><span>Pflichtfelder fehlen?</span><strong>${event.title && event.date && event.locationName ?"ok" : "prüfen"}</strong></div><div class="setup-step"><span>SEO-Daten vorhanden?</span><strong>${event.seoTitle && event.seoDescription ?"ok" : "Empfehlung"}</strong></div><div class="setup-step"><span>Alt-Texte bei Bildern?</span><strong>${eventMedia.some((item) => !item.altText) ?"Empfehlung" : "ok"}</strong></div></div>`;
@@ -2698,18 +3011,34 @@ function userMemberProfileLabel(user = {}, membersById = new Map()) {
 
 function memberUsersListSection(users = [], members = [], activeStatus = "active", inactiveStatus = "inactive") {
   const membersById = new Map(members.map((member) => [String(member.id || ""), member]).filter(([id]) => id));
+  const selectableUsers = users.filter((user) => userIsActive(user) && user.invitationStatus !== "accepted");
+  const selectAllDisabled = selectableUsers.length ? "" : "disabled";
   const rows = users
     .slice()
     .sort((a, b) => String(a.email || a.displayName || "").localeCompare(String(b.email || b.displayName || ""), "de", { sensitivity: "base" }))
     .map((item) => {
       const accepted = item.invitationStatus === "accepted";
+      const active = userIsActive(item);
+      const selectable = active && !accepted;
+      const selectTitle = accepted
+        ? "User ist bereits legitimiert."
+        : active
+          ? "User fuer Login-Mail auswaehlen."
+          : "Archivierte oder inaktive User koennen nicht ausgewaehlt werden.";
+      const invitationCell = !active
+        ? `<span class="muted">kein Versand</span>`
+        : accepted
+          ? status("active")
+          : item.invitationId
+            ? status(item.invitationMailStatus === "sent" ?"queued" : "draft")
+            : "-";
       return `<tr>
-      <td><input type="checkbox" data-member-user-select="${escapeHtml(item.id)}" ${accepted ?"disabled" : ""} aria-label="${escapeHtml(item.email || item.displayName || "User")} auswaehlen"></td>
+      <td><input type="checkbox" data-member-user-select="${escapeHtml(item.id)}" ${selectable ? "" : "disabled"} title="${escapeHtml(selectTitle)}" aria-label="${escapeHtml(item.email || item.displayName || "User")} auswaehlen"></td>
       <td><a class="link editorial-title-link" href="#/cms/edit?module=users&id=${escapeHtml(item.id)}">${escapeHtml(item.email || item.displayName || item.id || "-")}</a><br><small>${escapeHtml(item.displayName || "-")}</small></td>
       <td>${escapeHtml(item.role || "-")}</td>
       <td>${status(item.status || "active")}</td>
       <td>${escapeHtml(userMemberProfileLabel(item, membersById))}</td>
-      <td>${item.invitationStatus === "accepted" ?status("active") : item.invitationId ?status(item.invitationMailStatus === "sent" ?"queued" : "draft") : "-"}</td>
+      <td>${invitationCell}</td>
       <td>${cmsListActionButtons(item, "all", "users", activeStatus, inactiveStatus)}</td>
     </tr>`;
     })
@@ -2720,12 +3049,12 @@ function memberUsersListSection(users = [], members = [], activeStatus = "active
       <a class="button button--secondary button--small" href="#/cms/edit?module=users&id=new">Login manuell anlegen</a>
     </div>
     <div class="cms-bulk-bar">
-      <label class="checkbox"><input type="checkbox" data-member-user-select-all> alle noch nicht legitimierten User auswaehlen</label>
+      <label class="checkbox"><input type="checkbox" data-member-user-select-all ${selectAllDisabled}> alle offenen aktiven User auswaehlen</label>
       <button class="button button--primary button--small" type="button" data-send-selected-member-logins>Login-Mail versenden</button>
       <span class="muted" data-member-login-bulk-status></span>
     </div>
     <div class="table-wrap"><table class="table">
-      <thead><tr><th><input type="checkbox" data-member-user-select-all aria-label="Alle auswahlen"></th><th>User</th><th>Rolle</th><th>Status</th><th>Memberprofil</th><th>Einladung</th><th>Aktionen</th></tr></thead>
+      <thead><tr><th><input type="checkbox" data-member-user-select-all ${selectAllDisabled} aria-label="Alle auswahlen"></th><th>User</th><th>Rolle</th><th>Status</th><th>Memberprofil</th><th>Einladung</th><th>Aktionen</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="7">Noch keine User-Logins vorhanden.</td></tr>`}</tbody>
     </table></div>
   </section>`;
@@ -5547,3 +5876,6 @@ export async function aiSettingsPage() {
       </form>
     </section>`), true);
 }
+
+
+

@@ -1,7 +1,7 @@
-import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=530";
-import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=471";
+import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=532";
+import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=472";
 import { publicShell, logo } from "../components/layout.js?v=13";
-import { eventCard, topicCard } from "../components/cards.js?v=15";
+import { eventCard, topicCard } from "../components/cards.js?v=16";
 import { accessLabels, lifecycleLabels } from "../data/platformConstants.js?v=1";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
 import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=1";
@@ -180,18 +180,46 @@ function mediaAssetResolutionScore(asset = {}) {
 
 function publicTopicMediaAsset(topic = {}, mediaAssets = [], purpose = "article") {
   const wantsThumb = purpose === "thumb";
-  const recordUrl = wantsThumb ? topicDirectThumbnailUrl(topic) : topicDirectImageUrl(topic);
+  const wantsCard = purpose === "card";
+  const recordUrl = wantsThumb
+    ? topicDirectThumbnailUrl(topic)
+    : wantsCard
+      ? topicDirectImageUrl(topic) || topicDirectThumbnailUrl(topic)
+      : topicDirectImageUrl(topic);
   const directIds = wantsThumb
     ? [topic.thumbnail_media_asset_id, topic.thumbnailMediaAssetId].filter(Boolean)
-    : [topic.article_media_asset_id, topic.articleMediaAssetId, topic.mediaAssetId, topic.media_asset_id, topic.assetId].filter(Boolean);
+    : wantsCard
+      ? [
+        topic.article_media_asset_id,
+        topic.articleMediaAssetId,
+        topic.mediaAssetId,
+        topic.media_asset_id,
+        topic.assetId,
+        topic.thumbnail_media_asset_id,
+        topic.thumbnailMediaAssetId
+      ].filter(Boolean)
+      : [topic.article_media_asset_id, topic.articleMediaAssetId, topic.mediaAssetId, topic.media_asset_id, topic.assetId].filter(Boolean);
   const fieldMatches = (value = "") => {
     const normalized = String(value || "imageUrl").toLowerCase().replace(/[_-]/g, "");
+    if (wantsCard) {
+      return ["imageurl", "image", "asseturl", "articleimageurl", "article", "thumbnailurl", "thumbnail", "thumb"].includes(normalized);
+    }
     return wantsThumb
       ? ["thumbnailurl", "thumbnail", "thumb"].includes(normalized)
       : ["imageurl", "image", "asseturl", "articleimageurl", "article"].includes(normalized);
   };
   const variantScore = (asset = {}) => {
     const key = String(asset.variant_key || asset.variantKey || asset.usage_preset || "").toLowerCase();
+    if (wantsCard) {
+      if (key === "article_xl") return "9";
+      if (key === "news_desktop") return "8";
+      if (key === "social_share") return "7";
+      if (key === "web" || key === "image") return "6";
+      if (key === "thumbnail") return "3";
+      if (key === "square") return "2";
+      if (/thumb/.test(key)) return "1";
+      return "5";
+    }
     if (wantsThumb) {
       if (key === "thumbnail") return "9";
       if (key === "square") return "7";
@@ -244,6 +272,12 @@ function publicTopicImageUrl(topic = {}, mediaAssets = []) {
 
 function publicTopicThumbnailUrl(topic = {}, mediaAssets = []) {
   return topicDirectThumbnailUrl(topic) || mediaAssetUrl(publicTopicMediaAsset(topic, mediaAssets, "thumb") || {});
+}
+
+function publicTopicCardImageUrl(topic = {}, mediaAssets = []) {
+  return mediaAssetUrl(publicTopicMediaAsset(topic, mediaAssets, "card") || {})
+    || topicDirectImageUrl(topic)
+    || topicDirectThumbnailUrl(topic);
 }
 
 function publicTopicImageLooksLikeLogo(topic = {}, asset = {}, url = "") {
@@ -317,12 +351,29 @@ function assetLinkedField(asset = {}) {
   return asset.linked_field || asset.linkedField || "";
 }
 
-function publicEventMediaAsset(event = {}, mediaAssets = []) {
+function eventMediaAssetVariantScore(asset = {}, purpose = "detail") {
+  const key = String(asset.variant_key || asset.variantKey || asset.usage_preset || "").toLowerCase();
+  if (purpose === "thumb") {
+    if (key === "thumbnail") return "9";
+    if (key === "news_desktop") return "6";
+    if (key === "event_header") return "5";
+    return "0";
+  }
+  if (key === "event_header") return "9";
+  if (key === "news_desktop") return "8";
+  if (key === "social_share") return "6";
+  if (key === "thumbnail") return "0";
+  return "4";
+}
+
+function publicEventMediaAsset(event = {}, mediaAssets = [], purpose = "detail") {
   const eventImageFields = ["imageUrl", "thumbnail_url", "thumbnailUrl", "assetUrl"];
+  const eventUrl = event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "";
+  const directIds = purpose === "thumb"
+    ? [event.thumbnail_media_asset_id, event.thumbnailMediaAssetId, event.mediaAssetId, event.media_asset_id, event.assetId].filter(Boolean)
+    : [event.article_media_asset_id, event.articleMediaAssetId, event.mediaAssetId, event.media_asset_id, event.assetId, event.thumbnail_media_asset_id, event.thumbnailMediaAssetId].filter(Boolean);
   return mediaAssets
     .filter((asset) => {
-      const eventUrl = event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "";
-      const directIds = [event.thumbnail_media_asset_id, event.thumbnailMediaAssetId, event.mediaAssetId, event.media_asset_id, event.assetId].filter(Boolean);
       const urls = mediaAssetUrls(asset);
       return directIds.includes(asset.id)
         || (assetTargetCollection(asset) === "events" && assetTargetId(asset) === event.id && eventImageFields.includes(assetTargetField(asset) || "imageUrl"))
@@ -331,8 +382,8 @@ function publicEventMediaAsset(event = {}, mediaAssets = []) {
     })
     .filter((asset) => mediaAssetUrl(asset))
     .sort((a, b) => {
-      const directIds = [event.thumbnail_media_asset_id, event.thumbnailMediaAssetId, event.mediaAssetId, event.media_asset_id, event.assetId].filter(Boolean);
       const score = (asset = {}) => [
+        eventMediaAssetVariantScore(asset, purpose),
         directIds.includes(asset.id) ? "5" : "0",
         assetTargetCollection(asset) === "events" && assetTargetId(asset) === event.id && eventImageFields.includes(assetTargetField(asset) || "imageUrl") ? "4" : "0",
         assetLinkedCollection(asset) === "events" && assetLinkedId(asset) === event.id && eventImageFields.includes(assetLinkedField(asset) || "imageUrl") ? "3" : "0",
@@ -355,6 +406,7 @@ function upcomingEventMediaAsset(event = {}, mediaAssets = []) {
     .filter((asset) => mediaAssetUrl(asset))
     .sort((a, b) => {
       const score = (asset = {}) => [
+        eventMediaAssetVariantScore(asset, "thumb"),
         directIds.includes(asset.id) ? "5" : "0",
         assetTargetCollection(asset) === "events" && assetTargetId(asset) === event.id && eventImageFields.includes(assetTargetField(asset) || "imageUrl") ? "4" : "0",
         assetLinkedCollection(asset) === "events" && assetLinkedId(asset) === event.id && eventImageFields.includes(assetLinkedField(asset) || "imageUrl") ? "3" : "0",
@@ -634,10 +686,11 @@ function eventLocationDetailMarkup(event = {}) {
 }
 
 function archiveEventImageUrl(event = {}, mediaAssets = []) {
-  const asset = publicEventMediaAsset(event, mediaAssets);
+  const directUrl = versionedAssetUrl(event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "", event);
+  const asset = publicEventMediaAsset(event, mediaAssets, "detail");
   const candidates = [
-    mediaAssetUrl(asset || {}),
-    versionedAssetUrl(event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "", event)
+    directUrl,
+    mediaAssetUrl(asset || {})
   ].filter(Boolean);
   return candidates.find((url) => validEventImageUrl(url)) || "";
 }
@@ -672,17 +725,17 @@ function blockedHomeEventImageUrl(url = "") {
 function upcomingEventImageUrl(event = {}, mediaAssets = [], options = {}) {
   const directUrl = versionedAssetUrl(event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "", event);
   const directAssetUrl = mediaAssetUrl(upcomingEventMediaAsset(event, mediaAssets) || {});
-  const candidates = [directAssetUrl, directUrl].filter(Boolean);
+  const candidates = [directUrl, directAssetUrl].filter(Boolean);
   const match = candidates.find((url) => validEventImageUrl(url) && !blockedHomeEventImageUrl(url));
   return match || "";
 }
 
 function eventDetailImageUrl(event = {}, mediaAssets = [], blockedUrls = []) {
   const blocked = new Set(blockedUrls.filter(Boolean));
+  const direct = versionedAssetUrl(event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "", event);
+  if (validEventImageUrl(direct) && !blocked.has(direct)) return direct;
   const candidate = archiveEventImageUrl(event, mediaAssets);
   if (candidate && !blocked.has(candidate)) return candidate;
-  const direct = event.imageUrl || event.thumbnail_url || event.thumbnailUrl || event.assetUrl || "";
-  if (validEventImageUrl(direct) && !blocked.has(direct)) return direct;
   return "";
 }
 
@@ -714,11 +767,41 @@ function eventTalksMarkup(topics = [], speakers = [], event = {}) {
         ${text ? `<p>${escapeHtml(text)}</p>` : ""}
         <div class="event-talk-speakers">${topicSpeakers.length ? topicSpeakers.map((speaker) => `<a class="event-talk-speaker" href="${speakerProfileHref(speaker)}">
           <div class="event-talk-speaker__portrait">${speakerPortrait(speaker)}</div>
-          <div><strong>${escapeHtml(speakerName(speaker))}</strong><small>${escapeHtml([speaker.position, speaker.company].filter(Boolean).join(" - "))}</small>${speaker.shortBio ? `<p>${escapeHtml(speaker.shortBio)}</p>` : ""}</div>
+          <div><strong>${escapeHtml(speakerName(speaker))}</strong><small>${escapeHtml([speaker.position, speaker.company].filter(Boolean).join(" - "))}</small></div>
         </a>`).join("") : `<span class="event-talk-speaker event-talk-speaker--empty">Referent wird ergaenzt.</span>`}</div>
       </div>
     </article>`;
   }).join("")}</div>
+  </section>`;
+}
+
+function eventScheduleItems(event = {}) {
+  const text = String(event.scheduleText || event.agendaText || event.programText || "").trim();
+  if (!text) return [];
+  return text.split(/\n+/).map((line) => {
+    const clean = line.trim();
+    if (!clean) return null;
+    const parts = clean.split("|").map((part) => part.trim()).filter(Boolean);
+    if (parts.length >= 3) return { time: parts[0], title: parts[1], text: parts.slice(2).join(" | ") };
+    if (parts.length === 2) return { time: parts[0], title: parts[1], text: "" };
+    const match = clean.match(/^(\d{1,2}:\d{2})\s+(.+)$/);
+    if (match) return { time: match[1], title: match[2], text: "" };
+    return { time: "", title: clean, text: "" };
+  }).filter(Boolean);
+}
+
+function eventScheduleMarkup(event = {}) {
+  const items = eventScheduleItems(event);
+  if (!items.length) return "";
+  return `<section class="event-schedule" aria-labelledby="event-schedule-title">
+    <p class="eyebrow">Ablaufplan</p>
+    <h2 id="event-schedule-title">Ablauf der Veranstaltung</h2>
+    <div class="event-schedule__list">
+      ${items.map((item) => `<div class="event-schedule__item">
+        <div class="event-schedule__time">${escapeHtml(item.time)}</div>
+        <div class="event-schedule__body"><strong>${escapeHtml(item.title)}</strong>${item.text ? `<p>${escapeHtml(item.text)}</p>` : ""}</div>
+      </div>`).join("")}
+    </div>
   </section>`;
 }
 
@@ -1015,8 +1098,7 @@ function aboutStickyContent(events = [], board = [], members = [], topics = []) 
   const topicSlides = topics.filter((topic) => topicIsReleasedAfterEvent(topic, events)).slice(0, 6);
   const boardSlides = chunkItems(board.slice(0, 8), 2);
   const memberSlides = chunkItems(members.filter((member) => member.featured || member.logoUrl).slice(0, 15), 3);
-  const renderEvent = (event) => `<a class="internal-sticky-event" href="#/event/${event.id}">
-    ${event.imageUrl ? `<img src="${escapeHtml(event.imageUrl)}" alt="Eventbild ${escapeHtml(event.title || "")}">` : `<span class="internal-sticky-event__picto">${aboutPicto("breakfast")}</span>`}
+  const renderEvent = (event) => `<a class="internal-sticky-event internal-sticky-event--text" href="#/event/${event.id}">
     <span><strong>${escapeHtml(event.title || "Event")}</strong><small>${formatDate(event.date)}${event.city ? ` · ${escapeHtml(event.city)}` : ""}</small></span>
   </a>`;
   const renderTopic = (topic) => `<a class="internal-sticky-topic" href="#/topic/${topic.id}">
@@ -1033,7 +1115,7 @@ function aboutStickyContent(events = [], board = [], members = [], topics = []) 
   return `<aside class="internal-about-sticky" aria-label="Aktuelle Inhalte">
     <section class="internal-sticky-section">
       <a class="internal-sticky-section-title" href="#/events">Aktuelles Event <span aria-hidden="true">→</span></a>
-      ${rubricRotator(eventSlides, renderEvent, `<a class="internal-sticky-event" href="#/events"><span class="internal-sticky-event__picto">${aboutPicto("breakfast")}</span><span><strong>Neue Termine in Vorbereitung</strong><small>Zur Eventübersicht</small></span></a>`)}
+      ${rubricRotator(eventSlides, renderEvent, `<a class="internal-sticky-event internal-sticky-event--text" href="#/events"><span><strong>Neue Termine in Vorbereitung</strong><small>Zur Eventübersicht</small></span></a>`)}
     </section>
     <section class="internal-sticky-section">
       <a class="internal-sticky-section-title" href="#/topics">Themen <span aria-hidden="true">→</span></a>
@@ -1640,6 +1722,29 @@ function eventDateMillis(value) {
   return Number.isFinite(parsed) ? parsed : NaN;
 }
 
+function eventStartMillis(event = {}) {
+  const direct = eventDateMillis(event.startAt || event.startsAt || event.startDateTime || event.beginAt);
+  if (Number.isFinite(direct)) return direct;
+  const date = String(event.date || event.startDate || event.eventDate || event.datum || "").slice(0, 10);
+  if (!date) return NaN;
+  const startTime = String(event.startTime || event.start_time || event.time || "00:00").trim();
+  const time = /^\d{1,2}:\d{2}/.test(startTime) ? startTime.slice(0, 5) : "00:00";
+  const parsed = Date.parse(`${date}T${time}:00`);
+  return Number.isFinite(parsed) ? parsed : eventDateMillis(date);
+}
+
+function compareEventsByDateAsc(a = {}, b = {}) {
+  const left = eventStartMillis(a);
+  const right = eventStartMillis(b);
+  if (Number.isFinite(left) && Number.isFinite(right) && left !== right) return left - right;
+  if (Number.isFinite(left) !== Number.isFinite(right)) return Number.isFinite(left) ? -1 : 1;
+  return String(a.title || "").localeCompare(String(b.title || ""), "de", { sensitivity: "base" });
+}
+
+function compareEventsByDateDesc(a = {}, b = {}) {
+  return compareEventsByDateAsc(b, a);
+}
+
 function eventEndMillis(event = {}) {
   const direct = eventDateMillis(event.endDate || event.endsAt || event.endAt || event.end_date || event.endedAt);
   if (Number.isFinite(direct)) return direct;
@@ -2021,7 +2126,7 @@ function homeHeroMarkup({ next, nextImageUrl, retrospective, series }) {
 }
 
 function pageContentCacheKey(name = "", variant = "public") {
-  return `pdtv-page-content-v17:${name}:${variant}`;
+  return `pdtv-page-content-v21:${name}:${variant}`;
 }
 
 function readPageContentCache(name = "", variant = "public", maxAgeMs = 600000) {
@@ -2237,10 +2342,10 @@ export async function eventsPage() {
     imageDisplayUrl: upcomingEventImageUrl(event, [], { fallback: false }),
     storedTicket: readStoredTicket(event.id),
     myRegistration: myRegistrationByEventId.get(event.id) || null
-  }));
+  })).sort(compareEventsByDateAsc);
   const latestRetrospectives = visible
     .filter((event) => isPastEvent(event) && homeVisibleRecord(event))
-    .sort((a, b) => String(homeDateValue(b) || "").localeCompare(String(homeDateValue(a) || "")))
+    .sort(compareEventsByDateDesc)
     .slice(0, 3);
   const retrospectiveCards = latestRetrospectives.map((event) => {
     const imageUrl = archiveEventImageUrl(event, []) || event.imageDisplayUrl || event.imageUrl || event.thumbnail_url || event.thumbnailUrl || "";
@@ -2347,6 +2452,7 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
         ${restricted ? `<div class="alert alert--warning">Details und Anmeldung dieses Mitglieder-Events stehen nach dem Login zur Verfuegung.</div>` : ""}
         <h2>Zum Event</h2>${eventMainText ? `<div class="lead editorial-text event-detail-text">${articleParagraphs(eventMainText)}</div>` : ""}
         ${restricted ? "" : registrationCta}
+        ${restricted ? "" : eventScheduleMarkup(event)}
         ${retrospectiveText ? `<h2>Rückblick</h2><div class="editorial-text">${articleParagraphs(retrospectiveText)}</div>` : ""}
         ${eventTalksMarkup(topics, speakers, event)}
         ${event.lunchNote ? `<div class="alert">${escapeHtml(event.lunchNote)}</div>` : ""}
@@ -2437,8 +2543,8 @@ export async function topicsPage() {
   }) || {};
   const topics = topicsRaw.filter((topic) => topicIsReleasedAfterEvent(topic, events)).map((topic) => {
     const speaker = speakerForTopic(topic);
-    const topicAsset = publicTopicMediaAsset(topic, mediaAssets, "thumb");
-    const ownImage = publicTopicThumbnailUrl(topic, mediaAssets);
+    const topicAsset = publicTopicMediaAsset(topic, mediaAssets, "card");
+    const ownImage = publicTopicCardImageUrl(topic, mediaAssets);
     const ownImageType = publicTopicImageLooksLikeLogo(topic, topicAsset || {}, ownImage) ? "logo" : "image";
     const logoUrl = topic.companyLogoUrl || topic.logoUrl || topic.company_logo_url || speaker.companyLogoUrl || speaker.logoUrl || speaker.company_logo_url || "";
     const speakerPhoto = speaker.photoUrl || speaker.imageUrl || "";
@@ -2467,14 +2573,24 @@ export async function newsPage(query = new URLSearchParams()) {
   const news = cmsNews.sort(newestContentFirst);
   const selectedCategory = String(query?.get?.("category") || "").trim();
   const categoryHref = (category) => `#/news?category=${encodeURIComponent(category || "News")}`;
+  const displayNewsCategory = (category = "") => {
+    const value = String(category || "").trim();
+    if (!value || /^news[-\s_]*import$/i.test(value)) return "News";
+    return value;
+  };
   const newsCategories = (item = {}) => {
     const values = Array.isArray(item.category) ? item.category : [item.category || "News"];
     const categories = values
       .flatMap((value) => String(value || "").split(/\s*(?:\/|,|;|\|)\s*/))
-      .map((value) => value.trim())
+      .map(displayNewsCategory)
       .filter(Boolean);
     return [...new Set(categories.length ? categories : ["News"])];
   };
+  const allCategories = Array.from(new Set(news.flatMap(newsCategories))).sort((a, b) => {
+    if (a === "News") return -1;
+    if (b === "News") return 1;
+    return a.localeCompare(b, "de", { sensitivity: "base" });
+  }).slice(0, 10);
   const categoryLinks = (item = {}) => newsCategories(item)
     .map((category) => `<a class="news-category-link" href="${escapeHtml(categoryHref(category))}">${escapeHtml(category)}</a>`)
     .join(`<span class="news-category-separator"> / </span>`);
@@ -2506,6 +2622,10 @@ export async function newsPage(query = new URLSearchParams()) {
   };
   return publicShell("news", `${subhero("News", "Aktuelles von PROdigitalTV.", "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.")}
     <section class="section"><div class="container">${news.length ? `
+      <div class="news-category-nav" aria-label="News-Kategorien">
+        <a class="news-category-pill ${selectedCategory ? "" : "is-active"}" href="#/news">Alle</a>
+        ${allCategories.map((category) => `<a class="news-category-pill ${selectedCategory === category ? "is-active" : ""}" href="${escapeHtml(categoryHref(category))}">${escapeHtml(category)}</a>`).join("")}
+      </div>
       ${selectedCategory ? `<div class="news-filter-state"><span>Rubrik: <strong>${escapeHtml(selectedCategory)}</strong></span><a class="button button--secondary button--small" href="#/news">Alle News</a></div>` : ""}
       <div class="card-grid card-grid--three editorial-list editorial-list--news">${featuredNews.map(newsCard).join("")}</div>
       ${listedNews.length ? `<div class="news-list-view"><div class="section-head"><div><p class="eyebrow">Weitere News</p><h2>${selectedCategory ? `Weitere Meldungen in ${escapeHtml(selectedCategory)}` : "Alle weiteren Meldungen"}</h2></div></div>${listedNews.map(newsListItem).join("")}</div>` : ""}
@@ -2601,8 +2721,8 @@ export async function topicDetailPage(id) {
     .filter((entry) => entry.id !== topic.id && topicIsReleasedAfterEvent(entry, events))
     .slice(0, 8)
     .map((entry) => {
-      const topicAsset = publicTopicMediaAsset(entry, mediaAssets, "thumb");
-      const ownImage = publicTopicThumbnailUrl(entry, mediaAssets);
+      const topicAsset = publicTopicMediaAsset(entry, mediaAssets, "card");
+      const ownImage = publicTopicCardImageUrl(entry, mediaAssets);
       const ownImageType = publicTopicImageLooksLikeLogo(entry, topicAsset || {}, ownImage) ? "logo" : "image";
       return {
         ...entry,
@@ -2646,8 +2766,8 @@ export async function membersPage() {
   const memberVariant = mobileLeanStart() ? "mobile" : "desktop";
   const cachedMembers = readPageContentCache("members", memberVariant, 600000);
   if (cachedMembers) return publicShell("members", cachedMembers);
-  const rawMembers = await fastFallback(publicManagedMembers().catch(() => []), [], mobileLeanStart() ? 900 : 1800);
-  const members = await fastFallback(withPublicMemberLogos(rawMembers).catch(() => rawMembers), rawMembers, mobileLeanStart() ? 700 : 1200);
+  const rawMembers = await fastFallback(publicManagedMembers().catch(() => []), [], mobileLeanStart() ? 4500 : 9000);
+  const members = await fastFallback(withPublicMemberLogos(rawMembers).catch(() => rawMembers), rawMembers, mobileLeanStart() ? 2500 : 5000);
   const memberRows = members.map((member) => {
     const teaser = member.description || member.shortDescription || "";
     const searchText = [member.name, teaser, member.city, member.country, member.website].filter(Boolean).join(" ");
@@ -2656,7 +2776,7 @@ export async function membersPage() {
   }).join("");
   const content = `${subhero("Mitglieder", "Unternehmen im Netzwerk.", "Eine Plattform für Unternehmen, die digitale Medien aktiv weiterentwickeln.")}
     <section class="section"><div class="container"><div class="section-head"><h2>Mitgliedsunternehmen</h2><div class="search"><input data-member-search placeholder="Mitglieder suchen" aria-label="Mitglieder suchen"></div></div><div class="member-directory-list">${memberRows}</div><div class="alert" data-member-empty hidden>Keine passenden sichtbaren Mitglieder gefunden.</div></div></section>`;
-  writePageContentCache("members", memberVariant, content);
+  if (members.length) writePageContentCache("members", memberVariant, content);
   return publicShell("members", content);
 }
 
@@ -3225,4 +3345,5 @@ export async function legalPage(type) {
 export function notFoundPage() {
   return publicShell("", `<section class="section"><div class="container empty"><h1>Seite nicht gefunden</h1><p>Die angeforderte Seite ist nicht verfuegbar.</p><a class="button button--primary" style="margin-top:20px" href="#/home">Zur Startseite</a></div></section>`);
 }
+
 
