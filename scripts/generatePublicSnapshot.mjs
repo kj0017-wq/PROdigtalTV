@@ -243,6 +243,54 @@ function mediaAssetTargetId(asset = {}) {
   return String(asset.target_id || asset.targetId || asset.linked_record_id || asset.linkedRecordId || asset.linked_id || asset.linkedId || "").trim();
 }
 
+function linkedEventMediaAsset(asset = {}, eventId = "") {
+  if (!eventId || !publicGeneric(asset)) return false;
+  return mediaAssetTargetCollection(asset) === "events" && mediaAssetTargetId(asset) === eventId;
+}
+
+function topicLinkedToEvent(topic = {}, event = {}) {
+  return topic.eventId === event.id
+    || topic.linkedEventId === event.id
+    || (Array.isArray(topic.eventIds) && topic.eventIds.includes(event.id))
+    || (Array.isArray(event.topicIds) && event.topicIds.includes(topic.id));
+}
+
+function speakerLinkedToEventTopic(speaker = {}, event = {}, eventTopics = []) {
+  const eventTopicIds = new Set(eventTopics.map((topic) => topic.id).filter(Boolean));
+  const eventSpeakerIds = new Set(event.speakerIds || []);
+  if (eventSpeakerIds.has(speaker.id) || speaker.eventId === event.id || (Array.isArray(speaker.eventIds) && speaker.eventIds.includes(event.id))) return true;
+  if (speaker.topicId && eventTopicIds.has(speaker.topicId)) return true;
+  return Array.isArray(speaker.topicIds) && speaker.topicIds.some((topicId) => eventTopicIds.has(topicId));
+}
+
+function sponsorLinkedToEvent(sponsor = {}, event = {}) {
+  return sponsor.id === event.hostId
+    || sponsor.id === event.primaryHostId
+    || (Array.isArray(event.sponsorIds) && event.sponsorIds.includes(sponsor.id));
+}
+
+function galleryLinkedToEvent(gallery = {}, event = {}) {
+  return gallery.id === event.galleryId || gallery.eventId === event.id;
+}
+
+function buildEventDetailSnapshots({ events = [], topics = [], speakers = [], sponsors = [], galleries = [], mediaAssets = [] } = {}) {
+  const visibleEvents = events.filter(snapshotEvent);
+  return Object.fromEntries(visibleEvents.map((event) => {
+    const eventTopics = topics.filter((topic) => publicTopic(topic) && topicLinkedToEvent(topic, event));
+    const eventSpeakers = speakers.filter((speaker) => publicSpeaker(speaker) && speakerLinkedToEventTopic(speaker, event, eventTopics));
+    const eventSponsors = sponsors.filter((sponsor) => publicGeneric(sponsor) && sponsorLinkedToEvent(sponsor, event));
+    const eventGalleries = galleries.filter((gallery) => publicGeneric(gallery) && galleryLinkedToEvent(gallery, event));
+    const eventMediaAssets = mediaAssets.filter((asset) => linkedEventMediaAsset(asset, event.id));
+    return [event.id, {
+      event: cleanRecord(event, "events"),
+      topics: eventTopics.map((record) => cleanRecord(record, "topics")),
+      speakers: eventSpeakers.map((record) => cleanRecord(record, "speakers")),
+      sponsors: eventSponsors.map((record) => cleanRecord(record, "sponsors")),
+      galleries: eventGalleries.map((record) => cleanRecord(record, "galleries")),
+      mediaAssets: eventMediaAssets.map((record) => cleanRecord(record, "media_assets"))
+    }];
+  }));
+}
 function relevantPublicMediaAsset(asset = {}, publicIdsByCollection = {}) {
   if (!publicGeneric(asset)) return false;
   const preset = String(asset.usage_preset || asset.variant_key || "").toLowerCase();
@@ -259,7 +307,7 @@ function relevantPublicMediaAsset(asset = {}, publicIdsByCollection = {}) {
 export async function buildPublicSnapshot() {
   if (!getApps().length) initializeApp({ credential: applicationDefault(), projectId });
   const db = getFirestore();
-  const [events, topics, speakers, editorial, sponsors, members, downloads, mediaAssets] = await Promise.all([
+  const [events, topics, speakers, editorial, sponsors, members, downloads, mediaAssets, galleries] = await Promise.all([
     loadCollection(db, "events"),
     loadCollection(db, "topics"),
     loadCollection(db, "speakers"),
@@ -267,7 +315,8 @@ export async function buildPublicSnapshot() {
     loadCollection(db, "sponsors"),
     loadCollection(db, "members"),
     loadCollection(db, "downloads"),
-    loadCollection(db, "media_assets")
+    loadCollection(db, "media_assets"),
+    loadCollection(db, "galleries")
   ]);
   const snapshot = {};
   [
@@ -306,7 +355,8 @@ export async function buildPublicSnapshot() {
   };
   const relevantMediaAssets = mediaAssets.filter((asset) => relevantPublicMediaAsset(asset, publicIdsByCollection));
   addRecords(snapshot, "media_assets", relevantMediaAssets, [["status", "==", "active"], ["visibility", "==", "public"]]);
-  return { version: snapshotVersion, generatedAt: new Date().toISOString(), caches: snapshot };
+  const eventDetails = buildEventDetailSnapshots({ events, topics, speakers, sponsors, galleries, mediaAssets: relevantMediaAssets });
+  return { version: snapshotVersion, generatedAt: new Date().toISOString(), caches: snapshot, eventDetails };
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
@@ -319,3 +369,6 @@ if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
       process.exitCode = 1;
     });
 }
+
+
+

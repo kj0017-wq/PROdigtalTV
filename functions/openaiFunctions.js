@@ -13,6 +13,7 @@ const PRODIGITALTV_IMAGE_STYLE = "Ultra photorealistic, premium editorial photog
 
 const ACTIONS = {
   improveText: { label: "Text verbessern", mode: "text", instruction: "Verbessere den Text redaktionell, ohne Fakten zu erfinden." },
+  translateNewsImportToGerman: { label: "News-Import uebersetzen", mode: "text", instruction: "Uebersetze den gelieferten News- oder Quellentext vollstaendig ins Deutsche. Erhalte Fakten, Namen, Zahlen, Zitate, Datumsangaben, Links und Absatzstruktur. Keine eigenen Informationen ergaenzen, nichts zusammenfassen, keine Meta-Hinweise." },
   shortenText: { label: "Text kuerzen", mode: "text", instruction: "Kuerze den Text fuer eine bessere Lesbarkeit." },
   extendText: { label: "Text verlaengern", mode: "text", instruction: "Erweitere den Text sachlich mit den vorhandenen Informationen." },
   generateSeoMeta: { label: "SEO-Daten erzeugen", mode: "json", instruction: "Erzeuge SEO-Daten als JSON mit seoTitle, seoDescription, keywords und summary." },
@@ -758,6 +759,12 @@ function sourceUsageKey(source = {}) {
   return String(source.id || source.domain || source.url || source.name || "").trim();
 }
 
+function sourceMatchesAnyKey(source = {}, keys = new Set()) {
+  if (!keys?.size) return false;
+  return [source.id, source.domain, source.url, source.name, source.title]
+    .some((value) => keys.has(String(value || "").trim().toLowerCase()));
+}
+
 function sourceIsExcluded(source = {}) {
   const text = normalizeForSearch([source.id, source.name, source.domain, source.url].join(" "));
   return /\brtl\b|rtl deutschland|rtl\.com|rtl\.de/.test(text);
@@ -800,7 +807,7 @@ function sourceIsGerman(source = {}) {
   const germanLanguage = languageTokens.includes("de") || language.includes("deutsch");
   const bilingualGerman = language.includes("de/en")
     && (germanDomain || germanCountry || /deutsch|german|bundes|deutsche|deutscher|deutschland/.test(`${name} ${notes}`));
-  const germanNamedSource = /(ard|zdf|deutschlandradio|prosiebensat|seven one|vaunet|bitkom|anga|agf|agma|gema|vg wort|fraunhofer|bsi|bmj|bundes|medienanstalten|ffa|medienboard)/.test(`${name} ${notes}`);
+  const germanNamedSource = /(ard|zdf|deutschlandradio|prosiebensat|seven one|vaunet|bitkom|anga|agf|agma|gema|vg wort|fraunhofer|bsi|bmj|bundes|medienanstalten|ffa|medienboard|reuters|the verge|youtube creators|tiktok|instagram creators|twitch|tubefilter|nieman|business insider|axios|runway|adobe|blackmagic|nvidia|asus|trippy|studiolist|kinovela|graphrs)/.test(`${name} ${notes}`);
   if (language.includes("de/en") && !bilingualGerman && !germanNamedSource) return false;
   const clearlyForeign = /(franzoesisch|franzosisch|france|french|uk-medienmarkt|uk |usa|u\.s\.|international|europaeisch|europaeische|european|global|world|india|british)/.test(`${country} ${name} ${notes}`)
     && !germanLanguage
@@ -958,6 +965,16 @@ function parseSitemapUrls(xml = "", baseUrl = "") {
   }).filter((item) => item.url && item.url.startsWith("http")).slice(0, 80);
 }
 
+function topicDateWithinMonths(dateValue = "", months = 2) {
+  const normalized = normalizeDate(dateValue);
+  if (!normalized) return true;
+  const parsed = Date.parse(normalized);
+  if (!Number.isFinite(parsed)) return true;
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - Math.max(1, Number(months || 2)));
+  return parsed >= cutoff.getTime();
+}
+
 function isEditorialPublicationCandidate(item = {}) {
   const url = String(item.url || "").toLowerCase();
   const thematicHub = isThematicHubUrl(item.url || "");
@@ -966,6 +983,7 @@ function isEditorialPublicationCandidate(item = {}) {
   const title = normalizeForSearch(item.title || "");
   const combined = `${url} ${title}`;
   if (!item.url || !String(item.url).startsWith("http")) return false;
+  if (!topicDateWithinMonths(item.published_at || item.publishedAt || item.source_publication_date || item.sourcePublicationDate || "", 2)) return false;
   if (!cleanedTitle || cleanedTitle.length < (thematicHub ? 4 : 12)) return false;
   if (cleanedTitle.split(/\s+/).filter(Boolean).length < (thematicHub ? 1 : 3)) return false;
   if (/(skip to (main )?content|zum inhalt springen|untermen|hauptmen|menue|menu|einstellungen|ausblenden|pfeil links|presseportal)/i.test(rawTitle)) return false;
@@ -1009,7 +1027,7 @@ function hasMediaIndustrySignal(item = {}) {
     item.source_domain,
     item.publisher
   ].join(" "));
-  return /(medien|media|broadcast|tv|fernsehen|streaming|ott|hbbtv|fast|plattform|distribution|produktion|postproduktion|audio|video|werbung|vermarktung|rechte|urheber|gema|vg wort|barrierefreiheit|untertitel|ki|kuenstliche|daten|standard|technologie|digital|redaktion|journalismus|sender|mediathek|pressefreiheit|regulierung|publizistisch|qualitaet|vaunet|meedia|dwdl|medienanstalten|bitkom|anga|agf|bsi|fraunhofer|screenondemand|adtech|prospekt|connected tv|smart tv|bewegtbild|konvergenz|plattformregulierung)/.test(text);
+  return /(medien|media|broadcast|tv|fernsehen|streaming|ott|hbbtv|fast|plattform|distribution|produktion|postproduktion|audio|video|werbung|vermarktung|rechte|urheber|gema|vg wort|barrierefreiheit|untertitel|ki|kuenstliche|daten|standard|technologie|digital|redaktion|journalismus|sender|mediathek|pressefreiheit|regulierung|publizistisch|qualitaet|vaunet|meedia|dwdl|medienanstalten|bitkom|anga|agf|bsi|fraunhofer|screenondemand|adtech|prospekt|connected tv|smart tv|bewegtbild|konvergenz|plattformregulierung|creator|creators|creator economy|social video|tiktok|youtube|instagram|twitch|reels|shorts|workflow|workflows|tool|tools|schnitt|editing|motion|design|freelancer|nachwuchs|junior|karriere|jobs|skills|ausbildung|studium|hochschule|lab|labs|wettbewerb|stipendium|foerderung|foerderprogramm|gruendung|startup|deepfake|deepfakes|content authenticity|content credentials|c2pa|genai|generative ai)/.test(text);
 }
 
 const EDITORIAL_KEYWORD_RULES = [
@@ -1492,8 +1510,10 @@ function topicQualityAssessment(item = {}, context = {}) {
   if (isGeneralNewsOrLandingCandidate(publicationLike)) reasons.push("Allgemeinnews, Landingpage oder Navigationsfund");
   if (!sourceUrl && !topicSourceKey(item)) reasons.push("Keine belastbare Hauptquelle");
   if (String(item.source_status || "").toLowerCase().includes("unzureichend")) reasons.push("Quellenlage unzureichend");
-  if (Number(item.industry_score || item.branchenrelevanz || 0) < 68) reasons.push("Branchenrelevanz zu niedrig");
+  const targetAudienceScore = Number(item.target_audience_score || item.zielgruppenrelevanz || item.industry_score || item.branchenrelevanz || 0);
+  if (targetAudienceScore < 68) reasons.push("Zielgruppenrelevanz zu niedrig");
   if (Number(item.relevance_score || item.relevanz || 0) < 68) reasons.push("Gesamtrelevanz zu niedrig");
+  if (!topicDateWithinMonths(item.source_publication_date || item.sourcePublicationDate || item.published_at || item.publishedAt || "", 2)) reasons.push("Quelle ist aelter als 2 Monate");
   if (Number(item.actuality_score || item.aktualitaet || 0) < 55) reasons.push("Aktualitaet zu niedrig");
   if (context.category) {
     const requested = categoryTokens(context.category);
@@ -1507,7 +1527,7 @@ function topicQualityAssessment(item = {}, context = {}) {
     sourceKey: topicSourceKey(item),
     qualityScore: Math.round((
       Number(item.actuality_score || item.aktualitaet || 0)
-      + Number(item.industry_score || item.branchenrelevanz || 0)
+      + Number(item.target_audience_score || item.zielgruppenrelevanz || item.industry_score || item.branchenrelevanz || 0)
       + Number(item.relevance_score || item.relevanz || 0)
     ) / 3)
   };
@@ -1574,9 +1594,9 @@ function fallbackTopicSuggestionsFromPublications(publications = [], context = {
         themenabsatz: [
           teaser,
           publication.summary ? String(publication.summary).replace(/\s+/g, " ").trim() : "",
-          `Die Meldung stammt aus ${sourceLabel} und kann als Grundlage fuer eine redaktionelle Einordnung der Medienbranche dienen.`
+          `Die Meldung stammt aus ${sourceLabel} und kann als Grundlage fuer eine redaktionelle Einordnung fuer junge kreative Medienschaffende dienen.`
         ].filter(Boolean).join(" "),
-        pdtv_ansatz: `Der PDTv-Ansatz liegt in moeglichen Folgen fuer TV, Streaming, Plattformen, Produktion, Distribution, Vermarktung oder Regulierung. Die Redaktion kann den Fund anhand der Originalquelle vertiefen und in einen sachlichen Branchenbeitrag ueberfuehren.`,
+        pdtv_ansatz: `Der PDTv-Ansatz liegt in der praktischen Frage, was junge Kreative, Creator, Junior-Redaktionen, Produktionsteams oder Freelancer aus diesem Quellenfund fuer Skills, Tools, Workflows, Rechtefragen oder neue Formate ableiten koennen.`,
         quellenhinweis: `${sourceLabel}${publication.url ? ` - ${publication.url}` : ""}`,
         quellenstatus: sourceStatus,
         category: context.category || "Medienbranche",
@@ -1588,6 +1608,7 @@ function fallbackTopicSuggestionsFromPublications(publications = [], context = {
         }),
         actuality_score: publication.published_at ? 75 : thematicHub ? 66 : 55,
         industry_score: thematicHub ? 74 : 70,
+        target_audience_score: thematicHub ? 74 : 70,
         relevance_score: publication.published_at ? 74 : thematicHub ? 72 : 60,
         duplicate_status: "noch nicht geprueft",
         source_status: sourceStatus,
@@ -1635,7 +1656,7 @@ function uniqueRawTopicSuggestions(items = [], limit = 10) {
 }
 
 function fallbackSourceTeaser(sourceName = "", category = "") {
-  return `${sourceName} wird als Quelle fuer aktuelle Entwicklungen in ${category || "der Medienbranche"} ausgewertet.`;
+  return `${sourceName} wird als Quelle fuer aktuelle Entwicklungen in ${category || "KI, Creator Economy, Tools, Jobs und kreativer Medienarbeit"} ausgewertet.`;
 }
 
 function fallbackTopicSuggestionsFromScans(scans = [], context = {}, limit = 10) {
@@ -2277,6 +2298,12 @@ exports.generateAiEditorialTopicSuggestions = onCall({ region, secrets: [openAiA
   const keywords = String(payload.keywords || "").trim();
   const sourceFilter = String(payload.sourceId || payload.source_id || "").trim().toLowerCase();
   const useAllSources = payload.allSources === true || payload.researchMode === "all_sources";
+  const skipSourceIds = new Set(safeArray(payload.skipSourceIds || payload.skip_source_ids)
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean));
+  const maxSourcesPerRun = sourceFilter
+    ? 1
+    : Math.max(6, Math.min(36, Number(payload.maxSourcesPerRun || payload.max_sources_per_run || 24)));
   const [sourceSnapshot, existingSuggestionsSnapshot] = await Promise.all([
     db.collection("verified_sources").get(),
     db.collection("ai_topic_suggestions").get()
@@ -2288,9 +2315,14 @@ exports.generateAiEditorialTopicSuggestions = onCall({ region, secrets: [openAiA
   const filteredSources = sourceFilter
     ? verifiedSources.filter((source) => [source.id, source.domain, source.url, source.name, source.title].some((value) => String(value || "").trim().toLowerCase() === sourceFilter))
     : verifiedSources;
+  const remainingFilteredSources = skipSourceIds.size
+    ? filteredSources.filter((source) => !sourceMatchesAnyKey(source, skipSourceIds))
+    : filteredSources;
   const existingSuggestionRecords = existingSuggestionsSnapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() || {}) }));
-  const maxLiveSources = sourceFilter ? 1 : (useAllSources || category) ? filteredSources.length : 60;
-  const researchSources = selectResearchSources(filteredSources, existingSuggestionRecords, category, keywords, Math.min(filteredSources.length || maxLiveSources, maxLiveSources), { includeAllApproved: useAllSources });
+  const maxLiveSources = sourceFilter ? 1 : (useAllSources || category) ? remainingFilteredSources.length : 60;
+  const orderedResearchSources = selectResearchSources(remainingFilteredSources, existingSuggestionRecords, category, keywords, Math.min(remainingFilteredSources.length || maxLiveSources, maxLiveSources), { includeAllApproved: useAllSources });
+  const researchSources = orderedResearchSources.slice(0, maxSourcesPerRun);
+  const queuedSourcesAfterThisRun = orderedResearchSources.slice(maxSourcesPerRun);
   if ((category || sourceFilter) && !researchSources.length) {
     throw new HttpsError("failed-precondition", `Keine verifizierten Quellen fuer diese Auswahl gefunden. Bitte Quellenliste oder Filter pruefen.`);
   }
@@ -2305,6 +2337,10 @@ exports.generateAiEditorialTopicSuggestions = onCall({ region, secrets: [openAiA
     }
   });
   const sourcePublications = crawlResult.publications;
+  const processedSources = researchSources.slice(0, crawlResult.researchedSources);
+  const pendingSources = [...researchSources.slice(crawlResult.researchedSources), ...queuedSourcesAfterThisRun];
+  const processedSourceIds = processedSources.map(sourceUsageKey).filter(Boolean);
+  const remainingSourceIds = pendingSources.map(sourceUsageKey).filter(Boolean);
   const researchSourceSummary = researchSources.map((source) => ({
     id: source.id,
     name: source.name,
@@ -2316,26 +2352,26 @@ exports.generateAiEditorialTopicSuggestions = onCall({ region, secrets: [openAiA
   await writeRawSourceScans({ runId: logRef.id, scans: crawlResult.sourceScans, category, keywords, profile });
   await writeRawTopicPublications({ runId: logRef.id, publications: sourcePublications, category, keywords, profile });
   const prompt = [
-    `AUFGABE: Erstelle eine redaktionell kuratierte Themenvorschau mit bis zu ${limit} aktuellen PROdigitalTV-Beitragsthemen. Ziel sind 10 Themen, aber nur soweit die gelieferten Quellenfunde belastbar genug sind. Keine Luecken mit erfundenen oder generischen Themen auffuellen.`,
+    `AUFGABE: Erstelle eine redaktionell kuratierte Themenvorschau mit bis zu ${limit} aktuellen PROdigitalTV-Beitragsthemen fuer junge kreative Medienschaffende. Ziel sind 10 Themen, aber nur soweit die gelieferten Quellenfunde belastbar genug sind. Keine Luecken mit erfundenen oder generischen Themen auffuellen.`,
     "ROLLE: Du bist redaktioneller Themenkurator fuer PROdigitalTV. Du arbeitest quellenbasiert, sachlich und ohne Halluzinationen. Du erzeugst keine erfundenen Fakten, Quellen, URLs, Zahlen, Fristen, Studien, Urteile, Zitate oder Namen.",
-    "ZIELGRUPPE: TV-Sender, Streaminganbieter, Produzenten, Plattformbetreiber, Mediatheken, Verlage, Medienhaeuser, Dienstleister, Technologieanbieter, Verbaende sowie Entscheider aus Medienpolitik, Regulierung und Vermarktung.",
-    "PDTv-ANSATZ: Jedes Thema muss einen klaren Branchenbezug fuer TV, Streaming, Produktion, Plattformen, Mediatheken, digitale Distribution, Regulierung, Vermarktung oder Technologie enthalten. Keine politische Meinung, keine PR-Sprache, keine Uebertreibung.",
-    "THEMENBEREICHE: Medienpolitik, Streaming, lineares Fernsehen, Bewegtbild, Mediatheken, Plattformregulierung, KI in der Medienbranche, KI-Kennzeichnung, Urheberrecht, Verwertungsrecht, Produktion, Postproduktion, Distribution, Smart TV, HbbTV, Barrierefreiheit, Untertitelung, Audiodeskription, Medienkompetenz, Desinformation, Deepfakes, Werbung, Vermarktung, neue Geschaeftsmodelle, regionale Medien, oeffentlich-rechtlicher Rundfunk, private Medienanbieter, europaeische Medienregulierung, Datenschutz, digitale Identitaet, Content-Strategien und Automatisierung.",
-    "FORMAT JE THEMA: headline = klare redaktionelle Ueberschrift ohne Clickbait. subline = maximal 1 bis 2 Saetze. themenabsatz = 4 bis 6 Saetze: worum es geht, warum aktuell, welche Akteure/Bereiche betroffen sind und welche Bedeutung fuer die Medienbranche besteht. pdtv_ansatz = 2 bis 4 Saetze zur konkreten Relevanz fuer PROdigitalTV. keywords = 5 bis 8 CMS-taugliche Keywords. quellenhinweis = konkrete Quelle oder Art der Quelle. quellenstatus/source_status = 'Quelle vorhanden' oder 'Quelle bitte redaktionell pruefen'.",
+    "ZIELGRUPPE: Junge kreative Medienschaffende: Creator, Junior-Redakteur:innen, Video- und Social-Produzent:innen, Editor:innen, Motion Designer, Audio-/Podcast-Macher:innen, Formatentwickler:innen, Studierende, Berufseinsteiger:innen, Freelancer und junge Mediengruender:innen.",
+    "PDTv-ANSATZ: Jedes Thema muss zeigen, wie KI, Tools, Plattformen, Workflows, Jobs, Skills, Foerderung, Recht, neue Finanzierungsmodelle oder neue Formate die Medienarbeit junger Kreativer konkret veraendern. Bevorzuge Reuters, The Verge und Originalquellen; nutze Blogs, Studio-Listen und Jobprofile nur ergaenzend als Signale. Keine allgemeine Konzern-, Verbands- oder Regulierungsroutine ohne Praxisnutzen. Keine politische Meinung, keine PR-Sprache, keine Uebertreibung.",
+    "THEMENBEREICHE: KI & kreative Medienarbeit, KI-Videoproduktion, AI-native Studios, producer-geführte AI-Workflows, GenAI-Video, Tools & Workflows, Schnitt/Postproduktion, Social Video, Vertical Video, Microdramas, YouTube als Produktions- und Distributionsplattform, TikTok, Instagram, Twitch, Creator Economy, neue Creator-Finanzierung, neue Rollen und Skills, GenAI Video Producer, Einstieg und Karriere, Ausbildung, Labs, Wettbewerbe, Foerderungen, Mediengruendung, Urheberrecht, Deepfakes, KI-Kennzeichnung, Content Authenticity, Publikumsreaktionen auf KI-Inhalte, Streaming, Distribution, neue Formate, Barrierefreiheit und Plattformregulierung mit konkreter Praxisfolge.",
+    "FORMAT JE THEMA: headline = klare redaktionelle Ueberschrift ohne Clickbait. subline = maximal 1 bis 2 Saetze. themenabsatz = 4 bis 6 Saetze: worum es geht, warum aktuell, welche Akteure/Bereiche betroffen sind und was junge kreative Medienschaffende daraus konkret lernen, pruefen oder ausprobieren koennen. pdtv_ansatz = 2 bis 4 Saetze zur konkreten Relevanz fuer PROdigitalTV als Orientierung fuer neue Medienarbeit. keywords = 5 bis 8 CMS-taugliche Keywords. quellenhinweis = konkrete Quelle oder Art der Quelle. quellenstatus/source_status = 'Quelle vorhanden' oder 'Quelle bitte redaktionell pruefen'.",
     "SPRACHE: Deutsch, serioes, journalistisch, sachlich, leicht verstaendlich, professionell, klar strukturiert, ohne Floskeln, ohne PR-Sprache, ohne Eigenlob, ohne Saetze wie 'dieser Beitrag zeigt', 'wir beleuchten' oder 'spannend ist'.",
-    "AKTUALITAET: Nutze nur aktuelle oder zeitnah relevante Entwicklungen aus den gelieferten Quellenveroeffentlichungen. Keine veralteten Themen verwenden, wenn aktuellere Entwicklungen vorhanden sind.",
+    "AKTUALITAET: Nutze nur Nachrichten und Quellenveroeffentlichungen, die hoechstens 2 Monate alt sind. Aeltere Meldungen duerfen nicht beruecksichtigt werden, auch wenn sie inhaltlich passen. Wenn kein Datum ermittelt wurde, nur als Recherchespur verwenden und source_date_status auf Datum nicht ermittelt setzen.",
     "AUSSCHLUSS: Keine reine Produktwerbung, keine PR-Texte ohne journalistische Relevanz, keine rein lokalen Meldungen ohne Branchenbezug, keine Spekulationen, keine Sitemaps, keine Presseportal-Startseiten, keine generischen Quellenbeschreibungen.",
     "Keine Meta-Sprache in sichtbaren Feldern: nicht 'Themenkandidat', nicht 'Vorschlag', nicht 'Quellenfund', nicht erklaeren wie der Fund entstanden ist. Quellenstatus ist ein interner Hinweis, aber kein Blocker.",
     "Wenn die Quellenlage unklar ist, erzeuge kein Scheinwissen. Lasse unsichere Details weg und setze quellenstatus/source_status auf 'Quelle bitte redaktionell pruefen'.",
     "Wenn eine Quelle in der bisherigen Themenliste bereits ein Thema geliefert hat, soll der naechste Vorschlag bevorzugt aus einer anderen Quelle kommen. Maximal ein Vorschlag pro primary_source_id, soweit moeglich.",
-    category ? `Lenke die Recherche auf die Kategorie: ${category}` : "Nutze eine ausgewogene Rotation ueber Regulierung, Technologie, Markt, Produktion, Plattformen und gesellschaftliche Medienrelevanz.",
+    category ? `Lenke die Recherche auf die Kategorie: ${category}` : "Nutze eine ausgewogene Rotation ueber junge Medienschaffende/Creator Economy in Deutschland, KI-Videoproduktion und AI-native Studios, YouTube als Produktions- und Distributionsplattform, Vertical Video und Microdramas, neue Berufsbilder in der Medienproduktion, Creator-Finanzierung, KI/Authentizitaet/Zuschauerreaktionen, Tools & Workflows, Ausbildung/Labs/Wettbewerbe und Foerderung/Gruendung.",
     keywords ? `Beruecksichtige diese Stichworte: ${keywords}` : "",
     `Quellen fuer diese Recherche (${researchSources.length} geplant, ${crawlResult.researchedSources} abgearbeitet): ${JSON.stringify(researchSourceSummary)}`,
     `Gefundene Quellenveroeffentlichungen mit Datum und Auszug: ${JSON.stringify(sourcePublications)}`,
     "Nenne pro Thema mindestens eine Hauptquelle als primary_source_id und bis zu 4 Quellenkandidaten als source_candidates mit id, name, publisher, url falls sicher bekannt, und kurzer note. Erfinde keine URLs. Wenn keine sichere URL bekannt ist, lasse url leer.",
-    "Wenn ein Vorschlag auf einer konkreten Veroeffentlichung basiert, gib source_publication_date an. Wenn das Datum unbekannt ist, lasse source_publication_date leer und setze source_date_status auf 'Datum nicht ermittelt'.",
-    "Bewerte Aktualitaet, Branchenrelevanz und Gesamt-Relevanz jeweils von 0 bis 100.",
-    `Antworte ausschliesslich als valides JSON-Objekt mit dem Feld suggestions. suggestions ist ein Array mit maximal ${limit} Objekten mit exakt diesen Feldern: title, headline, subline, themenabsatz, pdtv_ansatz, keywords, quellenhinweis, quellenstatus, category, priority, thumbnail_idea, actuality_score, industry_score, relevance_score, source_status, reason, possible_sources, source_candidates, primary_source_id, source_ids, source_names, source_publication_date, source_date_status.`
+    "Wenn ein Vorschlag auf einer konkreten Veroeffentlichung basiert, gib source_publication_date an. Vorschlaege mit source_publication_date aelter als 2 Monate sind verboten. Wenn das Datum unbekannt ist, lasse source_publication_date leer und setze source_date_status auf 'Datum nicht ermittelt'.",
+    "Bewerte Aktualitaet, Zielgruppenrelevanz und Gesamt-Relevanz jeweils von 0 bis 100. industry_score darf als Zielgruppen-/Branchenwert genutzt werden und muss hoch sein, wenn der Praxisnutzen fuer junge Kreative stark ist.",
+    `Antworte ausschliesslich als valides JSON-Objekt mit dem Feld suggestions. suggestions ist ein Array mit maximal ${limit} Objekten mit exakt diesen Feldern: title, headline, subline, themenabsatz, pdtv_ansatz, keywords, quellenhinweis, quellenstatus, category, priority, thumbnail_idea, actuality_score, industry_score, target_audience_score, relevance_score, source_status, reason, possible_sources, source_candidates, primary_source_id, source_ids, source_names, source_publication_date, source_date_status.`
   ].filter(Boolean).join("\n\n");
   let rawSuggestions = [];
   let fallbackReason = "";
@@ -2406,7 +2442,7 @@ exports.generateAiEditorialTopicSuggestions = onCall({ region, secrets: [openAiA
       createdBy: profile.uid
     }, { merge: true });
     await emptyBatch.commit();
-    await writeAiLog({ profile, settings, action: "generateAiEditorialTopicSuggestions", payload, result: { suggestions: [], researchedSources: crawlResult.researchedSources, totalSources: crawlResult.totalSources, sourcePublications: sourcePublications.length, stoppedByTimeBudget: crawlResult.stoppedByTimeBudget, fallbackReason }, status: "blocked" }).catch(() => {});
+    await writeAiLog({ profile, settings, action: "generateAiEditorialTopicSuggestions", payload, result: { suggestions: [], researchedSources: crawlResult.researchedSources, totalSources: crawlResult.totalSources, sourcePublications: sourcePublications.length, stoppedByTimeBudget: crawlResult.stoppedByTimeBudget, processedSourceIds, remainingSourceIds, fallbackReason }, status: "blocked" }).catch(() => {});
     return {
       ok: false,
       suggestions: [],
@@ -2414,8 +2450,11 @@ exports.generateAiEditorialTopicSuggestions = onCall({ region, secrets: [openAiA
       totalSources: crawlResult.totalSources,
       sourcePublications: sourcePublications.length,
       stoppedByTimeBudget: crawlResult.stoppedByTimeBudget,
+      hasMoreSources: remainingSourceIds.length > 0,
+      processedSourceIds,
+      remainingSourceIds,
       fallbackReason,
-      message: `Rawdaten wurden gespeichert, aber es wurde kein echter Nachrichten-Themenvorschlag erzeugt. ${crawlResult.researchedSources} von ${crawlResult.totalSources} Quellen abgearbeitet.`
+      message: `Rawdaten wurden gespeichert, aber es wurde kein echter Nachrichten-Themenvorschlag erzeugt. ${crawlResult.researchedSources} von ${crawlResult.totalSources + queuedSourcesAfterThisRun.length} Quellen dieses automatischen Durchlaufs abgearbeitet.`
     };
   }
   const suggestions = rawSuggestions.map((item, index) => normalizeTopicSuggestion(item, index, { category, keywords }));
@@ -2444,8 +2483,8 @@ exports.generateAiEditorialTopicSuggestions = onCall({ region, secrets: [openAiA
     createdBy: profile.uid
   });
   await batch.commit();
-  await writeAiLog({ profile, settings, action: "generateAiEditorialTopicSuggestions", payload, result: { suggestions, rejectedQualitySuggestions, researchedSources: crawlResult.researchedSources, totalSources: crawlResult.totalSources, sourcePublications: sourcePublications.length, stoppedByTimeBudget: crawlResult.stoppedByTimeBudget, fallbackReason }, status: fallbackReason ? "warning" : "success" }).catch(() => {});
-  return { ok: true, suggestions, rejectedQualitySuggestions, researchedSources: crawlResult.researchedSources, totalSources: crawlResult.totalSources, sourcePublications: sourcePublications.length, stoppedByTimeBudget: crawlResult.stoppedByTimeBudget, fallbackReason, message: `${suggestions.length} Themenvorschlag${suggestions.length === 1 ? "" : "e"} wurden qualitaetsgeprueft erstellt. ${crawlResult.researchedSources} von ${crawlResult.totalSources} Quellen wurden abgearbeitet, ${sourcePublications.length} Veroeffentlichungen als Rawdaten gespeichert.${rejectedQualitySuggestions.length ? ` ${rejectedQualitySuggestions.length} Rohfund${rejectedQualitySuggestions.length === 1 ? "" : "e"} wegen Qualitaet verworfen.` : ""}${fallbackReason ? " KI-Auswertung abgebrochen; sichere Fallback-Themen aus Rawdaten genutzt." : ""}${crawlResult.stoppedByTimeBudget ? " Zeitbudget erreicht; weitere Quellen folgen im naechsten Lauf." : ""}` };
+  await writeAiLog({ profile, settings, action: "generateAiEditorialTopicSuggestions", payload, result: { suggestions, rejectedQualitySuggestions, researchedSources: crawlResult.researchedSources, totalSources: crawlResult.totalSources, sourcePublications: sourcePublications.length, stoppedByTimeBudget: crawlResult.stoppedByTimeBudget, processedSourceIds, remainingSourceIds, fallbackReason }, status: fallbackReason ? "warning" : "success" }).catch(() => {});
+  return { ok: true, suggestions, rejectedQualitySuggestions, researchedSources: crawlResult.researchedSources, totalSources: crawlResult.totalSources + queuedSourcesAfterThisRun.length, sourcePublications: sourcePublications.length, stoppedByTimeBudget: crawlResult.stoppedByTimeBudget, hasMoreSources: remainingSourceIds.length > 0, processedSourceIds, remainingSourceIds, fallbackReason, message: `${suggestions.length} Themenvorschlag${suggestions.length === 1 ? "" : "e"} wurden qualitaetsgeprueft erstellt. ${crawlResult.researchedSources} von ${crawlResult.totalSources + queuedSourcesAfterThisRun.length} Quellen dieses automatischen Durchlaufs wurden abgearbeitet, ${sourcePublications.length} Veroeffentlichungen als Rawdaten gespeichert.${rejectedQualitySuggestions.length ? ` ${rejectedQualitySuggestions.length} Rohfund${rejectedQualitySuggestions.length === 1 ? "" : "e"} wegen Qualitaet verworfen.` : ""}${fallbackReason ? " KI-Auswertung abgebrochen; sichere Fallback-Themen aus Rawdaten genutzt." : ""}${crawlResult.stoppedByTimeBudget ? " Zeitbudget erreicht; die CMS-Oberflaeche startet automatisch den naechsten Recherchelauf." : ""}` };
 });
 
 exports.importNewsUrlText = onCall({ region, timeoutSeconds: 60, memory: "512MiB" }, async (request) => {
@@ -2484,6 +2523,7 @@ exports.importNewsUrlText = onCall({ region, timeoutSeconds: 60, memory: "512MiB
 });
 
 exports.improveText = callable("improveText");
+exports.translateNewsImportToGerman = callable("translateNewsImportToGerman");
 exports.shortenText = callable("shortenText");
 exports.extendText = callable("extendText");
 exports.generateSeoMeta = callable("generateSeoMeta");
@@ -2544,4 +2584,11 @@ exports.testOpenAiConnection = onCall({ region, secrets: [openAiApiKey] }, async
   const result = await callOpenAi("improveText", { originalText: "Verbindungstest PROdigitalTV", context: { purpose: "connection_test" } }, settings);
   return { ok: true, preview: preview(result.text) };
 });
+
+
+
+
+
+
+
 

@@ -1,5 +1,5 @@
-const CACHE = "pdt-platform-v959";
-const IMAGE_CACHE = "pdt-platform-images-v959";
+const CACHE = "pdt-platform-v960";
+const IMAGE_CACHE = "pdt-platform-images-v960";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -136,3 +136,4 @@ self.addEventListener("notificationclick", (event) => {
     return undefined;
   }));
 });
+

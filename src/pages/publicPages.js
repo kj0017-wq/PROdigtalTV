@@ -2145,6 +2145,29 @@ function writePageContentCache(name = "", variant = "public", html = "") {
   } catch {}
 }
 
+function eventDetailCacheVariant(eventId = "") {
+  return `${mobileLeanStart() ? "mobile" : "desktop"}:${currentUser()?.uid || "guest"}:${eventId}`;
+}
+
+function eventDetailCacheName(eventId = "") {
+  return `event-detail:${eventId}`;
+}
+function readEmbeddedEventDetail(eventId = "") {
+  try {
+    const detail = window.__PDT_PUBLIC_SNAPSHOT?.eventDetails?.[eventId];
+    if (!detail?.event) return null;
+    return {
+      event: detail.event,
+      speakers: Array.isArray(detail.speakers) ? detail.speakers : [],
+      sponsors: Array.isArray(detail.sponsors) ? detail.sponsors : [],
+      topics: Array.isArray(detail.topics) ? detail.topics : [],
+      galleries: Array.isArray(detail.galleries) ? detail.galleries : [],
+      mediaAssets: Array.isArray(detail.mediaAssets) ? detail.mediaAssets : []
+    };
+  } catch {
+    return null;
+  }
+}
 function memberProfileCacheKey(user = {}) {
   const memberId = user.memberId || "";
   const userKey = user.uid || user.email || "member";
@@ -2384,6 +2407,11 @@ async function getPublicRouteEvent(id, includeMemberEvents = false) {
 export async function eventDetailPage(id, query = new URLSearchParams()) {
   const previewMode = query?.get?.("preview") === "1" && isAdmin();
   const ticketToken = String(query?.get?.("ticket") || "").trim();
+  const leanEventDetail = mobileLeanStart();
+  const canUseCachedDetail = id && !previewMode && !ticketToken;
+  const embeddedDetail = canUseCachedDetail ? readEmbeddedEventDetail(id) : null;
+  const cachedDetail = canUseCachedDetail ? readPageContentCache(eventDetailCacheName(id), eventDetailCacheVariant(id), leanEventDetail ? 900000 : 600000) : "";
+  if (cachedDetail) return publicShell("events", cachedDetail);
   let ticketActivation = null;
   if (ticketToken) {
     try {
@@ -2393,21 +2421,25 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
       ticketActivation = null;
     }
   }
-  let event;
-  try {
-    event = await getPublicRouteEvent(id, isMember());
-  } catch {
-    return publicShell("events", `${subhero("Geschuetzter Bereich", "Login erforderlich", "Dieses Event ist nur für berechtigte Personen sichtbar.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
+  let event = embeddedDetail?.event || null;
+  if (!event) {
+    try {
+      event = await getPublicRouteEvent(id, isMember());
+    } catch {
+      return publicShell("events", `${subhero("Geschuetzter Bereich", "Login erforderlich", "Dieses Event ist nur für berechtigte Personen sichtbar.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
+    }
   }
   if (!event) return notFoundPage();
   if (!previewMode && !isPastEvent(event) && !upcomingEventIsVisible(event)) return notFoundPage();
-  const [speakers, sponsors, topics, galleries, mediaAssets] = await Promise.all([
-    listPublicContent("speakers").catch(() => []),
-    listPublicContent("sponsors").catch(() => []),
-    listPublicContent("topics").catch(() => []),
-    listPublicContent("galleries").catch(() => []),
-    listPublicEventMediaAssets([event]).catch(() => [])
-  ]);
+  const [speakers, sponsors, topics, galleries, mediaAssets] = embeddedDetail
+    ? [embeddedDetail.speakers, embeddedDetail.sponsors, embeddedDetail.topics, embeddedDetail.galleries, embeddedDetail.mediaAssets]
+    : await Promise.all([
+      fastFallback(listPublicContent("speakers").catch(() => []), [], leanEventDetail ? 1200 : 22000),
+      fastFallback(listPublicContent("sponsors").catch(() => []), [], leanEventDetail ? 900 : 22000),
+      fastFallback(listPublicContent("topics").catch(() => []), [], leanEventDetail ? 1200 : 22000),
+      fastFallback(listPublicContent("galleries").catch(() => []), [], leanEventDetail ? 700 : 22000),
+      fastFallback(listPublicEventMediaAssets([event]).catch(() => []), [], leanEventDetail ? 900 : 22000)
+    ]);
   const registrationOpen = eventRegistrationIsOpen(event);
   const storedTicket = ticketActivation || await validateStoredTicket(event.id).catch(() => readStoredTicket(event.id));
   const restricted = event.accessType === "members_only" && !isMember() && !registrationOpen && !storedTicket;
@@ -2443,7 +2475,7 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
     : `<div class="alert event-registration-cta">${event.accessType === "invitation_only" ? "Teilnahme nur auf Einladung." : "Anmeldung derzeit nicht verfuegbar."}</div>`;
   const eventInfoBlock = restricted ? "" : `<section class="venue-stage event-info-stage"><div class="event-info-stage__facts"><p class="eyebrow">Daten</p><div class="event-info-facts"><div class="event-info-fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>${event.startTime ? `<div class="event-info-fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}<div class="event-info-fact"><label>Status</label><strong>${escapeHtml(eventRegistrationStatusLabel(event))}</strong></div></div></div><div class="venue-stage__place"><p class="eyebrow">${event.isVirtualEvent ? "Online-Teilnahme" : "Adresse"}</p>${eventLocationDetailMarkup(event)}</div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`;
   const previewNotice = previewMode ? `<div class="alert alert--warning">CMS-Vorschau: Dieses Event ist noch nicht zwingend öffentlich sichtbar.</div>` : "";
-  return publicShell("events", `${subhero(event.eventType, event.title, event.subtitle)}
+  const eventDetailContent = `${subhero(event.eventType, event.title, event.subtitle)}
     <section class="section event-detail-section"><div class="container detail-grid event-detail-grid">
       <article class="detail-main">
         ${previewNotice}
@@ -2471,7 +2503,9 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
         <div class="fact"><label>Ort</label><strong>${escapeHtml(eventLocationDisplay(event))}</strong></div>
         <div class="fact"><label>Status</label><strong>${escapeHtml(eventRegistrationStatusLabel(event))}</strong></div>
       </aside>
-    </div></section>`);
+    </div></section>`;
+  if (canUseCachedDetail) writePageContentCache(eventDetailCacheName(id), eventDetailCacheVariant(id), eventDetailContent);
+  return publicShell("events", eventDetailContent);
 }
 
 export async function registrationPage(id) {
@@ -3345,5 +3379,8 @@ export async function legalPage(type) {
 export function notFoundPage() {
   return publicShell("", `<section class="section"><div class="container empty"><h1>Seite nicht gefunden</h1><p>Die angeforderte Seite ist nicht verfuegbar.</p><a class="button button--primary" style="margin-top:20px" href="#/home">Zur Startseite</a></div></section>`);
 }
+
+
+
 
 

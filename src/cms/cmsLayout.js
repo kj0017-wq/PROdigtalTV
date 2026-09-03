@@ -8,6 +8,7 @@ const sections = [
     title: "Events",
     children: [
       ["cms/events", "Events"],
+      ["cms/live", "Veranstaltungs-Cockpit"],
       ["cms/registrations", "Anmeldungen"],
       ["cms/followup", "Event Rückblick"],
       ["cms/sponsors", "Sponsoren / Gastgeber"]
@@ -119,3 +120,4 @@ export function cmsShell(active, content) {
 export function cmsTitle(eyebrow, title, actions = "") {
   return `<div class="cms-title"><div><p class="eyebrow">${eyebrow}</p><h1>${title}</h1></div><div class="actions">${actions}</div></div>`;
 }
+

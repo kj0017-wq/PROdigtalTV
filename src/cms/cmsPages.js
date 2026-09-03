@@ -491,12 +491,12 @@ function galleryListStatus(item) {
 }
 
 function listDate(item) {
-  const value = item.publishDate || item.validFrom || item.date || item.submittedAt || item.updatedAt || item.createdAt || "";
+  const value = item.publishDate || item.published_at || item.publishedAt || item.validFrom || item.valid_from || item.date || item.news_imported_at || item.newsImportedAt || item.submittedAt || item.submitted_at || item.updatedAt || item.updated_at || item.createdAt || item.created_at || "";
   return value ?formatShortDate(value) : "-";
 }
 
 function listDateSortValue(item = {}) {
-  const value = item.publishDate || item.validFrom || item.date || item.submittedAt || item.updatedAt || item.createdAt || "";
+  const value = item.publishDate || item.published_at || item.publishedAt || item.validFrom || item.valid_from || item.date || item.news_imported_at || item.newsImportedAt || item.submittedAt || item.submitted_at || item.updatedAt || item.updated_at || item.createdAt || item.created_at || "";
   if (!value) return 0;
   if (typeof value.toDate === "function") {
     const date = value.toDate();
@@ -511,6 +511,35 @@ function listDateSortValue(item = {}) {
   return Number.isNaN(parsed.getTime()) ?0 : parsed.getTime();
 }
 
+function cmsImportTime(item = {}) {
+  const value = item.news_imported_at || item.newsImportedAt || item.createdAt || item.created_at || item.updatedAt || item.updated_at || "";
+  return listDateSortValue({ publishDate: value });
+}
+
+function cmsImportBatchKey(item = {}) {
+  return item.news_import_batch_id || item.newsImportBatchId || "";
+}
+
+function cmsLatestImportMarker(records = []) {
+  let latestTime = 0;
+  let latestBatch = "";
+  records.forEach((item) => {
+    const time = cmsImportTime(item);
+    if (time > latestTime) {
+      latestTime = time;
+      latestBatch = cmsImportBatchKey(item);
+    }
+  });
+  return latestTime ?{ time: latestTime, batch: latestBatch } : null;
+}
+
+function cmsIsLatestImportItem(item = {}, marker = null) {
+  if (!marker) return false;
+  const batch = cmsImportBatchKey(item);
+  if (marker.batch && batch) return batch === marker.batch;
+  const time = cmsImportTime(item);
+  return Boolean(time && Math.abs(time - marker.time) <= 5 * 60 * 1000);
+}
 function mailQueueDate(value) {
   return value ?formatDateTime(value) : "-";
 }
@@ -1123,7 +1152,7 @@ export async function dashboardPage() {
   const pending = registrations.filter((item) => item.status === "pending_email_confirmation").length;
   const postEvents = events.filter((event) => isPastCmsEvent(event));
   const openPost = postEvents.length + media.filter((item) => item.status === "in_review").length;
-  return protect(cmsShell("cms", `${cmsTitle("CMS Dashboard", "Uebersicht", `<a href="#/cms/events/new" class="button button--primary button--small">Neues Event</a>`)}
+  return protect(cmsShell("cms", `${cmsTitle("CMS Dashboard", "Uebersicht", `<a href="#/cms/live" class="button button--secondary button--small">Veranstaltungs-Cockpit</a><a href="#/cms/events/new" class="button button--primary button--small">Neues Event</a>`)}
     <div class="stat-grid">
       <div class="stat"><span>Kommende Events</span><strong>${upcoming.length}</strong></div>
       <div class="stat"><span>Anmeldungen</span><strong>${registrations.length}</strong></div>
@@ -4561,7 +4590,7 @@ export async function moduleListPage(module, section = "all") {
   const createParams = editorialConfig?.createParams || "";
   const emptyText = editorialConfig ?`Noch keine Inhalte in ${escapeHtml(title)}.` : "Noch keine Eintraege vorhanden.";
   if (module === "topics") {
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${cmsBulkToolbar(records, { collection: "topics", label: "Themen" })}<div class="table-wrap"><table class="table table--editorial table--topics table--with-audio"><thead><tr><th class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-select-all ${records.length ?"" : "disabled"} aria-label="Alle Themen auswaehlen"></th><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "Thema")} auswaehlen"></td><td><div class="topic-thumb topic-thumb--table">${topicThumb(item, linkedMediaAssets)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>Thema</td><td>${audioListCell("topics", item)}</td><td>${editorialMediaFlags(item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${cmsBulkToolbar(records, { collection: "topics", label: "Themen" })}<div class="table-wrap"><table class="table table--editorial table--topics table--with-audio"><thead><tr><th class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-select-all ${records.length ?"" : "disabled"} aria-label="Alle Themen auswaehlen"></th><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "Thema")} auswaehlen"></td><td><div class="topic-thumb topic-thumb--table">${topicThumb(item, linkedMediaAssets)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a>${newsImportBadge(item)}</td><td><strong class="ai-article-date">${escapeHtml(listDate(item))}</strong></td><td>Thema</td><td>${audioListCell("topics", item)}</td><td>${editorialMediaFlags(item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "galleries") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--galleries"><thead><tr><th>Bild</th><th>Titel</th><th>Bilder</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table gallery-thumb--table">${galleryThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a><small>${escapeHtml(shortText(item.description || "-", 90))}</small></td><td>${(item.images || []).length}</td><td>${galleryListStatus(item)}</td><td>${galleryActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="5">${emptyText}</td></tr>`}</tbody></table></div></section>`));
@@ -4578,7 +4607,9 @@ export async function moduleListPage(module, section = "all") {
     const selectHead = isBulkEditorialList ?`<th class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-select-all ${records.length ?"" : "disabled"} aria-label="Alle ${bulkLabel} auswaehlen"></th>` : "";
     const selectCell = (item) => isBulkEditorialList ?`<td class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || bulkLabel)} auswaehlen"></td>` : "";
     const emptyColspan = isBulkEditorialList ?8 : 7;
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${isBulkEditorialList ?cmsBulkToolbar(records, { collection: "editorialContent", label: bulkLabel }) : ""}<div class="table-wrap"><table class="table table--editorial table--with-audio${section === "press" ?" table--press" : ""}${section === "news" ?" table--news" : ""}"><thead><tr>${selectHead}<th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr>${selectCell(item)}<td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td>${escapeHtml(listDate(item))}</td><td>${escapeHtml(item.category || item.page || "-")}</td><td>${audioListCell("editorialContent", item, { showMeta: false })}</td><td>${editorialMediaFlags(item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${emptyColspan}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    const latestNewsImport = section === "news" ?cmsLatestImportMarker(records) : null;
+    const newsRowClass = (item) => section === "news" && cmsIsLatestImportItem(item, latestNewsImport) ?` class="ai-article-row--latest-import"` : "";
+    const newsImportBadge = (item) => section === "news" && cmsIsLatestImportItem(item, latestNewsImport) ?`<span class="ai-import-badge">Neuester Import</span>` : "";    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${isBulkEditorialList ?cmsBulkToolbar(records, { collection: "editorialContent", label: bulkLabel }) : ""}<div class="table-wrap"><table class="table table--editorial table--with-audio${section === "press" ?" table--press" : ""}${section === "news" ?" table--news" : ""}"><thead><tr>${selectHead}<th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr${newsRowClass(item)}>${selectCell(item)}<td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a>${newsImportBadge(item)}</td><td><strong class="ai-article-date">${escapeHtml(listDate(item))}</strong></td><td>${escapeHtml(item.category || item.page || "-")}</td><td>${audioListCell("editorialContent", item, { showMeta: false })}</td><td>${editorialMediaFlags(item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${emptyColspan}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "members") {
     const view = section === "users" ? "users" : "members";
@@ -5876,6 +5907,8 @@ export async function aiSettingsPage() {
       </form>
     </section>`), true);
 }
+
+
 
 
 

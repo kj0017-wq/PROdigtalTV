@@ -24,30 +24,35 @@ const publicationModes = {
   auto_publish: "automatisch veroeffentlichen bei bestandener Prüfung"
 };
 
-const newsImportResearchPrompt = `Recherchiere die 5 wichtigsten aktuellen News der deutschen Medienwirtschaft aus den letzten 7 Tagen.
+const newsImportResearchPrompt = `Recherchiere die 5 wichtigsten aktuellen News für junge kreative Medienschaffende aus den letzten 7 Tagen. Berücksichtige keine Nachrichten, die älter als 2 Monate sind.
 
-Berücksichtige seriöse Quellen wie DWDL, MEEDIA, Horizont, kress, turi2, Broadband TV News, Digitalfernsehen, VAUNET, Medienanstalten, Bundesnetzagentur, EU-Kommission, Reuters und relevante internationale Fachmedien, sofern die Meldung für den deutschen oder europäischen Medienmarkt wichtig ist.
+Zielgruppe:
+Junior-Redakteur:innen, Creator, Video- und Social-Produzent:innen, Editor:innen, Motion Designer, Audio-/Podcast-Macher:innen, Formatentwickler:innen, Berufseinsteiger:innen, Studierende, Freelancer und junge Mediengründer:innen im deutschsprachigen und europäischen Medienmarkt.
+
+Quellenfokus:
+Kombiniere klassische Medienfachquellen mit Creator-, Tool-, Job-, Förder-, Ausbildungs- und KI-Quellen. Bevorzuge belastbare Quellen wie Reuters, The Verge und Originalquellen von Plattformen/Unternehmen; nutze Blogs, Studio-Übersichten und Jobprofile nur ergänzend als Signale. Berücksichtige unter anderem Quellen zu KI-Tools, Postproduktion, Social Video, Creator Economy, Plattformänderungen, Fördercalls, Labs, Wettbewerben, Medienhochschulen, Jobprofilen, Urheberrecht und Content Authenticity. Klassische Branchenquellen wie DWDL, MEEDIA, Horizont, kress, turi2, VAUNET, Medienanstalten, EU-Kommission und Reuters bleiben relevant, dürfen aber nicht automatisch dominieren.
 
 Themenschwerpunkte:
-Streaming, OTT, Fernsehen, FAST Channels, Smart-TV, Connected TV, Video-on-Demand, YouTube, Creator Economy, Medienplattformen, Künstliche Intelligenz, Regulierung, Werbung, Vermarktung, Sportrechte, Content, Produktion, Distribution, CDN, Medienpolitik, Kooperationen, Übernahmen, Konsolidierung und neue Geschäftsmodelle.
+KI verändert Medienarbeit, neue kreative Workflows, GenAI in Redaktion und Produktion, KI-Videoproduktion, AI-native Studios, producer-geführte AI-Workflows, Vertical Video, Microdramas, YouTube als Produktions- und Distributionsplattform, Schnitt/Postproduktion, Social Video, YouTube/TikTok/Instagram/Twitch, Creator Economy, neue Finanzierungsmodelle, neue Rollen wie GenAI Video Producer, Einstieg und Karriere, Förderungen, Wettbewerbe, Labs, Rechte, Deepfakes, Kennzeichnung, Content Authenticity, Reaktionen von Zuschauer:innen auf KI-Inhalte, Tools, Plattformlogik, Distribution und neue Formate.
 
-Wähle nur die 5 redaktionell wichtigsten Themen aus. Vermeide Boulevardmeldungen, reine Personalien ohne Branchenrelevanz und Wiederholungen ohne neue Entwicklung.
+Auswahlregel:
+Wähle nur Themen, die einen konkreten Nutzen, eine Chance, ein Risiko oder einen Anlass für junge kreative Medienschaffende haben. Vermeide allgemeine Konzernmeldungen, Verbandsroutine, reine Personalien, abstrakte Regulierung ohne Praxisfolge und generische Technologiemeldungen. Jede News muss beantworten: Was bedeutet das praktisch für junge Kreative?
 
 Wichtig:
-Alle Informationen müssen aktuell recherchiert und mit Quellen belegt sein. Keine Meldung darf ausschließlich auf Modellwissen beruhen. Wenn mehrere Medien über dasselbe Ereignis berichten, fasse sie zu einem Thema zusammen.
+Alle Informationen müssen aktuell recherchiert und mit Quellen belegt sein. Nachrichten und Quellenveröffentlichungen, die älter als 2 Monate sind, dürfen nicht verwendet werden. Keine Meldung darf ausschließlich auf Modellwissen beruhen. Wenn mehrere Medien über dasselbe Ereignis berichten, fasse sie zu einem Thema zusammen.
 
 Gib das Ergebnis exakt in folgendem Format aus:
 
 ### Prägnante Überschrift der News
 
 Kurz-Teaser:
-2 bis 3 Sätze, die das Thema verständlich zusammenfassen.
+2 bis 3 Sätze, die das Thema verständlich zusammenfassen und den Nutzen für junge kreative Medienschaffende sichtbar machen.
 
 Branchen-News:
-Ein redaktionell formulierter Beitrag mit etwa 150 bis 220 Wörtern. Der Text soll sachlich, journalistisch und verständlich sein. Er soll erklären, was passiert ist, welche Unternehmen oder Institutionen beteiligt sind und warum die Entwicklung für TV-, Streaming- und Medienunternehmen relevant ist.
+Ein redaktionell formulierter Beitrag mit etwa 150 bis 220 Wörtern. Der Text soll sachlich, journalistisch und verständlich sein. Er erklärt, was passiert ist, wer beteiligt ist und welche konkrete Bedeutung die Entwicklung für junge Kreative, Creator, Nachwuchsredaktionen, Produktion, Postproduktion oder digitale Formate hat.
 
-Einordnung:
-Ein kurzer Satz zur Bedeutung für die Medienwirtschaft.
+Praxisnutzen:
+Ein kurzer Satz: Was sollte die Zielgruppe daraus lernen, prüfen oder ausprobieren?
 
 **Quelle:** Name des Mediums, Veröffentlichungsdatum – Titel der Quelle
 [URL zur Quelle](URL zur Quelle)
@@ -56,12 +61,11 @@ Ein kurzer Satz zur Bedeutung für die Medienwirtschaft.
 
 Am Ende zusätzlich:
 
-### Die drei wichtigsten Themen der Woche
+### Die drei wichtigsten Chancen der Woche
 
-1. Thema – ein Satz, warum besonders wichtig.
-2. Thema – ein Satz, warum besonders wichtig.
-3. Thema – ein Satz, warum besonders wichtig.`;
-
+1. Thema – ein Satz, warum besonders nützlich für junge kreative Medienschaffende.
+2. Thema – ein Satz, warum besonders nützlich für junge kreative Medienschaffende.
+3. Thema – ein Satz, warum besonders nützlich für junge kreative Medienschaffende.`;
 const promptTypes = [
   "Themenrecherche",
   "Quellenhinweise",
@@ -94,19 +98,19 @@ const systemPromptCatalog = [
 
 const topicResearchCategories = [
   "Alle Themenbereiche",
-  "Technik",
-  "Streaming-Technologie",
-  "Smart-TV / HbbTV",
-  "OTT / Distribution",
-  "KI in Redaktion und Produktion",
-  "KI in der Synchronbranche",
-  "Medienrecht / Verwertungsrecht",
+  "KI & kreative Medienarbeit",
+  "Tools & Workflows",
+  "Creator Economy",
+  "Social Video & Plattformen",
+  "Jobs, Skills & Karriere",
+  "Ausbildung, Labs & Wettbewerbe",
+  "Förderung & Gründung",
   "Produktion / Postproduktion",
+  "Recht, Deepfakes & Content Authenticity",
+  "Streaming & Distribution",
+  "Medieninnovation & Formate",
   "Barrierefreiheit",
-  "Plattformregulierung",
-  "Werbung / Vermarktung",
-  "FAST-Channels",
-  "Lokale und regionale Medien"
+  "Medienpolitik & Plattformregulierung"
 ];
 
 function defaultSystemPrompt(type, label) {
@@ -114,30 +118,33 @@ function defaultSystemPrompt(type, label) {
   const id = `ai-prompt-system-${type.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
   const promptText = type === "Themenrecherche"
     ? [
-      "Aufgabe: Erzeuge fuer die PROdigitalTV KI-Redaktion nur belastbare redaktionelle Nachrichtenthemen fuer die Themenliste.",
-      "Strategie: Dies ist Stufe 1. Es entstehen keine fertigen Artikel. Die Ausgabe ist eine redaktionelle Auswahl echter aktueller Nachrichtenfunde. Der vollstaendige Beitrag wird erst in Stufe 2 nach manueller Auswahl im Editor erzeugt.",
-      "Wenn aus den Quellen nur wenige ausreichend belegbare aktuelle Nachrichtenthemen ableitbar sind, liefere wenige. Keine Luecken mit schwachen, generischen oder technischen Crawler-Funden auffuellen.",
+      "Aufgabe: Erzeuge fuer die PROdigitalTV KI-Redaktion nur belastbare redaktionelle Nachrichtenthemen fuer junge kreative Medienschaffende.",
+      "Strategie: Dies ist Stufe 1. Es entstehen keine fertigen Artikel. Die Ausgabe ist eine redaktionelle Auswahl echter aktueller Nachrichtenfunde mit klarem Praxisnutzen fuer Nachwuchs, Creator, Junior-Redaktionen, Produktion, Postproduktion, Social Video, Freelancer oder junge Mediengruender. Priorisiere belastbare Quellen wie Reuters, The Verge und Originalquellen; Blogs, Studio-Listen und Jobprofile sind ergaenzende Signale und brauchen fuer fertige Artikel eine staerkere Zweitquelle. Der vollstaendige Beitrag wird erst in Stufe 2 nach manueller Auswahl im Editor erzeugt.",
+      "Wenn aus den Quellen nur wenige ausreichend belegbare aktuelle Nachrichtenthemen ableitbar sind, liefere wenige. Nachrichten oder Quellenveroeffentlichungen aelter als 2 Monate nicht verwenden. Keine Luecken mit schwachen, generischen oder technischen Crawler-Funden auffuellen.",
       "Jeder Eintrag braucht eine journalistische Headline, eine kurze Subline und einen Themenabsatz mit 4 bis 6 Saetzen.",
-      "Der Themenabsatz erklaert: worum es geht, warum es aktuell ist, welche Akteure oder Bereiche betroffen sind und welche Bedeutung das Thema fuer die Medienbranche hat.",
+      "Der Themenabsatz erklaert: worum es geht, warum es aktuell ist, welche Akteure oder Bereiche betroffen sind und was junge kreative Medienschaffende daraus konkret lernen, pruefen oder ausprobieren koennen.",
       "Keine redaktionelle Bewertung durch KI: keine Punktwerte, keine Rangliste, keine Freigabeempfehlung und keine Relevanzurteile.",
       "Keine Meta-Sprache in sichtbaren Feldern: nicht Themenkandidat, nicht Vorschlag, nicht redaktionell prüfen, nicht Quellenfund, nicht erklaeren wie der Fund entstanden ist.",
-      "Jeder Vorschlag muss ein konkretes Thema aus TV, Streaming, Digitalmedien, Medienrecht, Produktion, KI, Distribution, Vermarktung, HbbTV, OTT, FAST-Channels, Barrierefreiheit oder Plattformregulierung sein.",
+      "Jeder Vorschlag muss ein konkretes Thema aus KI & kreative Medienarbeit, KI-Videoproduktion, AI-native Studios, Tools & Workflows, Creator Economy, neue Creator-Finanzierung, Social Video & Plattformen, YouTube als Produktions- und Distributionsplattform, Vertical Video, Microdramas, Jobs/Skills/Karriere, neuen Berufsbildern wie GenAI Video Producer, Ausbildung/Labs/Wettbewerbe, Foerderung/Gruendung, Produktion/Postproduktion, Recht/Deepfakes/Content Authenticity, Publikumsreaktionen auf KI-Inhalte, Streaming/Distribution oder Medieninnovation sein.",
+      "Zielgruppenfilter verbindlich: Lehne Themen ab, die nur allgemeine Konzern-, Verbands-, Regulierungs- oder B2B-Marktnews sind und keinen konkreten Bezug zu jungen Kreativen, neuen Medienjobs, Tools, Skills, Workflows, Creator Economy, Foerderung oder Einstiegschancen haben.",
+      "Jeder Eintrag braucht im Feld themenabsatz mindestens eine konkrete Antwort auf: Was bedeutet das praktisch fuer junge Kreative? Welche Chance, welcher Skill, welches Risiko oder welcher naechste Schritt ergibt sich daraus?",
       "Keine Boulevardmeldungen, keine reinen Personenmeldungen, keine Programmhinweise, keine Navigationstexte, keine Sitemaps, keine Presseportal-Startseiten, keine generischen Quellenbeschreibungen.",
-      "Gib zusaetzlich Kategorie, 5-8 Keywords, Quellenhinweis, Quellenstatus, Quellenkandidaten und Veroeffentlichungsdatum der Quelle falls bekannt aus.",
+      "Gib zusaetzlich Kategorie, 5-8 Keywords, Quellenhinweis, Quellenstatus, Quellenkandidaten, Veroeffentlichungsdatum der Quelle falls bekannt und eine Praxisperspektive fuer die Zielgruppe aus.",
       "Nur Themen, die ein Redakteur auswaehlt, duerfen in die Themen-Queue uebernommen und danach als Beitrag erzeugt werden.",
-      "Keine Quellen, Zahlen, Studien, URLs oder Fakten erfinden. Wenn Live-Quellen fehlen, Quellenstatus als Recherche erforderlich kennzeichnen.",
+      "Keine Quellen, Zahlen, Studien, URLs oder Fakten erfinden. Wenn Live-Quellen fehlen oder die belegte Veroeffentlichung aelter als 2 Monate ist, Quellenstatus als Recherche erforderlich kennzeichnen und keinen Themenvorschlag daraus machen.",
       "Ausgabeformat: JSON-Array mit maximal 10 Objekten: title, headline, subline, themenabsatz, keywords, quellenhinweis, quellenstatus, category, priority, thumbnail_idea, source_status, source_candidates, source_publication_date."
     ].join("\n")
     : type === "Beitragstext"
       ? [
         "Aufgabe: Erstelle einen echten redaktionellen Nachrichtenbeitrag fuer PROdigitalTV aus dem ausgewaehlten Thema und den gelieferten Quelleninhalten.",
-        "Ziel: Der Text soll wie ein von einem Redakteur geschriebener Branchenartikel wirken: konkrete Nachricht zuerst, danach Einordnung. Keine Platzhalter, keine allgemeinen Branchenfloskeln, kein Text ueber den Redaktionsprozess.",
+        "Ziel: Der Text soll wie ein von einem Redakteur geschriebener Beitrag fuer junge kreative Medienschaffende wirken: konkrete Nachricht zuerst, danach Einordnung und praktischer Nutzen. Keine Platzhalter, keine allgemeinen Branchenfloskeln, kein Text ueber den Redaktionsprozess.",
         "Nutze nur die gelieferten Daten aus {{THEMA}}, {{KATEGORIE}}, {{QUELLEN}}, {{HEADLINE}}, {{SUBLINE}}, {{KEYWORDS}}, {{SPRACHSTIL}}, {{TEXTLAENGE}}, {{HEUTIGES_DATUM}} und vorhandene Quellenauszuege.",
         "Arbeite quellenorientiert: Identifiziere zuerst den Nachrichtenkern aus der Quelle. Uebernimm konkrete Akteure, Orte, Termine, Produkte, Entscheidungen, Zahlen, Verfahren, Zitate oder Rechtsfragen nur dann, wenn sie in den gelieferten Quellen stehen.",
         "Wenn die Quellen nur Titel, URL oder Quellenname ohne inhaltlichen Auszug liefern, schreibe keinen scheinbar fertigen Beitrag. Gib dann nur den belegten Nachrichtenkern aus und lasse fehlende Abschnitte weg.",
         "Keine Fakten, Zahlen, Zitate, Namen, Studien, Quellen oder URLs erfinden. Wenn eine Information nicht belegbar ist, lasse sie weg. Nicht mit Saetzen wie Medienanbieter muessen einordnen oder die Entwicklung ist fuer die Branche relevant auffuellen, wenn kein konkreter Befund folgt.",
         "Keine pauschalen Einschaetzungen und keine Fuellphrasen: nicht 'relevant fuer PROdigitalTV', nicht 'Einordnungsbedarf', nicht 'fuer die Branche wichtig', nicht 'Medienunternehmen sollten'. Nur konkrete Folgen nennen, wenn sie aus der Quelle belegbar sind.",
-        "Der fertige Beitrag hat 300 bis 400 Woerter, aber nur wenn die Quellen genug Substanz liefern. Er beantwortet konkret: Was ist passiert? Wer ist beteiligt? Wann oder wo passiert es? Was aendert sich? Warum ist das fuer TV, Streaming, Produktion, Plattformen, Verlage oder digitale Distribution relevant?",
+        "Der fertige Beitrag hat 300 bis 400 Woerter, aber nur wenn die Quellen genug Substanz liefern. Er beantwortet konkret: Was ist passiert? Wer ist beteiligt? Wann oder wo passiert es? Was aendert sich? Warum ist das fuer junge Kreative, Creator, Junior-Redaktionen, Produktion, Postproduktion, Social Video, Freelancer oder Berufseinsteiger relevant?",
+        "Jeder Beitrag braucht eine klare Praxisperspektive: Welche Chance, welches Risiko, welcher Skill, welches Tool, welcher Workflow, welche Foerderung oder welcher naechste Schritt ergibt sich fuer die Zielgruppe?",
         "Den Haupttext eigenstaendig redaktionell strukturieren: Lead mit Nachricht, zweiter Absatz mit Quellenfakten, danach Einordnung und Folgen. Keine Satz-fuer-Satz-Paraphrase, aber auch keine abstrakte Nacherzaehlung.",
         "Beim Neuformulieren den Kern der Aussagen bewahren: konkrete Akteure, Daten, Verfahren, Zahlen, Rechtsfragen, Marktfolgen und zentrale Ursache-Wirkung-Beziehungen nicht verwässern und nicht durch allgemeine Branchenfloskeln ersetzen.",
         "Verwende deutsche Umlaute und ß in sichtbaren deutschen Texten: ä, ö, ü, Ä, Ö, Ü, ß. Nicht ae, oe, ue oder ss schreiben, wenn ein deutscher Umlaut gemeint ist.",
@@ -146,7 +153,7 @@ function defaultSystemPrompt(type, label) {
         "Subline immer als vollstaendigen, sauber endenden Satz formulieren. Nicht mitten im Satz abbrechen, keine abgeschnittenen Nebensaetze.",
         "Keywords: genau 4 Keywords pro Beitrag. Jedes Keyword besteht aus genau einem fachlichen Wort, keine Satzteile, keine Mehrwort-Phrasen, keine Halbsätze, keine Wortfragmente wie gepr. Keine Funktionswoerter wie wird, werden, ist, sind, eine, der, die, das, mit, fuer, auf.",
         "Vermeide Wiederholungen gleicher Aussagen, gleicher Satzanfaenge und gleicher Woerter direkt nacheinander.",
-        "Sprache: sachlich, journalistisch, klar, nicht werblich, nicht reisserisch, keine langen Schachtelsaetze. Fachbegriffe nur verwenden, wenn sie noetig sind, und kurz erklaeren.",
+        "Sprache: sachlich, journalistisch, klar, zugänglich und nicht werblich. B2B-serioes, aber weniger verbandsnah und technokratisch. Schreibe so, dass junge kreative Medienschaffende schnell verstehen, warum das Thema fuer ihren Arbeitsalltag, Einstieg oder naechsten Skill relevant ist.",
         "Keine Meta-Sprache im Beitrag: nicht Arbeitsentwurf, nicht Themenkandidat, nicht Vorschlag, nicht Quellenfund, nicht redaktionell prüfen, nicht Freischaltung, nicht CMS, nicht Redakteur.",
         "Keine technischen oder organisatorischen Hinweise an die Redaktion. Die Aufgabe ist die Information des Beitrags, nicht die Beschreibung eines Workflows.",
         "Ausgabeformat: Headline, Subline, Beitragstext, Kategorie, Keywords, Thumbnail-Idee.",
@@ -165,7 +172,7 @@ function defaultSystemPrompt(type, label) {
     prompt_type: type,
     description: `Standardprompt fuer ${label}. Kann redaktionell angepasst werden.`,
     prompt_text: promptText,
-    system_instructions: "Feste Schutzregeln: keine Halluzinationen, keine erfundenen Quellen, keine KI-Bewertung, keine Score-Vergabe. Fuer die Themenliste reicht eine valide Quelle.",
+    system_instructions: "Feste Schutzregeln: keine Halluzinationen, keine erfundenen Quellen, keine KI-Bewertung, keine Score-Vergabe. Fokus: KI veraendert Medienarbeit; relevant sind konkrete Chancen, Risiken, Tools, Workflows, Skills, Jobs, Foerderungen und Formate fuer junge kreative Medienschaffende. Fuer die Themenliste reicht eine valide Quelle.",
     output_format: ["Themenrecherche", "Quellenhinweise", "Keywords", "SEO / Meta"].includes(type) ? "json" : "text",
     model: "gpt-4.1-mini",
     temperature: ["Headline", "Subline / Thubline", "Thumbnail-Idee", "Thumbnail-Prompt", "Thumbnail-Erstellung"].includes(type) ? 0.3 : 0.2,
@@ -188,7 +195,7 @@ async function ensureSystemPrompts(prompts = []) {
   const shouldUpdateTopicPrompt = topicSystemPrompt
     && String(topicSystemPrompt.created_by || topicSystemPrompt.createdBy || "").toLowerCase() === "system"
     && String(topicSystemPrompt.updated_by || topicSystemPrompt.updatedBy || "System").toLowerCase() === "system"
-    && !String(topicSystemPrompt.prompt_text || topicSystemPrompt.promptText || "").includes("redaktionelle Nachrichtenthemen");
+    && !String(topicSystemPrompt.prompt_text || topicSystemPrompt.promptText || "").includes("junge kreative Medienschaffende");
   if (shouldUpdateTopicPrompt) {
     const updated = {
       ...topicSystemPrompt,
@@ -210,7 +217,7 @@ async function ensureSystemPrompts(prompts = []) {
       model: updated.model || topicDefault.model,
       temperature: Number(updated.temperature ?? topicDefault.temperature),
       max_tokens: Number(updated.max_tokens || topicDefault.max_tokens),
-      change_note: "Systemprompt auf zweistufige Nachrichtenthemen-Strategie aktualisiert.",
+      change_note: "Systemprompt auf Zielgruppe junge kreative Medienschaffende, KI-Wandel und Praxisnutzen aktualisiert.",
       status: updated.status || "aktiv",
       created_at: updated.updated_at,
       created_by: "System"
@@ -475,21 +482,25 @@ function articleShortSummary(article = {}) {
 }
 
 function articleRows(articles, options = {}) {
+  const latestImport = options.latestImport || null;
   if (options.compactArticles) {
-    return articles.map((article) => `<tr>
-      <td><a class="link editorial-title-link" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(article.id)}&section=news">${escapeHtml(article.headline || article.title || "-")}</a><small>${escapeHtml(articleShortSummary(article))}</small></td>
+    return articles.map((article) => {
+      const isLatestImport = isLatestImportArticle(article, latestImport);
+      return `<tr class="${isLatestImport ? "ai-article-row--latest-import" : ""}">
+      <td><a class="link editorial-title-link" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(article.id)}&section=news">${escapeHtml(article.headline || article.title || "-")}</a><small>${escapeHtml(articleShortSummary(article))}</small>${isLatestImport ? `<span class="ai-import-badge">Neuester Import</span>` : ""}</td>
       <td><strong>${escapeHtml(articleSourceLabel(article))}</strong><small>${escapeHtml(articleOrigin(article).label)}</small></td>
       <td>${escapeHtml(article.category || "-")}</td>
-      <td>${escapeHtml(formatShortDate(articleDisplayDate(article)))}</td>
+      <td><strong class="ai-article-date">${escapeHtml(articleDateLabel(article))}</strong></td>
       <td><div class="actions ai-morning-row-actions"><a class="button button--secondary button--small" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(article.id)}&section=news">News oeffnen</a><button class="icon-button icon-button--danger" type="button" data-delete-record="editorialContent" data-record-id="${escapeHtml(article.id)}" title="Entfernen" aria-label="Entfernen">${iconTrash}</button></div></td>
-    </tr>`).join("");
+    </tr>`;
+    }).join("");
   }
   if (options.compactMorning) {
     return articles.map((article) => `<tr>
       <td><a class="link editorial-title-link" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(article.id)}&section=news">${escapeHtml(article.headline || article.title || "-")}</a><small>${escapeHtml(articleShortSummary(article))}</small></td>
       <td><strong>${escapeHtml(articleSourceLabel(article))}</strong></td>
       <td>${escapeHtml(article.category || "-")}</td>
-      <td>${escapeHtml(formatShortDate(articleDisplayDate(article)))}</td>
+      <td><strong class="ai-article-date">${escapeHtml(articleDateLabel(article))}</strong></td>
       <td><div class="actions ai-morning-row-actions"><a class="button button--secondary button--small" href="#/cms/edit?module=editorialContent&id=${encodeURIComponent(article.id)}&section=news">Briefing oeffnen</a><button class="icon-button icon-button--danger" type="button" data-ai-morning-article-delete="${escapeHtml(article.id)}" title="Entfernen" aria-label="Entfernen">${iconTrash}</button></div></td>
     </tr>`).join("");
   }
@@ -501,10 +512,9 @@ function articleRows(articles, options = {}) {
     <td>${badge(article.duplicate_status || article.duplicateStatus || "-")}</td>
     <td>${badge(article.ai_check_status || article.aiCheckStatus || "-")}</td>
     <td>${badge(article.publication_status || article.status || "-")}</td>
-    <td>${escapeHtml(formatShortDate(articleDisplayDate(article)))}</td>
+    <td><strong class="ai-article-date">${escapeHtml(articleDateLabel(article))}</strong></td>
   </tr>`).join("");
 }
-
 function dateSortTime(value) {
   if (!value) return 0;
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? 0 : value.getTime();
@@ -535,6 +545,37 @@ function articleDisplayDate(article = {}) {
     || "";
 }
 
+function articleDateLabel(article = {}) {
+  return formatShortDate(articleDisplayDate(article)) || "-";
+}
+
+function articleImportTime(article = {}) {
+  const log = article.ai_log_json || article.aiLogJson || {};
+  return dateSortTime(article.news_imported_at || article.newsImportedAt || article.article_created_at || article.articleCreatedAt || log.importedAt || log.imported_at || article.updatedAt || article.updated_at || article.createdAt || article.created_at || articleDisplayDate(article));
+}
+
+function articleImportBatchKey(article = {}) {
+  const log = article.ai_log_json || article.aiLogJson || {};
+  return String(article.news_import_batch_id || article.newsImportBatchId || log.importBatchId || log.import_batch_id || log.runId || log.run_id || "").trim();
+}
+
+function latestImportMarker(articles = []) {
+  const imported = articles
+    .map((article) => ({ article, time: articleImportTime(article), batch: articleImportBatchKey(article) }))
+    .filter((item) => item.time > 0)
+    .sort((a, b) => b.time - a.time);
+  if (!imported.length) return null;
+  const latest = imported[0];
+  return { batch: latest.batch, time: latest.time, fallbackCutoff: latest.time - 30 * 60 * 1000 };
+}
+
+function isLatestImportArticle(article = {}, marker = null) {
+  if (!marker) return false;
+  const batch = articleImportBatchKey(article);
+  const time = articleImportTime(article);
+  if (marker.batch && batch && marker.batch === batch) return true;
+  return time >= marker.fallbackCutoff && time <= marker.time;
+}
 function articleSortTime(article = {}) {
   return dateSortTime(articleDisplayDate(article));
 }
@@ -642,7 +683,7 @@ function morningBriefingPanel({ items = [], articles = [], sources = [], logs = 
       <div class="editorial-field-head">
         <div>
           <h2>Morgenbriefing & KI-Redaktion</h2>
-          <p class="muted">Tägliche Themenauswahl aus freigegebenen Quellen. Meldungen bleiben Arbeitsdaten der KI-Redaktion; Artikel entstehen als normale Redaktionsbeiträge im vorhandenen Editor.</p>
+          <p class="muted">Tägliche Themenauswahl zu KI, Tools, Jobs, Creator Economy und kreativer Medienarbeit. Meldungen bleiben Arbeitsdaten der KI-Redaktion; Artikel entstehen als normale Redaktionsbeiträge im vorhandenen Editor.</p>
         </div>
         <div class="actions ai-morning-main-actions">
           <button class="button button--primary" type="button" data-ai-morning-briefing-run>Morgenbriefing erzeugen</button>
@@ -651,7 +692,7 @@ function morningBriefingPanel({ items = [], articles = [], sources = [], logs = 
       </div>
       <div class="setup-steps">
         <div class="setup-step"><span>Freigegebene Quellen</span><strong>${approvedSources.length}</strong><small>nur erlaubt / bevorzugt</small></div>
-        <div class="setup-step"><span>Arbeitsliste</span><strong>${usableItems.length}</strong><small>5 bis 10 fuer Briefing vorgesehen</small></div>
+        <div class="setup-step"><span>Arbeitsliste</span><strong>${usableItems.length}</strong><small>5 bis 10 Chancen/Signale</small></div>
         <div class="setup-step"><span>Zusammenfassungen</span><strong>${articles.filter(isMorningBriefingArticle).length}</strong><small>Morgenbriefings</small></div>
         <div class="setup-step"><span>Redaktion</span><strong>100%</strong><small>entscheidet selbst</small></div>
       </div>
@@ -1312,7 +1353,7 @@ function settingsForm(settings) {
       <input name="minimumTrustScore" type="hidden" value="${Number(settings.minimumTrustScore || 70)}">
     </div>
     <label class="checkbox"><input type="checkbox" name="allowAutoPublish" disabled> Automatische Veroeffentlichung bleibt deaktiviert</label>
-    <div class="alert alert--warning">Schutzregeln sind fest verdrahtet: keine Halluzinationen, keine erfundenen Quellen, keine KI-Bewertung und keine Score-Vergabe. Fuer die Themenliste reicht eine valide Quelle.</div>
+    <div class="alert alert--warning">Schutzregeln sind fest verdrahtet: keine Halluzinationen, keine erfundenen Quellen, keine KI-Bewertung und keine Score-Vergabe. Fuer die Themenliste reicht eine valide Quelle; sichtbar werden sollen nur Themen mit konkretem Nutzen fuer junge kreative Medienschaffende.</div>
     <div class="actions"><button class="button button--primary">Einstellungen speichern</button></div>
     <div id="ai-editorial-settings-result"></div>
   </form>
@@ -1461,6 +1502,7 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
     ...(settingsRecord || {})
   };
   const latestArticle = latest(aiArticles);
+  const latestImport = latestImportMarker(aiArticles);
   const latestLog = latest(logs, "created_at");
   const latestPressRun = latest(pressImportRuns, "updated_at");
   const visiblePressReleases = pressReleases.filter((release) => !isLowQualityPressRelease(release) && !isDuplicatePressRelease(release));
@@ -1506,7 +1548,7 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
     }).join("");
   const secondaryTopicSection = secondaryTopicSuggestions.length ? `<details class="press-hidden-details topic-secondary-details"><summary><strong>Gespeicherte Themen ausserhalb der Arbeitsliste</strong><span>${secondaryTopicSuggestions.length} uebernommen oder zurueckgestellt</span></summary><p class="muted">Diese Themen bleiben gespeichert, werden aber nicht fuer die direkte Beitragserstellung angeboten.</p><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema / Quelle</th><th>Kategorie / Quellenhinweis</th><th>Beleg</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${topicSuggestionRows(secondaryTopicSuggestions.slice(0, 120), sources, { readonly: true, articles: aiArticles })}</tbody></table></div></details>` : "";
   const filteredTopicSection = filteredTopicSuggestions.length ? `<details class="press-hidden-details topic-secondary-details"><summary><strong>Aus Keywords/Quellen vorhandene, aber ausgefilterte Themen</strong><span>${filteredTopicSuggestions.length} gespeichert</span></summary><p class="muted">Diese Eintraege sind nicht weg. Sie liegen in den gespeicherten Themenvorschlaegen, werden aber wegen Filterregeln nicht in der Arbeitsliste angezeigt, zum Beispiel Presse-, Event-, Termin-, Navigations- oder unpassende Treffer.</p><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema / Keywords</th><th>Kategorie</th><th>Filtergrund</th><th>Datum</th></tr></thead><tbody>${filteredTopicRows(filteredTopicSuggestions.slice(0, 160))}</tbody></table></div></details>` : "";
-  const topicResearchPanel = `<section class="panel ai-topic-research-panel"><div class="ai-topic-research-hero"><div class="ai-topic-research-copy"><p class="eyebrow">KI-Redaktion</p><h2>Themenrecherche</h2><p>Erstellt Themenvorschlaege aus den hinterlegten Quellen. Die KI bereitet vor; die Redaktion entscheidet ueber Bearbeitung und Veroeffentlichung.</p><div class="ai-topic-research-facts"><span>Quellenhinweis</span><span>Themenfeld</span><span>Redaktion entscheidet</span></div></div><div class="ai-topic-research-card"><div class="ai-topic-research-controls ai-topic-research-controls--compact"><div class="field"><label>Themenbereich</label><select id="ai-topic-research-category">${topicResearchCategories.map((category) => `<option value="${category === "Alle Themenbereiche" ? "" : escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}</select></div><div class="field"><label>Quelle</label><select id="ai-topic-research-source"><option value="">Alle passenden Quellen</option>${sourceOptions}</select></div><div class="field"><label>Stichworte</label><input id="ai-topic-research-keywords" placeholder="z. B. FAST, GEMA, Voice-Cloning"></div><div class="ai-picto-row ai-topic-research-actions">${pictogram(">", "Recherche starten", "data-ai-topic-research")}</div></div></div></div><div id="ai-topic-research-result"></div><div class="ai-topic-subtools">${rawTopicDataTable}</div>${openSuggestions.length ? `<form id="ai-topic-suggestions-form"><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema / Quelle</th><th>Kategorie / Quellenhinweis</th><th>Beleg</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${topicSuggestionRows(openSuggestions.slice(0, 120), sources, { articles: aiArticles })}</tbody></table></div><div class="actions"><button class="button button--primary">News erstellen</button></div></form>` : `<div class="alert">Noch keine offenen Themenvorschlaege. Starte eine Themenrecherche.</div>`}${secondaryTopicSection}${filteredTopicSection}</section><section class="panel"><h2>Themen-Queue</h2><div class="table-wrap"><table class="table"><thead><tr><th>Thema</th><th>Kategorie</th><th>Beleg</th><th>Status</th><th>Datum</th></tr></thead><tbody>${queuedTopics.length ? topicQueueRows(queuedTopics) : `<tr><td colspan="5">Noch keine Themen in der Queue.</td></tr>`}</tbody></table></div></section>`;
+  const topicResearchPanel = `<section class="panel ai-topic-research-panel"><div class="ai-topic-research-hero"><div class="ai-topic-research-copy"><p class="eyebrow">KI-Redaktion</p><h2>Themenradar junge Kreative</h2><p>Findet aktuelle Signale zu KI, Tools, Social Video, Jobs, Skills, Foerderung und neuen Formaten. Entscheidend ist immer: Was bringt es jungen kreativen Medienschaffenden konkret?</p><div class="ai-topic-research-facts"><span>Quellenhinweis</span><span>Praxisnutzen</span><span>Redaktion entscheidet</span></div></div><div class="ai-topic-research-card"><div class="ai-topic-research-controls ai-topic-research-controls--compact"><div class="field"><label>Themenbereich</label><select id="ai-topic-research-category">${topicResearchCategories.map((category) => `<option value="${category === "Alle Themenbereiche" ? "" : escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}</select></div><div class="field"><label>Quelle</label><select id="ai-topic-research-source"><option value="">Alle passenden Quellen</option>${sourceOptions}</select></div><div class="field"><label>Stichworte</label><input id="ai-topic-research-keywords" placeholder="z. B. GenAI, Microdrama, YouTube, AI Studio, Creator-Fonds"></div><div class="ai-picto-row ai-topic-research-actions">${pictogram(">", "Recherche starten", "data-ai-topic-research")}</div></div></div></div><div id="ai-topic-research-result"></div><div class="ai-topic-subtools">${rawTopicDataTable}</div>${openSuggestions.length ? `<form id="ai-topic-suggestions-form"><div class="table-wrap"><table class="table table--topic-suggestions"><thead><tr><th>Thema / Quelle</th><th>Kategorie / Quellenhinweis</th><th>Beleg</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${topicSuggestionRows(openSuggestions.slice(0, 120), sources, { articles: aiArticles })}</tbody></table></div><div class="actions"><button class="button button--primary">News erstellen</button></div></form>` : `<div class="alert">Noch keine offenen Themenvorschlaege. Starte eine Themenrecherche.</div>`}${secondaryTopicSection}${filteredTopicSection}</section><section class="panel"><h2>Themen-Queue</h2><div class="table-wrap"><table class="table"><thead><tr><th>Thema</th><th>Kategorie</th><th>Beleg</th><th>Status</th><th>Datum</th></tr></thead><tbody>${queuedTopics.length ? topicQueueRows(queuedTopics) : `<tr><td colspan="5">Noch keine Themen in der Queue.</td></tr>`}</tbody></table></div></section>`;
   const pressListNotice = sortedPressReleases.length
     ? duplicatePressReleases.length ? `<p class="muted">${duplicatePressReleases.length} Dubletten sind gespeichert, werden aber nicht in der verwertbaren Presseliste angezeigt.</p>` : ""
     : duplicatePressReleases.length ? `<p class="muted">Keine verwertbaren Pressemitteilungen in der Liste. ${duplicatePressReleases.length} gespeicherte Dubletten werden nicht angezeigt.</p>` : "";
@@ -1517,16 +1559,16 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
   const pressSourcesPanel = `<section class="panel"><h2>Quellenstatus Presse</h2><p class="muted">Quellen werden erst nach drei erfolglosen Scans fuer 14 Tage ausgespart. Ein Treffer aktiviert die Quelle wieder.</p><div class="table-wrap"><table class="table table--press-sources"><thead><tr><th>Portal</th><th>Status</th><th>Letzte Treffer</th><th>Leerscans</th><th>Skip bis</th><th>Grund</th></tr></thead><tbody>${sortedPressSourceStatus.length ? pressSourceStatusRows(sortedPressSourceStatus.slice(0, 120)) : `<tr><td colspan="6">Noch kein Presse-Quellenstatus gespeichert.</td></tr>`}</tbody></table></div></section>`;
   const pressPanel = `${cmsTitle("KI-Redaktion", "Presse")}${nav(active)}${pressTabs}${pressView === "sources" ? pressSourcesPanel : pressReleasePanel}`;
   const content = {
-    dashboard: `${cmsTitle("KI-Redaktion", "Themenliste")}
+    dashboard: `${cmsTitle("KI-Redaktion", "Themenradar")}
       ${nav(active)}
       
       ${topicResearchPanel}
       <div id="ai-editorial-run-result"></div>`,
     "news-import": newsImportPageContent(active),
     "morning-briefing": morningBriefingPanel({ items: morningBriefingItems, articles, sources, logs, settings }),
-    articles: `${cmsTitle("KI-Redaktion", "Beitraege")}${nav(active)}<section class="panel"><p class="muted">Neueste Beitraege zuerst.</p><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Beitrag / Short Text</th><th>Quelle</th><th>Kategorie</th><th>Datum</th><th>Aktion</th></tr></thead><tbody>${aiArticles.length ? articleRows(aiArticles, { compactArticles: true }) : `<tr><td colspan="5">Noch keine KI-Beitraege.</td></tr>`}</tbody></table></div></section><div id="ai-editorial-run-result"></div>`,
+    articles: `${cmsTitle("KI-Redaktion", "Beitraege")}${nav(active)}<section class="panel"><div class="editorial-field-head"><p class="muted">Nach Datum sortiert, neueste Beitraege zuerst. Artikel aus dem letzten News-Import sind farbig markiert.</p>${aiArticles.length ? `<button class="button button--danger button--small" type="button" data-ai-articles-clear>Alle Artikel in der Liste loeschen</button>` : ""}</div><div id="ai-articles-delete-result"></div><div class="table-wrap"><table class="table table--editorial"><thead><tr><th>Beitrag / Short Text</th><th>Quelle</th><th>Kategorie</th><th>Datum</th><th>Aktion</th></tr></thead><tbody>${aiArticles.length ? articleRows(aiArticles, { compactArticles: true, latestImport }) : `<tr><td colspan="5">Noch keine KI-Beitraege.</td></tr>`}</tbody></table></div></section><div id="ai-editorial-run-result"></div>`,
     press: pressPanel,
-    sources: `${cmsTitle("KI-Redaktion", "Quellen")}${nav(active)}<section class="panel"><details class="source-management-details"><summary><strong>Quellen verwalten</strong><span>manuell hinzufuegen, automatisch erweitern, loeschen</span></summary><p class="muted">Quellen koennen manuell ergaenzt oder aus dem Systemkatalog automatisch in die verifizierte Quellenliste uebernommen werden.</p>${verifiedSourceForm()}</details></section><section class="panel"><h2>Quellen nach Themenbereich</h2><p class="muted">Orientierungsliste fuer die Themenrecherche. Die Quellen sind noch keine Belege fuer einen Artikel; die konkrete Belegpruefung erfolgt im Editor.</p>${sourceCategoryBlocks(sources)}</section><section class="panel"><h2>Alle verifizierten Quellen</h2><div class="table-wrap"><table class="table"><thead><tr><th>Nr.</th><th>Quelle</th><th>Typ</th><th>Status</th><th>Link</th><th>Aktion</th></tr></thead><tbody>${sources.length ? sourceRows(sources, { numbered: true, manageable: true }) : `<tr><td colspan="6">Noch keine Quellen erfasst.</td></tr>`}</tbody></table></div></section>`,
+    sources: `${cmsTitle("KI-Redaktion", "Quellen")}${nav(active)}<section class="panel"><details class="source-management-details"><summary><strong>Quellen verwalten</strong><span>manuell hinzufuegen, automatisch erweitern, loeschen</span></summary><p class="muted">Quellen koennen manuell ergaenzt oder aus dem Systemkatalog automatisch in die verifizierte Quellenliste uebernommen werden.</p>${verifiedSourceForm()}</details></section><section class="panel"><h2>Quellen nach Themenbereich</h2><p class="muted">Orientierungsliste fuer die Themenrecherche. Prioritaet haben Quellen mit Signalen zu KI-Wandel, Tools, Workflows, Creator Economy, Jobs, Ausbildung, Foerderung und neuen Formaten.</p>${sourceCategoryBlocks(sources)}</section><section class="panel"><h2>Alle verifizierten Quellen</h2><div class="table-wrap"><table class="table"><thead><tr><th>Nr.</th><th>Quelle</th><th>Typ</th><th>Status</th><th>Link</th><th>Aktion</th></tr></thead><tbody>${sources.length ? sourceRows(sources, { numbered: true, manageable: true }) : `<tr><td colspan="6">Noch keine Quellen erfasst.</td></tr>`}</tbody></table></div></section>`,
     suggestions: `${cmsTitle("KI-Redaktion", "Quellenvorschlaege")}${nav(active)}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Quelle</th><th>Typ</th><th>Status</th><th>Aktion</th></tr></thead><tbody>${sourceSuggestions.length ? sourceSuggestions.map((source) => `<tr><td><strong>${escapeHtml(source.name || source.title || "-")}</strong><small>${escapeHtml(source.suggestion_reason || source.domain || "")}</small></td><td>${escapeHtml(source.source_type || "-")}</td><td>${badge(source.review_status || "vorgeschlagen")}</td><td><button class="button button--secondary button--small" data-ai-source-review="${escapeHtml(source.id)}" data-review-status="in Prüfung">in Prüfung</button></td></tr>`).join("") : `<tr><td colspan="4">Keine neuen Quellenvorschlaege.</td></tr>`}</tbody></table></div></section><div id="ai-source-review-result"></div>`,
     prompts: `${cmsTitle("KI-Redaktion", "Prompt-Verwaltung")}${nav(active)}<section class="panel prompt-navigation-panel"><h2>Prompt-Navigation</h2>${promptNameNavigation(prompts)}</section><section class="panel prompt-edit-panel"><h2>Prompt anlegen / bearbeiten</h2>${promptForm(prompts.find((prompt) => !isArchivedPrompt(prompt)) || null)}</section><section class="panel"><h2>System-Prompts</h2><div class="table-wrap"><table class="table table--prompts"><thead><tr><th>Name</th><th>Typ</th><th>Aktueller Prompt</th><th>Status</th><th>Aktiv</th><th>Version</th><th>Geaendert</th><th>Aktion</th></tr></thead><tbody>${promptCatalogRows(prompts)}</tbody></table></div></section><section class="panel"><h2>Letzte Prompt-Tests</h2><div class="table-wrap"><table class="table"><thead><tr><th>Zeit</th><th>Prompt</th><th>Status</th><th>Warnungen</th></tr></thead><tbody>${promptTests.length ? promptTestRows([...promptTests].reverse().slice(0, 8)) : `<tr><td colspan="4">Noch keine Prompt-Tests.</td></tr>`}</tbody></table></div></section>`,
     keywords: `${cmsTitle("KI-Redaktion", "Keywords")}${nav(active)}<section class="panel"><h2>Themen-Keywords</h2><p class="muted">Keywords aus allen gespeicherten Themenvorschlaegen und der Themen-Queue. Einige Treffer koennen im Dashboard ausgefiltert sein; dort stehen sie jetzt im Block "Aus Keywords/Quellen vorhandene, aber ausgefilterte Themen".</p><div class="ai-keyword-cloud ai-keyword-cloud--clickable">${topicKeywords.length ? topicKeywords.slice(0, 60).map((keyword) => `<a class="${keyword.key === selectedKeyword ? "is-active" : ""}" href="#/cms/ai-editorial/keywords?keyword=${encodeURIComponent(keyword.key)}">${escapeHtml(keyword.keyword)} <strong>${keyword.count}</strong></a>`).join("") : `<p class="muted">Noch keine Themen-Keywords vorhanden. Starte eine Themenrecherche.</p>`}</div>${selectedKeyword ? `<section class="keyword-topic-detail"><div class="editorial-field-head"><h3>Themen zu "${escapeHtml(selectedKeywordLabel)}"</h3><a class="button button--secondary button--small" href="#/cms/ai-editorial/keywords">Filter loeschen</a></div><div class="table-wrap"><table class="table table--keyword-topics"><thead><tr><th>Thema</th><th>Kategorie</th><th>Beleg</th><th>Status</th></tr></thead><tbody>${selectedKeywordTopics.length ? keywordTopicRows(selectedKeywordTopics, aiArticles) : `<tr><td colspan="4">Keine Themen fuer dieses Keyword gefunden.</td></tr>`}</tbody></table></div></section>` : `<div class="alert">Waehle ein Keyword aus, um die zugehoerigen Themen zu sehen.</div>`}<div class="table-wrap"><table class="table table--topic-keywords"><thead><tr><th>Keyword</th><th>Treffer</th><th>Letzte Aktivitaet</th><th>Themen</th></tr></thead><tbody>${topicKeywords.length ? topicKeywordRows(topicKeywords.slice(0, 80)) : `<tr><td colspan="4">Noch keine Themen-Keywords vorhanden.</td></tr>`}</tbody></table></div></section><section class="panel"><h2>Artikel-Keywords</h2><div class="ai-keyword-cloud">${keywords.length ? keywords.map((keyword) => `<span>${escapeHtml(keyword.keyword)}</span>`).join("") : `<p class="muted">Noch keine KI-Artikel-Keywords gespeichert.</p>`}</div></section>`,
@@ -1536,3 +1578,8 @@ export async function aiEditorialPage(section = "dashboard", query = new URLSear
   }[active] || "";
   return protect(cmsShell(`cms/ai-editorial/${active}`, content));
 }
+
+
+
+
+

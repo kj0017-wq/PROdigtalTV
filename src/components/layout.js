@@ -48,19 +48,24 @@ export function header(active) {
   </div><nav class="public-mobile-menu" data-public-menu aria-label="Mobile Navigation">
     ${nav.map(menuLink).join("")}
     <div class="public-mobile-submenu" aria-label="Ueber uns Untermenue">${aboutSubnav.map(([route, label]) => `<a class="${active === route ? "active" : ""}" href="#/${route}" data-public-menu-close>${label}</a>`).join("")}</div>
-    ${showCmsLink(user) ? `<a href="/cms.html#/cms/live" data-public-menu-close>Mobile CMS</a>` : ""}
+    ${showCmsLink(user) ? `<a href="/cms.html?mobileCms=1#/cms/live" data-public-menu-close>Veranstaltungs-Cockpit</a>` : ""}
     <a href="#/${user ? "portal" : "login"}" data-public-menu-close>${user ? "Profil" : "Login"}</a>
   </nav></header>`;
 }
 
 export function bottomNav(active) {
   const user = currentUser();
-  const memberRoute = user ? "portal" : "login";
-  const memberLabel = user ? "Profil" : "Login";
-  const items = [["home", "home", "Start"], ["events", "events", "Events"], ["topics", "topics", "Themen"], ["news", "news", "News"], [memberRoute, "login", memberLabel]];
+  const adminCockpitRoute = "/cms.html?mobileCms=1#/cms/live";
+  const adminActive = String(window.location.hash || "").startsWith("#/cms/live");
+  const memberRoute = showCmsLink(user) ? adminCockpitRoute : user ? "portal" : "login";
+  const memberIcon = showCmsLink(user) ? "events" : "login";
+  const memberLabel = showCmsLink(user) ? "Cockpit" : user ? "Profil" : "Login";
+  const items = [["home", "home", "Start"], ["events", "events", "Events"], ["topics", "topics", "Themen"], ["news", "news", "News"], [memberRoute, memberIcon, memberLabel]];
+  const hrefForRoute = (route) => String(route || "").startsWith("/") ? route : `#/${route}`;
+  const activeForRoute = (route) => route === adminCockpitRoute ? adminActive : active === route || (active === "login" && route === "portal");
   return `<nav class="bottom-nav pdtv-mobile-bottom-nav" aria-label="Mobile Navigation">
     ${items.map(([route, icon, label]) =>
-      `<a href="#/${route}" class="${active === route || (active === "login" && route === "portal") ? "active" : ""}" ${active === route ? `aria-current="page"` : ""}><b>${navIcon(icon)}</b><span>${label}</span></a>`).join("")}
+      `<a href="${hrefForRoute(route)}" class="${activeForRoute(route) ? "active" : ""}" ${activeForRoute(route) ? `aria-current="page"` : ""}><b>${navIcon(icon)}</b><span>${label}</span></a>`).join("")}
   </nav>`;
 }
 
@@ -123,3 +128,4 @@ function pwaInstallPrompt() {
     </div>
   </aside>`;
 }
+

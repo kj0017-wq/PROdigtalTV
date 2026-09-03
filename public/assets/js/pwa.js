@@ -6,8 +6,8 @@
   const isIos = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent);
   const isAndroid = () => /android/i.test(window.navigator.userAgent);
   const isMobile = () => isIos() || isAndroid() || window.matchMedia("(pointer: coarse)").matches || window.innerWidth <= 820;
-  const currentCache = "prodigitaltv-pwa-v985";
-  const activeCacheNames = new Set([currentCache, "pdt-platform-v959", "pdt-platform-images-v959"]);
+  const currentCache = "prodigitaltv-pwa-v986";
+  const activeCacheNames = new Set([currentCache, "pdt-platform-v960", "pdt-platform-images-v960"]);
   const dismissKey = "pdtv-pwa-install-dismissed-session";
   const privacyDismissKey = "pdtv-pwa-privacy-dismissed-session";
   const cookieSettingsOpenKey = "pdtv-cookie-settings-open-session";
@@ -363,3 +363,4 @@
   navigator.serviceWorker?.ready?.then(updatePrompt).catch(() => undefined);
   window.PROdigitalTVPwa = { isStandalone, updatePrompt };
 })();
+

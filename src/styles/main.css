@@ -6437,6 +6437,27 @@ form.member-edit-form {
   accent-color: var(--pdt-red);
 }
 .table--editorial td:first-child { min-width: 310px; }
+.table--editorial tr.ai-article-row--latest-import td {
+  background: #fff6d8;
+  border-top-color: #f1c84b;
+  border-bottom-color: #f1c84b;
+}
+.table--editorial tr.ai-article-row--latest-import td:first-child {
+  box-shadow: inset 4px 0 0 #f0b429;
+}
+.ai-import-badge {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 8px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f0b429;
+  color: #071a33;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
 .table--event-followup td:first-child,
 .table--event-followup th:first-child,
 .table--press td:first-child,
@@ -16900,5 +16921,6 @@ body.theme-night .invitation-talk-hints p,
 :root[data-theme="night"] .invitation-talk-hints p {
   color: #fff;
 }
+
 
 

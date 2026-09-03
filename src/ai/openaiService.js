@@ -5,6 +5,7 @@ import { aiSourceCatalog } from "../data/aiSourceCatalog.js";
 
 const ACTION_FUNCTIONS = {
   improveText: "improveText",
+  translateNewsImportToGerman: "translateNewsImportToGerman",
   shortenText: "shortenText",
   extendText: "extendText",
   generateSeoMeta: "generateSeoMeta",
@@ -192,7 +193,9 @@ export async function generateAiTopicSuggestions(options = {}) {
         keywords: keywordFilter,
         sourceId: sourceFilter,
         allSources: options.allSources === true,
-        researchMode: options.researchMode || ""
+        researchMode: options.researchMode || "",
+        skipSourceIds: Array.isArray(options.skipSourceIds) ? options.skipSourceIds : [],
+        maxSourcesPerRun: Number(options.maxSourcesPerRun || 24)
       });
       if (isLocalHost() && Array.isArray(result.data?.suggestions)) {
         await Promise.all(result.data.suggestions.map((suggestion) => upsert("ai_topic_suggestions", suggestion)));
@@ -663,3 +666,6 @@ export async function saveAiDraft({ entityType, entityId, fieldName, originalTex
     createdAt: new Date().toISOString()
   });
 }
+
+
+

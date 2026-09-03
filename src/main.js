@@ -3,11 +3,12 @@ import { currentUser, canUseCms, isAdmin, login, logout, refreshAuthToken, waitF
 import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=532";
 import { escapeHtml, formatDate } from "./utils/format.js";
 import { normalizeLifecyclePhase } from "./data/platformConstants.js";
-import { publicShell } from "./components/layout.js?v=13";
+import { publicShell } from "./components/layout.js?v=14";
+import { articleToImportBlock, parseImportedNewsArticles } from "./utils/newsImportParser.js?v=1";
 
 const root = document.querySelector("#app");
 const initialWebappSplashStartedAt = root?.querySelector(".pdtv-webapp-splash") ? Date.now() : 0;
-const initialWebappSplashMinMs = 3000;
+const initialWebappSplashMinMs = 450;
 let initialWebappSplashPending = Boolean(initialWebappSplashStartedAt);
 const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const mediaProxyFunctionUrl = "https://europe-west3-prodigitaltv-da47b.cloudfunctions.net/mediaAssetProxy";
@@ -19,9 +20,9 @@ const memberProfileWarmups = new Map();
 let mobileSurveyPeopleCache = { createdAt: 0, directory: null };
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=778");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=736");
-const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=498");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=781");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=738");
+const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=502");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=116");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=16");
 const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=8");
@@ -29,7 +30,7 @@ const storageService = () => lazy.storageService ||= import("./firebase/storageS
 const firebaseClientService = () => lazy.firebaseClientService ||= import("./firebase/firebaseClient.js?v=1");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
 const csvService = () => lazy.csvService ||= import("./utils/csv.js");
-const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=328");
+const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=330");
 
 function memberProfileCacheKey(user = {}) {
   const memberId = user.memberId || "";
@@ -968,6 +969,7 @@ function publicRouteFromHashValue(hash = "") {
 
 async function render() {
   const generation = ++renderGeneration;
+  const routeHashAtStart = window.location.hash || "#/home";
   let currentRoute;
   let loadingTimer = null;
   try {
@@ -998,12 +1000,20 @@ async function render() {
     ]);
     if (loadingTimer) window.clearTimeout(loadingTimer);
     if (generation !== renderGeneration) return;
+    if (!isCmsRoute && (window.location.hash || "#/home") !== routeHashAtStart) {
+      render();
+      return;
+    }
     if (!isCmsRoute && initialWebappSplashPending) {
       initialWebappSplashPending = false;
       const remainingSplashMs = initialWebappSplashMinMs - (Date.now() - initialWebappSplashStartedAt);
       if (remainingSplashMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, remainingSplashMs));
         if (generation !== renderGeneration) return;
+        if ((window.location.hash || "#/home") !== routeHashAtStart) {
+          render();
+          return;
+        }
       }
     }
     root.innerHTML = viewHtml;
@@ -1109,6 +1119,12 @@ function updateMobileQrCode() {
   link.href = mobileUrl;
   link.title = mobileUrl;
   image.src = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&margin=1&data=${encodeURIComponent(mobileUrl)}`;
+}
+
+function preloadPublicRouteFromLink(link) {
+  const href = link?.getAttribute?.("href") || "";
+  if (!href.startsWith("#/event/")) return;
+  publicPages().catch(() => undefined);
 }
 
 function showRoutePending(link) {
@@ -1580,6 +1596,21 @@ async function startPublicTts(button) {
   }
   await audio.play();
 }
+
+document.addEventListener("pointerdown", (event) => {
+  const link = clickedAnchor(event);
+  if (!link || !link.matches?.('a[href^="#/"]')) return;
+  if (event.defaultPrevented || event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  showRoutePending(link);
+  preloadPublicRouteFromLink(link);
+}, { capture: true, passive: true });
+
+document.addEventListener("touchstart", (event) => {
+  const link = clickedAnchor(event);
+  if (!link || !link.matches?.('a[href^="#/"]')) return;
+  showRoutePending(link);
+  preloadPublicRouteFromLink(link);
+}, { capture: true, passive: true });
 
 document.addEventListener("click", (event) => {
   const stopButton = event.target.closest?.("[data-tts-stop]");
@@ -6647,6 +6678,58 @@ function topicResearchStatusMarkup({ contextLabel = "", startedAt = Date.now(), 
   </div>`;
 }
 
+async function runCompleteAiTopicResearch(options = {}, onProgress = () => {}) {
+  const processedSourceIds = new Set((Array.isArray(options.skipSourceIds) ? options.skipSourceIds : [])
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean));
+  const combined = {
+    ok: false,
+    suggestions: [],
+    rejectedQualitySuggestions: [],
+    researchedSources: 0,
+    totalSources: 0,
+    sourcePublications: 0,
+    stoppedByTimeBudget: false,
+    runs: 0,
+    messages: []
+  };
+  let previousProcessedCount = -1;
+  for (let pass = 1; pass <= 30; pass += 1) {
+    combined.runs = pass;
+    onProgress({ pass, processedSourceCount: processedSourceIds.size, result: combined });
+    const result = await generateAiTopicSuggestions({
+      ...options,
+      allSources: options.allSources !== false,
+      researchMode: options.researchMode || "all_sources",
+      maxSourcesPerRun: options.maxSourcesPerRun || 24,
+      skipSourceIds: Array.from(processedSourceIds)
+    });
+    const processedThisRun = (Array.isArray(result?.processedSourceIds) ? result.processedSourceIds : [])
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+    processedThisRun.forEach((value) => processedSourceIds.add(value.toLowerCase()));
+    combined.ok = combined.ok || result?.ok !== false;
+    combined.suggestions.push(...(Array.isArray(result?.suggestions) ? result.suggestions : []));
+    combined.rejectedQualitySuggestions.push(...(Array.isArray(result?.rejectedQualitySuggestions) ? result.rejectedQualitySuggestions : []));
+    combined.sourcePublications += Number(result?.sourcePublications || result?.source_publications || 0);
+    combined.researchedSources = processedSourceIds.size || (combined.researchedSources + Number(result?.researchedSources || 0));
+    combined.totalSources = Math.max(combined.totalSources, combined.researchedSources + Number((Array.isArray(result?.remainingSourceIds) ? result.remainingSourceIds : []).length));
+    if (result?.message) combined.messages.push(result.message);
+    onProgress({ pass, processedSourceCount: processedSourceIds.size, result: combined });
+    const hasMore = (Boolean(result?.hasMoreSources) || Boolean(result?.stoppedByTimeBudget)) && Array.isArray(result?.remainingSourceIds) && result.remainingSourceIds.length > 0;
+    if (!hasMore) {
+      combined.stoppedByTimeBudget = false;
+      break;
+    }
+    if (processedSourceIds.size <= previousProcessedCount) {
+      combined.stoppedByTimeBudget = true;
+      break;
+    }
+    previousProcessedCount = processedSourceIds.size;
+  }
+  combined.message = `Automatische Themenrecherche abgeschlossen. ${combined.researchedSources}${combined.totalSources ? ` von ${combined.totalSources}` : ""} Quellen wurden abgearbeitet, ${combined.sourcePublications} aktuelle Quellenfunde gespeichert und ${combined.suggestions.length} qualitaetsgepruefte Themenvorschlaege erstellt.${combined.stoppedByTimeBudget ? " Einige Quellen konnten wegen wiederholtem Zeitlimit noch nicht abgeschlossen werden." : ""}`;
+  return combined;
+}
 function pressImportStatusMarkup({ startedAt = Date.now(), run = null, stepIndex = 0, done = false }) {
   const elapsedSeconds = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
   const boundedStep = Math.max(0, Math.min(PRESS_IMPORT_STEPS.length - 1, stepIndex));
@@ -6905,6 +6988,53 @@ function cleanRawImportText(value = "") {
     .trim();
 }
 
+function textLooksGerman(value = "") {
+  const text = String(value || "").toLowerCase();
+  const germanHits = (text.match(/\b(der|die|das|und|oder|nicht|mit|fuer|für|auf|eine|einer|einem|ist|sind|wird|werden|hat|haben|dass|über|ueber|medien|beitrag|quelle|nachricht)\b/g) || []).length;
+  const englishHits = (text.match(/\b(the|and|with|for|from|that|this|will|has|have|media|creator|studio|video|news|source|published|according)\b/g) || []).length;
+  const umlautHits = (text.match(/[äöüß]/g) || []).length;
+  return germanHits + umlautHits * 2 >= Math.max(6, englishHits + 2);
+}
+
+function splitTranslationChunks(text = "", maxChars = 7000) {
+  const paragraphs = cleanRawImportText(text).split(/\n{2,}/).map((item) => item.trim()).filter(Boolean);
+  const chunks = [];
+  let current = "";
+  paragraphs.forEach((paragraph) => {
+    const next = current ? `${current}\n\n${paragraph}` : paragraph;
+    if (next.length > maxChars && current) {
+      chunks.push(current);
+      current = paragraph;
+    } else {
+      current = next;
+    }
+  });
+  if (current) chunks.push(current);
+  return chunks.length ? chunks : [cleanRawImportText(text)].filter(Boolean);
+}
+
+async function translateNewsImportTextIfNeeded(rawText = "", context = {}) {
+  const text = cleanRawImportText(rawText);
+  if (!text || textLooksGerman(text)) return { text, translated: false };
+  const chunks = splitTranslationChunks(text);
+  const translatedChunks = [];
+  for (const [index, chunk] of chunks.entries()) {
+    const result = await callChatGptAction("translateNewsImportToGerman", {
+      originalText: chunk,
+      targetWords: Math.min(1800, Math.max(300, Math.ceil(chunk.split(/\s+/).length * 1.25))),
+      context: {
+        title: context.title || "News-Import",
+        sourceUrl: context.sourceUrl || "",
+        chunk: chunks.length > 1 ? `${index + 1}/${chunks.length}` : "",
+        instruction: "Vor dem Import ins Deutsche uebersetzen. Fakten, Namen, Zahlen, Zitate und Links erhalten. Nicht zusammenfassen."
+      }
+    });
+    const translated = cleanRawImportText(result?.suggestedText || result?.text || "");
+    translatedChunks.push(translated || chunk);
+  }
+  const translatedText = cleanRawImportText(translatedChunks.join("\n\n"));
+  return translatedText ? { text: translatedText, translated: true } : { text, translated: false };
+}
 function rawImportHeadline(value = "", fallback = "Importierte News") {
   const line = cleanRawImportText(value)
     .split(/\n+/)
@@ -6976,6 +7106,25 @@ function markdownUrlFromLine(value = "") {
 }
 
 function parseImportedNewsBlock(rawText = "", fallbackTitle = "Importierte News") {
+  const parsedArticle = parseImportedNewsArticles(rawText)[0] || null;
+  if (parsedArticle) {
+    const sourceSnapshot = parsedArticle.sourceName || parsedArticle.sourceTitle || parsedArticle.sourceUrl ? [{
+      title: parsedArticle.sourceTitle || parsedArticle.sourceName || (parsedArticle.sourceUrl ? domainFromUrl(parsedArticle.sourceUrl) : "Importquelle"),
+      publisher: parsedArticle.sourceName || parsedArticle.sourceTitle || (parsedArticle.sourceUrl ? domainFromUrl(parsedArticle.sourceUrl) : "Importquelle"),
+      date: parsedArticle.sourceDate || "",
+      url: parsedArticle.sourceUrl || "",
+      source_type: "Textquelle"
+    }] : [];
+    return {
+      headline: limitText(stripUnfilledEditorialPlaceholders(parsedArticle.headline || fallbackTitle), 90) || fallbackTitle,
+      teaserText: limitText(stripInlineMarkdown(parsedArticle.shortText || parsedArticle.subline || parsedArticle.longText), 210),
+      shortText: limitText(stripInlineMarkdown(parsedArticle.shortText || parsedArticle.subline || parsedArticle.longText), 210),
+      introText: limitText(stripInlineMarkdown(parsedArticle.subline || parsedArticle.shortText || parsedArticle.longText), 260),
+      bodyText: stripInlineMarkdown(parsedArticle.longText || parsedArticle.rawText || rawText),
+      sourceSnapshot,
+      sourceUrl: parsedArticle.sourceUrl || ""
+    };
+  }
   const cleanedRawText = cleanRawImportText(rawText);
   const lines = cleanedRawText.split(/\n/)
     .map((line) => line.trim())
@@ -6986,97 +7135,16 @@ function parseImportedNewsBlock(rawText = "", fallbackTitle = "Importierte News"
     .replace(/^\d{1,2}[.)]\s+/, "")
     .replace(/^Pressemitteilung[:\s-]*/i, "")
     .trim(), 90) || fallbackTitle);
-  const sourceIndex = lines.findIndex((line) => /^(?:\*\*)?\s*(quelle|source)\s*:/i.test(line));
-  const sourceLine = sourceIndex >= 0 ? lines[sourceIndex] : "";
-  const sourceUrl = markdownUrlFromLine(sourceLine) || (sourceIndex >= 0 ? markdownUrlFromLine(lines[sourceIndex + 1] || "") : "");
-  const sourceTitle = sourceLine
-    ? stripInlineMarkdown(sourceLine.replace(/^(?:\*\*)?\s*(quelle|source)\s*:\s*(?:\*\*)?/i, ""))
-      .replace(/https?:\/\/\S+/gi, "")
-      .replace(/[–-]\s*$/, "")
-      .trim()
-    : "";
-  const bodyLines = lines.filter((line, index) => {
-    if (index === lines.indexOf(headingLine)) return false;
-    if (sourceIndex >= 0 && (index === sourceIndex || index === sourceIndex + 1 && /^https?:\/\//i.test(line))) return false;
-    if (/^(?:-{3,}|={3,}|\*{3,})$/.test(line)) return false;
-    return true;
-  });
-  const bodyText = stripInlineMarkdown(bodyLines.join("\n\n"));
-  const teaserSource = bodyLines.find((line) => !/^(?:\*\*)?\s*(quelle|source)\s*:/i.test(line)) || "";
-  const teaserText = limitText(stripInlineMarkdown(teaserSource), 210);
-  const sourceSnapshot = sourceLine || sourceUrl ? [{
-    title: sourceTitle || (sourceUrl ? domainFromUrl(sourceUrl) : "Importquelle"),
-    publisher: sourceTitle || (sourceUrl ? domainFromUrl(sourceUrl) : "Importquelle"),
-    url: sourceUrl,
-    source_type: "Textquelle"
-  }] : [];
-  return {
-    headline,
-    teaserText,
-    shortText: teaserText,
-    introText: teaserText,
-    bodyText: bodyText || stripInlineMarkdown(cleanedRawText),
-    sourceSnapshot,
-    sourceUrl
-  };
+  const bodyText = stripInlineMarkdown(lines.filter((line) => line !== headingLine).join("\n\n"));
+  const teaserText = limitText(bodyText, 210);
+  return { headline, teaserText, shortText: teaserText, introText: teaserText, bodyText: bodyText || stripInlineMarkdown(cleanedRawText), sourceSnapshot: [], sourceUrl: "" };
 }
 
 function splitImportedNewsBlocks(rawText = "") {
-  const text = cleanRawImportText(rawText);
-  if (!text) return [];
-
-  const cleanupBlock = (block = "") => cleanRawImportText(block)
-    .split(/\n/)
-    .map((line) => line.trimEnd())
-    .filter((line) => !/^@@NEWS_SPLIT@@$/i.test(line.trim()))
-    .filter((line) => !/^(?:-{3,}|={3,}|\*{3,})$/.test(line.trim()))
-    .join("\n")
-    .replace(/^(?:branchen-news|morgenbriefing|wochenbriefing)\s*[-–].*?(?:\n{2,}|$)/i, "")
-    .trim();
-
-  const lines = text.split(/\n/).map((line) => line.trim());
-  const explicitHeadingIndexes = [];
-  lines.forEach((line, index) => {
-    const normalizedLine = line.replace(/^\*+|\*+$/g, "").trim();
-    const markdownHeading = /^#{2,6}\s+\S.{6,180}$/.test(line);
-    const numberedHeading = /^(?:\*\*)?\d{1,2}[.)]\s+\S.{6,180}(?:\*\*)?$/.test(line);
-    const labeledHeading = /^(?:news|meldung|thema)\s+\d{1,2}\s*[:.-]\s+\S.{6,180}$/i.test(normalizedLine);
-    if (markdownHeading || numberedHeading || labeledHeading) explicitHeadingIndexes.push(index);
-  });
-  if (explicitHeadingIndexes.length > 1) {
-    const headingBlocks = explicitHeadingIndexes.map((start, index) => {
-      const end = explicitHeadingIndexes[index + 1] ?? lines.length;
-      return cleanupBlock(lines.slice(start, end).join("\n"));
-    }).filter((block) => block.length >= 80);
-    if (headingBlocks.length > 1) return headingBlocks.slice(0, 30);
-  }
-
-  let blocks = text
-    .split(/\n\s*(?:-{3,}|={3,}|\*{3,}|@@NEWS_SPLIT@@)\s*\n/g)
-    .map(cleanRawImportText)
-    .map(cleanupBlock)
-    .filter((block) => block.length >= 80 && !/^(?:branchen-news|morgenbriefing|wochenbriefing)\s*[-–]/i.test(block));
-  if (blocks.length > 1) return blocks.slice(0, 30);
-
-  const startIndexes = [];
-  lines.forEach((line, index) => {
-    const previousBlank = index === 0 || !lines[index - 1];
-    const next = lines.slice(index + 1, index + 24).join(" ");
-    const normalizedLine = line.replace(/^\*+|\*+$/g, "").trim();
-    const looksLikeNumberedHeadline = /^(?:\*\*)?\d{1,2}[.)]\s+\S.{6,160}(?:\*\*)?$/.test(line);
-    const looksLikeSectionHeadline = /^(?:news|meldung|thema)\s+\d{1,2}\s*[:.-]\s+\S.{6,160}$/i.test(normalizedLine);
-    const looksLikeHeadline = previousBlank && normalizedLine.length >= 12 && normalizedLine.length <= 140 && !/[.!?]$/.test(normalizedLine) && /[A-ZÄÖÜ]/.test(normalizedLine[0] || "");
-    const hasNewsEvidence = /(quelle|source|http|www\.|dwdl|meedia|horizont|kress|turi2|vaunet|reuters|medienanstalt|bundesnetzagentur|eu-kommission|datum|stand:|kurz-teaser|branchen-news|einordnung)/i.test(`${line} ${next}`);
-    if (looksLikeNumberedHeadline || looksLikeSectionHeadline || (looksLikeHeadline && hasNewsEvidence)) startIndexes.push(index);
-  });
-  if (startIndexes.length < 2) return [text];
-  blocks = startIndexes.map((start, index) => {
-    const end = startIndexes[index + 1] ?? lines.length;
-    return cleanupBlock(lines.slice(start, end).join("\n"));
-  }).filter((block) => block.length >= 80 && !/^@@NEWS_SPLIT@@$/i.test(block.trim()));
-  return blocks.length > 1 ? blocks.slice(0, 30) : [text];
+  const articles = parseImportedNewsArticles(rawText);
+  const blocks = articles.map((article) => articleToImportBlock(article)).filter((block) => block.length >= 40);
+  return blocks.length ?blocks : [cleanRawImportText(rawText)].filter(Boolean);
 }
-
 async function saveImportedNewsArticle({
   rawText = "",
   cleanHeadline = "",
@@ -7151,6 +7219,9 @@ async function saveImportedNewsArticle({
     author_type: "ki_news_import",
     author_name: "News-Import",
     generation_origin: "ki_news_import",
+    news_import_batch_id: importMeta.importBatchId || "",
+    news_imported_at: now,
+    translated_to_german: importMeta.translatedToGerman === true,
     ai_log_json: {
       import_flow: "ki_news_import",
       raw_import_only: true,
@@ -11914,7 +11985,11 @@ function wireActions() {
       sourcePool = await topicResearchSourcePool(category, keywords, sourceId);
       renderResearchStatus();
       progressTimer = window.setInterval(renderResearchStatus, 2500);
-      const result = await generateAiTopicSuggestions({ category, keywords, sourceId });
+      const result = await runCompleteAiTopicResearch({ category, keywords, sourceId }, ({ pass, processedSourceCount }) => {
+        if (!output) return;
+        const stepIndex = pass <= 1 ? 2 : 3;
+        output.innerHTML = `<div class="alert">${topicResearchStatusMarkup({ contextLabel: `${contextLabel}${contextLabel ? " / " : ""}Lauf ${pass}`, startedAt, stepIndex, sourcePool, sourceIndex: Math.max(0, processedSourceCount) })}<small>Automatische Fortsetzung aktiv: bereits ${processedSourceCount} Quellen verarbeitet.</small></div>`;
+      });
       if (progressTimer) window.clearInterval(progressTimer);
       const alertTone = result?.ok === false ? "alert--warning" : "alert--success";
       if (output) output.innerHTML = `<div class="alert ${alertTone}">${topicResearchStatusMarkup({ contextLabel, startedAt, stepIndex: TOPIC_RESEARCH_STEPS.length - 1, done: true, sourcePool, sourceIndex: Math.max(0, sourcePool.length - 1) })}<strong>${escapeHtml(result.message || "Themenvorschlaege wurden erstellt.")}</strong></div>`;
@@ -12042,12 +12117,16 @@ function wireActions() {
         importedUrl?.text || "",
         ...textSources.map((source) => source.text || source.content || "")
       ].filter(Boolean).join("\n\n").trim();
-      const rawText = cleanRawImportText(sourcePreviewText);
+      let rawText = cleanRawImportText(sourcePreviewText);
       if (!rawText) {
         throw new Error("Es konnte kein Beitragstext importiert werden.");
       }
+      if (output) output.innerHTML = `<div class="alert">${progressMarkup("Sprache wird geprueft und bei Bedarf ins Deutsche uebersetzt ...", 62)}</div>`;
+      const translation = await translateNewsImportTextIfNeeded(rawText, { title: importedUrl?.title || "News-Import", sourceUrl });
+      rawText = translation.text;
       if (output) output.innerHTML = `<div class="alert">${progressMarkup("Import wird als KI-News-Entwurf gespeichert ...", 78)}</div>`;
       const now = new Date().toISOString();
+      const importBatchId = `news-import-batch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       const importedTitle = importedUrl?.title || "";
       const importedTitleIsSource = importedTitleLooksLikeSource(importedTitle, importedUrl?.source || "", sourceUrl);
       const cleanHeadline = importedTitle && !importedTitleIsSource
@@ -12106,7 +12185,8 @@ function wireActions() {
           source_type: source.type || source.mimeType || "Bildquelle"
         }))
       ];
-      const blocks = splitImportedNewsBlocks(rawText);
+      const importedArticles = parseImportedNewsArticles(rawText);
+      const blocks = importedArticles.length ?importedArticles.map((article) => articleToImportBlock(article)).filter(Boolean) : splitImportedNewsBlocks(rawText);
       if (values.splitMultipleNews || blocks.length >= 3) {
         if (blocks.length > 1) {
           if (output) output.innerHTML = `<div class="alert">${progressMarkup(`${blocks.length} News werden einzeln angelegt ...`, 86)}</div>`;
@@ -12129,7 +12209,9 @@ function wireActions() {
                 split_index: index + 1,
                 split_total: blocks.length,
                 textSourceCount: textSources.length,
-                imageSourceCount: imageFiles.length
+                imageSourceCount: imageFiles.length,
+                importBatchId,
+                translatedToGerman: translation.translated
               }
             }));
           }
@@ -12195,8 +12277,13 @@ function wireActions() {
           sourceUrl,
           textSourceCount: textSources.length,
           imageSourceCount: imageFiles.length,
-          unsupportedTextFiles
+          unsupportedTextFiles,
+          importBatchId,
+          translatedToGerman: translation.translated
         },
+        news_import_batch_id: importBatchId,
+        news_imported_at: now,
+        translated_to_german: translation.translated,
         publishDate: now.slice(0, 10),
         validFrom: importedUrl?.publishedAt || now.slice(0, 10),
         createdAt: now,
@@ -12349,7 +12436,10 @@ function wireActions() {
       progressTimer = window.setInterval(() => {
         refreshLiveFinds().finally(() => renderMorningStatus());
       }, 2500);
-      const research = await generateAiTopicSuggestions({ limit: 10, allSources: true, researchMode: "all_sources", requireLive: true });
+      const research = await runCompleteAiTopicResearch({ limit: 10, allSources: true, researchMode: "all_sources", requireLive: true }, ({ pass, processedSourceCount }) => {
+        if (!output) return;
+        renderMorningStatus(pass <= 1 ? 2 : 3, { sourcePublications: liveSourcePublications, researchedSources: processedSourceCount, totalSources: sourcePool.length });
+      });
       if (progressTimer) window.clearInterval(progressTimer);
       liveSourcePublications = Math.max(liveSourcePublications, Number(research?.sourcePublications || research?.source_publications || 0));
       if (output) {
@@ -12736,6 +12826,57 @@ function wireActions() {
     }
   }));
 
+
+  document.querySelectorAll("[data-ai-articles-clear]").forEach((button) => button.addEventListener("click", async () => {
+    const output = document.querySelector("#ai-articles-delete-result") || document.querySelector("#ai-editorial-run-result");
+    const confirmText = "ARTIKEL LOESCHEN";
+    if (!window.confirm("Alle KI-Artikel in dieser Liste loeschen? Quellen- und Keyword-Zuordnungen dieser Artikel werden ebenfalls entfernt.")) return;
+    const typed = window.prompt(`Bitte zur Bestaetigung genau "${confirmText}" eingeben.`);
+    if (typed !== confirmText) {
+      if (output) output.innerHTML = '<div class="alert">Loeschen abgebrochen. Es wurde nichts geloescht.</div>';
+      return;
+    }
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Loesche ...";
+    const isListedAiArticle = (article = {}) => {
+      const log = article.ai_log_json || article.aiLogJson || {};
+      const values = [
+        article.author_type,
+        article.authorType,
+        article.generation_origin,
+        article.generationOrigin,
+        log.import_flow,
+        log.workflow,
+        log.origin
+      ].map((value) => String(value || "").toLowerCase());
+      return article.aiGenerated === true
+        || Boolean(article.source_snapshot_json || article.sourceSnapshotJson)
+        || Boolean(article.ai_log_json || article.aiLogJson)
+        || Boolean(article.source_status || article.duplicate_status || article.ai_check_status || article.publication_status)
+        || values.some((value) => value.includes("ki_news_import") || value.includes("morning_briefing") || value === "ai");
+    };
+    const removeRows = async (collection, rows) => {
+      const validRows = rows.filter((row) => row?.id);
+      for (const row of validRows) await remove(collection, row.id);
+      return validRows.length;
+    };
+    try {
+      const articles = (await list("editorialContent")).filter(isListedAiArticle);
+      const articleIds = new Set(articles.map((article) => article.id).filter(Boolean));
+      const [sources, keywords] = await Promise.all([list("article_sources").catch(() => []), list("article_keywords").catch(() => [])]);
+      const sourceCount = await removeRows("article_sources", sources.filter((source) => articleIds.has(source.article_id || source.articleId)));
+      const keywordCount = await removeRows("article_keywords", keywords.filter((keyword) => articleIds.has(keyword.article_id || keyword.articleId)));
+      const articleCount = await removeRows("editorialContent", articles);
+      if (output) output.innerHTML = `<div class="alert alert--success">${articleCount} Artikel geloescht. ${sourceCount} Quellenzuordnungen und ${keywordCount} Keywords entfernt.</div>`;
+      window.setTimeout(render, 700);
+    } catch (error) {
+      if (output) output.innerHTML = `<div class="alert alert--error">Artikel konnten nicht geloescht werden: ${escapeHtml(error.message || String(error))}</div>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }));
   document.querySelectorAll("[data-ai-topic-create-article]").forEach((button) => button.addEventListener("click", () => {
     const form = button.closest("form");
     if (!form) return;
@@ -17724,7 +17865,7 @@ async function resetInstalledAppCachesIfRequested() {
   if (!params.has("resetApp")) return false;
   await clearPreviewCaches();
   params.delete("resetApp");
-  params.set("v", "1221");
+  params.set("v", "1254");
   const nextSearch = params.toString();
   location.replace(`${location.origin}${location.pathname}${nextSearch ? `?${nextSearch}` : ""}${location.hash || "#/home"}`);
   return true;
@@ -17732,7 +17873,7 @@ async function resetInstalledAppCachesIfRequested() {
 
 async function refreshInstalledAppShellIfNeeded() {
   if (["localhost", "127.0.0.1"].includes(location.hostname) || location.protocol === "file:") return false;
-  const version = "1221";
+  const version = "1254";
   const key = "prodigitaltv-live-shell-version";
   try {
     if (localStorage.getItem(key) === version) return false;
@@ -17762,6 +17903,27 @@ resetInstalledAppCachesIfRequested().then((didReset) => {
     }
   });
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
