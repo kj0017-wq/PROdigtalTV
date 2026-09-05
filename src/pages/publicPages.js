@@ -1,11 +1,12 @@
-import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=532";
+import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=533";
 import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=472";
-import { publicShell, logo } from "../components/layout.js?v=13";
-import { eventCard, topicCard } from "../components/cards.js?v=16";
+import { publicShell, logo } from "../components/layout.js?v=15";
+import { eventCard, topicCard } from "../components/cards.js?v=17";
+import { pushControls } from "../components/pushControls.js?v=1";
 import { accessLabels, lifecycleLabels } from "../data/platformConstants.js?v=1";
 import { escapeHtml, formatDate, initials } from "../utils/format.js";
-import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=1";
-import { checkInWithStoredTicket, linkTicketDevice, listMyEventRegistrations, readStoredTicket, validateStoredTicket } from "../firebase/registrationService.js?v=16";
+import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=2";
+import { checkInWithStoredTicket, linkTicketDevice, listMyEventRegistrations, readStoredTicket, validateStoredTicket } from "../firebase/registrationService.js?v=17";
 
 function subhero(eyebrow, title, text) {
   const cleanEyebrow = String(eyebrow || "").trim();
@@ -52,19 +53,45 @@ function aiDisclosureNote(item = {}) {
   return `<details class="ai-disclosure-note"><summary><span>KI</span></summary><p>${escapeHtml(text)}</p></details>`;
 }
 
+function imageRightsNotice(item = {}, asset = null) {
+  const source = asset || {};
+  const value = source.rights_notice
+    || source.rightsNotice
+    || source.copyright_notice
+    || source.copyrightNotice
+    || source.credit
+    || item.image_rights_notice
+    || item.imageRightsNotice
+    || item.rights_notice
+    || item.rightsNotice
+    || item.copyright_notice
+    || item.copyrightNotice
+    || item.credit
+    || "";
+  return String(value || "").trim();
+}
+
+function imageRightsDisclosure(item = {}, asset = null) {
+  const text = imageRightsNotice(item, asset);
+  if (!text) return "";
+  return `<details class="image-rights-note"><summary>Bildrechte</summary><p>${escapeHtml(text)}</p></details>`;
+}
+
 function topicVisualHeader({ topic = {}, speakers = [], title = "", intro = "", mediaAssets = [] } = {}) {
-  const imageUrl = stableImageUrl(publicTopicImageUrl(topic, mediaAssets), "topic");
+  const imageAsset = publicTopicMediaAsset(topic, mediaAssets, "article");
+  const imageUrl = stableImageUrl(mediaAssetUrl(imageAsset || {}) || topicDirectImageUrl(topic), "topic");
+  const rightsNote = imageRightsDisclosure(topic, imageAsset);
   const logoSpeaker = speakers.find((speaker) => speaker.companyLogoUrl || speaker.logoUrl || speaker.company_logo_url) || {};
   const logoUrl = topic.companyLogoUrl || topic.logoUrl || topic.company_logo_url || logoSpeaker.companyLogoUrl || logoSpeaker.logoUrl || logoSpeaker.company_logo_url || "";
   const visibleSpeakers = speakers.filter(publicSpeakerIsVisible).slice(0, 3);
   const visual = imageUrl
-    ? `<figure class="topic-detail-hero__image"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(topic.thumbnail_alt || `Themenmotiv ${title}`)}" loading="eager" decoding="async" ${liveImageAttrs("topic")}></figure>`
+    ? `<figure class="topic-detail-hero__image"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(topic.thumbnail_alt || `Themenmotiv ${title}`)}" loading="eager" decoding="async" ${liveImageAttrs("topic")}>${rightsNote}</figure>`
     : `<div class="topic-detail-hero__speaker-wall">${visibleSpeakers.length ? visibleSpeakers.map((speaker) => `<a class="topic-detail-hero__speaker" href="${speakerProfileHref(speaker)}">${speakerPortrait(speaker)}<span>${escapeHtml(speakerName(speaker))}</span></a>`).join("") : `<span class="topic-detail-hero__placeholder">${escapeHtml(initials(title || "Thema"))}</span>`}</div>`;
   const mobileSpeakerStrip = visibleSpeakers.length
     ? `<div class="topic-detail-hero__mobile-speakers">${visibleSpeakers.map((speaker) => `<a href="${speakerProfileHref(speaker)}" title="${escapeHtml(speakerName(speaker))}">${speakerPortrait(speaker)}<span>${escapeHtml(speakerName(speaker))}</span></a>`).join("")}</div>`
     : "";
   const mobileMedia = imageUrl
-    ? `<div class="topic-detail-hero__mobile-media"><figure><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(topic.thumbnail_alt || `Themenmotiv ${title}`)}" loading="eager" decoding="async" ${liveImageAttrs("topic")}></figure>${mobileSpeakerStrip}</div>`
+    ? `<div class="topic-detail-hero__mobile-media"><figure><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(topic.thumbnail_alt || `Themenmotiv ${title}`)}" loading="eager" decoding="async" ${liveImageAttrs("topic")}>${rightsNote}</figure>${mobileSpeakerStrip}</div>`
     : (logoUrl || mobileSpeakerStrip)
       ? `<div class="topic-detail-hero__mobile-media topic-detail-hero__mobile-media--identity">${logoUrl ? `<figure class="topic-detail-hero__mobile-logo"><img src="${escapeHtml(logoUrl)}" alt="Logo" loading="eager" decoding="async" ${liveImageAttrs("sponsor")}></figure>` : ""}${mobileSpeakerStrip}</div>`
       : "";
@@ -2411,7 +2438,8 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
   const canUseCachedDetail = id && !previewMode && !ticketToken;
   const embeddedDetail = canUseCachedDetail ? readEmbeddedEventDetail(id) : null;
   const cachedDetail = canUseCachedDetail ? readPageContentCache(eventDetailCacheName(id), eventDetailCacheVariant(id), leanEventDetail ? 900000 : 600000) : "";
-  if (cachedDetail) return publicShell("events", cachedDetail);
+  const pushPanel = `<section class="section"><div class="container">${pushControls(id)}</div></section>`;
+  if (cachedDetail) return publicShell("events", cachedDetail + pushPanel);
   let ticketActivation = null;
   if (ticketToken) {
     try {
@@ -2475,11 +2503,13 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
     : `<div class="alert event-registration-cta">${event.accessType === "invitation_only" ? "Teilnahme nur auf Einladung." : "Anmeldung derzeit nicht verfuegbar."}</div>`;
   const eventInfoBlock = restricted ? "" : `<section class="venue-stage event-info-stage"><div class="event-info-stage__facts"><p class="eyebrow">Daten</p><div class="event-info-facts"><div class="event-info-fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>${event.startTime ? `<div class="event-info-fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}<div class="event-info-fact"><label>Status</label><strong>${escapeHtml(eventRegistrationStatusLabel(event))}</strong></div></div></div><div class="venue-stage__place"><p class="eyebrow">${event.isVirtualEvent ? "Online-Teilnahme" : "Adresse"}</p>${eventLocationDetailMarkup(event)}</div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`;
   const previewNotice = previewMode ? `<div class="alert alert--warning">CMS-Vorschau: Dieses Event ist noch nicht zwingend öffentlich sichtbar.</div>` : "";
+  const eventImageAsset = publicEventMediaAsset(event, mediaAssets, "detail");
+  const eventImageRights = imageRightsDisclosure(event, eventImageAsset);
   const eventDetailContent = `${subhero(event.eventType, event.title, event.subtitle)}
     <section class="section event-detail-section"><div class="container detail-grid event-detail-grid">
       <article class="detail-main">
         ${previewNotice}
-        <figure class="event-detail-image"><img src="${escapeHtml(stableImageUrl(eventImageUrl, "event"))}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy" ${liveImageAttrs("event")}></figure>
+        <figure class="event-detail-image"><img src="${escapeHtml(stableImageUrl(eventImageUrl, "event"))}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy" ${liveImageAttrs("event")}>${eventImageRights}</figure>
         ${ticketStatusCard}
         ${restricted ? `<div class="alert alert--warning">Details und Anmeldung dieses Mitglieder-Events stehen nach dem Login zur Verfuegung.</div>` : ""}
         <h2>Zum Event</h2>${eventMainText ? `<div class="lead editorial-text event-detail-text">${articleParagraphs(eventMainText)}</div>` : ""}
@@ -2505,7 +2535,7 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
       </aside>
     </div></section>`;
   if (canUseCachedDetail) writePageContentCache(eventDetailCacheName(id), eventDetailCacheVariant(id), eventDetailContent);
-  return publicShell("events", eventDetailContent);
+  return publicShell("events", eventDetailContent + pushPanel);
 }
 
 export async function registrationPage(id) {
@@ -2540,7 +2570,7 @@ export async function registrationPage(id) {
       <div class="field"><label for="message">Bemerkung</label><textarea id="message" name="message" rows="3"></textarea></div>
       <div class="registration-consents">
       <label class="checkbox"><input type="checkbox" name="notifyForThisEvent"> Ich moechte an diese Veranstaltung und zukuenftige PROdigitalTV-Veranstaltungen erinnert werden.</label>
-      <div class="notification-device-status" data-notification-device-status>Erinnerung noch nicht aktiviert. Wenn Browser-Push auf diesem Geraet nicht moeglich ist, erhalten Sie die Erinnerung per E-Mail.</div>
+      ${pushControls(id)}
       <label class="checkbox checkbox--required registration-consent-info"><input type="checkbox" name="privacyMediaConsent" required><span>Datenschutz akzeptiert und Foto-/Video-Hinweis zur Veranstaltung zur Kenntnis genommen *</span><button class="consent-info-button" type="button" aria-label="Erklaerung zu Datenschutz und Foto-/Video-Hinweis" title="Erklaerung">i</button><small>Ihre Daten werden zur Organisation der Veranstaltung verarbeitet. Bei PROdigitalTV-Veranstaltungen koennen Foto- und Videoaufnahmen entstehen, die fuer Dokumentation und Oeffentlichkeitsarbeit genutzt werden.</small></label>
       </div></fieldset>
       <div class="registration-submit"><button class="button button--primary" type="submit">Anmeldung absenden</button><div id="form-result"></div></div>
@@ -2603,15 +2633,19 @@ export async function topicsPage() {
 }
 
 export async function newsPage(query = new URLSearchParams()) {
-  const cmsNews = publicNewsItems(await listPublicContent("editorialContent"));
-  const news = cmsNews.sort(newestContentFirst);
-  const selectedCategory = String(query?.get?.("category") || "").trim();
-  const categoryHref = (category) => `#/news?category=${encodeURIComponent(category || "News")}`;
+  const rawSelectedCategory = String(query?.get?.("category") || "").trim();
   const displayNewsCategory = (category = "") => {
     const value = String(category || "").trim();
-    if (!value || /^news[-\s_]*import$/i.test(value)) return "News";
+    if (!value || /^(?:ki[-\s_]*)?news[-\s_]*import$/i.test(value)) return "News";
     return value;
   };
+  const selectedCategory = rawSelectedCategory ? displayNewsCategory(rawSelectedCategory) : "";
+  const newsVariant = selectedCategory ?`category:${selectedCategory}` : "public";
+  const cachedNews = readPageContentCache("news", newsVariant, 600000);
+  if (cachedNews) return publicShell("news", cachedNews);
+  const cmsNews = publicNewsItems(await listPublicContent("editorialContent"));
+  const news = cmsNews.sort(newestContentFirst);
+  const categoryHref = (category) => `#/news?category=${encodeURIComponent(category || "News")}`;
   const newsCategories = (item = {}) => {
     const values = Array.isArray(item.category) ? item.category : [item.category || "News"];
     const categories = values
@@ -2654,7 +2688,7 @@ export async function newsPage(query = new URLSearchParams()) {
       </div>
     </article>`;
   };
-  return publicShell("news", `${subhero("News", "Aktuelles von PROdigitalTV.", "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.")}
+  const newsContent = `${subhero("News", "Aktuelles von PROdigitalTV.", "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.")}
     <section class="section"><div class="container">${news.length ? `
       <div class="news-category-nav" aria-label="News-Kategorien">
         <a class="news-category-pill ${selectedCategory ? "" : "is-active"}" href="#/news">Alle</a>
@@ -2664,7 +2698,9 @@ export async function newsPage(query = new URLSearchParams()) {
       <div class="card-grid card-grid--three editorial-list editorial-list--news">${featuredNews.map(newsCard).join("")}</div>
       ${listedNews.length ? `<div class="news-list-view"><div class="section-head"><div><p class="eyebrow">Weitere News</p><h2>${selectedCategory ? `Weitere Meldungen in ${escapeHtml(selectedCategory)}` : "Alle weiteren Meldungen"}</h2></div></div>${listedNews.map(newsListItem).join("")}</div>` : ""}
       ${!filteredNews.length ? `<div class="alert">Zu dieser Rubrik sind aktuell keine News veröffentlicht.</div>` : ""}
-    ` : `<div class="alert">Aktuell sind keine News veröffentlicht.</div>`}</div></section>`);
+    ` : `<div class="alert">Aktuell sind keine News veröffentlicht.</div>`}</div></section>`;
+  writePageContentCache("news", newsVariant, newsContent);
+  return publicShell("news", newsContent);
 }
 
 export async function newsDetailPage(id) {
@@ -2674,7 +2710,7 @@ export async function newsDetailPage(id) {
   const isRetrospective = isRetrospectiveArticle(item);
   if (!item || (item.page !== "news" && item.section !== "news" && !isRetrospective)) return notFoundPage();
   if (!isRetrospective && !publicNewsItems([item]).length) return notFoundPage();
-  const [sponsors, galleries, events] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries"), listPublicEvents()]);
+  const [sponsors, galleries, events, allMediaAssets] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries"), listPublicEvents(), listPublicMediaAssets().catch(() => [])]);
   const date = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   const text = item.longDescription || item.articleText || item.bodyText || item.mainText || item.text || item.fullText || item.longText || item.shortText || item.teaserText || "";
   const displayTitle = cleanNewsDetailTitle(item);
@@ -2683,10 +2719,14 @@ export async function newsDetailPage(id) {
   const linkedEvent = retrospectiveLinkedEvent(item, events);
   const mediaAssets = isRetrospective && linkedEvent
     ? await listPublicEventMediaAssets([linkedEvent]).catch(() => [])
-    : [];
+    : allMediaAssets;
+  const articleImageAsset = isRetrospective && linkedEvent
+    ? publicEventMediaAsset(linkedEvent, mediaAssets, "detail") || publicEditorialMediaAsset(item, mediaAssets)
+    : publicEditorialMediaAsset(item, mediaAssets);
   const articleImageUrl = stableImageUrl(isRetrospective
     ? retrospectiveThumbUrl(item, linkedEvent, galleries, mediaAssets)
-    : item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || (linkedEvent ? archiveEventImageUrl(linkedEvent, mediaAssets) : ""), isRetrospective ? "event" : "news");
+    : mediaAssetUrl(articleImageAsset || {}) || item.imageUrl || item.thumbnail_url || item.thumbnailUrl || item.assetUrl || (linkedEvent ? archiveEventImageUrl(linkedEvent, mediaAssets) : ""), isRetrospective ? "event" : "news");
+  const articleImageRights = imageRightsDisclosure(item, articleImageAsset);
   const selectedGallery = item.galleryId ? galleries.find((gallery) => gallery.id === item.galleryId) : null;
   const attachedGalleryImages = Array.isArray(selectedGallery?.images)
     ? [...selectedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 12)
@@ -2703,7 +2743,7 @@ export async function newsDetailPage(id) {
     return publicShell("news", `<section class="section news-detail-clean-section"><div class="container">
       <article class="news-detail-clean">
         <a class="link news-detail-clean__back" href="#/news">Zur&uuml;ck zu News</a>
-        <figure class="news-detail-clean__hero"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${displayTitle || "News"}`)}" loading="eager" decoding="async" ${liveImageAttrs("news")}><figcaption><h1>${escapeHtml(displayTitle)}</h1></figcaption></figure>
+        <figure class="news-detail-clean__hero"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${displayTitle || "News"}`)}" loading="eager" decoding="async" ${liveImageAttrs("news")}>${articleImageRights}<figcaption><h1>${escapeHtml(displayTitle)}</h1></figcaption></figure>
         <div class="news-detail-clean__body">
           ${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}
           ${ttsReader({ rubric: item.category || "News", title: displayTitle || "", label: "Vorlesen", text: [item.subtitle, displayText].filter(Boolean).join("\n\n"), inlineOffsetText: item.subtitle || "", audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
@@ -2725,7 +2765,7 @@ export async function newsDetailPage(id) {
           title: item.title || "",
           intro: item.subtitle || ""
         })}
-        <figure class="news-detail__thumb news-detail__hero-image"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${item.title || "News"}`)}" loading="eager" decoding="async" ${liveImageAttrs(isRetrospective ? "event" : "news")}></figure>
+        <figure class="news-detail__thumb news-detail__hero-image"><img src="${escapeHtml(articleImageUrl)}" alt="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || `Artikelmotiv ${item.title || "News"}`)}" loading="eager" decoding="async" ${liveImageAttrs(isRetrospective ? "event" : "news")}>${articleImageRights}</figure>
         ${ttsReader({ rubric: isRetrospective ? "Rückblick" : item.category || "News", title: item.title || "", text: [item.subtitle, text].filter(Boolean).join("\n\n"), inlineOffsetText: item.subtitle || "", audio: item.audio || {}, audioProvider: item.audioProvider || "", audioUrl: item.audioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || "" })}
         <div class="editorial-text">${leadMedia}${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}${articleParagraphs(text)}</div>
         ${aiDisclosureNote(item)}
@@ -2900,12 +2940,15 @@ export async function ticketLinkPage(token = "") {
   if (!token) return publicShell("events", `${subhero("Ticket", "Ticket-Link unvollstaendig.", "Bitte oeffnen Sie den Link aus Ihrer Bestaetigungsmail erneut.")}`);
   try {
     const result = await linkTicketDevice(token);
-    return publicShell("events", `${subhero("Ticket", "Handy ist als Eintrittskarte aktiv.", `${result.eventTitle || "Ihre Anmeldung"} ist auf diesem Geraet gespeichert.`)}
+    const { isMobileTicketDevice, ticketTransfer } = await import("../components/ticketTransfer.js?v=1");
+    const mobile = isMobileTicketDevice();
+    const transfer = ticketTransfer(`${location.origin}/#/ticket/link/${encodeURIComponent(token)}`);
+    return publicShell("events", `${subhero("Ticket", mobile ? "Handy ist als Eintrittskarte aktiv." : "Ticket auf das Handy uebertragen.", `${escapeHtml(result.eventTitle || "Ihre Anmeldung")} ist auf diesem Geraet gespeichert.`)}
       <section class="section"><div class="container" style="max-width:760px">
         <div class="form-card login-card">
           <p class="eyebrow">Eintrittskarte</p>
           <h2>${escapeHtml(result.firstName || "")} ${escapeHtml(result.lastName || "")}</h2>
-          <section class="mobile-ticket-card mobile-ticket-card--standalone" aria-label="Aktives Handy-Ticket">
+          ${!mobile ? transfer : `<section class="mobile-ticket-card mobile-ticket-card--standalone" aria-label="Aktives Handy-Ticket">
             <div class="mobile-ticket-card__icon" aria-hidden="true"></div>
             <div class="mobile-ticket-card__body">
               <p class="eyebrow">Handy-Ticket aktiv</p>
@@ -2913,7 +2956,8 @@ export async function ticketLinkPage(token = "") {
               <p>${escapeHtml([result.firstName, result.lastName].filter(Boolean).join(" ") || "Dieses Geraet")}</p>
               <span>Dieses Handy ist fuer den Einlass vorbereitet.</span>
             </div>
-          </section>
+          </section>`}
+          ${pushControls(result.eventId)}
           <a class="button button--primary" href="#/events">Zu den Events</a>
         </div>
       </div></section>`);
@@ -3310,7 +3354,7 @@ export async function memberPortalPage() {
   const tabNav = `<nav class="member-portal-tabs" aria-label="Mitgliederbereich">${tabs.map(([key, label]) => `<a href="#/portal?tab=${key}" class="${activeTab === key ? "active" : ""}">${label}</a>`).join("")}<button class="member-portal-logout-tab" type="button" data-logout-button>Abmelden</button></nav>`;
   const documentsSection = `<section class="member-portal-section member-portal-section--documents"><div class="section-head"><div><h2>Mitglieder-Dokumente</h2><p class="muted">Freigegebene Unterlagen und Anlagen für Mitglieder.</p></div></div><div class="card-grid card-grid--three">${visibleDocuments.length ? visibleDocuments.map(documentCard).join("") : `<div class="alert">Noch keine freigegebenen Mitgliederdokumente.</div>`}</div></section>`;
   const memberInfosSection = `<section class="member-portal-section member-portal-section--infos"><div class="section-head"><h2>Member Infos</h2></div><div class="member-article-list">${visibleMemberArticles.length ? visibleMemberArticles.map((article) => memberArticleCard(article, galleries)).join("") : `<div class="alert">Noch keine Mitgliederbeitr&auml;ge sichtbar.</div>`}</div></section>`;
-  const profileSection = `<section class="member-portal-section"><div class="section-head"><h2>Mein Profil</h2></div>${memberProfileForm(ownMember, user, { adminMode: false })}</section>`;
+  const profileSection = `<section class="member-portal-section"><div class="section-head"><h2>Mein Profil</h2></div>${memberProfileForm(ownMember, user, { adminMode: false })}${pushControls()}</section>`;
   const renderedDirectorySection = `<section class="member-portal-section"><div class="section-head"><h2>Mitgliederverzeichnis</h2></div><div class="card-grid card-grid--three member-directory-grid">${visibleMembers.length ? visibleMembers.map(memberDirectoryCard).join("") : `<div class="alert">Noch keine freigegebenen Mitglieder.</div>`}</div></section>`;
   if (!cachedDirectorySection && activeTab === "directory" && visibleMembers.length) {
     writePageContentCache("member-portal-directory", "members", renderedDirectorySection);
@@ -3379,6 +3423,9 @@ export async function legalPage(type) {
 export function notFoundPage() {
   return publicShell("", `<section class="section"><div class="container empty"><h1>Seite nicht gefunden</h1><p>Die angeforderte Seite ist nicht verfuegbar.</p><a class="button button--primary" style="margin-top:20px" href="#/home">Zur Startseite</a></div></section>`);
 }
+
+
+
 
 
 

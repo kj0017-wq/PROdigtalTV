@@ -805,6 +805,35 @@ function mediaMetadataBox(asset = {}) {
   return `<details class="media-edit-meta"><summary><strong>Metadaten</strong><span>${rows.length} Angaben</span></summary><dl>${rows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}</dl></details>`;
 }
 
+function mediaRightsFields(asset = {}) {
+  const usage = Array.isArray(asset.allowed_usage)
+    ? asset.allowed_usage
+    : Array.isArray(asset.allowedUsage)
+      ? asset.allowedUsage
+      : [];
+  const checked = (id) => usage.includes(id) || usage.includes("all") ? "checked" : "";
+  return `<div class="media-rights-fields">
+    <div class="form-grid--two">
+      <div class="field"><label>Fotograf / Credit</label><input name="photographer" value="${escapeHtml(asset.photographer || asset.credit || "")}" placeholder="Name / Agentur"></div>
+      <div class="field"><label>Urheber / Rechteinhaber</label><input name="copyright_holder" value="${escapeHtml(asset.copyright_holder || asset.copyrightHolder || asset.copyright || "")}" placeholder="Rechteinhaber"></div>
+    </div>
+    <div class="form-grid--two">
+      <div class="field"><label>Quelle</label><input name="source_url" value="${escapeHtml(asset.source_url || asset.sourceUrl || asset.source || "")}" placeholder="URL, Mediathek, Uploadquelle"></div>
+      <div class="field"><label>Stock-/Asset-ID</label><input name="stock_asset_id" value="${escapeHtml(asset.stock_asset_id || asset.stockAssetId || asset.asset_id || "")}" placeholder="optional"></div>
+    </div>
+    <div class="form-grid--two">
+      <div class="field"><label>Lizenzart</label><input name="license_type" value="${escapeHtml(asset.license_type || asset.licenseType || "")}" placeholder="z. B. Eigenproduktion, Stock, Pressebild"></div>
+      <div class="field"><label>Lizenz gueltig bis</label><input name="license_valid_to" type="date" value="${escapeHtml(String(asset.license_valid_to || asset.licenseValidTo || "").slice(0, 10))}"></div>
+    </div>
+    <div class="member-event-contact-flags" aria-label="Erlaubte Nutzung">
+      <label class="checkbox"><input type="checkbox" name="allowed_usage_website" ${checked("website")}> Website</label>
+      <label class="checkbox"><input type="checkbox" name="allowed_usage_newsletter" ${checked("newsletter")}> Newsletter</label>
+      <label class="checkbox"><input type="checkbox" name="allowed_usage_social" ${checked("social")}> Social Media</label>
+      <label class="checkbox"><input type="checkbox" name="allowed_usage_events" ${checked("events")}> Events</label>
+    </div>
+  </div>`;
+}
+
 function valueUsesMedia(value, assetId, urls) {
   if (value === null || value === undefined) return false;
   if (typeof value === "string") return value === assetId || urls.includes(value);
@@ -1227,6 +1256,8 @@ function uploadPage() {
           </div>
           <div class="field"><label>Titel</label><input name="title" required placeholder="wird aus Datei erzeugt" data-media-auto-title></div>
           <div class="field"><label>Beschreibung</label><textarea name="description" placeholder="wird automatisch vorgeschlagen" data-media-auto-description></textarea></div>
+          <div class="field"><label>Rechtehinweis</label><input name="rights_notice" placeholder="z. B. Foto: Name / Unternehmen"></div>
+          ${mediaRightsFields({})}
           <div class="field"><label>Schlagwoerter</label><input name="tags" placeholder="werden automatisch vorgeschlagen" data-media-auto-tags></div>
           <div class="field"><label>Alt-Text</label><input name="alt_text" placeholder="wird automatisch aus Titel erzeugt" data-media-auto-alt></div>
           <button class="button button--primary">Bild speichern</button>
@@ -1510,6 +1541,8 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
         <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(asset.title || "")}" required></div>
         <div class="field"><label>Alt-Text</label><input name="alt_text" value="${escapeHtml(asset.alt_text || "")}"></div>
         <div class="field"><label>Beschreibung</label><textarea name="description">${escapeHtml(asset.description || "")}</textarea><button class="button button--secondary button--small" type="button" data-media-description-ai>Bildbeschreibung mit KI erzeugen</button></div>
+        <div class="field"><label>Rechtehinweis</label><input name="rights_notice" value="${escapeHtml(asset.rights_notice || asset.rightsNotice || asset.copyright_notice || asset.copyrightNotice || asset.credit || "")}" placeholder="z. B. Foto: Name / Unternehmen"><p class="muted">Wird dezent am Bild angezeigt, wenn hier ein Hinweis eingetragen ist.</p></div>
+        ${mediaRightsFields(asset)}
         ${mediaMetadataBox(asset)}
         <input type="hidden" name="focal_point_x" value="${escapeHtml(asset.focal_point_x ?? 50)}">
         <input type="hidden" name="focal_point_y" value="${escapeHtml(asset.focal_point_y ?? 50)}">

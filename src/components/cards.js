@@ -1,6 +1,6 @@
 ﻿import { accessLabels } from "../data/platformConstants.js";
 import { eventDateBox, escapeHtml, formatDate } from "../utils/format.js";
-import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=1";
+import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=2";
 
 function looksTruncatedText(text = "") {
   return /(?:\.\.\.|…)$/u.test(String(text || "").trim());

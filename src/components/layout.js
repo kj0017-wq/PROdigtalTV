@@ -29,6 +29,7 @@ function showCmsLink(user) {
 export function header(active) {
   const user = currentUser();
   const cmsLink = showCmsLink(user) ? `<a class="button button--secondary button--small header-auth header-auth--cms" href="/cms.html#/cms">CMS</a>` : "";
+  const accountMenuLinks = `<a href="#/${user ? "portal" : "login"}" data-public-menu-close>${user ? "Profil" : "Login"}</a>${showCmsLink(user) ? `<a href="/cms.html?mobileCms=1#/cms/live" data-public-menu-close>Veranstaltungs-Cockpit</a>` : ""}`;
   const navLink = ([route, label]) => route === "about"
     ? `<div class="desktop-nav__item desktop-nav__item--has-submenu"><a class="${active === route || aboutSubnav.some(([subRoute]) => active === subRoute) ? "active" : ""}" href="#/${route}" aria-haspopup="true">${label}</a><div class="desktop-subnav">${aboutSubnav.map(([subRoute, subLabel]) => `<a class="${active === subRoute ? "active" : ""}" href="#/${subRoute}">${subLabel}</a>`).join("")}</div></div>`
     : `<a class="${active === route ? "active" : ""}" href="#/${route}">${label}</a>`;
@@ -46,23 +47,20 @@ export function header(active) {
       <img data-mobile-qr-code alt="QR-Code für die mobile Seite">
     </a>
   </div><nav class="public-mobile-menu" data-public-menu aria-label="Mobile Navigation">
+    <div class="public-mobile-account" aria-label="Konto">${accountMenuLinks}</div>
     ${nav.map(menuLink).join("")}
     <div class="public-mobile-submenu" aria-label="Ueber uns Untermenue">${aboutSubnav.map(([route, label]) => `<a class="${active === route ? "active" : ""}" href="#/${route}" data-public-menu-close>${label}</a>`).join("")}</div>
-    ${showCmsLink(user) ? `<a href="/cms.html?mobileCms=1#/cms/live" data-public-menu-close>Veranstaltungs-Cockpit</a>` : ""}
-    <a href="#/${user ? "portal" : "login"}" data-public-menu-close>${user ? "Profil" : "Login"}</a>
   </nav></header>`;
 }
 
 export function bottomNav(active) {
   const user = currentUser();
-  const adminCockpitRoute = "/cms.html?mobileCms=1#/cms/live";
-  const adminActive = String(window.location.hash || "").startsWith("#/cms/live");
-  const memberRoute = showCmsLink(user) ? adminCockpitRoute : user ? "portal" : "login";
-  const memberIcon = showCmsLink(user) ? "events" : "login";
-  const memberLabel = showCmsLink(user) ? "Cockpit" : user ? "Profil" : "Login";
+  const memberRoute = user ? "portal" : "login";
+  const memberIcon = "login";
+  const memberLabel = user ? "Profil" : "Login";
   const items = [["home", "home", "Start"], ["events", "events", "Events"], ["topics", "topics", "Themen"], ["news", "news", "News"], [memberRoute, memberIcon, memberLabel]];
   const hrefForRoute = (route) => String(route || "").startsWith("/") ? route : `#/${route}`;
-  const activeForRoute = (route) => route === adminCockpitRoute ? adminActive : active === route || (active === "login" && route === "portal");
+  const activeForRoute = (route) => active === route || (active === "login" && route === "portal");
   return `<nav class="bottom-nav pdtv-mobile-bottom-nav" aria-label="Mobile Navigation">
     ${items.map(([route, icon, label]) =>
       `<a href="${hrefForRoute(route)}" class="${activeForRoute(route) ? "active" : ""}" ${activeForRoute(route) ? `aria-current="page"` : ""}><b>${navIcon(icon)}</b><span>${label}</span></a>`).join("")}

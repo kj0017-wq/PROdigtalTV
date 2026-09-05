@@ -162,6 +162,9 @@ export async function confirmRegistration(token) {
   if (firebase) {
     const callable = firebase.functionsLib.httpsCallable(firebase.functions, "confirmRegistrationByToken");
     const result = (await callable({ token })).data;
+    if (result.pushEnrollmentToken && result.eventId) {
+      try { localStorage.setItem(`pdtv-push-proof:${result.eventId}`, JSON.stringify({ token: result.pushEnrollmentToken, expiresAt: Date.now() + 30 * 86400000 })); } catch {}
+    }
     storeTicket(result);
     return result;
   }

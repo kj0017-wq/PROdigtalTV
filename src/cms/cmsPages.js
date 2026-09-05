@@ -198,6 +198,21 @@ function timestampInputDateTime(value) {
   return local.toISOString().slice(0, 16);
 }
 
+function contactConsentInputDateTime(value) {
+  return timestampInputDateTime(value);
+}
+
+function contactConsentSourceOptions(value = "") {
+  const selected = String(value || "cms").trim() || "cms";
+  return [
+    ["cms", "CMS / manuell"],
+    ["website", "Webseite"],
+    ["event_registration", "Event-Anmeldung"],
+    ["import", "Import"],
+    ["other", "Sonstige Quelle"]
+  ].map(([id, label]) => `<option value="${id}" ${selected === id ?"selected" : ""}>${label}</option>`).join("");
+}
+
 function memberAccessBlocked(item = {}, now = new Date()) {
   if (!["inactive", "cancelled"].includes(item.membershipAccessStatus)) return false;
   const effective = item.membershipAccessEffectiveAt;
@@ -2568,10 +2583,13 @@ export async function registrationsPage(query = new URLSearchParams()) {
 
 export async function eventNotificationsPage() {
   if (!hasCmsAccess()) return denied();
-  const [events, notifications, members] = await Promise.all([
+  const [events, notifications, members, contacts, users, testGroup] = await Promise.all([
     list("events"),
     list("eventNotifications").catch(() => []),
-    list("members").catch(() => [])
+    list("members"),
+    list("contacts"),
+    isAdmin(currentUser()) ? list("users") : Promise.resolve([]),
+    getOne("settings", "notificationTestGroup")
   ]);
   const activeEvents = events
     .filter((event) => !["archived", "deleted", "inactive", "draft"].includes(String(event.status || "").toLowerCase()) && !isPastCmsEvent(event))
@@ -2607,17 +2625,20 @@ export async function eventNotificationsPage() {
     .slice(0, 20)
     .map((item) => {
       const event = events.find((candidate) => candidate.id === item.eventId) || {};
-      return `<tr><td>${escapeHtml(item.title || "-")}</td><td>${escapeHtml(event.title || item.eventId || "-")}</td><td>${status(item.status || "draft")}</td><td>${escapeHtml(String(item.targetCount ?? "-"))}</td><td>${escapeHtml(String(item.queuedMailCount ?? "-"))}</td></tr>`;
+      return `<tr><td>${escapeHtml(item.title || "-")}</td><td>${escapeHtml(event.title || item.eventId || "-")}</td><td>${status(item.status || "draft")}</td><td>${escapeHtml(String(item.targetCount ?? "-"))}</td><td>${escapeHtml(String(item.queuedMailCount ?? "-"))}</td><td>${Number(item.pushedCount || 0)} gesendet${item.pushFailedCount ? `<small>${Number(item.pushFailedCount)} fehlgeschlagen</small>` : ""}${item.pushErrors?.length ? `<small>${escapeHtml([...new Set(item.pushErrors.map((error) => error.code))].join(", "))}</small>` : ""}</td></tr>`;
     }).join("");
-  const testMembers = members
-    .slice()
-    .sort((a, b) => String(a.name || a.company || a.title || "").localeCompare(String(b.name || b.company || b.title || "")))
-    .map((member) => {
-      const label = member.name || member.company || member.title || member.id;
-      const email = member.email || member.contactEmail || member.primaryEmail || "";
-      const checked = member.notificationTestGroup || member.isNotificationTestGroup || member.testGroup;
-      return `<label class="checkbox notification-test-group-item"><input type="checkbox" name="memberIds" value="${escapeHtml(member.id)}" ${checked ?"checked" : ""}><span><strong>${escapeHtml(label)}</strong>${email ?`<small>${escapeHtml(email)}</small>` : ""}</span></label>`;
-    }).join("");
+  const selectedTestEmails = new Set((testGroup ? testGroup.emails || [] : members
+    .filter((member) => peopleMemberIsActive(member) && !peopleMailingDisabled(member))
+    .filter((member) => typeof member.notificationTestGroup === "boolean" ? member.notificationTestGroup : member.isNotificationTestGroup || member.testGroup || member.notificationTester)
+    .flatMap(peopleMemberEmails)).map((email) => String(email).trim().toLowerCase()));
+  const testPeople = new Map();
+  mergePeopleContactsAndMembers(contacts, members, users).forEach((person) => {
+    const email = String(person.email || person.contactEmail || person.primaryEmail || "").trim().toLowerCase();
+    if (email) testPeople.set(email, peopleContactName(person));
+  });
+  selectedTestEmails.forEach((email) => { if (!testPeople.has(email)) testPeople.set(email, email); });
+  const testMembers = [...testPeople].sort(([a], [b]) => Number(selectedTestEmails.has(b)) - Number(selectedTestEmails.has(a)) || a.localeCompare(b))
+    .map(([email, label]) => `<label class="checkbox notification-test-group-item" data-test-recipient data-search="${escapeHtml(`${label} ${email}`.toLowerCase())}"><input type="checkbox" name="testEmails" value="${escapeHtml(email)}" ${selectedTestEmails.has(email) ? "checked" : ""}><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(email)}</small></span></label>`).join("");
   return protect(cmsShell("cms/event-notifications", `${cmsTitle("Kommunikation", "Event-Benachrichtigungen")}
     <section class="panel">
       <form id="event-notification-form" class="form-grid">
@@ -2668,17 +2689,18 @@ export async function eventNotificationsPage() {
     </section>
     <section class="panel">
       <details class="cms-disclosure-panel">
-        <summary><strong>Testgruppe bearbeiten</strong><span>${members.filter((member) => member.notificationTestGroup || member.isNotificationTestGroup || member.testGroup).length} ausgewaehlt</span></summary>
+        <summary><strong>Testgruppe bearbeiten</strong><span data-test-group-count>${selectedTestEmails.size} Adressen gespeichert</span></summary>
         <form id="notification-test-group-form" class="notification-test-group-form">
-          <p class="muted">Diese Mitglieder werden verwendet, wenn bei einer Benachrichtigung als Empfaenger <strong>Testgruppe</strong> gewaehlt ist.</p>
+          <div class="field"><label for="test-group-search">Empfaenger suchen</label><input id="test-group-search" type="search" data-test-group-search></div>
           <div class="notification-test-group-list">${testMembers || `<p class="muted">Noch keine Mitglieder vorhanden.</p>`}</div>
+          <div class="field"><label for="test-group-additions">Weitere Testadressen</label><textarea id="test-group-additions" name="additionalTestEmails" rows="3" placeholder="name@firma.de"></textarea></div>
           <div class="actions"><button class="button button--secondary button--small">Testgruppe speichern</button><div id="notification-test-group-result"></div></div>
         </form>
       </details>
     </section>
     <section class="panel">
       <h2>Letzte Benachrichtigungen</h2>
-      <div class="table-wrap"><table class="table"><thead><tr><th>Titel</th><th>Event</th><th>Status</th><th>Empfaenger</th><th>E-Mail</th></tr></thead><tbody>${rows || `<tr><td colspan="5">Noch keine Benachrichtigungen erstellt.</td></tr>`}</tbody></table></div>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Titel</th><th>Event</th><th>Status</th><th>Empfaenger</th><th>E-Mail</th><th>Push</th></tr></thead><tbody>${rows || `<tr><td colspan="6">Noch keine Benachrichtigungen erstellt.</td></tr>`}</tbody></table></div>
     </section>`));
 }
 
@@ -5374,7 +5396,11 @@ Ausgangstext:
       name: fullName,
       role: contact.role || contact.function || contact.department || "",
       email: contact.email || "",
-      phone: contact.phone || ""
+      phone: contact.phone || "",
+      primaryContact: Boolean(contact.primaryContact || contact.mainContact || contact.isPrimary),
+      billingContact: Boolean(contact.billingContact || contact.invoiceRecipient || contact.isBillingContact),
+      eventContact: contact.eventContact === false ?false : true,
+      newsletterContact: contact.newsletterContact === false ?false : true
     };
   };
   const memberEventContacts = Array.isArray(item?.eventContacts) && item.eventContacts.length
@@ -5402,6 +5428,12 @@ Ausgangstext:
             <div class="field"><label>Mail</label><input name="eventContactEmail${index}" type="email" value="${escapeHtml(contact.email || "")}"></div>
             <div class="field"><label>Tel. mit Landesvorwahl</label><input name="eventContactPhone${index}" type="tel" placeholder="+49 ..." value="${escapeHtml(contact.phone || "")}"></div>
             </div>
+            <div class="member-event-contact-flags">
+              <label class="checkbox"><input type="checkbox" name="eventContactPrimary${index}" ${contact.primaryContact ?"checked" : ""}> Hauptkontakt</label>
+              <label class="checkbox"><input type="checkbox" name="eventContactBilling${index}" ${contact.billingContact ?"checked" : ""}> Rechnung</label>
+              <label class="checkbox"><input type="checkbox" name="eventContactEvent${index}" ${contact.eventContact === false ?"" : "checked"}> Veranstaltungen</label>
+              <label class="checkbox"><input type="checkbox" name="eventContactNewsletter${index}" ${contact.newsletterContact === false ?"" : "checked"}> Newsletter</label>
+            </div>
           </fieldset>`;
         }).join("")}
       </div>`
@@ -5421,7 +5453,7 @@ Ausgangstext:
         </div>
         <label class="cms-switch ${item?.mailingDisabled || item?.notificationOptOut || item?.reminderConsent === false ?"" : "is-active"}" title="Mailabo fuer Event- und Umfragehinweise steuern"><input type="checkbox" name="mailingEnabled" ${item?.mailingDisabled || item?.notificationOptOut || item?.reminderConsent === false ?"" : "checked"}><span class="cms-switch__track" aria-hidden="true"></span><span class="cms-switch__text">${item?.mailingDisabled || item?.notificationOptOut || item?.reminderConsent === false ?"Mailabo aus" : "Mailabo aktiv"}</span></label>
         <p class="muted">Betrifft Event-Hinweise, Umfragen und Newsletter. Systemmails wie Login oder Passwort bleiben moeglich.</p>
-        <label class="checkbox"><input type="checkbox" name="notificationTestGroup" ${item?.notificationTestGroup || item?.isNotificationTestGroup || item?.testGroup ?"checked" : ""}> Teil der Benachrichtigungs-Testgruppe</label>
+        <a href="#/cms/event-notifications">Testgruppe verwalten</a>
       </div>`
     : "";
   const imageUpload = module === "topics"
@@ -5621,6 +5653,22 @@ function peopleContactType(item = {}) {
   return "contact";
 }
 
+function peopleMemberEmails(member = {}) {
+  const values = [member.email, member.contactEmail, member.contact_email, member.primaryEmail, member.profileEmail, member.billingEmail, member.invoiceEmail];
+  for (const key of ["emails", "additionalEmails", "alternateEmails", "contactEmails", "notificationEmails"]) {
+    if (Array.isArray(member[key])) values.push(...member[key]);
+  }
+  for (const key of ["eventContacts", "contacts"]) {
+    if (Array.isArray(member[key])) member[key].forEach((contact) => values.push(contact.email, contact.contactEmail));
+  }
+  return [...new Set(values.filter(Boolean).map((email) => String(email).trim().toLowerCase()))];
+}
+
+function peopleMemberIsActive(member = {}) {
+  return !["inactive", "archived", "deleted", "cancelled", "disabled"].includes(String(member.status || "active").toLowerCase())
+    && !["inactive", "archived", "deleted", "cancelled"].includes(String(member.membershipAccessStatus || "active").toLowerCase());
+}
+
 function peopleContactPushState(item = {}) {
   return item.pushToken || item.pushSubscription || item.browserPushEnabled || item.pushEnabled ? "yes" : "no";
 }
@@ -5651,13 +5699,16 @@ function peopleContactRow(item = {}, membersByEmail = new Map(), highlightEmail 
         data-email="${escapeHtml(email)}"
         data-mobile="${escapeHtml(item.mobile || item.phone || "")}"
         data-type="${escapeHtml(type)}"
-        data-newsletter-allowed="${item.newsletterAllowed || item.newsletterConsent ? "yes" : "no"}">Bearbeiten</button>`;
-  return `<tr data-people-row data-name="${escapeHtml(search)}" data-type="${escapeHtml(type)}" data-push="${escapeHtml(push)}" ${email && email.toLowerCase() === highlightEmail ?"class=\"is-highlighted\"" : ""}>
+        data-newsletter-allowed="${item.newsletterAllowed || item.newsletterConsent ? "yes" : "no"}"
+        data-consent-source="${escapeHtml(item.newsletterConsentSource || item.consentSource || item.source || "")}"
+        data-consent-at="${escapeHtml(contactConsentInputDateTime(item.newsletterConsentAt || item.consentAt || item.optInAt || ""))}"
+        data-consent-note="${escapeHtml(item.newsletterConsentNote || item.consentNote || "")}">Bearbeiten</button>`;
+  return `<tr data-people-row data-email="${escapeHtml(email.toLowerCase())}" data-name="${escapeHtml(search)}" data-type="${escapeHtml(type)}" data-push="unknown" ${email && email.toLowerCase() === highlightEmail ?"class=\"is-highlighted\"" : ""}>
     <td><strong>${escapeHtml(name)}</strong>${company ?`<small>${escapeHtml(company)}</small>` : ""}</td>
     <td>${escapeHtml(email || "-")}</td>
     <td>${escapeHtml(position || "-")}</td>
     <td>${status(type === "member" ?"member" : "contact")}</td>
-    <td>${status(push === "yes" ?"active" : "inactive")}</td>
+    <td data-people-push-status>Wird geprueft ...</td>
     <td>${status(disabled ?"inactive" : "active")}<small>${disabled ?"Mailabo aus" : "Mailabo aktiv"}</small></td>
     <td><div class="table-actions">
       ${editableContactButton}
@@ -5728,6 +5779,17 @@ function peopleUserContactRows(users = [], membersById = new Map()) {
 }
 
 function mergePeopleContactsAndMembers(contacts = [], members = [], users = []) {
+  const activeMembers = members.filter(peopleMemberIsActive);
+  const memberByEmail = new Map(activeMembers.flatMap((member) => peopleMemberEmails(member).map((email) => [email, member])));
+  const activeIds = new Set(activeMembers.map((member) => member.id));
+  users.filter((user) => userIsActive(user) && activeIds.has(user.memberId)).forEach((user) => {
+    memberByEmail.set(String(user.email || "").trim().toLowerCase(), activeMembers.find((member) => member.id === user.memberId));
+  });
+  contacts = contacts.map((contact) => {
+    const email = String(contact.email || contact.contactEmail || contact.primaryEmail || "").trim().toLowerCase();
+    const member = memberByEmail.get(email);
+    return member ? { ...contact, type: "member", memberId: member.id, company: contact.company || member.name || "" } : contact;
+  });
   const membersById = new Map(members.map((member) => [String(member.id || ""), member]).filter(([id]) => id));
   const usedEmails = new Set(contacts
     .map((contact) => String(contact.email || contact.contactEmail || contact.primaryEmail || "").trim().toLowerCase())
@@ -5796,7 +5858,7 @@ export async function peoplePage(query = new URLSearchParams()) {
         <div class="setup-step"><span>Adressen</span><strong>${sortedPeople.length}</strong></div>
         <div class="setup-step"><span>Aktiv</span><strong>${activeCount}</strong></div>
         <div class="setup-step"><span>Mitglieder</span><strong>${memberCount}</strong></div>
-        <div class="setup-step"><span>Push erreichbar</span><strong>${pushCount}</strong></div>
+        <div class="setup-step"><span>Push registriert</span><strong data-people-push-count>...</strong></div>
       </div>
     </section>
     <section class="panel">
@@ -5818,6 +5880,11 @@ export async function peoplePage(query = new URLSearchParams()) {
           <div class="field"><label>Typ</label><select name="type"><option value="contact">Kontakt</option><option value="member">Mitglied</option></select></div>
           <label class="checkbox"><input type="checkbox" name="newsletterAllowed" checked> Newsletter / Mailing erlaubt</label>
         </div>
+        <div class="form-grid--two">
+          <div class="field"><label>Einwilligungsquelle</label><select name="newsletterConsentSource">${contactConsentSourceOptions("cms")}</select></div>
+          <div class="field"><label>Einwilligung am</label><input name="newsletterConsentAt" type="datetime-local"></div>
+        </div>
+        <div class="field"><label>Einwilligungsnotiz</label><textarea name="newsletterConsentNote" placeholder="z. B. persoenlich bestaetigt, Visitenkarte, Event-Anmeldung"></textarea></div>
         <div class="actions"><button class="button button--primary button--small" type="submit">Mailing-Adresse speichern</button></div>
       </form>
       <div id="people-import-result" style="margin-top:14px">${importMessage}</div>

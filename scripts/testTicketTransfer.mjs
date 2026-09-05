@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { isMobileTicketDevice, ticketTransfer } from "../src/components/ticketTransfer.js";
+assert.equal(isMobileTicketDevice({ userAgent: "Windows", maxTouchPoints: 10 }), false);
+assert.equal(isMobileTicketDevice({ userAgent: "Macintosh", platform: "MacIntel", maxTouchPoints: 0 }), false);
+assert.equal(isMobileTicketDevice({ userAgent: "iPhone" }), true);
+assert.equal(isMobileTicketDevice({ userAgent: "Android" }), true);
+assert.equal(isMobileTicketDevice({ platform: "MacIntel", maxTouchPoints: 5 }), true);
+const markup = ticketTransfer("https://example.test/#/ticket/link/fake");
+assert.ok(markup.includes(encodeURIComponent("https://example.test/#/ticket/link/fake")));
+const confirm = await readFile(new URL("../src/confirm.js", import.meta.url), "utf8");
+assert.ok(confirm.includes("isMobileTicketDevice() ? readStoredTicket(result.eventId) : null"));
+console.log("Desktop/mobile ticket transfer regression checks passed.");

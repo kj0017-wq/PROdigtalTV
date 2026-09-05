@@ -1,13 +1,37 @@
-const CACHE = "pdt-platform-v960";
+const CACHE = "pdt-platform-v961";
 const IMAGE_CACHE = "pdt-platform-images-v960";
 const APP_SHELL = [
   "/",
   "/index.html",
   "/website.html",
   "/assets/js/pwa.js",
+  "/assets/js/push-display.js",
   "/assets/official/brand/prodigitaltv-logo-claim.png",
   "/images/icon-192.png"
 ];
+
+importScripts("/assets/js/push-display.js?v=1");
+
+// Register custom click handling before the Firebase SDK adds its handlers.
+self.addEventListener("notificationclick", (event) => {
+  if (!event.notification.data?.pdtPush && !event.notification.data?.link) return;
+  event.stopImmediatePropagation();
+  event.notification.close();
+  event.waitUntil((async () => {
+    const link = self.PROdigitalTVPush.safeLink(event.notification.data.link);
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const exact = windows.find((client) => client.url === link);
+    if (exact) return exact.focus();
+    const existing = windows.find((client) => new URL(client.url).origin === new URL(link).origin);
+    if (existing?.navigate) {
+      try {
+        const navigated = await existing.navigate(link);
+        if (navigated) return navigated.focus();
+      } catch {}
+    }
+    return self.clients.openWindow(link);
+  })());
+});
 
 try {
   importScripts("https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js");
@@ -22,14 +46,9 @@ try {
   });
   const messaging = firebase.messaging();
   messaging.onBackgroundMessage((payload) => {
-    const notification = payload.notification || {};
-    const data = payload.data || {};
-    self.registration.showNotification(notification.title || "PROdigitalTV", {
-      body: notification.body || "",
-      icon: "/images/icon-192.png",
-      badge: "/images/icon-192.png",
-      data: { link: data.link || "/" }
-    });
+    // Older servers send a notification payload which Firebase already displays.
+    if (payload.notification) return;
+    return self.PROdigitalTVPush.show(self.registration, payload);
   });
 } catch (error) {
   console.warn("Firebase Messaging konnte im Service Worker nicht initialisiert werden.", error);
@@ -124,16 +143,4 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
-  const link = event.notification?.data?.link || "/";
-  event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
-    const absoluteLink = new URL(link, self.location.origin).href;
-    for (const client of clientList) {
-      if ("focus" in client && client.url === absoluteLink) return client.focus();
-    }
-    if (clients.openWindow) return clients.openWindow(absoluteLink);
-    return undefined;
-  }));
-});
 

@@ -1,9 +1,10 @@
 import { route, onRouteChange, go } from "./utils/router.js?v=4";
 import { currentUser, canUseCms, isAdmin, login, logout, refreshAuthToken, waitForAuthReady } from "./firebase/authService.js?v=474";
-import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=532";
+import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=533";
 import { escapeHtml, formatDate } from "./utils/format.js";
 import { normalizeLifecyclePhase } from "./data/platformConstants.js";
-import { publicShell } from "./components/layout.js?v=14";
+import { publicShell } from "./components/layout.js?v=15";
+import { wirePushControls, refreshBrowserPush, disableBrowserNotifications } from "./firebase/pushClient.js?v=1";
 import { articleToImportBlock, parseImportedNewsArticles } from "./utils/newsImportParser.js?v=1";
 
 const root = document.querySelector("#app");
@@ -14,18 +15,19 @@ const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
 const mediaProxyFunctionUrl = "https://europe-west3-prodigitaltv-da47b.cloudfunctions.net/mediaAssetProxy";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
 let renderGeneration = 0;
+let pendingRenderHash = "";
 let mobileCmsLiveResultsTimer = null;
 let mobileCheckinStatsTimer = null;
 const memberProfileWarmups = new Map();
 let mobileSurveyPeopleCache = { createdAt: 0, directory: null };
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=781");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=738");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=788");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=740");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=502");
-const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=116");
-const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=16");
-const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=8");
+const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=117");
+const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=17");
+const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=10");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=13");
 const firebaseClientService = () => lazy.firebaseClientService ||= import("./firebase/firebaseClient.js?v=1");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
@@ -67,7 +69,6 @@ const createEventNotification = async (...args) => (await notificationService())
 const previewEventNotification = async (...args) => (await notificationService()).previewEventNotification(...args);
 const getLiveSurvey = async (...args) => (await notificationService()).getLiveSurvey(...args);
 const submitLiveSurveyResponse = async (...args) => (await notificationService()).submitLiveSurveyResponse(...args);
-const enableBrowserNotifications = async (...args) => (await notificationService()).enableBrowserNotifications(...args);
 const unsubscribeEventNotifications = async (...args) => (await notificationService()).unsubscribeEventNotifications(...args);
 const cancelRegistration = async (...args) => (await registrationService()).cancelRegistration(...args);
 const getEventCheckinScreenStatus = async (...args) => (await registrationService()).getEventCheckinScreenStatus(...args);
@@ -808,6 +809,8 @@ async function viewForRoute(current) {
   if (current.path === "cms" && mobileCmsDisabled() && current.id === "live-results") return mobileLiveResultsPage();
   if (current.path === "cms" && mobileCmsDisabled() && current.id !== "quality") return mobileCmsPlaceholder();
   if (current.path === "cms" && current.id === "quality" && mobileCmsDisabled()) return mobileQualityPage();
+  if (current.path === "cms" && current.id === "live") return mobileLiveAdminPage();
+  if (current.path === "cms" && current.id === "live-results") return mobileLiveResultsPage();
   if (current.path === "cms" && current.id === "media") {
     const { mediaPage } = await mediaPages();
     return mediaPage(current.section || "library", current.query);
@@ -967,9 +970,26 @@ function publicRouteFromHashValue(hash = "") {
   return { path };
 }
 
+function markBrokenImage(img) {
+  if (!img || img.tagName !== "IMG") return;
+  img.classList.add("is-broken-image");
+  img.parentElement?.classList.add("image-load-failed");
+}
+
+document.addEventListener("error", (event) => {
+  if (event.target?.tagName === "IMG") markBrokenImage(event.target);
+}, true);
+
+function markAlreadyBrokenImages(scope = document) {
+  scope.querySelectorAll?.("img").forEach((img) => {
+    if (img.complete && !img.naturalWidth) markBrokenImage(img);
+  });
+}
+
 async function render() {
   const generation = ++renderGeneration;
   const routeHashAtStart = window.location.hash || "#/home";
+  pendingRenderHash = routeHashAtStart;
   let currentRoute;
   let loadingTimer = null;
   try {
@@ -991,6 +1011,15 @@ async function render() {
       showRoutePending({ getAttribute: () => `#/${publicActiveRoute(currentRoute)}` });
     }
     const viewPromise = viewForRoute(currentRoute);
+    if (["imprint", "privacy"].includes(currentRoute?.path)) {
+      const main = root?.querySelector("main.page");
+      if (main) {
+        const title = currentRoute.path === "imprint" ? "Impressum" : "Datenschutz";
+        main.innerHTML = `<section class="section"><div class="container"><h1>${title}</h1><p role="status">Inhalt wird geladen ...</p></div></section>`;
+        closePublicMenu();
+        window.scrollTo({ top: 0, behavior: "instant" });
+      }
+    }
     const timeoutMessage = isCmsRoute
       ? "CMS-Ladevorgang hat zu lange gedauert. Bitte neu anmelden oder am Desktop oeffnen."
       : "Die Seite laedt zu lange. Bitte tippen Sie die Navigation erneut oder laden Sie die Website neu.";
@@ -1017,7 +1046,11 @@ async function render() {
       }
     }
     root.innerHTML = viewHtml;
+    markAlreadyBrokenImages(root);
+    window.setTimeout(() => markAlreadyBrokenImages(root), 1600);
     wireActions();
+    wirePushControls();
+    refreshBrowserPush();
     initCheckinScreenWatcher();
     updateMobileQrCode();
     window.PROdigitalTVPwa?.updatePrompt?.();
@@ -1068,6 +1101,8 @@ async function render() {
       return;
     }
     root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Seite konnte nicht geladen werden</p><h1>Bitte neu laden</h1><p style="margin:14px 0 24px">${escapeHtml(message)}</p><button class="button button--primary" type="button" onclick="window.location.reload()">Neu laden</button></div></section>`;
+  } finally {
+    if (generation === renderGeneration) pendingRenderHash = "";
   }
 }
 
@@ -1123,10 +1158,29 @@ function updateMobileQrCode() {
 
 function preloadPublicRouteFromLink(link) {
   const href = link?.getAttribute?.("href") || "";
-  if (!href.startsWith("#/event/")) return;
+  if (!href.startsWith("#/event/") && !href.startsWith("#/events") && !href.startsWith("#/news") && !href.startsWith("#/topics") && !href.startsWith("#/speakers")) return;
   publicPages().catch(() => undefined);
 }
 
+let publicMobileWarmupStarted = false;
+function mobileViewportLikely() {
+  return window.matchMedia?.("(max-width: 820px)")?.matches || window.innerWidth <= 920 || window.screen?.width <= 820;
+}
+
+function schedulePublicMobileWarmup() {
+  if (publicMobileWarmupStarted || !mobileViewportLikely()) return;
+  publicMobileWarmupStarted = true;
+  const runWarmup = () => {
+    publicPages().then((pages) => {
+      pages.eventsPage?.().catch(() => {});
+      pages.newsPage?.(new URLSearchParams()).catch(() => {});
+      pages.topicsPage?.().catch(() => {});
+      window.setTimeout(() => pages.speakersPage?.().catch(() => {}), 700);
+    }).catch(() => {});
+  };
+  if ("requestIdleCallback" in window) window.requestIdleCallback(runWarmup, { timeout: 1800 });
+  else window.setTimeout(runWarmup, 900);
+}
 function showRoutePending(link) {
   if (!root || !link) return;
   const href = link.getAttribute("href") || "";
@@ -1601,14 +1655,12 @@ document.addEventListener("pointerdown", (event) => {
   const link = clickedAnchor(event);
   if (!link || !link.matches?.('a[href^="#/"]')) return;
   if (event.defaultPrevented || event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-  showRoutePending(link);
   preloadPublicRouteFromLink(link);
 }, { capture: true, passive: true });
 
 document.addEventListener("touchstart", (event) => {
   const link = clickedAnchor(event);
   if (!link || !link.matches?.('a[href^="#/"]')) return;
-  showRoutePending(link);
   preloadPublicRouteFromLink(link);
 }, { capture: true, passive: true });
 
@@ -1636,6 +1688,7 @@ document.addEventListener("click", (event) => {
   const targetHash = linkTargetHash(link) || "#/home";
   if (isCurrentInternalRouteLink(link)) {
     event.preventDefault();
+    if (pendingRenderHash === targetHash) return;
     clearRoutePending();
     render();
     window.scrollTo({ top: 0 });
@@ -1674,6 +1727,42 @@ function formObject(form) {
     data[item.name] = item.checked;
   });
   return data;
+}
+
+function consentSourceOptions(value = "") {
+  const selected = String(value || "cms").trim() || "cms";
+  return [
+    ["cms", "CMS / manuell"],
+    ["website", "Webseite"],
+    ["event_registration", "Event-Anmeldung"],
+    ["import", "Import"],
+    ["other", "Sonstige Quelle"]
+  ].map(([id, label]) => `<option value="${id}" ${selected === id ?"selected" : ""}>${label}</option>`).join("");
+}
+
+function collectMediaRightsValues(values = {}) {
+  const allowedUsage = [
+    values.allowed_usage_website ? "website" : "",
+    values.allowed_usage_newsletter ? "newsletter" : "",
+    values.allowed_usage_social ? "social" : "",
+    values.allowed_usage_events ? "events" : ""
+  ].filter(Boolean);
+  return {
+    photographer: String(values.photographer || "").trim(),
+    credit: String(values.photographer || values.credit || "").trim(),
+    copyright_holder: String(values.copyright_holder || "").trim(),
+    copyrightHolder: String(values.copyright_holder || "").trim(),
+    source_url: String(values.source_url || "").trim(),
+    sourceUrl: String(values.source_url || "").trim(),
+    stock_asset_id: String(values.stock_asset_id || "").trim(),
+    stockAssetId: String(values.stock_asset_id || "").trim(),
+    license_type: String(values.license_type || "").trim(),
+    licenseType: String(values.license_type || "").trim(),
+    license_valid_to: String(values.license_valid_to || "").trim(),
+    licenseValidTo: String(values.license_valid_to || "").trim(),
+    allowed_usage: allowedUsage,
+    allowedUsage
+  };
 }
 
 function scheduleTimeToMinutes(value = "") {
@@ -2602,11 +2691,15 @@ function collectMemberEventContacts(form, membershipType = "") {
     const role = String(form.querySelector(`[name="eventContactRole${index}"]`)?.value || "").trim();
     const email = String(form.querySelector(`[name="eventContactEmail${index}"]`)?.value || "").trim();
     const phone = String(form.querySelector(`[name="eventContactPhone${index}"]`)?.value || "").trim();
+    const primaryContact = Boolean(form.querySelector(`[name="eventContactPrimary${index}"]`)?.checked);
+    const billingContact = Boolean(form.querySelector(`[name="eventContactBilling${index}"]`)?.checked);
+    const eventContact = form.querySelector(`[name="eventContactEvent${index}"]`) ?Boolean(form.querySelector(`[name="eventContactEvent${index}"]`)?.checked) : true;
+    const newsletterContact = form.querySelector(`[name="eventContactNewsletter${index}"]`) ?Boolean(form.querySelector(`[name="eventContactNewsletter${index}"]`)?.checked) : true;
     if (!firstName && !lastName && !legacyName && !role && !email && !phone) continue;
     if (!name || !email || !phone) {
       throw new Error(`Eventkontakt ${index + 1} bitte mit Name, E-Mail und Telefon vollständig ausfüllen.`);
     }
-    contacts.push({ firstName, lastName, name, role, email, phone });
+    contacts.push({ firstName, lastName, name, role, email, phone, primaryContact, mainContact: primaryContact, billingContact, eventContact, newsletterContact });
   }
   if (!contacts.length) throw new Error("Bitte mindestens einen eventberechtigten Kontakt mit Name, E-Mail und Telefon eintragen.");
   return contacts;
@@ -2615,7 +2708,7 @@ function collectMemberEventContacts(form, membershipType = "") {
 function removeMemberEventContactFormFields(values = {}) {
   const normalized = { ...values };
   Object.keys(normalized).forEach((key) => {
-    if (/^eventContact(?:Name|FirstName|LastName|Role|Email|Phone)\d+$/.test(key)) delete normalized[key];
+    if (/^eventContact(?:Name|FirstName|LastName|Role|Email|Phone|Primary|Billing|Event|Newsletter)\d+$/.test(key)) delete normalized[key];
   });
   return normalized;
 }
@@ -5178,6 +5271,9 @@ async function saveCentralMediaUpload(form, file, { result = null, auto = false 
     status: "active",
     alt_text: values.alt_text || values.title || file.name,
     description: values.description || "",
+    rights_notice: values.rights_notice || "",
+    rightsNotice: values.rights_notice || "",
+    ...collectMediaRightsValues(values),
     tags: mediaTags(values.tags)
   });
   await upsert("media_variants", {
@@ -9893,6 +9989,9 @@ function wireMediaEdit() {
         ...mediaPresetFields(values.media_type || asset.media_type || "upload"),
         alt_text: values.alt_text || "",
         description: values.description || "",
+        rights_notice: values.rights_notice || "",
+        rightsNotice: values.rights_notice || "",
+        ...collectMediaRightsValues(values),
         status: asset.status || "active",
         focal_point_x: Number(values.focal_point_x || 50),
         focal_point_y: Number(values.focal_point_y || 50),
@@ -14462,30 +14561,7 @@ function wireActions() {
         values.photoVideoConsent = true;
       }
       await createRegistration(registrationForm.dataset.eventId, values);
-      let pushHint = "";
-      if (values.notifyForThisEvent) {
-        try {
-          setNotificationDeviceStatus("Push-Aktivierung wird geprueft ...", "pending");
-          const pushResult = await enableBrowserNotifications({ email: values.email, eventId: registrationForm.dataset.eventId });
-          if (pushResult?.status === "active") {
-            pushHint = " Browser-Benachrichtigungen sind auf diesem Geraet aktiviert.";
-            setNotificationDeviceStatus("Push aktiv auf diesem Geraet.", "active");
-          } else if (pushResult?.status === "missing-vapid-key") {
-            pushHint = " Browser-Benachrichtigungen sind noch nicht konfiguriert; die Erinnerung erfolgt per E-Mail.";
-            setNotificationDeviceStatus("Browser-Push ist noch nicht eingerichtet. Sie erhalten die Erinnerung per E-Mail.", "fallback");
-          } else if (["denied", "default"].includes(pushResult?.status)) {
-            pushHint = " Die Erinnerung erfolgt per E-Mail.";
-            setNotificationDeviceStatus("Browser-Push wurde nicht erlaubt. Sie erhalten die Erinnerung per E-Mail.", "fallback");
-          } else {
-            setNotificationDeviceStatus("Browser-Push ist nicht aktiv. Sie erhalten die Erinnerung per E-Mail.", "fallback");
-          }
-        } catch {
-          pushHint = " Browser-Benachrichtigungen konnten nicht aktiviert werden; die Erinnerung erfolgt per E-Mail.";
-          setNotificationDeviceStatus("Browser-Push konnte nicht aktiviert werden. Sie erhalten die Erinnerung per E-Mail.", "fallback");
-        }
-      } else {
-        setNotificationDeviceStatus("Erinnerung nicht gewuenscht.", "neutral");
-      }
+      const pushHint = values.notifyForThisEvent ? " Nach der E-Mail-Bestaetigung steht die Push-Aktivierung bereit." : "";
       result.innerHTML = `<div class="alert alert--success">Danke, Ihre Anmeldung wurde gesendet. Bitte pruefen Sie Ihre E-Mail und bestaetigen Sie die Anmeldung ueber den zugesandten Link.${escapeHtml(pushHint)}</div>`;
       if (submitButton) submitButton.textContent = "Anmeldung gesendet";
     } catch (error) {
@@ -14710,6 +14786,15 @@ function wireActions() {
     if (linkInput && !linkInput.value) setDefaultNotificationLink();
     syncNotificationPreview();
     let confirmedPayload = null;
+    let notificationPreviewRevision = 0;
+    const invalidateNotificationPreview = () => {
+      notificationPreviewRevision++;
+      confirmedPayload = null;
+      if (notificationResult) notificationResult.innerHTML = "";
+    };
+    eventNotificationForm.addEventListener("input", invalidateNotificationPreview);
+    eventNotificationForm.addEventListener("change", invalidateNotificationPreview);
+    document.querySelector("#notification-test-group-form")?.addEventListener("input", invalidateNotificationPreview);
     notificationResult?.addEventListener("click", async (event) => {
       const sendButton = event.target.closest("[data-confirm-notification-send]");
       const cancelButton = event.target.closest("[data-cancel-notification-send]");
@@ -14760,6 +14845,7 @@ function wireActions() {
           button.textContent = "Bereite vor ...";
         }
         const payload = formObject(eventNotificationForm);
+        if (payload.recipientGroup === "test_group" && document.querySelector("#notification-test-group-form")?.dataset.dirty === "true") throw new Error("Bitte die geaenderte Testgruppe zuerst speichern.");
         if (payload.liveActionMode === "survey") {
           syncLiveSurveyOptions();
           payload.surveyOptions = liveSurveyOptions?.value || "";
@@ -14769,12 +14855,16 @@ function wireActions() {
         payload.testOnly = recipientGroup?.value === "test_person";
         if (payload.testOnly) rememberTestRecipients();
         if (!payload.testOnly) payload.testRecipients = "";
+        const revision = notificationPreviewRevision;
         const previewResponse = await previewEventNotification(payload);
+        if (revision !== notificationPreviewRevision) return;
+        if (payload.recipientGroup === "test_group") payload.expectedTestRecipients = previewResponse.recipientEmails;
         confirmedPayload = payload;
         const selectedSourceLabel = textSourceSelect?.selectedOptions?.[0]?.textContent || "Manueller Text";
         const previewText = String(payload.shortText || "");
         const previewExcerpt = previewText.length > 260 ?`${previewText.slice(0, 257)}...` : previewText;
         if (notificationResult) notificationResult.innerHTML = `<div class="alert alert--warning"><strong>${Number(previewResponse.mailCount || previewResponse.targetCount || 0)} Mails vorbereitet.</strong><p style="margin:10px 0 0"><strong>Textquelle:</strong> ${escapeHtml(selectedSourceLabel)}</p><p style="margin:8px 0 0">${escapeHtml(previewExcerpt)}</p><div class="actions" style="margin-top:12px"><button class="button button--primary button--small" type="button" data-confirm-notification-send>Senden</button><button class="button button--secondary button--small" type="button" data-cancel-notification-send>Abbrechen</button></div></div>`;
+        if (previewResponse.recipientEmails?.length) notificationResult?.querySelector(".alert")?.insertAdjacentHTML("afterbegin", `<p><strong>Testempfaenger:</strong> ${previewResponse.recipientEmails.map((email) => escapeHtml(email)).join(", ")}</p>`);
       } catch (error) {
         confirmedPayload = null;
         if (notificationResult) notificationResult.innerHTML = `<div class="alert alert--error">${escapeHtml(notificationErrorText(error))}</div>`;
@@ -14812,25 +14902,40 @@ function wireActions() {
   });
 
   const notificationTestGroupForm = document.querySelector("#notification-test-group-form");
+  notificationTestGroupForm?.querySelector("[data-test-group-search]")?.addEventListener("input", (event) => {
+    const search = event.target.value.trim().toLowerCase();
+    notificationTestGroupForm.querySelectorAll("[data-test-recipient]").forEach((row) => { row.hidden = !row.dataset.search.includes(search); });
+  });
+  notificationTestGroupForm?.addEventListener("input", (event) => {
+    if (!event.target.matches("[data-test-group-search]")) notificationTestGroupForm.dataset.dirty = "true";
+  });
   notificationTestGroupForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const result = notificationTestGroupForm.querySelector("#notification-test-group-result");
     const button = notificationTestGroupForm.querySelector("button[type='submit'], button:not([type])");
-    const checkboxes = Array.from(notificationTestGroupForm.querySelectorAll("input[name='memberIds']"));
-    const selectedIds = new Set(checkboxes.filter((input) => input.checked).map((input) => input.value));
+    const checkboxes = Array.from(notificationTestGroupForm.querySelectorAll("input[name='testEmails']"));
+    const additions = notificationTestGroupForm.querySelector("[name='additionalTestEmails']");
+    const emails = [...new Set([...checkboxes.filter((input) => input.checked).map((input) => input.value), ...(additions?.value || "").split(/[\s,;]+/)]
+      .map((email) => email.trim().toLowerCase()).filter(Boolean))];
     const originalLabel = button?.textContent || "";
     try {
       if (button) {
         button.disabled = true;
         button.textContent = "Speichere ...";
       }
-      const now = new Date().toISOString();
-      await Promise.all(checkboxes.map((input) => upsert("members", {
-        id: input.value,
-        notificationTestGroup: selectedIds.has(input.value),
-        updatedAt: now
-      })));
-      if (result) result.innerHTML = `<div class="alert alert--success">${selectedIds.size} Mitglied${selectedIds.size === 1 ? "" : "er"} in der Testgruppe gespeichert.</div>`;
+      if (emails.some((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new Error("Bitte gueltige E-Mail-Adressen eintragen.");
+      const { saveNotificationTestGroup } = await notificationService();
+      await saveNotificationTestGroup(emails);
+      const list = notificationTestGroupForm.querySelector(".notification-test-group-list");
+      emails.filter((email) => !checkboxes.some((input) => input.value === email)).forEach((email) => {
+        list.insertAdjacentHTML("afterbegin", `<label class="checkbox notification-test-group-item" data-test-recipient data-search="${escapeHtml(email)}"><input type="checkbox" name="testEmails" value="${escapeHtml(email)}" checked><span>${escapeHtml(email)}</span></label>`);
+      });
+      checkboxes.forEach((input) => { input.checked = emails.includes(input.value); });
+      if (additions) additions.value = "";
+      notificationTestGroupForm.dataset.dirty = "false";
+      const counter = document.querySelector("[data-test-group-count]");
+      if (counter) counter.textContent = `${emails.length} Adressen gespeichert`;
+      if (result) result.innerHTML = `<div class="alert alert--success">${emails.length} Testadressen gespeichert.${emails.length ? "" : " Die leere Testgruppe kann nicht versendet werden."}</div>`;
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--error">${escapeHtml(error.message || String(error))}</div>`;
     } finally {
@@ -15133,6 +15238,7 @@ function wireActions() {
   syncMemberLoginBulkState();
 
   document.querySelectorAll("#logout-button, [data-logout-button]").forEach((button) => button.addEventListener("click", async () => {
+    await disableBrowserNotifications().catch(() => {});
     await logout();
     go("home");
   }));
@@ -17689,6 +17795,13 @@ async function savePeopleEditForm(form, { stayInPlace = false } = {}) {
     phone: String(form.mobile?.value || "").trim(),
     type: form.type?.value === "member" ? "member" : "contact",
     newsletterAllowed: Boolean(form.newsletterAllowed?.checked),
+    newsletterConsent: Boolean(form.newsletterAllowed?.checked),
+    newsletterConsentAt: String(form.newsletterConsentAt?.value || "").trim() || (form.newsletterAllowed?.checked ?new Date().toISOString() : ""),
+    newsletterConsentSource: String(form.newsletterConsentSource?.value || "").trim() || "cms",
+    newsletterConsentNote: String(form.newsletterConsentNote?.value || "").trim(),
+    consentAt: String(form.newsletterConsentAt?.value || "").trim() || (form.newsletterAllowed?.checked ?new Date().toISOString() : ""),
+    consentSource: String(form.newsletterConsentSource?.value || "").trim() || "cms",
+    consentNote: String(form.newsletterConsentNote?.value || "").trim(),
     source: "cms",
     updatedAt: new Date().toISOString()
   };
@@ -17712,6 +17825,7 @@ async function savePeopleEditForm(form, { stayInPlace = false } = {}) {
 function openPeopleEditLayer(button) {
   const type = button.dataset.type === "member" ? "member" : "contact";
   const newsletterChecked = button.dataset.newsletter === "yes" ? "checked" : "";
+  const consentSource = button.dataset.consentSource || "cms";
   const layer = document.createElement("div");
   layer.className = "ai-dialog-backdrop";
   layer.dataset.peopleEditLayer = "true";
@@ -17733,6 +17847,9 @@ function openPeopleEditLayer(button) {
         <label>Mobilnummer<input name="mobile" value="${peopleEditEscapeHtml(button.dataset.mobile || "")}"></label>
         <label>Typ<select name="type"><option value="contact" ${type === "contact" ? "selected" : ""}>Kontakt</option><option value="member" ${type === "member" ? "selected" : ""}>Mitglied</option></select></label>
         <label class="check-row"><input type="checkbox" name="newsletterAllowed" ${newsletterChecked}> Newsletter erlaubt</label>
+        <label>Einwilligungsquelle<select name="newsletterConsentSource">${consentSourceOptions(consentSource)}</select></label>
+        <label>Einwilligung am<input name="newsletterConsentAt" type="datetime-local" value="${peopleEditEscapeHtml(button.dataset.consentAt || "")}"></label>
+        <label>Einwilligungsnotiz<textarea name="newsletterConsentNote">${peopleEditEscapeHtml(button.dataset.consentNote || "")}</textarea></label>
         <div class="actions">
           <button class="button button--primary" type="submit">Mailing-Adresse speichern</button>
           <button class="button button--secondary" type="button" data-people-edit-close>Abbrechen</button>
@@ -17782,6 +17899,23 @@ function bindPeopleManagementControls() {
     peopleTypeFilter?.addEventListener("change", applyPeopleFilters);
     peoplePushFilter?.addEventListener("change", applyPeopleFilters);
     applyPeopleFilters();
+    const pushRows = Array.from(document.querySelectorAll("[data-people-row]"));
+    const pushCounter = document.querySelector("[data-people-push-count]");
+    notificationService().then(({ getNotificationPushStatus }) => getNotificationPushStatus(pushRows.map((row) => row.dataset.email).filter(Boolean)))
+      .then((result) => {
+        if (!pushCounter?.isConnected) return;
+        const activeEmails = new Set(result.activeEmails || []);
+        pushRows.forEach((row) => {
+          row.dataset.push = activeEmails.has(row.dataset.email) ? "yes" : "no";
+          row.querySelector("[data-people-push-status]").textContent = row.dataset.push === "yes" ? "Registriert" : "Nicht aktiviert";
+        });
+        pushCounter.textContent = String(activeEmails.size);
+        applyPeopleFilters();
+      }).catch(() => {
+        if (!pushCounter?.isConnected) return;
+        pushCounter.textContent = "?";
+        pushRows.forEach((row) => { row.querySelector("[data-people-push-status]").textContent = "Status unbekannt"; });
+      });
   }
 
   document.querySelector("[data-people-import-file]")?.addEventListener("change", (event) => {
@@ -17865,7 +17999,7 @@ async function resetInstalledAppCachesIfRequested() {
   if (!params.has("resetApp")) return false;
   await clearPreviewCaches();
   params.delete("resetApp");
-  params.set("v", "1254");
+  params.set("v", "1262");
   const nextSearch = params.toString();
   location.replace(`${location.origin}${location.pathname}${nextSearch ? `?${nextSearch}` : ""}${location.hash || "#/home"}`);
   return true;
@@ -17873,7 +18007,7 @@ async function resetInstalledAppCachesIfRequested() {
 
 async function refreshInstalledAppShellIfNeeded() {
   if (["localhost", "127.0.0.1"].includes(location.hostname) || location.protocol === "file:") return false;
-  const version = "1254";
+  const version = "1262";
   const key = "prodigitaltv-live-shell-version";
   try {
     if (localStorage.getItem(key) === version) return false;
@@ -17903,6 +18037,7 @@ resetInstalledAppCachesIfRequested().then((didReset) => {
     }
   });
 });
+
 
 
 

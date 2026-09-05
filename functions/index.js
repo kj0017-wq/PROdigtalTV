@@ -9,9 +9,11 @@ const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https")
 const { defineSecret } = require("firebase-functions/params");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const nodemailer = require("nodemailer");
+const { createPushService } = require("./pushService");
 
 initializeApp();
 const db = getFirestore();
+const pushService = createPushService({ db, messaging: getMessaging(), FieldValue, HttpsError });
 const region = "europe-west3";
 const storageBucket = "prodigitaltv-da47b.firebasestorage.app";
 const SMTP_HOST = defineSecret("SMTP_HOST");
@@ -180,6 +182,7 @@ function normalizedMemberEmails(member = {}) {
     member.email,
     member.contactEmail,
     member.contact_email,
+    member.primaryEmail,
     member.profileEmail,
     member.billingEmail,
     member.invoiceEmail
@@ -188,10 +191,10 @@ function normalizedMemberEmails(member = {}) {
     if (Array.isArray(member[key])) member[key].forEach((value) => values.push(value));
   });
   if (Array.isArray(member.eventContacts)) {
-    member.eventContacts.forEach((contact) => values.push(contact?.email));
+    member.eventContacts.forEach((contact) => values.push(contact?.email || contact?.contactEmail));
   }
   if (Array.isArray(member.contacts)) {
-    member.contacts.forEach((contact) => values.push(contact?.email));
+    member.contacts.forEach((contact) => values.push(contact?.email || contact?.contactEmail));
   }
   return values.map((value) => clean(value).toLowerCase()).filter(Boolean);
 }
@@ -202,7 +205,33 @@ function memberCanMatchRegistration(member = {}) {
 }
 
 function memberIsNotificationTestGroup(member = {}) {
+  if (typeof member.notificationTestGroup === "boolean") return member.notificationTestGroup;
   return Boolean(member.notificationTestGroup || member.isNotificationTestGroup || member.testGroup || member.notificationTester);
+}
+
+function memberIsMailingEligible(member = {}) {
+  return memberCanMatchRegistration(member)
+    && !["inactive", "cancelled", "archived", "deleted"].includes(clean(member.membershipAccessStatus).toLowerCase());
+}
+
+async function notificationTestGroupTargets() {
+  const saved = await db.collection("settings").doc("notificationTestGroup").get();
+  let emails;
+  if (saved.exists) {
+    emails = saved.data().emails;
+    if (!Array.isArray(emails)) throw new HttpsError("failed-precondition", "Testgruppe ist ungueltig. Bitte neu speichern.");
+  } else {
+    const members = await db.collection("members").get();
+    emails = members.docs.map((doc) => doc.data())
+      .filter((member) => memberIsMailingEligible(member) && memberIsNotificationTestGroup(member))
+      .filter((member) => !member.notificationOptOut && !member.mailingDisabled && member.reminderConsent !== false)
+      .flatMap(normalizedMemberEmails);
+  }
+  const unique = [...new Set(emails.map((email) => clean(email).toLowerCase()))];
+  if (!unique.length || unique.some((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+    throw new HttpsError("failed-precondition", "Bitte mindestens eine gueltige Adresse in der Testgruppe speichern.");
+  }
+  return unique.map((email) => ({ email, source: "test_group", audienceType: "test" }));
 }
 
 async function emailBelongsToMember(email = "") {
@@ -282,6 +311,8 @@ async function findPersonByEmail(email = "") {
 async function eventNotificationTargets(eventId = "", options = {}) {
   const hasEvent = Boolean(clean(eventId));
   const recipientGroup = clean(options.recipientGroup || "");
+  // Test recipients never pass through the member/contact recipient expansion.
+  if (recipientGroup === "test_group") return notificationTestGroupTargets();
   const includeRegistered = ["event_registered", "event_registered_speakers"].includes(recipientGroup) || options.includeRegistered === true;
   const includeSpeakers = ["event_speakers", "event_registered_speakers"].includes(recipientGroup) || options.includeSpeakers === true;
   const includeMembers = ["members", "members_contacts", "test_group"].includes(recipientGroup) || options.includeMembers === true;
@@ -299,9 +330,11 @@ async function eventNotificationTargets(eventId = "", options = {}) {
     .filter(registrationIsActive);
   const registeredEmails = new Set(activeRegistrations.map((registration) => clean(registration.email).toLowerCase()).filter(Boolean));
   const officialMemberEmails = new Set();
+  const eligibleMemberIds = new Set();
   membersSnapshot.docs.forEach((document) => {
     const member = { id: document.id, ...document.data() };
-    if (!memberCanMatchRegistration(member)) return;
+    if (!memberIsMailingEligible(member)) return;
+    eligibleMemberIds.add(member.id);
     normalizedMemberEmails(member).forEach((email) => officialMemberEmails.add(email));
   });
   usersSnapshot.docs.forEach((document) => {
@@ -310,7 +343,7 @@ async function eventNotificationTargets(eventId = "", options = {}) {
     const role = clean(user.role || "member").toLowerCase();
     const email = clean(user.email).toLowerCase();
     if (!email || ["inactive", "archived", "deleted", "disabled"].includes(status)) return;
-    if (role !== "member" && !clean(user.memberId)) return;
+    if (!eligibleMemberIds.has(clean(user.memberId)) && !officialMemberEmails.has(email)) return;
     officialMemberEmails.add(email);
   });
   const people = new Map();
@@ -330,7 +363,7 @@ async function eventNotificationTargets(eventId = "", options = {}) {
   };
   membersSnapshot.docs.forEach((document) => {
     const member = { id: document.id, ...document.data() };
-    if (!memberCanMatchRegistration(member)) return;
+    if (!memberIsMailingEligible(member)) return;
     if (member.notificationOptOut === true || member.mailingDisabled === true || member.reminderConsent === false) return;
     if (recipientGroup === "test_group" && !memberIsNotificationTestGroup(member)) return;
     normalizedMemberEmails(member).forEach((email) => addPerson(email, {
@@ -346,7 +379,7 @@ async function eventNotificationTargets(eventId = "", options = {}) {
     const role = clean(user.role || "member").toLowerCase();
     const email = clean(user.email).toLowerCase();
     if (!email || ["inactive", "archived", "deleted", "disabled"].includes(status)) return;
-    if (role !== "member" && !clean(user.memberId)) return;
+    if (!eligibleMemberIds.has(clean(user.memberId)) && !officialMemberEmails.has(email)) return;
     if (user.notificationOptOut === true || user.mailingDisabled === true || user.reminderConsent === false) return;
     addPerson(email, {
       firstName: user.firstName || "",
@@ -416,11 +449,16 @@ async function eventNotificationTargets(eventId = "", options = {}) {
 
 async function queueEventNotificationDelivery(notification = {}, eventRecord = {}) {
   const explicitRecipients = Array.isArray(notification.testRecipients) ? notification.testRecipients : [];
-  const targets = explicitRecipients.length
+  const targets = notification.recipientGroup === "test_group"
+    ? await notificationTestGroupTargets()
+    : explicitRecipients.length
     ? explicitRecipients.map((email) => ({ email, audienceType: "test", firstName: "", lastName: "", company: "" }))
     : await eventNotificationTargets(eventRecord.id, notification);
   let queued = 0;
   let pushed = 0;
+  let pushAttempted = 0;
+  let pushFailed = 0;
+  const pushErrors = [];
   for (const target of targets) {
     let link = notification.linkEnabled === false ? "" : clean(notification.link || eventUrl(eventRecord.id));
     let surveyInviteId = "";
@@ -471,29 +509,11 @@ async function queueEventNotificationDelivery(notification = {}, eventRecord = {
       eventRecord,
       variables: { eventLink: link, link }
     });
-    let pushDelivered = false;
-    try {
-      const tokens = await db.collection("notificationTokens")
-        .where("email", "==", target.email)
-        .where("status", "==", "active")
-        .limit(5)
-        .get();
-      for (const tokenDocument of tokens.docs) {
-        const token = clean(tokenDocument.data()?.token);
-        if (!token) continue;
-        const pushMessage = {
-          token,
-          notification: { title: renderedTitle || notification.title, body },
-          data: { eventId: eventRecord.id, notificationId: notification.id, link }
-        };
-        if (link) pushMessage.webpush = { fcmOptions: { link } };
-        await getMessaging().send(pushMessage);
-        pushDelivered = true;
-        pushed += 1;
-      }
-    } catch {
-      pushDelivered = false;
-    }
+    const pushResult = await pushService.deliver(target.email, { title: renderedTitle || notification.title, body, eventId: eventRecord.id, id: notification.id, link });
+    pushed += pushResult.sent;
+    pushAttempted += pushResult.attempted;
+    pushFailed += pushResult.failed;
+    pushErrors.push(...pushResult.errors);
     await queueMail({
       type: "event_notification",
       template: "event_notification",
@@ -520,10 +540,13 @@ async function queueEventNotificationDelivery(notification = {}, eventRecord = {
     targetCount: targets.length,
     queuedMailCount: queued,
     pushedCount: pushed,
+    pushAttemptedCount: pushAttempted,
+    pushFailedCount: pushFailed,
+    pushErrors: pushErrors.slice(0, 50),
     processedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp()
   }, { merge: true });
-  return { targetCount: targets.length, queuedMailCount: queued, pushedCount: pushed };
+  return { targetCount: targets.length, queuedMailCount: queued, pushedCount: pushed, pushFailedCount: pushFailed };
 }
 
 function notificationConsentId(email = "") {
@@ -1007,6 +1030,9 @@ function renderMail(mail, context = {}) {
     const title = registration.eventTitle || eventRecord.title || "";
     const eventLink = eventUrl(registration.eventId || eventRecord.id || mail.eventId || "");
     const ticketEnabled = mail.ticketEnabled !== false && eventUsesHandyTicket(eventRecord, registration);
+    const ticketLink = clean(mail.ticketLink || "");
+    const primaryLink = ticketEnabled && ticketLink ? ticketLink : eventLink;
+    const primaryLabel = ticketEnabled && ticketLink ? "Handy-Ticket anzeigen" : "Zum Event";
     return {
       subject: mail.subject || `Anmeldung bestaetigt: ${registration.eventTitle || eventRecord.title || ""}`,
       text: [
@@ -1014,9 +1040,9 @@ function renderMail(mail, context = {}) {
         "",
         `Ihre Anmeldung${title ? ` fuer "${title}"` : ""} wurde bestaetigt.`,
         "",
-        ticketEnabled ? "Wenn Sie die Anmeldung auf dem Handy bestaetigt haben, ist dieses Geraet bereits als Ticket vorbereitet." : "Fuer diese Veranstaltung ist kein Handy-Ticket erforderlich.",
-        ticketEnabled ? "Beim Einlass scannen Sie bitte den QR-Code des Events. Das System erkennt dann das gespeicherte Ticket auf Ihrem Handy." : "Ihre bestaetigte Anmeldung ist ausreichend; weitere Informationen erhalten Sie ueber die Veranstaltungskommunikation.",
-        eventLink ? `Zum Event: ${eventLink}` : "",
+        ticketEnabled ? "Oeffnen Sie den folgenden Link bitte einmal auf dem Smartphone. Dort wird Ihr persoenliches Handy-Ticket fuer den Einlass angezeigt und gespeichert." : "Fuer diese Veranstaltung ist kein Handy-Ticket erforderlich.",
+        ticketEnabled ? "Wenn Sie die Bestaetigung bereits auf dem Handy geoeffnet haben, ist dieses Geraet schon vorbereitet." : "Ihre bestaetigte Anmeldung ist ausreichend; weitere Informationen erhalten Sie ueber die Veranstaltungskommunikation.",
+        primaryLink ? `${primaryLabel}: ${primaryLink}` : "",
         mail.cancelUrl ? `Anmeldung stornieren: ${mail.cancelUrl}` : "",
         "",
         "Viele Gruesse",
@@ -1026,11 +1052,11 @@ function renderMail(mail, context = {}) {
         `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Guten Tag ${clean(registration.firstName)} ${clean(registration.lastName)},</p>`,
         `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Ihre Anmeldung${title ? ` fuer <strong>${title}</strong>` : ""} wurde bestaetigt.</p>`,
         ticketEnabled
-          ? `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Wenn Sie die Anmeldung auf dem Handy bestaetigt haben, ist dieses Geraet bereits als Ticket vorbereitet.</p><p style="font-size:17px;line-height:1.55;margin:0 0 14px">Beim Einlass scannen Sie bitte den QR-Code des Events. Das System erkennt dann das gespeicherte Ticket auf Ihrem Handy.</p>`
+          ? `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Oeffnen Sie den folgenden Link bitte einmal auf dem Smartphone. Dort wird Ihr persoenliches Handy-Ticket fuer den Einlass angezeigt und gespeichert.</p><p style="font-size:17px;line-height:1.55;margin:0 0 14px">Wenn Sie die Bestaetigung bereits auf dem Handy geoeffnet haben, ist dieses Geraet schon vorbereitet.</p>`
           : `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Fuer diese Veranstaltung ist kein Handy-Ticket erforderlich.</p><p style="font-size:17px;line-height:1.55;margin:0 0 14px">Ihre bestaetigte Anmeldung ist ausreichend; weitere Informationen erhalten Sie ueber die Veranstaltungskommunikation.</p>`,
-        mailButton("Zum Event", eventLink),
+        mailButton(primaryLabel, primaryLink),
         mail.cancelUrl ? `<p style="font-size:14px;line-height:1.5;margin:18px 0 0"><a href="${mail.cancelUrl}" style="color:#0b3a66">Anmeldung stornieren</a></p>` : "",
-        ticketEnabled ? `<p style="font-size:14px;color:#5f6b7c;margin:18px 0 0">Der separate Handy-Ticket-Link wird nicht mehr benoetigt, wenn die Bestaetigung bereits auf dem Smartphone erfolgt ist.</p>` : ""
+        ticketEnabled && eventLink ? `<p style="font-size:14px;color:#5f6b7c;margin:18px 0 0">Eventdetails: <a href="${escapeAttribute(eventLink)}" style="color:#0b3a66">${escapeAttribute(eventLink)}</a></p>` : ""
       ].filter(Boolean).join(""))
     };
   }
@@ -1865,6 +1891,18 @@ exports.getMyEventRegistrations = onCall({ region }, async (request) => {
   return { registrations };
 });
 
+exports.saveNotificationTestGroup = onCall({ region }, async (request) => {
+  const profile = await requireEditor(request);
+  const values = request.data?.emails;
+  if (!Array.isArray(values) || values.some((email) => typeof email !== "string")) throw new HttpsError("invalid-argument", "Testadressen fehlen.");
+  const emails = [...new Set(values.map((email) => clean(email).toLowerCase()))];
+  if (emails.some((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new HttpsError("invalid-argument", "Bitte gueltige E-Mail-Adressen eintragen.");
+  await db.collection("settings").doc("notificationTestGroup").set({
+    emails, updatedAt: FieldValue.serverTimestamp(), updatedBy: profile.email || request.auth.uid
+  }, { merge: true });
+  return { emails, count: emails.length };
+});
+
 exports.createEventNotification = onCall({ region }, async (request) => {
   const profile = await requireEditor(request);
   const input = request.data?.input || {};
@@ -1890,12 +1928,19 @@ exports.createEventNotification = onCall({ region }, async (request) => {
     .map((email) => mailAddress(email))
     .filter(Boolean)
     .filter((email, index, all) => all.indexOf(email) === index);
-  const testOnly = Boolean(input.testOnly);
+  const testOnly = clean(input.recipientGroup) !== "test_group" && (clean(input.recipientGroup) === "test_person" || input.testOnly === true || input.testOnly === "true");
   if (testOnly && !testRecipients.length) throw new HttpsError("invalid-argument", "Bitte mindestens eine Testperson eintragen.");
   const recipientGroup = ["members", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "test_group", "test_person"].includes(clean(input.recipientGroup))
     ? clean(input.recipientGroup)
     : "members_contacts";
   const offsetMinutes = Number(input.offsetMinutes || 0);
+  if (recipientGroup === "test_group") {
+    const targets = await notificationTestGroupTargets();
+    if (Array.isArray(input.expectedTestRecipients)) {
+      const expected = [...new Set(input.expectedTestRecipients.map((email) => clean(email).toLowerCase()))].sort();
+      if (JSON.stringify(expected) !== JSON.stringify(targets.map((target) => target.email).sort())) throw new HttpsError("failed-precondition", "Die Testgruppe wurde geaendert. Bitte Empfaenger erneut vorbereiten.");
+    }
+  }
   let scheduledAt = null;
   if (sendMode === "scheduled" && clean(input.scheduledAt)) {
     const parsed = Date.parse(clean(input.scheduledAt));
@@ -1987,7 +2032,7 @@ exports.previewEventNotification = onCall({ region }, async (request) => {
     .map((email) => mailAddress(email))
     .filter(Boolean)
     .filter((email, index, all) => all.indexOf(email) === index);
-  const testOnly = Boolean(input.testOnly);
+  const testOnly = clean(input.recipientGroup) !== "test_group" && (clean(input.recipientGroup) === "test_person" || input.testOnly === true || input.testOnly === "true");
   if (testOnly && !testRecipients.length) throw new HttpsError("invalid-argument", "Bitte mindestens eine Testperson eintragen.");
   const recipientGroup = ["members", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "test_group", "test_person"].includes(clean(input.recipientGroup))
     ? clean(input.recipientGroup)
@@ -2006,6 +2051,7 @@ exports.previewEventNotification = onCall({ region }, async (request) => {
   return {
     targetCount: targets.length,
     mailCount: targets.length,
+    recipientEmails: recipientGroup === "test_group" || testOnly ? targets.map((target) => target.email) : [],
     testOnly,
     recipientGroup
   };
@@ -2116,28 +2162,11 @@ exports.submitLiveSurveyResponse = onCall({ region, invoker: "public" }, async (
 });
 
 exports.registerNotificationToken = onCall({ region }, async (request) => {
-  const data = request.data || {};
-  const token = clean(data.token);
-  const email = mailAddress(data.email);
-  if (!token) throw new HttpsError("invalid-argument", "Push-Token fehlt.");
-  if (!email) throw new HttpsError("invalid-argument", "E-Mail-Adresse fehlt.");
-  const tokenId = `notification-token-${createHash("sha256").update(token).digest("hex").slice(0, 40)}`;
-  await db.collection("notificationTokens").doc(tokenId).set({
-    id: tokenId,
-    token,
-    email,
-    eventId: clean(data.eventId),
-    status: "active",
-    permission: clean(data.permission || "granted"),
-    source: clean(data.source || "browser"),
-    userAgent: stripTags(data.userAgent),
-    platform: stripTags(data.platform),
-    lastSeenAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-    createdAt: FieldValue.serverTimestamp()
-  }, { merge: true });
-  return { status: "active", id: tokenId };
+  return pushService.register(request);
 });
+
+exports.getBrowserPushDeviceStatus = onCall({ region }, (request) => pushService.deviceStatus(request));
+exports.disableBrowserPush = onCall({ region }, (request) => pushService.deviceStatus(request, true));
 
 exports.getNotificationPushStatus = onCall({ region }, async (request) => {
   await requireEditor(request);
@@ -2151,7 +2180,7 @@ exports.getNotificationPushStatus = onCall({ region }, async (request) => {
   tokens.docs.forEach((document) => {
     const token = document.data() || {};
     const email = mailAddress(token.email);
-    if (!email || !token.token || !emailSet.has(email)) return;
+    if (!email || !token.token || token.verified !== true || !emailSet.has(email)) return;
     activeEmails.add(email);
   });
   return { activeEmails: [...activeEmails] };
@@ -2245,13 +2274,18 @@ exports.processEventNotifications = onSchedule({ region, schedule: "every 15 min
     .get();
   for (const document of due.docs) {
     const notification = { id: document.id, ...document.data() };
-    const eventSnapshot = await db.collection("events").doc(notification.eventId).get();
-    if (!eventSnapshot.exists) {
-      await document.ref.set({ status: "failed", error: "Event wurde nicht gefunden.", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-      continue;
+    try {
+      let eventRecord = {};
+      if (notification.notificationKind !== "member_message") {
+        const eventSnapshot = await db.collection("events").doc(notification.eventId).get();
+        if (!eventSnapshot.exists) throw new Error("Event wurde nicht gefunden.");
+        eventRecord = { id: eventSnapshot.id, ...eventSnapshot.data() };
+      }
+      await document.ref.set({ status: "processing", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      await queueEventNotificationDelivery(notification, eventRecord);
+    } catch (error) {
+      await document.ref.set({ status: "failed", error: String(error.message || "Versand fehlgeschlagen"), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     }
-    await document.ref.set({ status: "processing", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-    await queueEventNotificationDelivery(notification, { id: eventSnapshot.id, ...eventSnapshot.data() });
   }
   const eventSnapshot = await db.collection("events").get();
   const mailTemplatesSnapshot = await db.collection("settings").doc("mailTemplates").get().catch(() => null);
@@ -2509,11 +2543,14 @@ exports.confirmRegistrationByToken = onCall({ region, invoker: "public" }, async
   const eventRecord = eventSnapshot?.exists ? { id: eventSnapshot.id, ...eventSnapshot.data() } : {};
   const ticketEnabled = eventUsesHandyTicket(eventRecord, registration);
   const ticketToken = ticketEnabled ? randomBytes(32).toString("hex") : "";
+  const pushEnrollmentToken = randomBytes(32).toString("hex");
   const cancelToken = randomBytes(32).toString("hex");
   const ticketLink = ticketEnabled ? registrationTicketUrl(ticketToken, registration.eventId) : "";
   const cancelUrl = registrationCancelUrl(cancelToken);
   const update = {
     status: "confirmed", emailConfirmed: true, confirmedAt: FieldValue.serverTimestamp(),
+    pushEnrollmentTokenHash: hashToken(pushEnrollmentToken),
+    pushEnrollmentExpiresAt: Timestamp.fromMillis(Date.now() + 30 * 86400000),
     confirmationTokenHash: FieldValue.delete(),
     handyTicketEnabled: ticketEnabled,
     cancelTokenHash: hashToken(cancelToken),
@@ -2545,6 +2582,7 @@ exports.confirmRegistrationByToken = onCall({ region, invoker: "public" }, async
     lastName: registration.lastName || "",
     ticketEnabled,
     ticketToken,
+    pushEnrollmentToken,
     ticketLink,
     cancelUrl
   };

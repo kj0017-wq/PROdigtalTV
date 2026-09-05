@@ -307,10 +307,11 @@ export async function listPublicEventMediaAssets(eventsOrIds = []) {
   if (!eventIds.length) return [];
 
   const directIds = [...new Set(events.flatMap(directMediaAssetIds))];
-  const firebase = await getDataFirebase();
-  if (!firebase) {
-    return [];
-  }
+  const activeMediaKey = publicCacheKey("media_assets", [["status", "==", "active"], ["visibility", "==", "public"]]);
+  const cachedActiveAssets = readPublicSessionCache(activeMediaKey, { allowStale: true }) || [];
+  const cachedDirectAssets = directIds
+    .map((assetId) => cachedActiveAssets.find((asset) => asset.id === assetId))
+    .filter(publicActiveMediaAsset);
 
   const requests = [];
   if (eventIds.length <= 8) {
@@ -321,24 +322,24 @@ export async function listPublicEventMediaAssets(eventsOrIds = []) {
       cachedConstrainedList("media_assets", [["linkedCollection", "==", "events"], ["linkedRecordId", "==", eventId]]).catch(() => [])
     ]));
   }
-  directIds.forEach((assetId) => {
-    requests.push(getOne("media_assets", assetId).then((asset) => publicActiveMediaAsset(asset || {}) ? [asset] : []).catch(() => []));
-  });
+  directIds
+    .filter((assetId) => !cachedDirectAssets.some((asset) => asset.id === assetId))
+    .forEach((assetId) => {
+      requests.push(getOne("media_assets", assetId).then((asset) => publicActiveMediaAsset(asset || {}) ? [asset] : []).catch(() => []));
+    });
 
-  const records = (await Promise.all(requests)).flat().filter(publicActiveMediaAsset);
+  const records = [...cachedDirectAssets, ...(await Promise.all(requests)).flat()].filter(publicActiveMediaAsset);
   return Array.from(new Map(records.filter(Boolean).map((record) => [record.id, record])).values());
 }
 
 export async function listPublicMediaAssets() {
-  const firebase = await getDataFirebase();
-  if (!firebase) {
-    return [];
-  }
+  const key = publicCacheKey("media_assets", [["status", "==", "active"], ["visibility", "==", "public"]]);
+  const cachedAssets = readPublicSessionCache(key, { allowStale: true });
+  if (cachedAssets) return cachedAssets.filter(publicActiveMediaAsset);
   return cachedConstrainedList("media_assets", [["status", "==", "active"], ["visibility", "==", "public"]])
     .then((assets) => assets.filter(publicActiveMediaAsset))
     .catch(() => []);
 }
-
 export async function listPublicEvents(includeMemberEvents = false) {
   const aggregateCacheKey = `publicEvents:${includeMemberEvents ? "member" : "public"}`;
   const aggregateCached = readPublicSessionCache(aggregateCacheKey);
@@ -550,3 +551,4 @@ export async function remove(collectionName, id) {
   }
   throw new Error("Firebase ist nicht erreichbar. Es wurde nichts lokal geloescht.");
 }
+
