@@ -3,6 +3,7 @@ const { defineSecret } = require("firebase-functions/params");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getStorage } = require("firebase-admin/storage");
 const { randomUUID } = require("node:crypto");
+const { normalizeGermanSpeechText } = require("./voiceTextNormalizer");
 const region = "europe-west3";
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
 const ttsModel = "gemini-2.5-flash-preview-tts";
@@ -10,6 +11,8 @@ const sampleRate = 24000;
 const channels = 1;
 const bitsPerSample = 16;
 const maxCharacters = 6000;
+const maxInputCharacters = 12000;
+const maxPayloadBytes = 64 * 1024;
 const chunkCharacters = 1200;
 const db = getFirestore();
 const storageBucket = "prodigitaltv-da47b.firebasestorage.app";
@@ -154,14 +157,16 @@ async function createSpeechBuffer({ title, text, variant = "accessible" }) {
   const cleanTitle = cleanText(title || "");
   const cleanBody = cleanText(text || "");
   if (!cleanBody) throw new HttpsError("invalid-argument", "Kein Text zum Vorlesen uebergeben.");
+  const speechTitle = normalizeGermanSpeechText(cleanTitle);
+  const speechBody = normalizeGermanSpeechText(cleanBody);
   const config = ttsVariantConfig(variant);
-  const chunks = splitIntoChunks(cleanBody);
+  const chunks = splitIntoChunks(speechBody);
   const pcmBuffers = [];
 
   for (let index = 0; index < chunks.length; index += 1) {
     const prompt = [
       ...config.promptLines,
-      cleanTitle && index === 0 ? `Title: ${cleanTitle}` : "",
+      speechTitle && index === 0 ? `Title: ${speechTitle}` : "",
       chunks.length > 1 ? `Part ${index + 1} of ${chunks.length}:` : "",
       chunks[index]
     ].filter(Boolean).join("\n\n");
@@ -193,17 +198,63 @@ async function createSpeechBuffer({ title, text, variant = "accessible" }) {
     pcmBuffers.push(Buffer.from(pcmBase64, "base64"));
   }
   const pcmBuffer = Buffer.concat(pcmBuffers);
-  return { buffer: wavBufferFromPcmBuffer(pcmBuffer), pcmBuffer, truncated: String(text || "").length > maxCharacters, textLength: cleanBody.length };
+  return { buffer: wavBufferFromPcmBuffer(pcmBuffer), pcmBuffer, truncated: String(text || "").length > maxCharacters, textLength: speechBody.length };
+}
+
+function speechRequestInput(request = {}) {
+  const data = request?.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new HttpsError("invalid-argument", "Ungueltige Audio-Payload.");
+  }
+
+  let payloadBytes = 0;
+  try {
+    payloadBytes = Buffer.byteLength(JSON.stringify(data), "utf8");
+  } catch {
+    throw new HttpsError("invalid-argument", "Audio-Payload konnte nicht verarbeitet werden.");
+  }
+  if (payloadBytes > maxPayloadBytes) {
+    throw new HttpsError("resource-exhausted", "Audio-Payload ist zu gross.");
+  }
+
+  if (typeof data.text !== "string" || !data.text.trim()) {
+    throw new HttpsError("invalid-argument", "Text zum Vorlesen fehlt.");
+  }
+  if (data.text.length > maxInputCharacters) {
+    throw new HttpsError("invalid-argument", `Text darf maximal ${maxInputCharacters} Zeichen enthalten.`);
+  }
+  if (data.title !== undefined && typeof data.title !== "string") {
+    throw new HttpsError("invalid-argument", "Titel muss ein Text sein.");
+  }
+  if (data.variant !== undefined && !["accessible", "natural"].includes(data.variant)) {
+    throw new HttpsError("invalid-argument", "Ungueltige Audio-Variante.");
+  }
+
+  const text = cleanText(data.text);
+  if (!text) throw new HttpsError("invalid-argument", "Text zum Vorlesen ist leer.");
+  return {
+    title: cleanText(data.title || ""),
+    text,
+    variant: data.variant || "accessible"
+  };
 }
 
 exports.generateArticleSpeech = onCall({ region, secrets: [geminiApiKey], timeoutSeconds: 240, memory: "512MiB" }, async (request) => {
-  const speech = await createSpeechBuffer({ title: request.data?.title || "", text: request.data?.text || "", variant: request.data?.variant || "accessible" });
-  return {
-    audioBase64: speech.buffer.toString("base64"),
-    mimeType: "audio/wav",
-    sampleRate,
-    truncated: speech.truncated
-  };
+  try {
+    await requireEditor(request);
+    const input = speechRequestInput(request);
+    const speech = await createSpeechBuffer(input);
+    return {
+      audioBase64: speech.buffer.toString("base64"),
+      mimeType: "audio/wav",
+      sampleRate,
+      truncated: speech.truncated
+    };
+  } catch (error) {
+    console.error("generateArticleSpeech failed", error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError("internal", "Audio konnte intern nicht erzeugt werden.");
+  }
 });
 
 exports.generateArticleSpeechAsset = onCall({ region, secrets: [geminiApiKey], timeoutSeconds: 360, memory: "1GiB" }, async (request) => {

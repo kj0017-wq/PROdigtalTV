@@ -1,4 +1,4 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=470";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=479";
 import { list, getOne } from "../firebase/dataService.js?v=488";
 import { currentUser, canUseCms, waitForAuthReady } from "../firebase/authService.js?v=471";
 import { escapeHtml } from "../utils/format.js";
@@ -111,7 +111,7 @@ const mediaAiTextAreaOptions = [
 const mediaAiAreaOptions = [
   ["news", "News"],
   ["press", "Presse / Mitteilung"],
-  ["medienfruehstueck", "Medienfruehstueck"],
+  ["medienfruehstueck", "Medienfrühstück"],
   ["von_den_besten", "Von den Besten"],
   ["rueckblick", "Rueckblick"],
   ["versammlung", "Versammlungen"],
@@ -1433,7 +1433,7 @@ function aiPage(query = new URLSearchParams(), targetRecord = null) {
         <div class="field"><label>Motivart</label><select name="motif_type">${mediaAiSelectOptions(mediaAiMotifOptions, "symbol")}</select></div>
         <div class="field"><label>Bildwirkung</label><select name="image_effect">${mediaAiSelectOptions(mediaAiEffectOptions, "premium")}</select></div>
         <div class="field"><label>Textflaeche</label><select name="text_area">${mediaAiSelectOptions(mediaAiTextAreaOptions, "none")}</select></div>
-        <div class="field"><label>Text-Overlay / Covertext</label><input name="text_overlay" placeholder="z. B. MEDIENFRUEHSTUECK · BERLIN · 12. MAERZ"></div>
+        <div class="field"><label>Text-Overlay / Covertext</label><input name="text_overlay" placeholder="z. B. MEDIENFRÜHSTÜCK · BERLIN · 12. MÄRZ"></div>
         <div class="field"><label>Eigene Stilwelt / Referenzen</label><input name="style" placeholder="z. B. analoger Scan-Look, jap. Magazinlayout, Neon-Noir, rohe Pressefotografie, 70er TV-Grafik"></div>
       </div>
       <input type="hidden" name="aspect_ratio" value="16x9">
@@ -1477,7 +1477,7 @@ function editPage(asset = null, query = new URLSearchParams(), variants = [], as
         <div class="media-crop-stage" data-media-crop-stage style="--media-crop-aspect:${mediaAspectStyle(asset.aspect_ratio)}">
           ${editorUrl ? `<button class="media-fullscreen-button" type="button" data-media-fullscreen-open data-media-fullscreen-src="${escapeHtml(previewUrl)}" data-media-fullscreen-alt="${escapeHtml(asset.alt_text || asset.title || "Medienbild")}" title="Bild gross anzeigen" aria-label="Bild gross anzeigen">${mediaFullscreenIcon()}</button>
           <img src="${escapeHtml(editorUrl)}" alt="${escapeHtml(asset.alt_text || asset.title || "Medienbild")}" data-media-crop-image data-media-preview-src="${escapeHtml(previewUrl)}" data-media-editor-src="${escapeHtml(editorUrl)}">
-          <span class="media-crop-frame" aria-hidden="true"></span>` : `<div class="alert alert--warning media-crop-empty">Dieses Bild hat noch keine verwendbare URL. Bitte ein anderes Bild waehlen oder die Datei neu hochladen.</div>`}
+          <span class="media-crop-frame" aria-hidden="true"></span><span class="media-crop-preview-badge" data-media-crop-preview-badge hidden>Live-Vorschau - noch nicht gespeichert</span>` : `<div class="alert alert--warning media-crop-empty">Dieses Bild hat noch keine verwendbare URL. Bitte ein anderes Bild waehlen oder die Datei neu hochladen.</div>`}
         </div>
         <div class="media-crop-dimensions" data-media-crop-dimensions>
           <span data-media-target-size>Zielrahmen: -</span>

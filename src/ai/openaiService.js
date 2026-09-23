@@ -25,6 +25,7 @@ const ACTION_FUNCTIONS = {
   generateDownloadDescription: "generateDownloadDescription",
   rewritePressRetrospective: "rewritePressRetrospective",
   analyzeEventPipelineQuality: "analyzeEventPipelineQuality"
+  ,generateLinkedInPost: "generateLinkedInPost"
 };
 
 const DEFAULT_AI_EDITORIAL_THUMBNAIL_PROMPT = "Fotorealistisches redaktionelles 16:9-Vorschaubild für PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
@@ -57,6 +58,10 @@ const LOCAL_TOPIC_POOL = [
 
 function localSuggestion(action, payload) {
   const text = payload.originalText || payload.context?.description || "";
+  if (action === "generateLinkedInPost") {
+    const context = payload.context || {};
+    return { action, suggestedText: [context.title, context.shortText || context.bodyText].filter(Boolean).join("\n\n"), structured: { hashtags: ["#Medien", "#DigitalTV"], text: [context.title, context.shortText || context.bodyText].filter(Boolean).join("\n\n") }, status: "suggested" };
+  }
   if (action === "generateSeoMeta") {
     return {
       action,

@@ -133,59 +133,70 @@ export async function disableBrowserNotifications() {
 }
 
 function errorMessage(error) {
-  if (/unauthenticated|permission-denied/.test(error?.code || "")) return "Bitte mit bestaetigter E-Mail anmelden oder den Bestaetigungs-/Ticket-Link Ihrer Event-Anmeldung oeffnen.";
+  if (/unauthenticated|permission-denied/.test(error?.code || "")) return "Bitte den Bestaetigungslink aus der Event-Mail auf diesem Geraet oeffnen und dort Push aktivieren.";
   return error?.message || "Push konnte nicht aktiviert werden. Bitte erneut versuchen.";
 }
 function updateControls(message = "") {
   const support = supportState();
-  const active = storedDevice()?.status === "active" && support === "available" && Notification.permission === "granted";
-  const text = message || (support === "install" ? "Auf dem iPhone: Zum Home-Bildschirm hinzufuegen und die WebApp dort oeffnen." : support === "blocked" ? "Push ist blockiert. Freigabe in den Browser-/Systemeinstellungen aendern." : support === "unsupported" ? "Browser-Push wird auf diesem Geraet nicht unterstuetzt." : active ? "Push ist auf diesem Geraet aktiviert." : "Push ist auf diesem Geraet nicht aktiviert.");
+  const device = storedDevice();
+  const permissionGranted = "Notification" in window && Notification.permission === "granted";
+  const active = device?.status === "active" && support === "available" && permissionGranted;
+  const pending = device?.status === "pending" && support === "available" && permissionGranted;
+  const permittedButUnlinked = !device?.token && support === "available" && permissionGranted;
+  const defaultText = support === "install"
+    ? "Auf dem iPhone: Zum Home-Bildschirm hinzufuegen und die WebApp dort oeffnen."
+    : support === "blocked"
+      ? "Push ist blockiert. Freigabe in den Browser-/Systemeinstellungen aendern."
+      : support === "unsupported"
+        ? "Browser-Push wird auf diesem Geraet nicht unterstuetzt."
+        : active
+          ? "Push ist auf diesem Geraet aktiviert."
+          : pending || permittedButUnlinked
+            ? "Push ist im Browser erlaubt, aber noch nicht mit einer Event-Anmeldung verknuepft. Bitte den Bestaetigungslink auf diesem Geraet oeffnen."
+            : "Push ist auf diesem Geraet nicht aktiviert.";
+  const text = message || defaultText;
   document.querySelectorAll("[data-push-controls]").forEach((box) => {
     box.querySelector("[data-push-status]").textContent = text;
     const enable = box.querySelector("[data-push-enable]");
     const disable = box.querySelector("[data-push-disable]");
     enable.hidden = active;
     enable.disabled = busy || support !== "available";
+    enable.textContent = pending || permittedButUnlinked ? "Push verknuepfen" : "Push aktivieren";
     disable.hidden = !active;
     disable.disabled = busy;
   });
+}
+
+async function activateBrowserPushForBox(box, { requestPermission = true, auto = false } = {}) {
+  if (busy) return;
+  if (auto && (!box.dataset.pushAuto || !("Notification" in window) || Notification.permission !== "granted")) return;
+  busy = true;
+  updateControls(auto ? "Push wird automatisch verknuepft ..." : "Push wird aktiviert ...");
+  try {
+    await enableBrowserNotifications({ eventId: box.dataset.eventId || "", requestPermission });
+    busy = false;
+    updateControls();
+  } catch (error) {
+    busy = false;
+    updateControls(errorMessage(error));
+  }
 }
 
 export function wirePushControls() {
   document.querySelectorAll("[data-push-controls]").forEach((box) => {
     if (box.dataset.wired) return;
     box.dataset.wired = "1";
-    box.querySelector("[data-push-enable]").addEventListener("click", async () => {
-      if (busy) return;
-      busy = true;
-      const operation = enableBrowserNotifications({ eventId: box.dataset.eventId || "" });
-      updateControls("Push wird aktiviert ...");
-      try { await operation; busy = false; updateControls(); }
-      catch (error) {
-        busy = false; updateControls(errorMessage(error));
-        if (/unauthenticated/.test(error?.code || "")) {
-          const firebase = await getFirebaseServices();
-          box.querySelector("[data-push-verify]").hidden = !firebase?.auth?.currentUser || firebase.auth.currentUser.emailVerified;
-        }
-      }
+    box.querySelector("[data-push-enable]")?.addEventListener("click", () => {
+      activateBrowserPushForBox(box);
     });
-    box.querySelector("[data-push-verify]").addEventListener("click", async (event) => {
-      const button = event.currentTarget;
-      button.disabled = true;
-      try {
-        const firebase = await getFirebaseServices();
-        if (!firebase?.auth?.currentUser) throw new Error("Bitte zuerst anmelden.");
-        await firebase.authLib.sendEmailVerification(firebase.auth.currentUser, { url: `${location.origin}/#/portal?tab=profile` });
-        updateControls("Bestaetigungsmail gesendet. Danach Push erneut aktivieren.");
-      } catch (error) { updateControls(errorMessage(error)); button.disabled = false; }
-    });
-    box.querySelector("[data-push-disable]").addEventListener("click", async () => {
+    box.querySelector("[data-push-disable]")?.addEventListener("click", async () => {
       if (busy) return;
       busy = true;
       updateControls("Push wird deaktiviert ...");
       try { await disableBrowserNotifications(); busy = false; updateControls(); }
       catch (error) { busy = false; updateControls(errorMessage(error)); }
     });
+    activateBrowserPushForBox(box, { requestPermission: false, auto: true });
   });
   updateControls();
 }

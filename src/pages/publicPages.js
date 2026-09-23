@@ -1,13 +1,26 @@
-import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=533";
-import { currentUser, isAdmin, isMember } from "../firebase/authService.js?v=472";
+import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=535";
+import { currentUser, canUseCms, isAdmin, isMember } from "../firebase/authService.js?v=472";
 import { publicShell, logo } from "../components/layout.js?v=15";
-import { eventCard, topicCard } from "../components/cards.js?v=17";
-import { pushControls } from "../components/pushControls.js?v=1";
-import { accessLabels, lifecycleLabels } from "../data/platformConstants.js?v=1";
-import { escapeHtml, formatDate, initials } from "../utils/format.js";
+import { eventCard, topicCard, topicImageTransformStyle } from "../components/cards.js?v=24";
+import { pushControls } from "../components/pushControls.js?v=2";
+import { accessLabels, lifecycleLabels, normalizeLifecyclePhase } from "../data/platformConstants.js?v=1";
+import { escapeHtml, formatDate, initials, linkedText, richTextHtml, richTextPlainText } from "../utils/format.js?v=3";
+import { calendarFileName, generateGoogleCalendarUrl, generateGoogleDecisionReminderUrl, generateICS, generateICSDataUrl, generateOutlookCalendarUrl, generateOutlookDecisionReminderUrl } from "../utils/calendar.js?v=1";
 import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=2";
-import { checkInWithStoredTicket, linkTicketDevice, listMyEventRegistrations, readStoredTicket, validateStoredTicket } from "../firebase/registrationService.js?v=17";
+import { checkInWithStoredTicket, confirmRegistration, getEventCheckinAccess, getPublicEventCheckinQr, linkTicketDevice, listMyEventRegistrations, readStoredTicket, validateStoredTicket } from "../firebase/registrationService.js?v=20";
+import { getFirebaseServices } from "../firebase/firebaseClient.js?v=1";
+import { hiddenTalkTitles, isVisibleEventTalk, removeHiddenTalkMentions } from "../utils/eventTalkVisibility.js";
 
+async function callSpeakerApprovalFunction(name, data = {}) {
+  const firebase = await getFirebaseServices();
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, name, { timeout: 30000 });
+  return (await callable(data)).data;
+}
+async function callEventFeedbackFunction(name, data = {}) {
+  const firebase = await getFirebaseServices();
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, name, { timeout: 30000 });
+  return (await callable(data)).data;
+}
 function subhero(eyebrow, title, text) {
   const cleanEyebrow = String(eyebrow || "").trim();
   const cleanTitle = String(title || "").trim();
@@ -85,13 +98,13 @@ function topicVisualHeader({ topic = {}, speakers = [], title = "", intro = "", 
   const logoUrl = topic.companyLogoUrl || topic.logoUrl || topic.company_logo_url || logoSpeaker.companyLogoUrl || logoSpeaker.logoUrl || logoSpeaker.company_logo_url || "";
   const visibleSpeakers = speakers.filter(publicSpeakerIsVisible).slice(0, 3);
   const visual = imageUrl
-    ? `<figure class="topic-detail-hero__image"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(topic.thumbnail_alt || `Themenmotiv ${title}`)}" loading="eager" decoding="async" ${liveImageAttrs("topic")}>${rightsNote}</figure>`
+    ? `<figure class="topic-detail-hero__image"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(topic.thumbnail_alt || `Themenmotiv ${title}`)}" loading="eager" decoding="async"${topicImageTransformStyle(topic)} ${liveImageAttrs("topic")}>${rightsNote}</figure>`
     : `<div class="topic-detail-hero__speaker-wall">${visibleSpeakers.length ? visibleSpeakers.map((speaker) => `<a class="topic-detail-hero__speaker" href="${speakerProfileHref(speaker)}">${speakerPortrait(speaker)}<span>${escapeHtml(speakerName(speaker))}</span></a>`).join("") : `<span class="topic-detail-hero__placeholder">${escapeHtml(initials(title || "Thema"))}</span>`}</div>`;
   const mobileSpeakerStrip = visibleSpeakers.length
     ? `<div class="topic-detail-hero__mobile-speakers">${visibleSpeakers.map((speaker) => `<a href="${speakerProfileHref(speaker)}" title="${escapeHtml(speakerName(speaker))}">${speakerPortrait(speaker)}<span>${escapeHtml(speakerName(speaker))}</span></a>`).join("")}</div>`
     : "";
   const mobileMedia = imageUrl
-    ? `<div class="topic-detail-hero__mobile-media"><figure><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(topic.thumbnail_alt || `Themenmotiv ${title}`)}" loading="eager" decoding="async" ${liveImageAttrs("topic")}>${rightsNote}</figure>${mobileSpeakerStrip}</div>`
+    ? `<div class="topic-detail-hero__mobile-media"><figure><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(topic.thumbnail_alt || `Themenmotiv ${title}`)}" loading="eager" decoding="async"${topicImageTransformStyle(topic)} ${liveImageAttrs("topic")}>${rightsNote}</figure>${mobileSpeakerStrip}</div>`
     : (logoUrl || mobileSpeakerStrip)
       ? `<div class="topic-detail-hero__mobile-media topic-detail-hero__mobile-media--identity">${logoUrl ? `<figure class="topic-detail-hero__mobile-logo"><img src="${escapeHtml(logoUrl)}" alt="Logo" loading="eager" decoding="async" ${liveImageAttrs("sponsor")}></figure>` : ""}${mobileSpeakerStrip}</div>`
       : "";
@@ -115,8 +128,11 @@ function topicVisualHeader({ topic = {}, speakers = [], title = "", intro = "", 
 function memberLogo(member, options = {}) {
   const logoClass = `member-logo member-logo--${String(member.id || "").replace(/[^a-z0-9-]/gi, "").toLowerCase()}`;
   const logoUrl = safeMemberLogoUrl(member, member.logoDisplayUrl || member.logoUrl || "");
+  const logoScale = Math.min(180, Math.max(50, Number(member.logoScale) || 100)) / 100;
+  const logoOffsetX = Math.min(50, Math.max(-50, Number(member.logoOffsetX) || 0));
+  const logoOffsetY = Math.min(50, Math.max(-50, Number(member.logoOffsetY) || 0));
   return logoUrl
-    ? `<img class="${logoClass}" src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(member.name)}" ${liveImageAttrs("member")}>`
+    ? `<img class="${logoClass}" src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(member.name)}" style="position:relative;left:${logoOffsetX}%;top:${logoOffsetY}%;transform:scale(${logoScale}) !important" ${liveImageAttrs("member")}>`
     : options.initialFallback
       ? `<span class="member-logo-initials" aria-hidden="true">${escapeHtml(initials(member.name || "Mitglied"))}</span>`
       : escapeHtml(member.name);
@@ -124,7 +140,8 @@ function memberLogo(member, options = {}) {
 
 function blockedMemberLogoUrl(member = {}, url = "") {
   const value = String(url || "");
-  if (member.id === "goldvisite-media" && /goldbach/i.test(value)) return true;
+  const isGoldvisite = member.id === "goldvisite-media" || /goldvisite/i.test(String(member.name || ""));
+  if (isGoldvisite && /goldbach/i.test(value)) return true;
   return false;
 }
 
@@ -153,7 +170,29 @@ function mediaAssetUrl(asset = {}) {
     || asset.imageUrl || asset.assetUrl || "";
   return versionedAssetUrl(url, asset);
 }
+function mediaAssetPreferredImageUrl(asset = {}) {
+  const url = asset.file_path_original_url || asset.filePathOriginalUrl || asset.originalUrl
+    || asset.file_path_web_url || asset.filePathWebUrl || asset.webUrl
+    || asset.downloadUrl || asset.downloadURL || asset.url
+    || asset.imageUrl || asset.assetUrl
+    || asset.file_path_thumb_url || asset.filePathThumbUrl || asset.thumbUrl || asset.thumb_url
+    || asset.thumbnail_url || asset.thumbnailUrl || "";
+  return versionedAssetUrl(url, asset);
+}
 
+function mediaAssetImageSrcset(asset = {}) {
+  const candidates = [
+    [asset.file_path_thumb_url || asset.filePathThumbUrl || asset.thumbUrl || asset.thumb_url, asset.file_path_thumb_width || asset.thumb_width || asset.thumbWidth || 480],
+    [asset.file_path_web_url || asset.filePathWebUrl || asset.webUrl, asset.file_path_web_width || asset.web_width || asset.webWidth || 1200],
+    [asset.file_path_original_url || asset.filePathOriginalUrl || asset.originalUrl || asset.downloadUrl || asset.downloadURL || asset.url, asset.file_path_original_width || asset.original_width || asset.originalWidth || asset.image_width || asset.imageWidth || 1800]
+  ];
+  const seen = new Set();
+  return candidates
+    .map(([url, width]) => [versionedAssetUrl(url || "", asset), Number(width || 0)])
+    .filter(([url, width]) => url && width > 0 && !seen.has(url) && seen.add(url))
+    .map(([url, width]) => `${escapeHtml(url)} ${Math.round(width)}w`)
+    .join(", ");
+}
 function mediaAssetUrls(asset = {}) {
   return [
     asset.file_path_web_url, asset.filePathWebUrl, asset.webUrl,
@@ -318,6 +357,10 @@ function publicTopicImageLooksLikeLogo(topic = {}, asset = {}, url = "") {
     asset.filename_original,
     asset.filename_web,
     topic.title,
+    topic.subtitle,
+    topic.shortDescription,
+    topic.description,
+    topic.longDescription,
     topic.company,
     topic.companyName,
     topic.companyLogoUrl,
@@ -521,6 +564,22 @@ function publicEditorialMediaAsset(item = {}, mediaAssets = []) {
     })[0];
 }
 
+function publicEditorialCardImage(item = {}, mediaAssets = []) {
+  const asset = publicEditorialMediaAsset(item, mediaAssets);
+  const url = stableImageUrl(
+    mediaAssetPreferredImageUrl(asset || {})
+      || item.imageDisplayUrl
+      || item.articleImageUrl
+      || item.imageUrl
+      || item.assetUrl
+      || item.asset_url
+      || item.thumbnail_url
+      || item.thumbnailUrl
+      || "",
+    "news"
+  );
+  return { url, srcset: asset ? mediaAssetImageSrcset(asset) : "" };
+}
 function publicMemberLogoAsset(member = {}, mediaAssets = []) {
   return mediaAssets
     .filter((asset) => {
@@ -589,9 +648,10 @@ async function withPublicMemberLogos(members = []) {
   const mediaAssets = await listPublicMediaAssets().catch(() => []);
   return members.map((member) => {
     const asset = publicMemberLogoAsset(member, mediaAssets);
+    const officialLogo = /^\/assets\/official\/members\//i.test(String(member.logoUrl || "")) ? member.logoUrl : "";
     return {
       ...member,
-      logoDisplayUrl: safeMemberLogoUrl(member, mediaAssetUrl(asset || {}) || member.logoUrl || "")
+      logoDisplayUrl: safeMemberLogoUrl(member, officialLogo || mediaAssetUrl(asset || {}) || member.logoUrl || "")
     };
   });
 }
@@ -617,6 +677,20 @@ function speakerName(speaker = {}) {
 
 function speakerPhotoUrl(speaker = {}) {
   return stableImageUrl(speaker.photoUrl || speaker.imageUrl || speaker.thumbnailUrl || speaker.thumbnail_url || speaker.assetUrl || speaker.portraitUrl || speaker.profileImageUrl || "", "member");
+}
+
+function speakerCompanyLogoUrl(speaker = {}, topic = {}) {
+  return stableImageUrl(
+    speaker.companyLogoUrl
+      || speaker.logoUrl
+      || speaker.company_logo_url
+      || speaker.company_logo
+      || topic.companyLogoUrl
+      || topic.logoUrl
+      || topic.company_logo_url
+      || "",
+    "sponsor"
+  );
 }
 
 function speakerIntroText(speaker = {}) {
@@ -681,19 +755,42 @@ function archiveEditorialArticle(item, partners = []) {
 }
 
 function articleParagraphs(text = "") {
-  return text.split(/\n+/).filter(Boolean).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("");
+  return richTextHtml(text);
 }
 
 function looksTruncatedText(text = "") {
   return /(?:\.\.\.|…)$/u.test(String(text || "").trim());
 }
 
+function cleanPublicArticleText(text = "") {
+  return String(text || "")
+    .replace(/(?:^|\n{2,})(?:keywords?|tags?|schlagworte?)\s*[:\n][\s\S]*$/i, "")
+    .trim();
+}
+
+function eventTopicTeaser(topic = {}) {
+  const short = cleanPublicArticleText(topic.shortDescription || topic.teaserText || topic.subtitle || "");
+  const long = cleanPublicArticleText(topic.longDescription || topic.bodyText || topic.articleText || "");
+  return teaserText(long || short, 220);
+}
+
+function registrationPartyNames(registration = {}) {
+  const primary = [registration.firstName, registration.lastName].filter(Boolean).join(" ").trim();
+  const companion = registration.companion || {};
+  const companionName = [companion.firstName, companion.lastName].filter(Boolean).join(" ").trim();
+  return [primary, companionName].filter(Boolean);
+}
+
+function registrationPartyLabel(registration = {}) {
+  return registrationPartyNames(registration).join(" und ") || "Dieses Geraet";
+}
+
 function eventIntroText(event = {}) {
-  return String(event.description || event.publicTeaser || event.teaserText || event.shortDescription || event.introText || event.subtitle || "").trim();
+  return cleanPublicArticleText(event.description || event.publicTeaser || event.teaserText || event.shortDescription || event.introText || event.subtitle || "");
 }
 
 function eventLongText(event = {}) {
-  return String(event.postEventSummary || event.postEventummary || event.archiveText || event.longDescription || event.bodyText || event.articleText || "").trim();
+  return cleanPublicArticleText(event.postEventSummary || event.postEventummary || event.archiveText || event.longDescription || event.bodyText || event.articleText || "");
 }
 
 function eventOnlineLabel(event = {}) {
@@ -705,6 +802,32 @@ function eventLocationDisplay(event = {}) {
   return [event.locationName, event.city].filter(Boolean).join(", ") || "Ort wird bekanntgegeben";
 }
 
+function eventCalendarSaveEnabled(event = {}) {
+  return event.calendarSaveEnabled !== false && event.calendar_vormerkung !== false;
+}
+
+function eventCalendarIcsUrl(event = {}, includeDecisionReminder = true) {
+  const id = String(event.id || "").trim();
+  const reminder = includeDecisionReminder ? "1" : "0";
+  return id ? `https://europe-west3-prodigitaltv-da47b.cloudfunctions.net/eventCalendarIcs?eventId=${encodeURIComponent(id)}&decisionReminder=${reminder}` : "";
+}
+function eventCalendarSaveMarkup(event = {}) {
+  if (!eventCalendarSaveEnabled(event)) return "";
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://prodigitaltv.de";
+  const googleUrl = generateGoogleCalendarUrl(event, { origin });
+  const googleReminderUrl = generateGoogleDecisionReminderUrl(event, { origin });
+  const outlookUrl = generateOutlookCalendarUrl(event, { origin });
+  const outlookReminderUrl = generateOutlookDecisionReminderUrl(event, { origin });
+  const fileName = calendarFileName(event);
+  const cloudIcsUrl = eventCalendarIcsUrl(event, true);
+  const cloudIcsPlainUrl = eventCalendarIcsUrl(event, false);
+  const fallbackIcsContent = cloudIcsUrl ? "" : generateICS(event, { origin, includeDecisionReminder: true });
+  const fallbackIcsPlainContent = cloudIcsUrl ? "" : generateICS(event, { origin, includeDecisionReminder: false });
+  const fallbackIcsAttrs = cloudIcsUrl ? "" : ` data-calendar-ics-download data-calendar-file="${escapeHtml(fileName)}" data-calendar-ics-on="${escapeHtml(encodeURIComponent(fallbackIcsContent))}" data-calendar-ics-off="${escapeHtml(encodeURIComponent(fallbackIcsPlainContent))}"`;
+  const icsUrl = cloudIcsUrl || generateICSDataUrl(event, { origin, includeDecisionReminder: true });
+  const icsPlainUrl = cloudIcsPlainUrl || generateICSDataUrl(event, { origin, includeDecisionReminder: false });
+  return `<div class="event-calendar-save" data-calendar-save><button class="button button--secondary" type="button" data-calendar-overlay-open aria-haspopup="dialog">Termin merken</button><p>Unverbindlich im Kalender speichern. Das erstellt keine Anmeldung.</p><div class="event-calendar-overlay" data-calendar-overlay hidden><div class="event-calendar-overlay__backdrop" data-calendar-overlay-close></div><div class="event-calendar-dialog" role="dialog" aria-modal="true" aria-label="Termin merken"><button class="event-calendar-dialog__close" type="button" data-calendar-overlay-close aria-label="Schliessen">&times;</button><strong>Termin merken</strong><p>Veranstaltung im persönlichen Kalender speichern.</p><label class="event-calendar-switch"><input type="checkbox" data-calendar-decision-toggle role="switch" aria-label="Teilnahme 7 Tage vorher noch einmal pruefen" aria-checked="true" checked><span class="event-calendar-switch__track" aria-hidden="true"></span><span><b>Teilnahme 7 Tage vorher noch einmal prüfen</b><small data-calendar-decision-state>AN</small></span></label><small>Wir tragen zusätzlich eine Erinnerung ein, damit Sie eine Woche vor der Veranstaltung entscheiden können, ob Sie teilnehmen möchten. Es wird nichts bei PROdigitalTV gespeichert.</small><div class="event-calendar-menu" data-calendar-options><a class="button button--secondary button--small" href="${escapeHtml(googleUrl)}" data-calendar-provider="google" data-calendar-reminder-url="${escapeHtml(googleReminderUrl)}" target="_blank" rel="noopener">Google Kalender</a><a class="button button--secondary button--small" href="${escapeHtml(outlookUrl)}" data-calendar-provider="outlook" data-calendar-reminder-url="${escapeHtml(outlookReminderUrl)}" target="_blank" rel="noopener">Outlook / Microsoft 365</a><a class="button button--secondary button--small" href="${escapeHtml(icsUrl)}" data-calendar-url-on="${escapeHtml(icsUrl)}" data-calendar-url-off="${escapeHtml(icsPlainUrl)}" download="${escapeHtml(fileName)}"${fallbackIcsAttrs}>Apple / iCal</a><a class="button button--secondary button--small" href="${escapeHtml(icsUrl)}" data-calendar-url-on="${escapeHtml(icsUrl)}" data-calendar-url-off="${escapeHtml(icsPlainUrl)}" download="${escapeHtml(fileName)}"${fallbackIcsAttrs}>ICS herunterladen</a></div><p class="event-calendar-mobile-note"><a class="link" href="${escapeHtml(icsUrl)}" target="_blank" rel="noopener">Kalenderdatei fürs Handy öffnen</a> – enthält Event und 7-Tage-Wiedervorlage.</p><div class="event-calendar-fallback" data-calendar-reminder-fallback hidden tabindex="-1"><strong>Zweiter Kalendereintrag wurde blockiert.</strong><p>Bitte die Wiedervorlage zusätzlich öffnen und in Google/Outlook speichern.</p><a class="button button--secondary button--small" href="#" target="_blank" rel="noopener">Wiedervorlage öffnen</a></div><small>Vormerken ist keine Anmeldung, Reservierung oder Zusage.</small></div></div></div>`;
+}
 function eventLocationDetailMarkup(event = {}) {
   if (event.isVirtualEvent) {
     return `<h2>${escapeHtml(eventOnlineLabel(event) || "Online")}</h2><p>Virtuelle Teilnahme per Zoom Meeting.${event.zoomLink ? "<br>Den Zugangslink erhalten angemeldete Teilnehmer separat." : ""}</p>`;
@@ -778,24 +901,74 @@ function eventTalkSpeakers(topic = {}, event = {}, speakers = []) {
   });
 }
 
+function eventInvitationProgramText(topics = [], speakers = [], event = {}, currentText = "") {
+  if (isPastEvent(event)) return "";
+  const assignedTopics = (event.topicIds || []).map((topicId) => topics.find((topic) => topic.id === topicId)).filter((topic) => topic && isVisibleEventTalk(topic));
+  const existingText = String(currentText || "").toLocaleLowerCase("de");
+  const missingTalks = assignedTopics.map((topic) => {
+    const title = String(topic.title || topic.headline || "").trim();
+    if (!title) return null;
+    const topicSpeakers = eventTalkSpeakers(topic, event, speakers);
+    const requiredValues = [title, ...topicSpeakers.flatMap((speaker) => [speakerName(speaker), speaker.company || ""])].filter(Boolean);
+    if (requiredValues.every((value) => existingText.includes(String(value).toLocaleLowerCase("de")))) return null;
+    return { title, speakers: topicSpeakers };
+  }).filter(Boolean);
+  if (!missingTalks.length) return "";
+  const sentences = missingTalks.map((talk, index) => {
+    const speakerLabels = talk.speakers.map((speaker) => {
+      const name = speakerName(speaker);
+      return speaker.company ? `${name} von ${speaker.company}` : name;
+    }).filter(Boolean);
+    if (!speakerLabels.length) {
+      return index % 2 === 0
+        ? `Zum Programm gehört der Vortrag „${talk.title}“.`
+        : `Ein weiterer fachlicher Schwerpunkt ist „${talk.title}“.`;
+    }
+    const subject = speakerLabels.length === 1
+      ? speakerLabels[0]
+      : `${speakerLabels.slice(0, -1).join(", ")} und ${speakerLabels.at(-1)}`;
+    const plural = speakerLabels.length > 1;
+    const variants = [
+      `${subject} ${plural ? "stellen" : "stellt"} den Vortrag „${talk.title}“ vor.`,
+      `${subject} ${plural ? "sprechen" : "spricht"} über „${talk.title}“.`,
+      `${subject} ${plural ? "setzen" : "setzt"} mit „${talk.title}“ einen weiteren fachlichen Schwerpunkt.`,
+      `${subject} ${plural ? "präsentieren" : "präsentiert"} „${talk.title}“.`
+    ];
+    return variants[index % variants.length];
+  });
+  return `Das Programm verbindet mehrere Perspektiven aus der digitalen Medienwirtschaft: ${sentences.join(" ")}`;
+}
+
+function eventInvitationClosingText(event = {}, registrationAllowed = false) {
+  if (isPastEvent(event)) return "";
+  const city = String(event.city || "").trim();
+  const welcome = city
+    ? `Wir freuen uns darauf, Sie in ${city} persönlich zu begrüßen.`
+    : "Wir freuen uns darauf, Sie persönlich begrüßen zu dürfen.";
+  return registrationAllowed
+    ? `${welcome} Bitte melden Sie sich frühzeitig an, damit wir Ihre Teilnahme verbindlich einplanen können.`
+    : welcome;
+}
+
 function eventTalksMarkup(topics = [], speakers = [], event = {}) {
   if (isPastEvent(event)) return "";
-  const assignedTopics = (event.topicIds || []).map((topicId) => topics.find((topic) => topic.id === topicId)).filter(Boolean).slice(0, 6);
+  const assignedTopics = (event.topicIds || []).map((topicId) => topics.find((topic) => topic.id === topicId)).filter((topic) => topic && isVisibleEventTalk(topic));
   if (!assignedTopics.length) return "";
-  return `<section class="event-talks"><div class="section-head"><div><p class="eyebrow">Themen & Referenten</p><h2>Agenda des Medienfruehstuecks</h2></div></div>
+  return `<section class="event-talks"><div class="section-head"><div><p class="eyebrow">Themen & Referenten</p><h2>Agenda des Medienfrühstücks</h2></div></div>
     <div class="event-talk-list">${assignedTopics.map((topic) => {
     const topicSpeakers = eventTalkSpeakers(topic, event, speakers);
-    const short = topic.shortDescription || topic.teaserText || topic.subtitle || "";
-    const text = topic.longDescription && topic.longDescription !== short ? topic.longDescription : "";
+    const short = eventTopicTeaser(topic);
+    const text = topic.longDescription && topic.longDescription !== short ? cleanPublicArticleText(topic.longDescription) : "";
     return `<article class="event-talk-card">
       <div class="event-talk-card__body">
-        <h3>${escapeHtml(topic.title || "Thema")}</h3>
-        ${short ? `<p class="event-talk-card__short">${escapeHtml(short)}</p>` : ""}
-        ${text ? `<p>${escapeHtml(text)}</p>` : ""}
         <div class="event-talk-speakers">${topicSpeakers.length ? topicSpeakers.map((speaker) => `<a class="event-talk-speaker" href="${speakerProfileHref(speaker)}">
           <div class="event-talk-speaker__portrait">${speakerPortrait(speaker)}</div>
-          <div><strong>${escapeHtml(speakerName(speaker))}</strong><small>${escapeHtml([speaker.position, speaker.company].filter(Boolean).join(" - "))}</small></div>
+          <div class="event-talk-speaker__identity"><strong>${escapeHtml(speakerName(speaker))}</strong><small>${escapeHtml([speaker.position, speaker.company].filter(Boolean).join(" - "))}</small></div>
+          ${speakerCompanyLogoUrl(speaker, topic) ? `<span class="event-talk-speaker__logo"><img src="${escapeHtml(speakerCompanyLogoUrl(speaker, topic))}" alt="Logo ${escapeHtml(speaker.company || "Unternehmen")}" loading="lazy" decoding="async" ${liveImageAttrs("sponsor")}></span>` : ""}
         </a>`).join("") : `<span class="event-talk-speaker event-talk-speaker--empty">Referent wird ergaenzt.</span>`}</div>
+        <h3>${escapeHtml(topic.title || "Thema")}</h3>
+        ${short ? `<p class="event-talk-card__short">${escapeHtml(short)}</p>` : ""}
+        ${text ? `<details class="event-talk-more"><summary>Mehr …</summary><div class="event-talk-more__body"><p>${escapeHtml(text)}</p></div></details>` : ""}
       </div>
     </article>`;
   }).join("")}</div>
@@ -809,11 +982,11 @@ function eventScheduleItems(event = {}) {
     const clean = line.trim();
     if (!clean) return null;
     const parts = clean.split("|").map((part) => part.trim()).filter(Boolean);
-    if (parts.length >= 3) return { time: parts[0], title: parts[1], text: parts.slice(2).join(" | ") };
-    if (parts.length === 2) return { time: parts[0], title: parts[1], text: "" };
+    if (parts.length >= 3) return { time: parts[0], title: parts[1], text: parts.slice(2).join(" | "), neutral: /pause|lunch|fruehstueck|frühstück|networking|begr[uü]ßung|begr[uü]ssung/i.test(clean) };
+    if (parts.length === 2) return { time: parts[0], title: parts[1], text: "", neutral: /pause|lunch|fruehstueck|frühstück|networking|begr[uü]ßung|begr[uü]ssung/i.test(clean) };
     const match = clean.match(/^(\d{1,2}:\d{2})\s+(.+)$/);
-    if (match) return { time: match[1], title: match[2], text: "" };
-    return { time: "", title: clean, text: "" };
+    if (match) return { time: match[1], title: match[2], text: "", neutral: /pause|lunch|fruehstueck|frühstück|networking|begr[uü]ßung|begr[uü]ssung/i.test(clean) };
+    return { time: "", title: clean, text: "", neutral: /pause|lunch|fruehstueck|frühstück|networking|begr[uü]ßung|begr[uü]ssung/i.test(clean) };
   }).filter(Boolean);
 }
 
@@ -824,7 +997,7 @@ function eventScheduleMarkup(event = {}) {
     <p class="eyebrow">Ablaufplan</p>
     <h2 id="event-schedule-title">Ablauf der Veranstaltung</h2>
     <div class="event-schedule__list">
-      ${items.map((item) => `<div class="event-schedule__item">
+      ${items.map((item) => `<div class="event-schedule__item${item.neutral ? " event-schedule__item--neutral" : ""}">
         <div class="event-schedule__time">${escapeHtml(item.time)}</div>
         <div class="event-schedule__body"><strong>${escapeHtml(item.title)}</strong>${item.text ? `<p>${escapeHtml(item.text)}</p>` : ""}</div>
       </div>`).join("")}
@@ -849,12 +1022,12 @@ function retrospectiveLinkedEvent(item = {}, events = []) {
 
 function archiveListEvent(event, partners = [], mediaAssets = [], editorial = [], eventMedia = [], galleries = []) {
   const host = partners.find((partner) => partner.id === event.hostId);
-  const retrospectiveArticle = editorial.find((item) => isRetrospectiveArticle(item) && retrospectiveLinkedEvent(item, [event])?.id === event.id);
+  const retrospectiveArticle = editorial.find((item) => retrospectiveArticleIsVisible(item, [event]) && retrospectiveLinkedEvent(item, [event])?.id === event.id);
   const displayTitle = retrospectiveArticle?.title || event.retrospectiveTitle || event.title;
   const dateLabel = event.displayDate || formatDate(event.date);
   const detailUrl = retrospectiveArticle?.id ? `#/retrospective/${escapeHtml(retrospectiveArticle.id)}` : `#/event/${escapeHtml(event.id)}`;
-  const imageUrl = archiveEventImageUrl(event, mediaAssets)
-    || retrospectiveThumbUrl(retrospectiveArticle, event, galleries, mediaAssets)
+  const imageUrl = retrospectiveThumbUrl(retrospectiveArticle, event, galleries, mediaAssets)
+    || archiveEventImageUrl(event, mediaAssets)
     || eventMediaThumbUrl(event, eventMedia);
   return `<article class="archive-article archive-article--list">
     <a class="archive-article__thumb" href="${detailUrl}" aria-label="Rückblick ${escapeHtml(displayTitle)} ansehen">
@@ -864,7 +1037,7 @@ function archiveListEvent(event, partners = [], mediaAssets = [], editorial = []
       <p class="eyebrow">${escapeHtml(dateLabel)}${event.city ? ` · ${escapeHtml(event.city)}` : ""}</p>
       <h2><a href="${detailUrl}">${escapeHtml(displayTitle)}</a></h2>
       <p class="archive-article__meta">${escapeHtml(event.locationName || "Ort nicht angegeben")}${host ? ` · Co-Gastgeber: ${escapeHtml(host.name)}` : ""}</p>
-      <p>${escapeHtml(teaserText(event.postEventummary || event.description || "", 260))}</p>
+      <p>${escapeHtml(teaserText(event.postEventSummary || event.postEventummary || event.description || "", 260))}</p>
       <a class="link" href="${detailUrl}">Rückblick ansehen -></a>
     </div>
   </article>`;
@@ -1183,16 +1356,7 @@ function internalOverviewPage(bereich) {
     const cacheVariant = leanInternal ? "mobile" : "desktop";
     const cachedInternal = readPageContentCache(cacheName, cacheVariant, 600000);
     if (cachedInternal) return publicShell(meta.active, cachedInternal);
-    const [blocks, events, board, rawMembers, topics] = bereich === "ueber_uns"
-      ? await Promise.all([
-        fastFallback(internalBlocks(bereich).catch(() => []), [], leanInternal ? 900 : 1800),
-        leanInternal ? [] : fastFallback(listPublicEvents().catch(() => []), [], 1600),
-        leanInternal ? [] : fastFallback(listPublicContent("boardMembers").catch(() => []), [], 1600),
-        leanInternal ? [] : fastFallback(listPublicContent("members").catch(() => []), [], 1600),
-        leanInternal ? [] : fastFallback(listPublicContent("topics").catch(() => []), [], 1600)
-      ])
-      : [await fastFallback(internalBlocks(bereich).catch(() => []), [], leanInternal ? 900 : 1800), [], [], [], []];
-    const members = leanInternal ? rawMembers : await fastFallback(withPublicMemberLogos(rawMembers).catch(() => rawMembers), rawMembers, 1200);
+    const blocks = await fastFallback(internalBlocks(bereich).catch(() => []), [], leanInternal ? 900 : 1800);
     const hero = blocks.find((block) => block.typ === "hero") || blocks[0];
     const cards = blocks.map((block) => internalCard(block, meta)).join("");
     const aboutCards = aboutCardGroups(blocks, meta);
@@ -1200,10 +1364,19 @@ function internalOverviewPage(bereich) {
     const desktopSections = blocks.map((block) => internalDesktopSection(block, meta)).join("");
     if (bereich === "ueber_uns") {
       const content = `${subhero(meta.eyebrow, meta.title, meta.intro)}
-      <section class="section internal-overview internal-overview--about"><div class="container"><div class="internal-about-layout"><div class="internal-about-main">
-        <div class="internal-mobile-list internal-mobile-list--about">${aboutCards || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
-        <div class="internal-about-texts">${aboutTexts}</div>
-        </div>${aboutStickyContent(events, board, members, topics)}</div>
+      <section class="section internal-overview internal-overview--about-simple"><div class="container">
+        <div class="join-simple-copy about-strategy-copy">
+          <div class="join-simple-intro"><div><p class="join-simple-lead"><strong>PROdigitalTV ist das unabhängige Branchennetzwerk für Menschen und Unternehmen, die digitale Medien aktiv gestalten.</strong> Wir verbinden Erfahrung mit neuen Perspektiven und schaffen einen persönlichen Ort für Austausch, Orientierung und Zusammenarbeit.</p><p>Unsere Mitglieder kommen aus TV, Streaming, Plattformen, Produktion, Distribution, Technologie, Start-ups und Medienservices. Gemeinsam greifen wir Veränderungen früh auf und machen sie für die Praxis nutzbar.</p></div><aside><strong>PROdigitalTV auf einen Blick</strong><p><b>Mehr als 60 Veranstaltungen</b> zu zentralen Entwicklungen der Medienwirtschaft.</p><p><b>Persönlicher B2B-Austausch</b> im deutschsprachigen Raum.</p><p><b>Unabhängig und praxisnah</b> mit direktem Zugang zu Expertise.</p></aside></div>
+          <ul class="join-benefit-list about-principle-list">
+            <li><span>01</span><div><strong>Netzwerk</strong><p>Wir bringen etablierte Marktteilnehmer, innovative Unternehmen, Entscheider und Fachleute in einem vertrauensvollen Rahmen zusammen.</p></div></li>
+            <li><span>02</span><div><strong>Dialog</strong><p>Persönliche Gespräche und unterschiedliche Perspektiven stehen im Mittelpunkt, weil tragfähige Beziehungen nicht allein digital entstehen.</p></div></li>
+            <li><span>03</span><div><strong>Wissen</strong><p>Wir ordnen Entwicklungen rund um Streaming, KI, Content, Plattformen, Vermarktung, Medienrecht und neue Geschäftsmodelle ein.</p></div></li>
+            <li><span>04</span><div><strong>Formate</strong><p>Medienfrühstücke, Fachgespräche und „Von den Besten lernen“ verbinden kompakte Impulse mit Begegnung und offenem Austausch.</p></div></li>
+            <li><span>05</span><div><strong>Sichtbarkeit</strong><p>Wir machen Expertise, Projekte und Perspektiven unserer Mitglieder innerhalb der digitalen Medienwirtschaft sichtbar.</p></div></li>
+            <li><span>06</span><div><strong>Zukunft</strong><p>Als generationsübergreifende Medien- und Technologie-Community gestalten wir Wandel gemeinsam, offen und praxisorientiert.</p></div></li>
+          </ul>
+          <div class="join-simple-action about-simple-action"><p>Menschen, Themen und Veranstaltungen machen das Netzwerk erlebbar.</p><div class="actions"><a class="button button--secondary" href="#/board">Vorstand</a><a class="button button--secondary" href="#/members">Mitglieder</a><a class="button button--primary" href="#/join">Mitglied werden</a></div></div>
+        </div>
       </div></section>`;
       writePageContentCache(cacheName, cacheVariant, content);
       return publicShell(meta.active, content);
@@ -1396,15 +1569,6 @@ function normalizeTopicType(value = "") {
     .replace(/[^a-z0-9]+/g, "");
 }
 
-function isStandaloneTopic(item = {}) {
-  const category = normalizeTopicType(item.category || item.type || "");
-  const section = normalizeTopicType(item.section || item.page || "");
-  return category !== "vortrag"
-    && section !== "vortraege"
-    && section !== "vortrage"
-    && item.isTalk !== true;
-}
-
 function dedupeNewsItems(items = []) {
   const byKey = new Map();
   items
@@ -1437,6 +1601,12 @@ function isRetrospectiveArticle(item = {}) {
     || category.includes("nachlauf");
   const isHidden = item.status === "archived" || item.status === "draft" || item.visibility === "internal";
   return inPress && isRetrospective && !isHidden;
+}
+
+function retrospectiveArticleIsVisible(item = {}, events = []) {
+  if (!isRetrospectiveArticle(item)) return false;
+  const linkedEvent = retrospectiveLinkedEvent(item, events);
+  return Boolean(linkedEvent && eventHasEnded(linkedEvent));
 }
 
 function isAiGeneratedArticle(item = {}) {
@@ -1680,7 +1850,7 @@ function memberArticleHero(item = {}, loading = "lazy") {
 
 function memberArticleCard(item = {}, galleries = []) {
   const date = item.publishDate || item.validFrom || item.date || "";
-  const text = item.articleText || item.bodyText || item.longDescription || item.introText || "";
+  const text = richTextPlainText(item.articleText || item.bodyText || item.longDescription || item.introText || "");
   const href = `#/portal/article/${encodeURIComponent(item.slug || item.id || item.key || "")}`;
   return `<article class="card card__body member-article-card">
     ${memberArticleImageHero(item)}
@@ -1693,23 +1863,73 @@ function memberArticleCard(item = {}, galleries = []) {
   </article>`;
 }
 
+function memberArticleEventIds(item = {}) {
+  return [
+    item.linkedEventId,
+    item.linked_event_id,
+    item.eventId,
+    item.event_id,
+    item.galleryEventId,
+    item.gallery_event_id
+  ].filter(Boolean);
+}
+
+function memberArticleIsCommunication(item = {}) {
+  return item.section === "member-communication"
+    || item.publication_target === "member-communication"
+    || item.publicationTarget === "member-communication"
+    || item.communicationType === "member-news"
+    || item.contentType === "member-news";
+}
+
+function memberArticleIsInPublicationWindow(item = {}, now = new Date()) {
+  const nowTime = now.getTime();
+  const validFrom = eventDateMillis(item.validFrom || item.publishDate || item.date || "");
+  if (Number.isFinite(validFrom) && validFrom > nowTime) return false;
+  const validToValue = item.validTo || item.expiresAt || item.expireAt || item.until || "";
+  if (!validToValue) return true;
+  const validTo = eventDateMillis(String(validToValue).length <= 10 ? `${validToValue}T23:59:59` : validToValue);
+  return !Number.isFinite(validTo) || validTo >= nowTime;
+}
+
+function memberArticleLinkedEventHasEnded(item = {}, events = []) {
+  const ids = new Set(memberArticleEventIds(item));
+  if (!ids.size) return false;
+  const linkedEvent = events.find((event) => event?.id && ids.has(event.id));
+  if (!linkedEvent) return false;
+  return eventHasEnded(linkedEvent) || normalizeLifecyclePhase(linkedEvent.lifecyclePhase || linkedEvent.lifecycle_phase || linkedEvent.phase || "") === "archived";
+}
+
+function memberArticleIsVisibleNow(item = {}, events = []) {
+  const status = String(item.status || "published").toLowerCase();
+  if (["archived", "deleted", "hidden", "draft", "inactive"].includes(status) || item.visible === false) return false;
+  if (!memberArticleIsInPublicationWindow(item)) return false;
+  if (memberArticleIsCommunication(item) && memberArticleLinkedEventHasEnded(item, events)) return false;
+  return true;
+}
+
 function teaserText(value = "", length = 118) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   return text.length > length ? `${text.slice(0, Math.max(0, length - 3))}...` : text;
 }
 
-function downloadUrl(item = {}, fallback = "#/downloads") {
+function downloadUrl(item = {}, fallback = "") {
   return item.documentUrl || item.assetUrl || item.fileUrl || fallback;
 }
 
 function downloadCard(item) {
   const url = downloadUrl(item);
-  const active = url !== "#/downloads";
-  return `<a class="quick-card download-card" href="${escapeHtml(url)}" ${active ? `target="_blank" rel="noreferrer"` : ""}>
+  const active = Boolean(url);
+  const tag = active ? "a" : "article";
+  const attributes = active
+    ? ` href="${escapeHtml(url)}" download="${escapeHtml(item.fileName || "")}"`
+    : ` aria-disabled="true"`;
+  return `<${tag} class="quick-card download-card${active ? "" : " download-card--disabled"}"${attributes}>
     <p class="eyebrow">${escapeHtml(item.category || "Download")}</p>
     <h3>${escapeHtml(item.title || item.fileName || "Download")}</h3>
     <p>${escapeHtml(item.description || item.bodyText || item.fileName || "PDF wird öffentlich bereitgestellt.")}</p>
-  </a>`;
+    <span class="download-card__action">${active ? "PDF herunterladen" : "Datei noch nicht hinterlegt"}</span>
+  </${tag}>`;
 }
 
 function eventExpires(event) {
@@ -1726,7 +1946,8 @@ function isPastEvent(event) {
 function upcomingEventIsVisible(event = {}) {
   if (isPastEvent(event)) return false;
   const status = String(event.status || "").toLowerCase();
-  if (["archived", "archive", "deleted", "cancelled", "canceled", "draft", "inactive", "inaktiv"].includes(status)) return false;
+  if (["archived", "archive", "deleted", "cancelled", "canceled", "draft"].includes(status)) return false;
+  if (["inactive", "inaktiv"].includes(status) && event.preStatus !== "save_the_date") return false;
   if (event.visible === false || event.isLive === false) return false;
   return true;
 }
@@ -1814,7 +2035,14 @@ function topicIsReleasedAfterEvent(topic = {}, events = []) {
     .some((event) => publicEventAllowsTopicRelease(event) && eventHasEnded(event));
 }
 
+function publicReleasedTopics(topics = [], events = []) {
+  return topics
+    .filter((topic) => topicIsReleasedAfterEvent(topic, events))
+    .sort(newestContentFirst);
+}
+
 function eventRegistrationIsOpen(event = {}) {
+  if (event.preStatus === "save_the_date" || ["inactive", "draft", "archived", "deleted", "hidden"].includes(String(event.status || "").toLowerCase())) return false;
   const registrationState = String(event.registrationStatus || event.registration_state || event.registrationState || "").toLowerCase();
   return Boolean(event.registrationEnabled)
     || (event.accessType === "public" && event.allowPublicRegistration === true)
@@ -1825,6 +2053,7 @@ function eventRegistrationIsOpen(event = {}) {
 }
 
 function eventRegistrationStatusLabel(event = {}) {
+  if (event.preStatus === "save_the_date") return "Save the Date";
   if (event.accessType === "invitation_only") return "Teilnahme nur auf Einladung";
   if (eventRegistrationIsOpen(event)) return "Anmeldung geoeffnet";
   return "Anmeldung geschlossen";
@@ -1862,6 +2091,9 @@ async function legacyHomePage() {
     ["#/members", "members", "Mitglieder", "Unser Netzwerk, Vorteile und Mitglied werden"],
     ["#/about", "about", "Über uns", "Der Verband, Vorstand und Ziele"]
   ];
+  if (isMember(currentUser())) {
+    mobileCards.splice(1, 0, ["#/portal?tab=strategy", "strategy", "Strategie", "Zukunftsstrategie 2027–2030 mitgestalten"]);
+  }
   const nextImageUrl = next ? upcomingEventImageUrl(next, mediaAssets, { fallback: false }) : "";
   const nextImageStyle = nextImageUrl ? ` style="--home-event-card-image:url(&quot;${escapeHtml(nextImageUrl)}&quot;)"` : "";
   const mobileNextImageStyle = nextImageUrl ? ` style="--mobile-event-card-image:url(&quot;${escapeHtml(nextImageUrl)}&quot;)"` : "";
@@ -1875,12 +2107,12 @@ async function legacyHomePage() {
           <span class="pdtv-mobile-icon" aria-hidden="true">?</span>
           <div>
             <p>Nächstes Medienfrühstück</p>
-            ${next ? `<h2>${escapeHtml(formatDate(next.date))}${next.city ? ` · ${escapeHtml(next.city)}` : ""}</h2><span>${escapeHtml(next.subtitle || next.title || "")}</span><div class="pdtv-mobile-next-actions"><a class="button button--primary button--small" href="#/register/${next.id}">Anmelden</a><a href="#/event/${next.id}">Details ansehen →</a></div>` : `<h2>Neue Termine in Vorbereitung</h2><span>Die nächsten Formate werden in Kürze veröffentlicht.</span><div class="pdtv-mobile-next-actions"><a href="#/events">Events ansehen →</a></div>`}
+            ${next ? `<h2>${escapeHtml(formatDate(next.date))}${next.city ? ` · ${escapeHtml(next.city)}` : ""}</h2><span>${escapeHtml(next.subtitle || next.title || "")}</span><div class="pdtv-mobile-next-actions">${eventRegistrationIsOpen(next) ? `<a class="button button--primary button--small" href="#/register/${next.id}">Anmelden</a>` : `<span>Save the Date</span>`}<a href="#/event/${next.id}">Details ansehen →</a></div>` : `<h2>Neue Termine in Vorbereitung</h2><span>Die nächsten Formate werden in Kürze veröffentlicht.</span><div class="pdtv-mobile-next-actions"><a href="#/events">Events ansehen →</a></div>`}
           </div>
         </article>
       </div>
       <nav class="pdtv-mobile-card-grid" aria-label="Hauptbereiche">
-        ${mobileCards.map(([href, type, title, text], index) => `<a class="pdtv-mobile-card pdtv-mobile-card--${type} ${index === 0 || index === 3 ? "pdtv-mobile-card--dark" : ""}" href="${href}"><span class="pdtv-mobile-card__icon" aria-hidden="true"></span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(text)}</small></a>`).join("")}
+        ${mobileCards.map(([href, type, title, text]) => `<a class="pdtv-mobile-card pdtv-mobile-card--${type} ${["events", "about", "strategy"].includes(type) ? "pdtv-mobile-card--dark" : ""}" href="${href}"><span class="pdtv-mobile-card__icon" aria-hidden="true"></span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(text)}</small></a>`).join("")}
       </nav>
     </div>
   </section>`;
@@ -1891,7 +2123,7 @@ async function legacyHomePage() {
     <h2>${escapeHtml(next.title || "Naechste Veranstaltung")}</h2>
     <p class="home-event-card__meta">${escapeHtml(formatDate(next.date))}${next.startTime ? ` · ${escapeHtml(next.startTime)} Uhr` : ""}${next.city ? ` · ${escapeHtml(next.city)}` : ""}</p>
     <p>${escapeHtml(next.subtitle || next.locationName || "Austausch, Orientierung und relevante Branchenkontakte.")}</p>
-    <div class="home-event-card__actions"><a class="button button--primary" href="#/register/${escapeHtml(next.id)}">Anmelden</a><a class="home-text-link" href="#/event/${escapeHtml(next.id)}">Details ansehen</a></div>
+    <div class="home-event-card__actions">${eventRegistrationIsOpen(next) ? `<a class="button button--primary" href="#/register/${escapeHtml(next.id)}">Anmelden</a>` : `<span>Save the Date</span>`}<a class="home-text-link" href="#/event/${escapeHtml(next.id)}">Details ansehen</a></div>
   </article>` : `<article class="home-event-card">
     <div class="home-event-card__icon" aria-hidden="true"><span></span></div>
     <p class="eyebrow">Nächstes Medienfrühstück</p>
@@ -1936,7 +2168,7 @@ async function legacyHomePage() {
       <article class="home-info-card"><p class="eyebrow">Social</p><h3>Mit uns vernetzen</h3><p>Folgen Sie PROdigitalTV auf den relevanten Branchenkanaelen.</p><div class="home-socials"><a href="#/news">RSS</a><a class="home-socials__linkedin" href="#/about" aria-label="LinkedIn"><span aria-hidden="true">in</span></a><a href="#/events">YouTube</a></div></article>
       <article class="home-info-card home-info-card--stat"><p class="eyebrow">Netzwerk</p><h3>${escapeHtml(memberCount)}</h3><p>Mitglieder und Partner im digitalen Mediennetzwerk.</p></article>
     </div></div></section>
-    <section class="section section--white"><div class="container feature home-member-feature"><div><p class="eyebrow">Mitglieder</p><h2>Ein Netzwerk für digitale Medien.</h2><p class="lead">Mitglieder profitieren von Fachimpulsen, Medienfruehstuecken und relevanten Branchenkontakten.</p><a class="button button--secondary" href="#/members">Mitglieder entdecken</a></div><div class="member-logos">${featuredMembers.map((member) => `<div class="member-tile">${memberLogo(member)}</div>`).join("")}</div></div></section>
+    <section class="section section--white"><div class="container feature home-member-feature"><div><p class="eyebrow">Mitglieder</p><h2>Ein Netzwerk für digitale Medien.</h2><p class="lead">Mitglieder profitieren von Fachimpulsen, Medienfrühstücken und relevanten Branchenkontakten.</p><a class="button button--secondary" href="#/members">Mitglieder entdecken</a></div><div class="member-logos">${featuredMembers.map((member) => `<div class="member-tile">${memberLogo(member)}</div>`).join("")}</div></div></section>
     <section class="section home-final-cta"><div class="container home-final-cta__inner"><div><h2>Gemeinsam für die Medienzukunft.</h2><p>Vernetzen, informieren und die digitale Zukunft gestalten.</p></div><a class="button button--primary" href="#/join">Mitglied werden</a></div></section>
   `);
 }
@@ -1992,7 +2224,7 @@ function homeRetrospectiveItems(events = [], editorial = []) {
     .filter((event) => isPastEvent(event) && homeVisibleRecord(event) && eventShowsOnHome(event))
     .map((event) => ({ ...event, homeType: "event-retrospective", href: "#/archive", dateKey: homeDateValue(event) }));
   const articles = editorial
-    .filter(isRetrospectiveArticle)
+    .filter((item) => retrospectiveArticleIsVisible(item, events))
     .map((item) => ({ ...item, homeType: "article-retrospective", href: `#/retrospective/${item.id}`, dateKey: homeDateValue(item) }));
   return [...pastEvents, ...articles].sort((a, b) => String(b.dateKey).localeCompare(String(a.dateKey)));
 }
@@ -2153,7 +2385,7 @@ function homeHeroMarkup({ next, nextImageUrl, retrospective, series }) {
 }
 
 function pageContentCacheKey(name = "", variant = "public") {
-  return `pdtv-page-content-v21:${name}:${variant}`;
+  return `pdtv-page-content-v44:${name}:${variant}`;
 }
 
 function readPageContentCache(name = "", variant = "public", maxAgeMs = 600000) {
@@ -2255,25 +2487,26 @@ export async function homePage() {
   const latestNewsItems = publicNewsItems(editorial)
     .sort(newestContentFirst)
     .slice(0, 3);
-  const visibleTopics = topics
-    .filter((topic) => topicIsReleasedAfterEvent(topic, events) && isStandaloneTopic(topic))
-    .sort(newestContentFirst)
-    .slice(0, 6);
+  const newsMediaAssets = latestNewsItems.length
+    ? await withHomeTimeout(listPublicMediaAssets().catch(() => []), [], leanHome ? 1400 : 3600)
+    : [];
+  const visibleTopics = publicReleasedTopics(topics, events).slice(0, 6);
   const visibleSpeakers = homeSpeakersOnePerTalk(events, topics, speakers)
     .sort((a, b) => Number(Boolean(speakerPhotoUrl(b))) - Number(Boolean(speakerPhotoUrl(a))))
     .slice(0, 6);
 
   const newsBody = latestNewsItems.length ? `<div class="pdtv-home-news-grid">${latestNewsItems.map((item) => {
-    const image = homeImageUrl({ ...item, imageUrl: newsThumbUrl(item) }, "news");
+    const cardImage = publicEditorialCardImage(item, newsMediaAssets);
+    const image = cardImage.url;
     const audio = availableAudioUrl(item.audioUrl || item.audioNaturalUrl || item.audioAccessibleUrl || "", item.audioStatus || item.audioNaturalStatus || item.audioAccessibleStatus || "");
     return `<a class="pdtv-home-news-card" href="#/news/${escapeHtml(item.id)}">
-      ${image ? `<figure><img src="${escapeHtml(image)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${liveImageAttrs("news")}></figure>` : ""}
+      ${image ? `<figure><img src="${escapeHtml(image)}"${cardImage.srcset ? ` srcset="${cardImage.srcset}" sizes="(max-width: 760px) 92vw, 390px"` : ""} alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${liveImageAttrs("news")}></figure>` : ""}
       <div><p class="eyebrow">${escapeHtml(item.category || "News")}${audio ? " - Audio" : ""}</p><h3>${escapeHtml(item.title || "News")}</h3>${homeTeaser(item, 160) ? `<p>${escapeHtml(homeTeaser(item, 160))}</p>` : ""}<span>Beitrag öffnen</span></div>
     </a>`;
   }).join("")}</div>` : `<div class="pdtv-home-empty">Aktuell sind keine News veröffentlicht.</div>`;
 
   const topicsBody = visibleTopics.length ? `<div class="pdtv-home-topic-grid">${visibleTopics.map((topic) => `<a class="pdtv-home-topic-card" href="#/topic/${escapeHtml(topic.id)}">
-    ${homeImageUrl(topic, "topic") ? `<img src="${escapeHtml(homeImageUrl(topic, "topic"))}" alt="${escapeHtml(topic.title || "Thema")}" loading="lazy" decoding="async" ${liveImageAttrs("topic")}>` : `<span class="pdtv-home-topic-card__placeholder" aria-hidden="true">${escapeHtml(initials(topic.title || "Thema"))}</span>`}<span><strong>${escapeHtml(topic.title || "Thema")}</strong>${homeTeaser(topic, 135) ? `<small>${escapeHtml(homeTeaser(topic, 135))}</small>` : ""}</span>
+    ${homeImageUrl(topic, "topic") ? `<img src="${escapeHtml(homeImageUrl(topic, "topic"))}" alt="${escapeHtml(topic.title || "Thema")}" loading="lazy" decoding="async"${topicImageTransformStyle(topic)} ${liveImageAttrs("topic")}>` : `<span class="pdtv-home-topic-card__placeholder" aria-hidden="true">${escapeHtml(initials(topic.title || "Thema"))}</span>`}<span><strong>${escapeHtml(topic.title || "Thema")}</strong></span>
   </a>`).join("")}</div>` : "";
 
   const speakersBody = visibleSpeakers.length ? `<div class="pdtv-home-speaker-grid">${visibleSpeakers.map((speaker) => {
@@ -2299,14 +2532,27 @@ export async function homePage() {
     ${homeSection("Aktuelle Referenten", "Köpfe", speakersBody, `<a class="link" href="#/speakers">Alle Referenten</a>`)}
     ${homeSection("Vortragsreihen", "Interna", seriesBody)}
   </main>`;
-  writePageContentCache("home", homeVariant, homeContent);
+  if (latestNewsItems.length || publicNewsItems(editorial).length) writePageContentCache("home", homeVariant, homeContent);
   return publicShell("home", homeContent);
 }
 
 export async function speakersPage() {
+  const speakerSortParts = (speaker = {}) => {
+    const displayName = speakerName(speaker).trim();
+    const nameParts = displayName.split(/\s+/).filter(Boolean);
+    return {
+      lastName: String(speaker.lastName || nameParts.at(-1) || ""),
+      firstName: String(speaker.firstName || nameParts.slice(0, -1).join(" ") || displayName)
+    };
+  };
   const speakers = (await listPublicContent("speakers").catch(() => []))
     .filter(publicSpeakerIsVisible)
-    .sort((a, b) => String(speakerName(a)).localeCompare(String(speakerName(b)), "de", { sensitivity: "base" }));
+    .sort((a, b) => {
+      const aName = speakerSortParts(a);
+      const bName = speakerSortParts(b);
+      return aName.lastName.localeCompare(bName.lastName, "de", { sensitivity: "base" })
+        || aName.firstName.localeCompare(bName.firstName, "de", { sensitivity: "base" });
+    });
   const cards = speakers.map((speaker) => {
     const name = speakerName(speaker);
     const role = [speaker.position, speaker.company].filter(Boolean).join(" - ");
@@ -2314,15 +2560,14 @@ export async function speakersPage() {
     return `<article class="speaker-directory-card">
       <a class="speaker-directory-card__portrait" href="${speakerProfileHref(speaker)}">${speakerPortrait(speaker)}</a>
       <div>
-        <p class="eyebrow">Referent</p>
         <h2><a href="${speakerProfileHref(speaker)}">${escapeHtml(name)}</a></h2>
         ${role ? `<p class="speaker-profile__position">${escapeHtml(role)}</p>` : ""}
         ${teaser ? `<p>${escapeHtml(teaserText(teaser, 220))}</p>` : ""}
-        <a class="button button--secondary button--small" href="${speakerProfileHref(speaker)}">Mehr</a>
+        <a class="button button--secondary button--small speaker-directory-card__more" href="${speakerProfileHref(speaker)}">Mehr</a>
       </div>
     </article>`;
   }).join("");
-  return publicShell("speakers", `${subhero("Referenten", "Profile und Vitas", "Menschen, Themen und Perspektiven aus den PROdigitalTV-Formaten.")}
+  return publicShell("speakers", `${subhero("Referenten", "Profile und Viten", "Menschen, Themen und Perspektiven aus den PROdigitalTV-Formaten.")}
     <section class="section section--white"><div class="container speaker-directory-grid">
       ${cards || `<div class="alert">Aktuell sind noch keine Referentenprofile veroeffentlicht.</div>`}
     </div></section>`);
@@ -2340,6 +2585,8 @@ export async function speakerDetailPage(id) {
   const role = [speaker.position, speaker.company].filter(Boolean).join(" - ");
   const intro = speakerIntroText(speaker);
   const vita = speakerVitaText(speaker);
+  const profileTopic = topics.find((topic) => (speaker.topicIds || []).includes(topic.id) || topic.speakerId === speaker.id || (topic.speakerIds || []).includes(speaker.id)) || {};
+  const profileLogoUrl = speakerCompanyLogoUrl(speaker, profileTopic);
   const talks = speakerTalkLinks(speaker, topics, events);
   const talksHtml = talks.length ? `<div class="speaker-detail-talks">${talks.map(({ topic, event }) => `<a class="speaker-detail-talk" href="#/topic/${escapeHtml(topic.id)}">
       <span>${escapeHtml(event?.displayDate || formatDate(event?.date || "") || "Vortrag")}</span>
@@ -2348,7 +2595,7 @@ export async function speakerDetailPage(id) {
     </a>`).join("")}</div>` : `<div class="alert">Noch keine veroeffentlichten Vortraege zugeordnet.</div>`;
   return publicShell("speakers", `${subhero("Referent", name, role || "PROdigitalTV Referentenprofil")}
     <section class="section section--white"><div class="container speaker-detail">
-      <aside class="speaker-detail__portrait">${speakerPortrait(speaker)}</aside>
+      <aside class="speaker-detail__identity"><div class="speaker-detail__portrait">${speakerPortrait(speaker)}</div>${profileLogoUrl ? `<div class="speaker-detail__logo"><img src="${escapeHtml(profileLogoUrl)}" alt="Logo ${escapeHtml(speaker.company || "Unternehmen")}" loading="eager" decoding="async" ${liveImageAttrs("sponsor")}></div>` : ""}</aside>
       <article class="speaker-detail__body">
         <a class="link" href="#/speakers">Zurueck zu allen Referenten</a>
         <h1>${escapeHtml(name)}</h1>
@@ -2359,12 +2606,119 @@ export async function speakerDetailPage(id) {
           ${speaker.website ? `<a class="button button--secondary button--small" href="${escapeHtml(/^https?:\/\//i.test(speaker.website) ? speaker.website : `https://${speaker.website}`)}" target="_blank" rel="noopener">Website</a>` : ""}
           ${speaker.linkedIn ? `<a class="button button--secondary button--small" href="${escapeHtml(speaker.linkedIn)}" target="_blank" rel="noopener">LinkedIn</a>` : ""}
         </div>
-        <h2>Vortraege und Themen</h2>
+        <h2>Vorträge und Themen</h2>
         ${talksHtml}
       </article>
     </div></section>`);
 }
 
+function eventFeedbackQuestionHtml(question = {}, index = 0) {
+  const inputName = `q_${question.id}`;
+  const commentName = `comment_${question.id}`;
+  const isMultiple = question.type === "multiple";
+  return `<fieldset class="event-feedback-question" data-feedback-question="${escapeHtml(question.id)}" data-feedback-type="${escapeHtml(question.type || "single")}">
+    <legend><span>${index + 1}</span>${escapeHtml(question.title || "Feedbackfrage")}</legend>
+    <div class="event-feedback-options">
+      ${(question.options || []).map((option) => `<label class="event-feedback-option"><input type="${isMultiple ? "checkbox" : "radio"}" name="${escapeHtml(inputName)}" value="${escapeHtml(option)}" ${isMultiple ? "" : "required"}><span>${escapeHtml(option)}</span></label>`).join("")}
+    </div>
+    <div class="field"><label>${escapeHtml(question.commentPrompt || "Kommentar")}</label><textarea name="${escapeHtml(commentName)}" rows="3" placeholder="Optional"></textarea></div>
+
+  </fieldset>`;
+}
+
+export async function eventFeedbackPage(query = new URLSearchParams()) {
+  const token = String(query?.get?.("token") || "").trim();
+  if (!token) return publicShell("events", `${subhero("Feedback", "Link unvollstaendig", "Bitte oeffnen Sie den vollstaendigen Feedback-Link aus Ihrer E-Mail.")}`);
+  let payload = null;
+  try {
+    payload = await callEventFeedbackFunction("getEventFeedbackByToken", { token });
+  } catch (error) {
+    return publicShell("events", `${subhero("Feedback", "Link nicht verfuegbar", error?.message || "Der Feedback-Link konnte nicht geoeffnet werden.")}`);
+  }
+  const eventRecord = payload.event || {};
+  const guest = payload.guest || {};
+  const alreadySubmitted = payload.feedback?.submittedAt ? `<div class="alert alert--success">Vielen Dank, Ihre Rueckmeldung wurde bereits gespeichert. Sie koennen sie bei Bedarf erneut absenden.</div>` : "";
+  const eventMeta = [formatDate(eventRecord.date), eventRecord.locationName, eventRecord.city].filter(Boolean).join(" · ");
+  return publicShell("events", `${subhero("Feedback", "Ihre Rueckmeldung", "Ihre Einschätzung hilft PROdigitalTV, Veranstaltungen und Netzwerkangebote gezielt weiterzuentwickeln.")}
+    <section class="section section--white"><div class="container event-feedback-page">
+      <aside class="event-feedback-summary">
+        <p class="eyebrow">Veranstaltung</p>
+        <h2>${escapeHtml(eventRecord.title || "PROdigitalTV Event")}</h2>
+        ${eventMeta ? `<p class="muted">${escapeHtml(eventMeta)}</p>` : ""}
+        <div class="event-feedback-guest"><strong>${escapeHtml(guest.guestName || "Gast")}</strong>${guest.guestCompany ? `<span>${escapeHtml(guest.guestCompany)}</span>` : ""}${guest.guestEmail ? `<span>${escapeHtml(guest.guestEmail)}</span>` : ""}</div>
+      </aside>
+      <form id="event-feedback-form" class="form-card event-feedback-form" data-token="${escapeHtml(token)}">
+        ${alreadySubmitted}
+        ${(payload.questions || []).map(eventFeedbackQuestionHtml).join("")}
+        <fieldset class="event-feedback-question event-feedback-question--compact">
+          <legend><span>+</span>Dürfen wir Sie zu PROdigitalTV-Veranstaltungen und Informationen zum Netzwerk kontaktieren?</legend>
+          <div class="event-feedback-options event-feedback-options--inline">
+            <label class="event-feedback-option"><input type="radio" name="contactConsent" value="Ja"><span>Ja</span></label>
+            <label class="event-feedback-option"><input type="radio" name="contactConsent" value="Nein"><span>Nein</span></label>
+          </div>
+        </fieldset>
+        <div id="event-feedback-result" role="status" aria-live="polite"></div>
+        <div class="actions"><button class="button button--primary" type="submit">Feedback absenden</button></div>
+      </form>
+    </div></section>`);
+}
+export async function speakerApprovalPage(id = "", query = new URLSearchParams()) {
+  const token = String(query?.get?.("token") || "").trim();
+  if (!id || !token) return publicShell("speakers", `${subhero("Referentenfreigabe", "Link unvollstaendig", "Bitte oeffnen Sie den vollstaendigen Link aus Ihrer E-Mail.")}`);
+  let payload = null;
+  try {
+    payload = (await callSpeakerApprovalFunction("getSpeakerApproval", { approvalId: id, token })).approval;
+  } catch (error) {
+    return publicShell("speakers", `${subhero("Referentenfreigabe", "Link nicht verfuegbar", error?.message || "Der Freigabelink konnte nicht geoeffnet werden.")}`);
+  }
+  const speaker = payload.speaker || {};
+  const topic = payload.topic || {};
+  const eventRecord = payload.event || {};
+  const statusNote = payload.status === "submitted"
+    ? payload.speakerDecision === "approved"
+      ? `<div class="alert alert--success"><strong>Verbindlich freigegeben.</strong> Ihre Freigabe wurde an PROdigitalTV übermittelt. Sie können Ihre Angaben bei Bedarf erneut bearbeiten.</div>`
+      : `<div class="alert alert--success">Vielen Dank, Ihre Korrekturen wurden bereits übermittelt. Sie können bei Bedarf erneut speichern.</div>`
+    : "";
+  const role = [speaker.position, speaker.company].filter(Boolean).join(" - ");
+  const eventMeta = [formatDate(eventRecord.date), eventRecord.locationName, eventRecord.city].filter(Boolean).join(" · ");
+  return publicShell("speakers", `${subhero("Referentenfreigabe", "Profil und Vortragsbeschreibung", "Bitte pruefen Sie nur Ihre eigenen Angaben und senden Sie Korrekturen direkt an PROdigitalTV.")}
+    <section class="section section--white"><div class="container speaker-approval-page">
+      <aside class="speaker-approval-summary">
+        <div class="speaker-detail__portrait">${speaker.photoUrl ? `<img src="${escapeHtml(speaker.photoUrl)}" alt="${escapeHtml(speaker.name || "Referent")}" loading="eager" decoding="async">` : `<span>${escapeHtml(initials(speaker.name || "Referent"))}</span>`}</div>
+        <p class="eyebrow">${escapeHtml(eventRecord.title || "PROdigitalTV Event")}</p>
+        ${eventMeta ? `<p class="muted">${escapeHtml(eventMeta)}</p>` : ""}
+        <h2>${escapeHtml(speaker.name || "Referent")}</h2>
+        ${role ? `<p>${escapeHtml(role)}</p>` : ""}
+      </aside>
+      <form id="speaker-approval-form" class="form-card speaker-approval-form" data-approval-id="${escapeHtml(id)}" data-token="${escapeHtml(token)}">
+        ${statusNote}
+        <div class="form-grid--two">
+          <div class="field"><label>Name</label><input name="speakerName" value="${escapeHtml(speaker.name || "")}" required></div>
+          <div class="field"><label>Firma</label><input name="company" value="${escapeHtml(speaker.company || "")}"></div>
+        </div>
+        <div class="field"><label>Funktion / Position</label><input name="position" value="${escapeHtml(speaker.position || "")}"></div>
+        <div class="form-grid--two">
+          <div class="field"><label>E-Mail</label><input name="email" type="email" value="${escapeHtml(speaker.email || "")}" required></div>
+          <div class="field"><label>Telefon</label><input name="phone" type="tel" value="${escapeHtml(speaker.phone || "")}"></div>
+        </div>
+        <div class="field"><label>LinkedIn</label><input name="linkedIn" type="url" value="${escapeHtml(speaker.linkedIn || "")}" placeholder="https://www.linkedin.com/in/..."></div>
+        <div class="field"><label>Kurzvita</label><textarea name="shortBio" rows="4">${escapeHtml(speaker.shortBio || "")}</textarea></div>
+        <div class="field"><label>Ausfuehrliche Vita</label><textarea name="longBio" rows="6">${escapeHtml(speaker.longBio || "")}</textarea></div>
+        <hr>
+        <div class="field"><label>Vortragstitel</label><input name="topicTitle" value="${escapeHtml(topic.title || "")}" required></div>
+        <div class="field"><label>Vortragsbeschreibung</label><textarea name="topicDescription" rows="10" required>${escapeHtml(topic.description || "")}</textarea></div>
+        <div class="field"><label>Hinweis an die Redaktion</label><textarea name="note" rows="3" placeholder="Optional: Was wurde geaendert oder worauf sollen wir achten?"></textarea></div>
+        <div class="speaker-approval-decision">
+          <p><strong>Bitte wählen Sie eindeutig:</strong> Senden Sie entweder Korrekturen an die Redaktion oder bestätigen Sie alle Angaben verbindlich.</p>
+          <div class="actions">
+            <button class="button button--secondary" type="submit" name="decision" value="corrections">Korrekturen an PROdigitalTV senden</button>
+            <button class="button button--primary" type="submit" name="decision" value="approved">Profil und Vortrag verbindlich freigeben</button>
+          </div>
+          <span id="speaker-approval-result" role="status" aria-live="polite"></span>
+        </div>
+      </form>
+    </div></section>`);
+}
 export async function eventsPage() {
   const user = currentUser();
   const eventVariant = `${isMember(user) ? "member" : "public"}:${user?.uid || "guest"}`;
@@ -2407,14 +2761,15 @@ export async function eventsPage() {
     </a>`;
   }).join("");
   const eventsContent = `${subhero("Veranstaltungen", "Events", "Kuratierte Formate für Wissenstransfer, Partnerschaften und relevante Branchenkontakte.")}
-    <section class="section"><div class="container"><div class="filters"><button class="filter active">Kommende Events</button><button class="filter">Öffentlich</button><button class="filter">Mitglieder</button><a class="filter" href="#/archive">Rückblicke</a></div>
-    ${upcoming.length ? `<div class="card-grid card-grid--three">${upcoming.map((event) => eventCard(event, false, sponsors)).join("")}</div>` : `<div class="alert">Aktuell sind keine neuen Termine veröffentlicht. Im Eventarchiv finden Sie die letzten PROdigitalTV-Veranstaltungen.</div>`}
+    <section class="section"><div class="container"><div class="filters" data-public-event-filters><button type="button" class="filter active" data-public-event-filter="upcoming">Kommende Events</button><button type="button" class="filter" data-public-event-filter="public">Öffentlich</button><button type="button" class="filter" data-public-event-filter="members">Mitglieder</button><a class="filter" href="#/archive">Rückblicke</a></div>
+    ${upcoming.length ? `<div class="card-grid card-grid--three" data-public-event-grid>${upcoming.map((event) => `<div class="event-filter-card" data-public-event-card data-event-audience="${event.accessType === "members_only" ? "members" : "public"}">${eventCard(event, false, sponsors)}</div>`).join("")}</div><div class="alert" data-public-event-empty hidden>Für diesen Filter sind aktuell keine kommenden Events veröffentlicht.</div>` : `<div class="alert">Aktuell sind keine neuen Termine veröffentlicht. Im Eventarchiv finden Sie die letzten PROdigitalTV-Veranstaltungen.</div>`}
     ${retrospectiveCards ? `<div class="section-head section-head--inline events-retrospective-head"><div><p class="eyebrow">Rückblicke</p><h2>Letzte Veranstaltungen</h2></div><a class="link" href="#/archive">Alle Rückblicke -></a></div><div class="card-grid card-grid--three">${retrospectiveCards}</div>` : ""}</div></section>`;
   writePageContentCache("events", eventVariant, eventsContent);
   return publicShell("events", eventsContent);
 }
 
 async function getPublicRouteEvent(id, includeMemberEvents = false) {
+  const embeddedEvent = readEmbeddedEventDetail(id)?.event || null;
   const directEvent = getOne("events", id).then((event) => {
     if (event) return event;
     throw new Error(`Event ${id} nicht gefunden`);
@@ -2427,7 +2782,7 @@ async function getPublicRouteEvent(id, includeMemberEvents = false) {
   try {
     return await Promise.any([directEvent, listedEvent]);
   } catch {
-    return null;
+    return embeddedEvent;
   }
 }
 
@@ -2437,9 +2792,8 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
   const leanEventDetail = mobileLeanStart();
   const canUseCachedDetail = id && !previewMode && !ticketToken;
   const embeddedDetail = canUseCachedDetail ? readEmbeddedEventDetail(id) : null;
-  const cachedDetail = canUseCachedDetail ? readPageContentCache(eventDetailCacheName(id), eventDetailCacheVariant(id), leanEventDetail ? 900000 : 600000) : "";
-  const pushPanel = `<section class="section"><div class="container">${pushControls(id)}</div></section>`;
-  if (cachedDetail) return publicShell("events", cachedDetail + pushPanel);
+  const cachedDetail = canUseCachedDetail ? readPageContentCache(eventDetailCacheName(id), eventDetailCacheVariant(id), 30000) : "";
+  if (cachedDetail) return publicShell("events", cachedDetail);
   let ticketActivation = null;
   if (ticketToken) {
     try {
@@ -2449,30 +2803,29 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
       ticketActivation = null;
     }
   }
-  let event = embeddedDetail?.event || null;
-  if (!event) {
-    try {
-      event = await getPublicRouteEvent(id, isMember());
-    } catch {
-      return publicShell("events", `${subhero("Geschuetzter Bereich", "Login erforderlich", "Dieses Event ist nur für berechtigte Personen sichtbar.")}<section class="section"><div class="container"><a class="button button--primary" href="#/login">Zum Login</a></div></section>`);
-    }
+  let event = null;
+  try {
+    event = await getPublicRouteEvent(id, isMember());
+  } catch {
+    event = embeddedDetail?.event || null;
   }
+  if (!event && embeddedDetail?.event) event = embeddedDetail.event;
   if (!event) return notFoundPage();
   if (!previewMode && !isPastEvent(event) && !upcomingEventIsVisible(event)) return notFoundPage();
-  const [speakers, sponsors, topics, galleries, mediaAssets] = embeddedDetail
-    ? [embeddedDetail.speakers, embeddedDetail.sponsors, embeddedDetail.topics, embeddedDetail.galleries, embeddedDetail.mediaAssets]
-    : await Promise.all([
-      fastFallback(listPublicContent("speakers").catch(() => []), [], leanEventDetail ? 1200 : 22000),
-      fastFallback(listPublicContent("sponsors").catch(() => []), [], leanEventDetail ? 900 : 22000),
-      fastFallback(listPublicContent("topics").catch(() => []), [], leanEventDetail ? 1200 : 22000),
-      fastFallback(listPublicContent("galleries").catch(() => []), [], leanEventDetail ? 700 : 22000),
-      fastFallback(listPublicEventMediaAssets([event]).catch(() => []), [], leanEventDetail ? 900 : 22000)
-    ]);
+  const [speakers, sponsors, topics, galleries, mediaAssets] = await Promise.all([
+    fastFallback(listPublicContent("speakers").catch(() => []), embeddedDetail?.speakers || [], leanEventDetail ? 1200 : 22000),
+    fastFallback(listPublicContent("sponsors").catch(() => []), embeddedDetail?.sponsors || [], leanEventDetail ? 900 : 22000),
+    fastFallback(listPublicContent("topics").catch(() => []), embeddedDetail?.topics || [], leanEventDetail ? 1200 : 22000),
+    fastFallback(listPublicContent("galleries").catch(() => []), embeddedDetail?.galleries || [], leanEventDetail ? 700 : 22000),
+    fastFallback(listPublicEventMediaAssets([event]).catch(() => []), embeddedDetail?.mediaAssets || [], leanEventDetail ? 900 : 22000)
+  ]);
   const registrationOpen = eventRegistrationIsOpen(event);
   const storedTicket = ticketActivation || await validateStoredTicket(event.id).catch(() => readStoredTicket(event.id));
   const restricted = event.accessType === "members_only" && !isMember() && !registrationOpen && !storedTicket;
   if (restricted && !event.showPublicTeaser) return publicShell("events", subhero("Geschuetzter Bereich", "Nur für Mitglieder", "Bitte melden Sie sich an, um dieses Event zu sehen."));
-  const coHost = sponsors.find((sponsor) => sponsor.id === event.hostId) || null;
+  const eventFormatKey = normalizeTopicType(`${event.id || ""} ${event.title || event.titel || ""} ${event.eventType || ""} ${event.series || ""}`);
+  const suppressCoHost = eventFormatKey.includes("vondenbestenlernen");
+  const coHost = suppressCoHost ? null : sponsors.find((sponsor) => sponsor.id === event.hostId) || null;
   const coHostLogo = coHost ? publicSponsorLogoUrl(coHost, mediaAssets) : "";
   const assignedGallery = galleries.find((gallery) => gallery.id === event.galleryId) || galleries.find((gallery) => gallery.eventId === event.id && gallery.status === "published" && gallery.visibility === "public");
   const assignedGalleryImages = Array.isArray(assignedGallery?.images)
@@ -2484,8 +2837,8 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
     <div class="mobile-ticket-card__body">
       <p class="eyebrow">Handy-Ticket aktiv</p>
       <h2>${escapeHtml(event.title || storedTicket.eventTitle || "PROdigitalTV Event")}</h2>
-      <p>${escapeHtml([storedTicket.firstName, storedTicket.lastName].filter(Boolean).join(" ") || "Dieses Geraet")}</p>
-      <span>Dieses Handy ist fuer den Einlass vorbereitet.</span>
+      <p>${escapeHtml(registrationPartyLabel(storedTicket))}</p>
+      <span>Dieses Handy ist fuer ${storedTicket.participantCount > 1 || storedTicket.companion ? "beide Personen" : "den Einlass"} vorbereitet.</span>
     </div>
   </section>` : "";
   const eventImageUrl = eventDetailImageUrl(event, mediaAssets, [coHostLogo]);
@@ -2494,14 +2847,22 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
   const introText = looksTruncatedText(rawIntroText) && longText ? "" : rawIntroText;
   const hasSeparateLongText = longText.trim() && longText.trim() !== introText.trim();
   const isPast = isPastEvent(event);
-  const eventMainText = !isPast && hasSeparateLongText
-    ? [introText, longText].filter(Boolean).join("\n\n")
-    : introText || longText;
+  const hasCompleteDescription = !isPast && event.descriptionMode === "complete";
+  const eventMainText = hasCompleteDescription
+    ? rawIntroText
+    : !isPast && hasSeparateLongText
+      ? [introText, longText].filter(Boolean).join("\n\n")
+      : introText || longText;
+  const visibleEventMainText = removeHiddenTalkMentions(eventMainText, hiddenTalkTitles(event, topics));
+  const eventProgramText = hasCompleteDescription ? "" : eventInvitationProgramText(topics, speakers, event, visibleEventMainText);
+  const eventClosingText = hasCompleteDescription ? "" : eventInvitationClosingText(event, registrationAllowed);
+  const eventPageText = [visibleEventMainText, eventProgramText, eventClosingText].filter(Boolean).join("\n\n");
   const retrospectiveText = isPast && hasSeparateLongText ? longText : "";
+  const calendarSave = eventCalendarSaveMarkup(event);
   const registrationCta = registrationAllowed
-    ? `<div class="event-registration-cta"><a class="button button--primary" href="#/register/${escapeHtml(event.id)}">Zum Event anmelden</a></div>`
-    : `<div class="alert event-registration-cta">${event.accessType === "invitation_only" ? "Teilnahme nur auf Einladung." : "Anmeldung derzeit nicht verfuegbar."}</div>`;
-  const eventInfoBlock = restricted ? "" : `<section class="venue-stage event-info-stage"><div class="event-info-stage__facts"><p class="eyebrow">Daten</p><div class="event-info-facts"><div class="event-info-fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>${event.startTime ? `<div class="event-info-fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}<div class="event-info-fact"><label>Status</label><strong>${escapeHtml(eventRegistrationStatusLabel(event))}</strong></div></div></div><div class="venue-stage__place"><p class="eyebrow">${event.isVirtualEvent ? "Online-Teilnahme" : "Adresse"}</p>${eventLocationDetailMarkup(event)}</div><div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`;
+    ? `<div class="event-registration-cta event-registration-cta--split"><a class="button button--primary" href="#/register/${escapeHtml(event.id)}">Jetzt anmelden</a>${calendarSave}</div>`
+    : `<div class="event-registration-cta event-registration-cta--split"><div class="alert">${event.preStatus === "save_the_date" ? "Save the Date: Die Anmeldung startet zu einem spaeteren Zeitpunkt." : event.accessType === "invitation_only" ? "Teilnahme nur auf Einladung." : "Anmeldung derzeit nicht verfuegbar."}</div>${calendarSave}</div>`;
+  const eventInfoBlock = restricted ? "" : `<section class="venue-stage event-info-stage"><div class="event-info-stage__facts"><p class="eyebrow">Daten</p><div class="event-info-facts"><div class="event-info-fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>${event.startTime ? `<div class="event-info-fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}<div class="event-info-fact"><label>Status</label><strong>${escapeHtml(eventRegistrationStatusLabel(event))}</strong></div></div></div><div class="venue-stage__place"><p class="eyebrow">${event.isVirtualEvent ? "Online-Teilnahme" : "Adresse"}</p>${eventLocationDetailMarkup(event)}</div>${suppressCoHost ? "" : `<div class="venue-stage__partners"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `<article class="partner-spotlight">${coHostLogo ? `<img class="partner-spotlight__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : `<span class="avatar">${initials(coHost.name)}</span>`}<div><h3>${escapeHtml(coHost.name)}</h3>${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : ""}</div></article>` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div>`}</section>`;
   const previewNotice = previewMode ? `<div class="alert alert--warning">CMS-Vorschau: Dieses Event ist noch nicht zwingend öffentlich sichtbar.</div>` : "";
   const eventImageAsset = publicEventMediaAsset(event, mediaAssets, "detail");
   const eventImageRights = imageRightsDisclosure(event, eventImageAsset);
@@ -2509,16 +2870,16 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
     <section class="section event-detail-section"><div class="container detail-grid event-detail-grid">
       <article class="detail-main">
         ${previewNotice}
-        <figure class="event-detail-image"><img src="${escapeHtml(stableImageUrl(eventImageUrl, "event"))}" alt="Eventbild ${escapeHtml(event.title)}" loading="lazy" ${liveImageAttrs("event")}>${eventImageRights}</figure>
+        <figure class="event-detail-image"><img src="${escapeHtml(stableImageUrl(eventImageUrl, "event"))}" alt="Eventbild ${escapeHtml(event.title)}" loading="eager" decoding="async" fetchpriority="high" ${liveImageAttrs("event")}>${eventImageRights}</figure>
         ${ticketStatusCard}
         ${restricted ? `<div class="alert alert--warning">Details und Anmeldung dieses Mitglieder-Events stehen nach dem Login zur Verfuegung.</div>` : ""}
-        <h2>Zum Event</h2>${eventMainText ? `<div class="lead editorial-text event-detail-text">${articleParagraphs(eventMainText)}</div>` : ""}
+        <h2>Zum Event</h2>${eventPageText ? `<div class="lead editorial-text event-detail-text">${articleParagraphs(eventPageText)}</div>` : ""}
         ${restricted ? "" : registrationCta}
         ${restricted ? "" : eventScheduleMarkup(event)}
         ${retrospectiveText ? `<h2>Rückblick</h2><div class="editorial-text">${articleParagraphs(retrospectiveText)}</div>` : ""}
         ${eventTalksMarkup(topics, speakers, event)}
         ${event.lunchNote ? `<div class="alert">${escapeHtml(event.lunchNote)}</div>` : ""}
-        ${restricted ? "" : `<section class="venue-stage venue-stage--event-detail"><div class="venue-stage__identity"><p class="eyebrow">${event.isVirtualEvent ? "Online-Teilnahme" : "Veranstaltungsort"}</p>${!event.isVirtualEvent && coHost && coHostLogo ? `<img class="venue-stage__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : ""}${event.isVirtualEvent ? eventLocationDetailMarkup(event) : `<h2>${escapeHtml(coHost?.name || event.locationName || "Ort wird bekanntgegeben")}</h2><p>${escapeHtml(event.locationName || "")}${event.locationName ? "<br>" : ""}${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}</p>`}</div><div class="venue-stage__description"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : `<p>${escapeHtml(coHost.name)} begleitet dieses PROdigitalTV Event als Co-Gastgeber.</p>`}` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div></section>`}
+        ${restricted ? "" : `<section class="venue-stage venue-stage--event-detail"><div class="venue-stage__identity"><p class="eyebrow">${event.isVirtualEvent ? "Online-Teilnahme" : "Veranstaltungsort"}</p>${!event.isVirtualEvent && coHost && coHostLogo ? `<img class="venue-stage__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : ""}${event.isVirtualEvent ? eventLocationDetailMarkup(event) : `<h2>${escapeHtml(coHost?.name || event.locationName || "Ort wird bekanntgegeben")}</h2><p>${escapeHtml(event.locationName || "")}${event.locationName ? "<br>" : ""}${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}</p>`}</div>${suppressCoHost ? "" : `<div class="venue-stage__description"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : `<p>${escapeHtml(coHost.name)} begleitet dieses PROdigitalTV Event als Co-Gastgeber.</p>`}` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div>`}</section>`}
         ${assignedGalleryImages.length ? galleryPlayCta(assignedGallery, assignedGalleryImages) : ""}
       </article>
       <aside class="detail-aside">
@@ -2535,10 +2896,32 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
       </aside>
     </div></section>`;
   if (canUseCachedDetail) writePageContentCache(eventDetailCacheName(id), eventDetailCacheVariant(id), eventDetailContent);
-  return publicShell("events", eventDetailContent + pushPanel);
+  return publicShell("events", eventDetailContent);
 }
 
-export async function registrationPage(id) {
+export async function registrationConfirmPage(token = "") {
+  if (!token) return publicShell("events", `${subhero("Anmeldung", "Bestaetigungslink unvollstaendig.", "Bitte oeffnen Sie den Link aus Ihrer E-Mail erneut.")}`);
+  try {
+    const result = await confirmRegistration(token);
+    return publicShell("events", `${subhero("Anmeldung bestaetigt", result.eventTitle || "Ihre Veranstaltung", "Ihre Anmeldung ist bestaetigt. Push kann jetzt direkt auf diesem Geraet aktiviert werden.")}
+      <section class="section"><div class="container" style="max-width:760px">
+        <div class="form-card login-card">
+          <p class="eyebrow">Event-Erinnerung</p>
+          <h2>${escapeHtml(result.eventTitle || "PROdigitalTV Event")}</h2>
+          <p>${escapeHtml(registrationPartyLabel(result) || "Ihre Anmeldung")}</p>
+          <div class="alert alert--success">Ihre E-Mail ist bestaetigt. Wenn Sie Push-Nachrichten wuenschen, aktivieren Sie diese jetzt direkt hier auf dem Geraet.</div>
+          ${pushControls(result.eventId, { auto: true, primary: true, status: "Wenn Push im Browser schon erlaubt ist, wird dieses Geraet automatisch verknuepft. Sonst bitte einmal aktivieren." })}
+          ${result.ticketLink ? `<a class="button button--secondary" href="${escapeHtml(result.ticketLink)}">Ticket oeffnen</a>` : ""}
+          <a class="button button--primary" href="#/events">Zu den Events</a>
+        </div>
+      </div></section>`);
+  } catch (error) {
+    return publicShell("events", `${subhero("Anmeldung", "Bestaetigung nicht moeglich.", escapeHtml(error.message || String(error)))}<section class="section"><div class="container"><a class="button button--secondary" href="#/events">Zu den Events</a></div></section>`);
+  }
+}
+export async function registrationPage(id, query = new URLSearchParams()) {
+  const checkinMode = query.get("source") === "checkin";
+  const checkinToken = checkinMode ? query.get("access") || "" : "";
   let event;
   try {
     event = await getPublicRouteEvent(id, true);
@@ -2547,33 +2930,44 @@ export async function registrationPage(id) {
   }
   if (!event) return notFoundPage();
   if (!eventRegistrationIsOpen(event)) {
-    return publicShell("events", `${subhero("Anmeldung", event.title, "Fuer dieses Event ist aktuell keine Anmeldung moeglich.")}
-      <section class="section"><div class="container" style="max-width:820px"><div class="alert">Die Anmeldung ist derzeit geschlossen.</div><a class="button button--secondary" href="#/event/${escapeHtml(event.id)}">Zurueck zum Event</a></div></section>`);
+    return publicShell("events", `${subhero(checkinMode ? "Einlass-Anmeldung" : "Anmeldung", event.title, "Fuer dieses Event ist aktuell keine Anmeldung moeglich.")}
+      <section class="section"><div class="container" style="max-width:820px"><div class="alert">${event.preStatus === "save_the_date" ? "Save the Date: Fuer dieses Event ist noch keine Anmeldung moeglich." : "Die Anmeldung ist derzeit geschlossen."}</div><a class="button button--secondary" href="#/event/${escapeHtml(event.id)}">Zurueck zum Event</a></div></section>`);
   }
-  return publicShell("events", `${subhero("Anmeldung", event.title, `${formatDate(event.date)} · ${eventLocationDisplay(event)}`)}
-    <section class="section"><div class="container registration-container"><form id="registration-form" data-event-id="${event.id}" class="form-card registration-form">
+  return publicShell("events", `${subhero(checkinMode ? "Einlass-Anmeldung" : "Anmeldung", event.title, `${formatDate(event.date)} · ${eventLocationDisplay(event)}`)}
+    <section class="section"><div class="container registration-container"><form id="registration-form" data-event-id="${event.id}" data-checkin-mode="${checkinMode ? "1" : "0"}" data-checkin-token="${escapeHtml(checkinToken)}" class="form-card registration-form">
       <div class="registration-summary">
         <div><span>Event</span><strong>${escapeHtml(event.title || "")}</strong></div>
         <div><span>Termin</span><strong>${escapeHtml(formatDate(event.date))}${event.startTime ?` - ${escapeHtml(event.startTime)} Uhr` : ""}</strong></div>
         <div><span>Ort</span><strong>${escapeHtml(eventLocationDisplay(event))}</strong></div>
       </div>
-      <div class="alert">${event.accessType === "members_only"
+      <div class="alert">${checkinMode
+        ? "Sie melden sich direkt am Einlass an. Nach dem Speichern sind Sie angemeldet und eingecheckt."
+        : event.accessType === "members_only"
         ? "Dieses Event ist fuer Mitglieder und deren eingeladene Gaeste vorgesehen. Bitte melden Sie sich einfach mit Name und E-Mail an; das System gleicht die E-Mail mit vorhandenen Datensaetzen ab."
         : "Ihre Anmeldung ist erst nach Bestaetigung Ihrer E-Mail-Adresse gueltig."}</div>
       <fieldset class="registration-section"><legend>Person und Kontakt</legend>
       <div class="form-grid--two"><div class="field"><label for="firstName">Vorname *</label><input id="firstName" name="firstName" autocomplete="given-name" required></div><div class="field"><label for="lastName">Nachname *</label><input id="lastName" name="lastName" autocomplete="family-name" required></div></div>
       <div class="form-grid--two"><div class="field"><label for="company">Unternehmen</label><input id="company" name="company" autocomplete="organization"></div><div class="field"><label for="position">Position / Funktion</label><input id="position" name="position" autocomplete="organization-title"></div></div>
-      <div class="form-grid--two"><div class="field"><label for="email">E-Mail *</label><input id="email" name="email" type="email" autocomplete="email" required></div><div class="field"><label for="phone">Telefon</label><input id="phone" name="phone" autocomplete="tel"></div></div>
+      <div class="form-grid--two"><div class="field"><label for="email">E-Mail *</label><input id="email" name="email" type="email" autocomplete="email" required></div><div class="field"><label for="phone">Telefon / Mobilnummer</label><input id="phone" name="phone" autocomplete="tel"></div></div>
       ${event.invitationCodeRequired ? `<div class="field"><label for="invitationCode">Einladungscode *</label><input id="invitationCode" name="invitationCode" autocomplete="one-time-code" required></div>` : ""}
+      </fieldset>
+      <fieldset class="registration-section registration-section--compact"><legend>Begleitperson</legend>
+        <label class="checkbox"><input type="checkbox" name="hasCompanion" data-registration-companion-toggle> Ich komme mit einer Begleitperson</label>
+        <div data-registration-companion-fields hidden>
+          <div class="form-grid--two"><div class="field"><label for="companionFirstName">Vorname der Begleitperson *</label><input id="companionFirstName" name="companionFirstName" autocomplete="off" disabled></div><div class="field"><label for="companionLastName">Nachname der Begleitperson *</label><input id="companionLastName" name="companionLastName" autocomplete="off" disabled></div></div>
+          <div class="form-grid--two"><div class="field"><label for="companionEmail">E-Mail der Begleitperson *</label><input id="companionEmail" name="companionEmail" type="email" autocomplete="off" disabled></div><div class="field"><label for="companionPhone">Telefon der Begleitperson *</label><input id="companionPhone" name="companionPhone" type="tel" autocomplete="off" disabled></div></div>
+          <p class="muted">Beide Personen werden mit demselben Handy-Ticket am Einlass eingecheckt.</p>
+        </div>
       </fieldset>
       <fieldset class="registration-section registration-section--compact"><legend>Hinweise und Einwilligungen</legend>
       <div class="field"><label for="message">Bemerkung</label><textarea id="message" name="message" rows="3"></textarea></div>
       <div class="registration-consents">
-      <label class="checkbox"><input type="checkbox" name="notifyForThisEvent"> Ich moechte an diese Veranstaltung und zukuenftige PROdigitalTV-Veranstaltungen erinnert werden.</label>
-      ${pushControls(id)}
-      <label class="checkbox checkbox--required registration-consent-info"><input type="checkbox" name="privacyMediaConsent" required><span>Datenschutz akzeptiert und Foto-/Video-Hinweis zur Veranstaltung zur Kenntnis genommen *</span><button class="consent-info-button" type="button" aria-label="Erklaerung zu Datenschutz und Foto-/Video-Hinweis" title="Erklaerung">i</button><small>Ihre Daten werden zur Organisation der Veranstaltung verarbeitet. Bei PROdigitalTV-Veranstaltungen koennen Foto- und Videoaufnahmen entstehen, die fuer Dokumentation und Oeffentlichkeitsarbeit genutzt werden.</small></label>
+      <label class="checkbox"><input type="checkbox" name="notifyForThisEvent"><span class="registration-consent-summary"><strong>Event-Erinnerungen erhalten</strong><small>Per E-Mail, Push oder SMS; jederzeit abbestellbar.</small></span></label>
+      <label class="checkbox registration-push-choice"><input type="checkbox" name="enablePushCommunication"><span class="registration-consent-summary"><strong>Push auf diesem Gerät aktivieren</strong><small>Gilt für alle PROdigitalTV-Mitteilungen. Ohne Auswahl bleiben bestehende Einstellungen unverändert.</small></span></label>
+      <p class="muted" data-notification-device-status></p>
+      <label class="checkbox checkbox--required registration-consent-info"><input type="checkbox" name="privacyMediaConsent" required><span>Datenschutz und Foto-/Video-Hinweis akzeptiert *</span><small>Daten werden für die Anmeldung verarbeitet; Aufnahmen können für Dokumentation und Öffentlichkeitsarbeit genutzt werden.</small></label>
       </div></fieldset>
-      <div class="registration-submit"><button class="button button--primary" type="submit">Anmeldung absenden</button><div id="form-result"></div></div>
+      <div class="registration-submit"><button class="button button--primary" type="submit">${checkinMode ? "Anmelden und einchecken" : "Anmeldung absenden"}</button><div id="form-result" role="status" aria-live="polite"></div></div>
     </form></div></section>`);
 }
 
@@ -2605,7 +2999,7 @@ export async function topicsPage() {
     const topicSpeakerIds = new Set(topic.speakerIds || [topic.speakerId].filter(Boolean));
     return topicSpeakerIds.has(speaker.id) || speaker.topicId === topic.id || (speaker.topicIds || []).includes(topic.id);
   }) || {};
-  const topics = topicsRaw.filter((topic) => topicIsReleasedAfterEvent(topic, events)).map((topic) => {
+  const topics = publicReleasedTopics(topicsRaw, events).map((topic) => {
     const speaker = speakerForTopic(topic);
     const topicAsset = publicTopicMediaAsset(topic, mediaAssets, "card");
     const ownImage = publicTopicCardImageUrl(topic, mediaAssets);
@@ -2617,7 +3011,7 @@ export async function topicsPage() {
       cardImageUrl: ownImage || logoUrl || speakerPhoto || "",
       cardImageType: ownImage ? ownImageType : logoUrl ? "logo" : speakerPhoto ? "portrait" : ""
     };
-  }).sort(newestContentFirst);
+  });
   const initialVisible = 9;
   const topicCards = topics.map((topic, index) => {
     const hidden = index >= initialVisible;
@@ -2643,7 +3037,8 @@ export async function newsPage(query = new URLSearchParams()) {
   const newsVariant = selectedCategory ?`category:${selectedCategory}` : "public";
   const cachedNews = readPageContentCache("news", newsVariant, 600000);
   if (cachedNews) return publicShell("news", cachedNews);
-  const cmsNews = publicNewsItems(await listPublicContent("editorialContent"));
+  const [editorialContent, mediaAssets] = await Promise.all([listPublicContent("editorialContent"), listPublicMediaAssets().catch(() => [])]);
+  const cmsNews = publicNewsItems(editorialContent);
   const news = cmsNews.sort(newestContentFirst);
   const categoryHref = (category) => `#/news?category=${encodeURIComponent(category || "News")}`;
   const newsCategories = (item = {}) => {
@@ -2668,19 +3063,21 @@ export async function newsPage(query = new URLSearchParams()) {
   const featuredNews = filteredNews.slice(0, 6);
   const listedNews = filteredNews.slice(6);
   const newsCard = (item) => {
-    const thumb = stableImageUrl(newsThumbUrl(item), "news");
+    const cardImage = publicEditorialCardImage(item, mediaAssets);
+    const thumb = cardImage.url;
     const teaser = item.shortText || item.teaserText || item.introText || item.bodyText || "";
     const category = newsCategories(item)[0] || "News";
     const detailHref = `#/news/${escapeHtml(item.id)}`;
-    return `<article class="quick-card news-card"><a class="news-card__thumb-link" href="${detailHref}"><figure class="news-card__thumb"><img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${liveImageAttrs("news")}></figure></a><div class="news-card__body"><p class="eyebrow news-category-list">${categoryLinks(item)}</p><h3><a href="${detailHref}">${escapeHtml(item.title || "")}</a></h3>${item.subtitle ? `<p class="news-card__subtitle">${escapeHtml(item.subtitle)}</p>` : ""}<p class="news-card__teaser">${escapeHtml(teaser).slice(0, 320)}</p></div></article>`;
+    return `<article class="quick-card news-card"><a class="news-card__thumb-link" href="${detailHref}"><figure class="news-card__thumb"><img src="${escapeHtml(thumb)}"${cardImage.srcset ? ` srcset="${cardImage.srcset}" sizes="(max-width: 760px) 92vw, 390px"` : ""} alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${liveImageAttrs("news")}></figure></a><div class="news-card__body"><p class="eyebrow news-category-list">${categoryLinks(item)}</p><h3><a href="${detailHref}">${escapeHtml(item.title || "")}</a></h3>${item.subtitle ? `<p class="news-card__subtitle">${escapeHtml(item.subtitle)}</p>` : ""}<p class="news-card__teaser">${escapeHtml(teaser).slice(0, 320)}</p></div></article>`;
   };
   const newsListItem = (item) => {
     const date = item.publishDate || item.validFrom || item.updatedAt || item.createdAt || "";
     const teaser = item.shortText || item.teaserText || item.introText || item.subtitle || item.bodyText || "";
     const category = newsCategories(item)[0] || "News";
-    const thumb = stableImageUrl(newsThumbUrl(item), "news");
+    const cardImage = publicEditorialCardImage(item, mediaAssets);
+    const thumb = cardImage.url;
     return `<article class="news-list-item">
-      <a class="news-list-item__thumb" href="#/news/${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "News")}"><img src="${escapeHtml(thumb)}" alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${liveImageAttrs("news")}></a>
+      <a class="news-list-item__thumb" href="#/news/${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "News")}"><img src="${escapeHtml(thumb)}"${cardImage.srcset ? ` srcset="${cardImage.srcset}" sizes="(max-width: 760px) 92vw, 180px"` : ""} alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${liveImageAttrs("news")}></a>
       <div class="news-list-item__body">
         <span class="news-list-item__meta">${categoryLinks(item)}${date ? ` / ${escapeHtml(formatDate(date))}` : ""}</span>
         <strong><a href="#/news/${escapeHtml(item.id)}">${escapeHtml(item.title || "")}</a></strong>
@@ -2711,6 +3108,7 @@ export async function newsDetailPage(id) {
   if (!item || (item.page !== "news" && item.section !== "news" && !isRetrospective)) return notFoundPage();
   if (!isRetrospective && !publicNewsItems([item]).length) return notFoundPage();
   const [sponsors, galleries, events, allMediaAssets] = await Promise.all([listPublicContent("sponsors"), listPublicContent("galleries"), listPublicEvents(), listPublicMediaAssets().catch(() => [])]);
+  if (isRetrospective && !retrospectiveArticleIsVisible(item, events)) return notFoundPage();
   const date = item.publishDate || item.validFrom || item.date || item.updatedAt || "";
   const text = item.longDescription || item.articleText || item.bodyText || item.mainText || item.text || item.fullText || item.longText || item.shortText || item.teaserText || "";
   const displayTitle = cleanNewsDetailTitle(item);
@@ -2781,10 +3179,18 @@ export async function newsDetailPage(id) {
     </div></section>`);
 }
 
-export async function topicDetailPage(id) {
-  const [topic, events, galleries, allTopics, speakers, mediaAssets] = await Promise.all([getOne("topics", id), listPublicEvents(), listPublicContent("galleries"), listPublicContent("topics"), listPublicContent("speakers"), listPublicMediaAssets().catch(() => [])]);
+export async function topicDetailPage(id, query = new URLSearchParams()) {
+  const preview = query?.get?.("preview") === "1" && canUseCms(currentUser());
+  const [topic, events, galleries, allTopics, speakers, mediaAssets] = await Promise.all([
+    getOne("topics", id),
+    preview ? list("events") : listPublicEvents(),
+    preview ? list("galleries") : listPublicContent("galleries"),
+    preview ? list("topics") : listPublicContent("topics"),
+    preview ? list("speakers") : listPublicContent("speakers"),
+    listPublicMediaAssets().catch(() => [])
+  ]);
   if (!topic) return notFoundPage();
-  if (!topicIsReleasedAfterEvent(topic, events)) return notFoundPage();
+  if (!preview && !topicIsReleasedAfterEvent(topic, events)) return notFoundPage();
   const linked = topicLinkedEvents(topic, events).filter(publicEventAllowsTopicRelease).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   const primaryLinkedEvent = linked[0] || {};
   const heroSpeakers = speakers.filter((speaker) => {
@@ -2792,7 +3198,7 @@ export async function topicDetailPage(id) {
     return topicSpeakerIds.has(speaker.id) || speaker.topicId === topic.id || (speaker.topicIds || []).includes(topic.id);
   });
   const relatedTopics = allTopics
-    .filter((entry) => entry.id !== topic.id && topicIsReleasedAfterEvent(entry, events))
+    .filter((entry) => entry.id !== topic.id && (preview || topicIsReleasedAfterEvent(entry, events)))
     .slice(0, 8)
     .map((entry) => {
       const topicAsset = publicTopicMediaAsset(entry, mediaAssets, "card");
@@ -2887,21 +3293,35 @@ export async function archivePage() {
   ]);
   const events = allEvents.filter((event) => isPastEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
-  const visibleEvents = showAll ? events : events.slice(0, initialLimit);
+  const retrospectives = editorial
+    .filter(isRetrospectiveArticle)
+    .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")));
+  const linkedRetrospectiveEventIds = new Set(retrospectives.flatMap((item) => [item.linkedEventId, item.galleryEventId]).filter(Boolean));
+  const eventEntries = events.map((event) => ({
+    kind: "event",
+    date: event.date || event.updatedAt || "",
+    event
+  }));
+  const editorialEntries = retrospectives
+    .filter((item) => !events.some((event) => linkedRetrospectiveEventIds.has(event.id) && (item.linkedEventId === event.id || item.galleryEventId === event.id)))
+    .map((item) => ({
+      kind: "editorial",
+      date: item.publishDate || item.validFrom || item.updatedAt || "",
+      item
+    }));
+  const combinedEntries = [...eventEntries, ...editorialEntries]
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  const visibleEntries = showAll ? combinedEntries : combinedEntries.slice(0, initialLimit);
+  const visibleEvents = visibleEntries.filter((entry) => entry.kind === "event").map((entry) => entry.event);
   const mediaLookupEvents = visibleEvents
     .filter((event) => !archiveEventImageUrl(event, []))
     .slice(0, leanMobile ? 8 : 16);
   const mediaAssets = await withArchiveTimeout(listPublicEventMediaAssets(mediaLookupEvents).catch(() => []), [], leanMobile ? 2500 : 8000);
-  const archiveEvents = visibleEvents;
-  const retrospectives = editorial
-    .filter(isRetrospectiveArticle)
-    .sort((a, b) => String(b.publishDate || b.validFrom || b.updatedAt || "").localeCompare(String(a.publishDate || a.validFrom || a.updatedAt || "")));
-  const visibleRetrospectives = showAll ? retrospectives : retrospectives.slice(0, initialLimit);
-  const items = archiveEvents.length
-    ? archiveEvents.map((event) => archiveListEvent(event, sponsors, mediaAssets, editorial, eventMedia, galleries)).join("")
-    : visibleRetrospectives.map((item) => archiveListEditorial(item, sponsors, archiveEvents, mediaAssets, galleries)).join("");
-  const totalCount = events.length || retrospectives.length;
-  const visibleCount = archiveEvents.length || visibleRetrospectives.length;
+  const items = visibleEntries.map((entry) => entry.kind === "event"
+    ? archiveListEvent(entry.event, sponsors, mediaAssets, editorial, eventMedia, galleries)
+    : archiveListEditorial(entry.item, sponsors, events, mediaAssets, galleries)).join("");
+  const totalCount = combinedEntries.length;
+  const visibleCount = visibleEntries.length;
   const moreLink = !showAll && totalCount > visibleCount
     ? `<div class="archive-more"><a class="button button--secondary" href="#/archive?all=1">Alle ${totalCount} R&uuml;ckblicke anzeigen</a></div>`
     : "";
@@ -2912,10 +3332,12 @@ export async function archivePage() {
 }
 
 export async function downloadsPage() {
-  const downloads = (await listPublicContent("downloads"))
-    .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
-  return publicShell("downloads", `${subhero("Downloads", "Oeffentliche Downloads.", "Vereinssatzung, Beiträge und weitere oeffentliche Dokumente von PROdigitalTV.")}
-    <section class="section"><div class="container">${downloads.length ? `<div class="card-grid card-grid--three">${downloads.map(downloadCard).join("")}</div>` : `<div class="alert">Oeffentliche Downloads werden aktuell vorbereitet.</div>`}</div></section>`);
+  return publicShell("downloads", `${subhero("Downloads", "Dokumente im Mitgliederbereich.", "Vereinssatzung, Beitragsordnung und weitere Unterlagen stehen unseren Mitgliedern geschützt zur Verfügung.")}
+    <section class="section"><div class="container" style="max-width:780px"><div class="detail-main">
+      <h2>Mitgliederdokumente öffnen</h2>
+      <p>Bitte melden Sie sich an. Nach dem Login finden Sie die freigegebenen PDFs im Mitgliederbereich unter „Member Infos“.</p>
+      <div class="actions" style="margin-top:22px"><a class="button button--primary" href="#/login">Zum Login</a></div>
+    </div></div></section>`);
 }
 
 export function webappQrPage() {
@@ -2929,6 +3351,7 @@ export function webappQrPage() {
           <p class="eyebrow">PROdigitalTV WebApp</p>
           <h2>QR-Code scannen</h2>
           <p>Der Code fuehrt direkt zur mobilen PROdigitalTV-WebApp.</p>
+          <div class="webapp-qr-card__desktop-note"><strong>Am PC oder Mac?</strong><p>Sie muessen den QR-Code nicht scannen. Oeffnen Sie die WebApp einfach direkt ueber den Button oder den angezeigten Link.</p></div>
           <p class="webapp-qr-card__url">${escapeHtml(webappUrl)}</p>
           <div class="actions"><a class="button button--primary" href="${escapeHtml(webappUrl)}" target="_blank" rel="noreferrer">WebApp öffnen</a><a class="button button--secondary" href="#/home">Zur Website</a></div>
         </div>
@@ -2947,17 +3370,17 @@ export async function ticketLinkPage(token = "") {
       <section class="section"><div class="container" style="max-width:760px">
         <div class="form-card login-card">
           <p class="eyebrow">Eintrittskarte</p>
-          <h2>${escapeHtml(result.firstName || "")} ${escapeHtml(result.lastName || "")}</h2>
+          <h2>${escapeHtml(registrationPartyLabel(result))}</h2>
           ${!mobile ? transfer : `<section class="mobile-ticket-card mobile-ticket-card--standalone" aria-label="Aktives Handy-Ticket">
             <div class="mobile-ticket-card__icon" aria-hidden="true"></div>
             <div class="mobile-ticket-card__body">
               <p class="eyebrow">Handy-Ticket aktiv</p>
               <h2>${escapeHtml(result.eventTitle || "PROdigitalTV Event")}</h2>
-              <p>${escapeHtml([result.firstName, result.lastName].filter(Boolean).join(" ") || "Dieses Geraet")}</p>
-              <span>Dieses Handy ist fuer den Einlass vorbereitet.</span>
+              <p>${escapeHtml(registrationPartyLabel(result))}</p>
+              <span>Dieses Handy ist fuer ${result.participantCount > 1 || result.companion ? "beide Personen" : "den Einlass"} vorbereitet.</span>
             </div>
           </section>`}
-          ${pushControls(result.eventId)}
+          ${pushControls(result.eventId, { auto: true, primary: true, status: "Wenn Push im Browser schon erlaubt ist, wird dieses Geraet automatisch verknuepft. Sonst bitte einmal aktivieren." })}
           <a class="button button--primary" href="#/events">Zu den Events</a>
         </div>
       </div></section>`);
@@ -2966,41 +3389,68 @@ export async function ticketLinkPage(token = "") {
   }
 }
 
-export async function eventCheckinPage(eventId = "") {
-  const event = eventId ? await getOne("events", eventId).catch(() => null) : null;
-  try {
-    const result = await checkInWithStoredTicket(eventId);
-    return publicShell("events", `${subhero("Check-in", `Willkommen, ${escapeHtml(result.firstName || "Gast")}.`, `${escapeHtml(result.eventTitle || event?.title || "Event")} ist bestaetigt.`)}
-      <section class="section"><div class="container" style="max-width:760px">
-        <div class="form-card login-card">
-          <p class="eyebrow">Einlass</p>
-          <h2>${escapeHtml(result.firstName || "")} ${escapeHtml(result.lastName || "")}</h2>
-          ${result.company ? `<p>${escapeHtml(result.company)}</p>` : ""}
-          <div class="alert alert--success">${result.alreadyCheckedIn ? "Sie waren bereits eingecheckt." : "Check-in erfolgreich."}</div>
-        </div>
-      </div></section>`);
-  } catch (error) {
-    const ticket = readStoredTicket(eventId);
-    return publicShell("events", `${subhero("Check-in", ticket ? "Ticket konnte nicht geprueft werden." : "Kein Ticket auf diesem Geraet.", ticket ? escapeHtml(error.message || String(error)) : "Bitte oeffnen Sie zuerst den Ticket-Link aus Ihrer Bestaetigungsmail auf diesem Handy.")}
-      <section class="section"><div class="container" style="max-width:760px"><div class="alert alert--warning">${escapeHtml(error.message || String(error))}</div><a class="button button--secondary" href="#/events">Zu den Events</a></div></section>`);
+export async function eventCheckinPage(eventId = "", query = new URLSearchParams()) {
+  const registeredNow = query.get("registered") === "1";
+  const accessToken = query.get("access") || "";
+  const event = eventId ? await getPublicRouteEvent(eventId, true) : null;
+  const ticket = readStoredTicket(eventId);
+  if (!ticket?.ticketToken) {
+    const registrationOpen = Boolean(event && eventRegistrationIsOpen(event));
+    const registrationUrl = accessToken
+      ? `#/register/${escapeHtml(eventId)}?source=checkin&access=${encodeURIComponent(accessToken)}`
+      : `#/register/${escapeHtml(eventId)}`;
+    const closedUrl = event ? `#/event/${escapeHtml(eventId)}` : "#/events";
+    return publicShell("events", `${subhero("Check-in", "Noch keine Anmeldung gefunden.", registrationOpen ? "Melden Sie sich jetzt direkt fuer dieses Event an." : "Fuer dieses Event ist derzeit keine Anmeldung moeglich.")}
+      <section class="section"><div class="container" style="max-width:760px"><div class="form-card login-card checkin-registration-card"><div class="alert alert--warning">Auf diesem Geraet ist noch keine Anmeldung fuer dieses Event gespeichert.</div>${registrationOpen ? `<p class="checkin-registration-lead">Die Anmeldung dauert nur wenige Augenblicke. Anschliessend wird Ihr Ticket auf diesem Geraet gespeichert.</p><a class="button button--primary checkin-registration-cta" href="${registrationUrl}">Jetzt zur Anmeldung</a>` : `<a class="button button--secondary" href="${closedUrl}">Zum Event</a>`}</div></div></section>`);
   }
+  if (ticket.eventId && ticket.eventId !== eventId) {
+    return publicShell("events", `${subhero("Check-in", "Falsches Ticket.", "Das gespeicherte Ticket gehoert zu einer anderen Veranstaltung.")}
+      <section class="section"><div class="container" style="max-width:760px"><div class="alert alert--warning">Das gespeicherte Ticket gehoert zu einer anderen Veranstaltung.</div><a class="button button--secondary" href="#/events">Zu den Events</a></div></section>`);
+  }
+  if (registeredNow) {
+    return publicShell("events", `${subhero("Herzlich willkommen", event?.title || ticket.eventTitle || "PROdigitalTV Event", "Sie sind angemeldet und erfolgreich eingecheckt.")}
+      <section class="section"><div class="container" style="max-width:760px"><div class="form-card login-card"><p class="eyebrow">Einlass erfolgreich</p><h2>Herzlich willkommen, ${escapeHtml(registrationPartyLabel(ticket))}!</h2><p>Wir freuen uns, Sie bei ${escapeHtml(event?.title || ticket.eventTitle || "der Veranstaltung")} begruessen zu duerfen.</p><div class="alert alert--success">${ticket.participantCount > 1 || ticket.companion ? "Beide Personen wurden" : "Anmeldung und Check-in wurden"} gespeichert.</div><a class="button button--secondary" href="#/event/${escapeHtml(eventId)}">Zum Event</a></div></div></section>`);
+  }
+  return publicShell("events", `${subhero("Check-in", event?.title || ticket.eventTitle || "PROdigitalTV Event", "Bitte bestaetigen Sie den Check-in erst direkt am Einlass.")}
+    <section class="section"><div class="container" style="max-width:760px">
+      <div class="form-card login-card">
+        <p class="eyebrow">Einlass</p>
+        <h2>${escapeHtml(registrationPartyLabel(ticket))}</h2>
+        ${ticket.eventTitle ? `<p>${escapeHtml(ticket.eventTitle)}</p>` : ""}
+        <div class="alert">${ticket.participantCount > 1 || ticket.companion ? "Zwei Personen" : "Noch nicht eingecheckt"}. Bitte tippen Sie erst am Empfang auf den Button.</div>
+        <button class="button button--primary" type="button" data-confirm-ticket-checkin data-event-id="${escapeHtml(eventId)}">${ticket.participantCount > 1 || ticket.companion ? "Beide Personen einchecken" : "Jetzt einchecken"}</button>
+        <div id="ticket-checkin-result" style="margin-top:16px"></div>
+      </div>
+    </div></section>`);
 }
 
-export async function eventCheckinScreenPage(eventId = "") {
-  const event = eventId ? await getOne("events", eventId).catch(() => null) : null;
+export async function eventCheckinScreenPage(eventId = "", query = new URLSearchParams()) {
+  const event = eventId ? await getPublicRouteEvent(eventId, true) : null;
   if (!event) return notFoundPage();
-  const url = `https://prodigitaltv-da47b.web.app/?v=${Date.now()}#/event-checkin/${encodeURIComponent(event.id)}`;
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=900x900&margin=2&data=${encodeURIComponent(url)}`;
+  let accessToken = query.get("access") || "";
+  let qrDataUrl = "";
+  if (currentUser()) {
+    const access = await getEventCheckinAccess(event.id).catch(() => null);
+    accessToken = access?.accessToken || accessToken;
+    qrDataUrl = access?.qrDataUrl || "";
+  }
+  if (!qrDataUrl && accessToken) {
+    const access = await getPublicEventCheckinQr(event.id, accessToken).catch(() => null);
+    qrDataUrl = access?.qrDataUrl || "";
+  }
+  const accessQuery = accessToken ? `?access=${encodeURIComponent(accessToken)}` : "";
+  const url = `https://prodigitaltv-da47b.firebaseapp.com/checkin.html?v=${Date.now()}#/event-checkin/${encodeURIComponent(event.id)}${accessQuery}`;
   return publicShell("events", `${subhero("Event-QR", event.title || "Event", "Diesen QR-Code am Empfang anzeigen oder ausdrucken.")}
-    <section class="section"><div class="container webapp-qr-page event-checkin-screen" data-checkin-screen-event="${escapeHtml(event.id)}">
+    <section class="section"><div class="container webapp-qr-page event-checkin-screen" data-checkin-screen-event="${escapeHtml(event.id)}" data-checkin-screen-title="${escapeHtml(event.title || "PROdigitalTV Veranstaltung")}" data-checkin-screen-url="${escapeHtml(url)}">
       <article class="webapp-qr-card">
-        <figure class="webapp-qr-card__code"><img src="${escapeHtml(qrUrl)}" alt="Check-in QR-Code fuer ${escapeHtml(event.title || "Event")}"></figure>
+        <figure class="webapp-qr-card__code">${qrDataUrl ? `<img src="${escapeHtml(qrDataUrl)}" alt="Check-in QR-Code fuer ${escapeHtml(event.title || "Event")}">` : `<div class="alert alert--warning">Der geschuetzte Einlass-QR konnte nicht geladen werden. Bitte oeffnen Sie ihn erneut aus dem CMS.</div>`}</figure>
         <div class="webapp-qr-card__copy">
           <p class="eyebrow">Check-in</p>
           <h2>QR-Code fuer den Einlass</h2>
           <p>Teilnehmer scannen diesen Code am Event. Das zuvor gespeicherte Handy-Ticket wird dann geprueft.</p>
           <p class="webapp-qr-card__url">${escapeHtml(url)}</p>
-          <div class="actions"><button class="button button--primary" type="button" data-print-page>QR-Code drucken</button><a class="button button--secondary" href="#/cms/event/${escapeHtml(event.id)}?tab=registration">Zur Eventverwaltung</a></div>
+          <div class="actions"><button class="button button--primary" type="button" data-checkin-screen-pdf>QR-Code als PDF</button><button class="button button--secondary" type="button" data-print-page>QR-Code drucken</button><a class="button button--secondary" href="#/cms/event/${escapeHtml(event.id)}?tab=registration">Zur Eventverwaltung</a></div>
+          <div data-checkin-screen-pdf-status></div>
         </div>
       </article>
       <div class="event-checkin-screen__overlay" data-checkin-welcome hidden>
@@ -3048,7 +3498,26 @@ function joinAside(downloads, editorial) {
   return `<aside class="join-aside join-aside--overview">${joinCta}<h2>Downloads</h2>${publicDownloads.length ? `<div class="join-download-fields">${publicDownloads.map(downloadField).join("")}</div>` : `<a class="button button--secondary" href="#/downloads">Zu den oeffentlichen Downloads</a>`}</aside>`;
 }
 
+const MEMBERSHIP_APPLICATION_DOCUMENTS = {
+  statutes: {
+    title: "Vereinssatzung",
+    fileName: "PROdigitalTV-Vereinssatzung.pdf",
+    url: "https://firebasestorage.googleapis.com/v0/b/prodigitaltv-da47b.firebasestorage.app/o/member-documents%2FmemberDocuments-dfe8b3f2-7009-4ed3-9d7b-7ed32e148ef8%2F1782028461345-8f50d9d5-bd18-4f81-84f7-72902ff6d4ab.pdf?alt=media&token=368d3d46-b2e7-44e5-b448-23eef7e35c8d"
+  },
+  fees: {
+    title: "Gebührenordnung",
+    fileName: "PROdigitalTV-Gebuehrenordnung.pdf",
+    url: "https://firebasestorage.googleapis.com/v0/b/prodigitaltv-da47b.firebasestorage.app/o/member-documents%2FmemberDocuments-dff340dd-5da9-483f-b4fd-df773d5a8b87%2F1782028326547-ad7011e7-aaac-45a8-9afa-f44907d81228.pdf?alt=media&token=6fc26d5a-380b-49d7-8f85-59a184bbde6d"
+  }
+};
+
+function membershipDocumentLink(document, label = document.title) {
+  return `<a href="${escapeHtml(document.url)}" target="_blank" rel="noopener" download="${escapeHtml(document.fileName)}">${escapeHtml(label)}</a>`;
+}
+
 function membershipFormSection() {
+  const statutes = MEMBERSHIP_APPLICATION_DOCUMENTS.statutes;
+  const fees = MEMBERSHIP_APPLICATION_DOCUMENTS.fees;
   return `<section class="section"><div class="container join-form-wrap"><form id="membership-application-form" class="form-card form-grid join-form">
     <p class="eyebrow">Mitgliedsantrag</p><h2 style="margin-bottom:6px">Mitglied werden</h2>
     <div class="form-grid--two"><div class="field"><label>Unternehmen / Organisation *</label><input name="company" required></div><div class="field"><label>Rechtsform</label><input name="legalForm" placeholder="z. B. GmbH, AG, e.V."></div></div>
@@ -3059,8 +3528,9 @@ function membershipFormSection() {
     <div class="form-grid--two"><div class="field"><label>Telefon</label><input name="phone" type="tel"></div><div class="field"><label>Mitgliedschaft</label><select name="membershipType"><option value="company">Unternehmensmitglied</option><option value="individual">Einzelmitglied</option></select></div></div>
     <div class="field"><label>Kurzbeschreibung Unternehmen</label><textarea name="companyDescription" placeholder="Taetigkeitsfeld, Bezug zur digitalen Medienwirtschaft"></textarea></div>
     <div class="field"><label>Nachricht / Rueckfragen</label><textarea name="message"></textarea></div>
-    <label class="checkbox"><input type="checkbox" name="statutesAccepted" required> Ich habe die Vereinssatzung gelesen und akzeptiere sie. *</label>
-    <label class="checkbox"><input type="checkbox" name="feeInfoAccepted" required> Ich habe die Informationen zu Mitgliedsbeitraegen zur Kenntnis genommen. *</label>
+    <fieldset class="registration-section registration-section--compact"><legend>Dokumente zur Mitgliedschaft</legend><p>Bitte laden Sie beide Dokumente herunter und lesen Sie sie vor dem Absenden des Antrags.</p><div class="actions"><a class="button button--secondary" href="${escapeHtml(statutes.url)}" target="_blank" rel="noopener" download="${escapeHtml(statutes.fileName)}">Satzung herunterladen (PDF)</a><a class="button button--secondary" href="${escapeHtml(fees.url)}" target="_blank" rel="noopener" download="${escapeHtml(fees.fileName)}">Gebührenordnung herunterladen (PDF)</a></div></fieldset>
+    <label class="checkbox"><input type="checkbox" name="statutesAccepted" required> <span>Ich habe die ${membershipDocumentLink(statutes)} gelesen und akzeptiere sie. *</span></label>
+    <label class="checkbox"><input type="checkbox" name="feeInfoAccepted" required> <span>Ich habe die ${membershipDocumentLink(fees)} zur Kenntnis genommen. *</span></label>
     <label class="checkbox"><input type="checkbox" name="privacyAccepted" required> Ich akzeptiere die Datenschutzerklaerung zur Verarbeitung meines Mitgliedsantrags. *</label>
     <label class="checkbox"><input type="checkbox" name="newsletterConsent"> Ich moechte Informationen zu Veranstaltungen und Vereinsaktivitaeten erhalten.</label>
     <button class="button button--primary" type="submit">Mitgliedsantrag absenden</button><div id="membership-application-result"></div>
@@ -3072,20 +3542,20 @@ export async function joinPage() {
   const joinVariant = mobileLeanStart() ? "mobile" : "desktop";
   const cachedJoin = readPageContentCache("join", joinVariant, 600000);
   if (cachedJoin) return publicShell("join", cachedJoin);
-  const [blocks, downloads, editorial] = await Promise.all([
-    fastFallback(internalBlocks("mitglied_werden").catch(() => []), [], mobileLeanStart() ? 900 : 1800),
-    fastFallback(listPublicContent("downloads").catch(() => []), [], mobileLeanStart() ? 700 : 1400),
-    fastFallback(listPublicContent("editorialContent").catch(() => []), [], mobileLeanStart() ? 900 : 1800)
-  ]);
-  const hero = blocks.find((block) => block.typ === "hero") || blocks[0];
-  const cardBlocks = blocks.filter((block) => block.typ !== "hero");
-  const joinCards = aboutCardGroups(cardBlocks, meta, { summary: "long", all: true, joinCta: true });
-  const joinTexts = blocks.map((block) => aboutLongTextSection(block, { joinCta: block.typ !== "hero" })).join("");
-  const content = `${subhero(meta.eyebrow, hero?.titel || meta.title, hero?.kurztext || meta.intro)}
-  <section class="section internal-overview internal-overview--join"><div class="container"><div class="internal-about-layout"><div class="internal-about-main">
-    <div class="internal-mobile-list internal-mobile-list--about">${joinCards || `<div class="alert">Inhalte werden aktuell vorbereitet.</div>`}</div>
-    <div class="internal-about-texts">${joinTexts}</div>
-  </div>${joinAside(downloads, editorial)}</div></div></section>${membershipFormSection()}`;
+  const content = `${subhero(meta.eyebrow, meta.title, meta.intro)}
+  <section class="section internal-overview internal-overview--join-simple"><div class="container"><div class="join-simple-copy">
+    <div class="join-simple-intro"><div><p class="join-simple-lead"><strong>PROdigitalTV entwickelt sich vom klassischen Verband zu einem aktiven, generationsübergreifenden Netzwerk.</strong> In unserer Medien- und Technologie-Community treffen Erfahrung, neue Perspektiven und konkretes Branchenwissen aufeinander.</p><p>Mitglieder finden relevante Kontakte, ordnen Veränderungen gemeinsam ein und können Themen, Formate und Projekte aktiv mitgestalten. So entsteht ein Netzwerk, das nicht nur informiert, sondern persönliche und geschäftliche Chancen eröffnet.</p></div><aside><strong>Mitglied werden können</strong><p><b>Unternehmen und Organisationen</b>, die mehrere Fach- und Führungskräfte in das Netzwerk einbinden möchten.</p><p><b>Einzelpersonen</b>, die ihre Erfahrung, Expertise und Perspektive aktiv einbringen wollen.</p></aside></div>
+    <ul class="join-benefit-list">
+      <li><span>01</span><div><strong>Zugang</strong><p>Relevante Menschen persönlich kennenlernen, die im beruflichen Alltag oft nur schwer erreichbar sind.</p></div></li>
+      <li><span>02</span><div><strong>Orientierung</strong><p>KI, Streaming, Plattformen, Content, Medienrecht und neue Geschäftsmodelle gemeinsam einordnen.</p></div></li>
+      <li><span>03</span><div><strong>Sichtbarkeit</strong><p>Eigene Expertise über Veranstaltungen, Interviews, Fachbeiträge und Mitgliederprofile sichtbar machen.</p></div></li>
+      <li><span>04</span><div><strong>Mitgestaltung</strong><p>Themen, Fachvorträge und Formate aktiv prägen und eigene Praxisimpulse in die Community einbringen.</p></div></li>
+      <li><span>05</span><div><strong>Netzwerk</strong><p>Belastbare Beziehungen zwischen Erfahrungsträgern, Entscheidern und zukünftigen Führungskräften aufbauen.</p></div></li>
+      <li><span>06</span><div><strong>Chancen</strong><p>Kooperationen, Empfehlungen, neue Projekte und Geschäftsmöglichkeiten aus persönlichem Austausch entwickeln.</p></div></li>
+    </ul>
+    <div class="join-simple-steps"><span><b>1</b><strong>Antrag ausfüllen</strong><small>Kontaktdaten und gewünschte Mitgliedschaft angeben.</small></span><span><b>2</b><strong>Persönliche Rückmeldung</strong><small>Wir melden uns zum weiteren Ablauf direkt bei Ihnen.</small></span><span><b>3</b><strong>Netzwerk nutzen</strong><small>An Veranstaltungen, Austausch und Mitgliederformaten teilnehmen.</small></span></div>
+    <div class="join-simple-action"><p>Der Mitgliedsantrag kann direkt im Anschluss ausgefüllt werden.</p><a class="button button--primary" href="#membership-application-form" data-join-scroll>Zum Mitgliedsantrag</a></div>
+  </div></div></section>${membershipFormSection()}`;
   writePageContentCache("join", joinVariant, content);
   return publicShell("join", content);
 }
@@ -3093,7 +3563,7 @@ export async function joinPage() {
 export async function loginPage() {
   const user = currentUser();
   const activeSession = user ? `<div class="alert" style="margin-bottom:18px">Aktuell angemeldet als ${escapeHtml(user.email || user.displayName || user.uid || "Benutzer")} mit Rolle ${escapeHtml(user.role || "guest")}.</div><button id="logout-button" class="button button--secondary" type="button">Abmelden / Session loeschen</button>` : "";
-  return publicShell("login", `<section class="login-wrap"><div class="container"><form id="login-form" class="form-card login-card">${logo()}<p class="eyebrow">Mitgliederbereich</p><h1 style="margin-bottom:10px">Anmelden</h1><p style="margin-bottom:25px">Zugriff auf exklusive Events, Downloads und CMS-Funktionen. Nach erfolgreichem Login wird ein Firebase-ID-Token fuer die aktuelle Sitzung gespeichert.</p>${activeSession}<div class="form-grid"><div class="field"><label>E-Mail</label><input name="email" type="email" value="" required></div><div class="field"><label>Passwort</label><input name="password" type="password" value="" required></div><button class="button button--primary">Einloggen</button><p class="muted">Produktiv zaehlt die Rolle aus Firestore unter <code>users/{uid}</code>. Der Token wird automatisch erneuert und beim Logout geloescht.</p><div id="login-result"></div></div></form></div></section>`);
+  return publicShell("login", `<section class="login-wrap"><div class="container"><form id="login-form" class="form-card login-card">${logo()}<p class="eyebrow">Mitgliederbereich</p><h1 style="margin-bottom:10px">Anmelden</h1><p style="margin-bottom:25px">Zugriff auf exklusive Events, Downloads und CMS-Funktionen.</p>${activeSession}<div class="form-grid"><div class="field"><label>E-Mail</label><input name="email" type="email" value="" required></div><div class="field"><label>Passwort</label><input name="password" type="password" value="" required></div><button class="button button--primary">Einloggen</button><div id="login-result"></div></div></form></div></section>`);
 }
 
 export async function userInvitationPage(invitationId = "", query = new URLSearchParams(), tokenFromPath = "") {
@@ -3292,9 +3762,9 @@ export async function memberPortalPage() {
   if (cachedOwnMember) ownMemberPromise.catch(() => {});
   const ownMember = cachedOwnMember || (activeTab === "profile" ? await fastFallback(ownMemberPromise, null, 2500) : null);
   const linkedMemberBlocked = ownMember?.id && !memberHasPortalAccess(ownMember);
-  const needsEvents = activeTab === "overview" || activeTab === "events";
+  const needsEvents = activeTab === "overview" || activeTab === "events" || activeTab === "documents";
   const needsSponsors = needsEvents;
-  const needsDocuments = activeTab === "documents";
+  const needsDocuments = activeTab === "documents" || activeTab === "strategy";
   const needsArticles = activeTab === "overview" || activeTab === "documents";
   const needsGalleries = needsArticles;
   const needsMembers = !cachedDirectorySection && (activeTab === "directory" || (!leanPortal && activeTab === "overview"));
@@ -3320,6 +3790,10 @@ export async function memberPortalPage() {
   const visibleDocuments = memberDocuments
     .filter((item) => item.status === "published" && (item.visibility || "members") === "members")
     .sort((a, b) => String(b.meetingDate || b.publishDate || b.year || b.updatedAt || "").localeCompare(String(a.meetingDate || a.publishDate || a.year || a.updatedAt || "")));
+  const strategyDocument = visibleDocuments.find((item) =>
+    item.id === "zukunftsstrategie-2027-2030"
+      || String(item.contentType || item.type || "").toLowerCase() === "strategy-page"
+  );
   const visibleMembers = sortedMembers
     .filter((member) => {
       const status = String(member.status || "active").toLowerCase();
@@ -3330,7 +3804,7 @@ export async function memberPortalPage() {
     });
   const visibleMemberArticles = memberVideos
     .filter((item) => (item.visibility || "members") === "members" || item.page === "member-area" || item.section === "member-area" || String(item.category || "").toLowerCase().includes("mitglied"))
-    .filter((item) => !["archived", "deleted", "hidden"].includes(String(item.status || "published").toLowerCase()) && item.visible !== false)
+    .filter((item) => memberArticleIsVisibleNow(item, allEvents))
     .sort((a, b) => Number(a.sortOrder || 9999) - Number(b.sortOrder || 9999) || String(b.publishDate || b.updatedAt || "").localeCompare(String(a.publishDate || a.updatedAt || "")));
   const documentUrl = (item) => item.documentUrl || item.assetUrl || item.fileUrl || item.url || "";
   const documentCard = (item) => {
@@ -3338,22 +3812,35 @@ export async function memberPortalPage() {
     return `<article class="card card__body">
       <p class="eyebrow">${escapeHtml([item.category || "Dokument", item.year].filter(Boolean).join(" / "))}</p>
       <h3>${escapeHtml(item.title || item.fileName || "Dokument")}</h3>
-      ${item.description ? `<p>${escapeHtml(item.description)}</p>` : ""}
+      ${item.description ? `<p>${linkedText(item.description)}</p>` : ""}
       ${item.meetingDate ? `<p class="muted">${formatDate(item.meetingDate)}</p>` : ""}
       ${url ? `<a class="button button--secondary button--small" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">Datei öffnen</a>` : `<p class="muted">Datei ist noch nicht hinterlegt.</p>`}
     </article>`;
   };
   const tabs = [
     ["overview", "Übersicht"],
+    ["strategy", "Zukunftsstrategie"],
     ["profile", "Mein Profil"],
     ["directory", "Mitgliederliste"],
     ["documents", "Member Infos"],
     ["events", "Events"],
     ["upload", "Foto-Upload"]
   ];
-  const tabNav = `<nav class="member-portal-tabs" aria-label="Mitgliederbereich">${tabs.map(([key, label]) => `<a href="#/portal?tab=${key}" class="${activeTab === key ? "active" : ""}">${label}</a>`).join("")}<button class="member-portal-logout-tab" type="button" data-logout-button>Abmelden</button></nav>`;
+  const mobileTabNav = `<div class="member-portal-mobile-nav"><label><span>Bereich auswählen</span><select class="member-portal-select" data-member-portal-select aria-label="Bereich im Mitgliederportal auswählen">${tabs.map(([key, label]) => `<option value="#/portal?tab=${key}" ${activeTab === key ? "selected" : ""}>${label}</option>`).join("")}</select></label><button class="member-portal-logout-tab" type="button" data-logout-button>Abmelden</button></div>`;
+  const tabNav = `${mobileTabNav}<nav class="member-portal-tabs" aria-label="Mitgliederbereich">${tabs.map(([key, label]) => `<a href="#/portal?tab=${key}" class="${activeTab === key ? "active" : ""}">${label}</a>`).join("")}<button class="member-portal-logout-tab" type="button" data-logout-button>Abmelden</button></nav>`;
   const documentsSection = `<section class="member-portal-section member-portal-section--documents"><div class="section-head"><div><h2>Mitglieder-Dokumente</h2><p class="muted">Freigegebene Unterlagen und Anlagen für Mitglieder.</p></div></div><div class="card-grid card-grid--three">${visibleDocuments.length ? visibleDocuments.map(documentCard).join("") : `<div class="alert">Noch keine freigegebenen Mitgliederdokumente.</div>`}</div></section>`;
   const memberInfosSection = `<section class="member-portal-section member-portal-section--infos"><div class="section-head"><h2>Member Infos</h2></div><div class="member-article-list">${visibleMemberArticles.length ? visibleMemberArticles.map((article) => memberArticleCard(article, galleries)).join("") : `<div class="alert">Noch keine Mitgliederbeitr&auml;ge sichtbar.</div>`}</div></section>`;
+  const strategyFrameSrcdoc = (html = "") => {
+    const resizeScript = `<script>(function(){var last=0;function send(){var d=document.documentElement,b=document.body,h=Math.ceil(Math.max(d?d.scrollHeight:0,b?b.scrollHeight:0,d?d.offsetHeight:0,b?b.offsetHeight:0));if(!h||Math.abs(h-last)<8)return;last=h;parent.postMessage({type:"pdtv-member-strategy-resize",height:h},"*");}function scrollToTarget(target){if(!target)return;var r=target.getBoundingClientRect();parent.postMessage({type:"pdtv-member-strategy-scroll",top:Math.max(0,r.top+(window.scrollY||window.pageYOffset||0))},"*");}window.openModal=function(title,text){parent.postMessage({type:"pdtv-member-strategy-modal",title:String(title||""),text:String(text||"")},"*");};try{if("ResizeObserver" in window){var ro=new ResizeObserver(send);ro.observe(document.documentElement);if(document.body)ro.observe(document.body);}}catch(e){}document.addEventListener("click",function(event){var el=event.target.closest("a[href^='#'],button[onclick*='scrollIntoView']");if(!el)return;var id="";if(el.tagName==="A")id=(el.getAttribute("href")||"").replace(/^#/,"");else{var m=String(el.getAttribute("onclick")||"").match(/getElementById\\(['\"]([^'\"]+)['\"]\\)/);id=m&&m[1]||"";}var target=id&&document.getElementById(id);if(target){event.preventDefault();event.stopImmediatePropagation();scrollToTarget(target);}},true);window.addEventListener("load",send);window.addEventListener("resize",send);document.addEventListener("input",send,true);document.addEventListener("change",send,true);setTimeout(send,50);setTimeout(send,400);setTimeout(send,1200);})();<\/script>`;
+    const value = String(html || "");
+    return /<\/body>/i.test(value) ? value.replace(/<\/body>/i, `${resizeScript}</body>`) : `${value}${resizeScript}`;
+  };
+  const strategySection = `<section class="member-portal-section member-portal-section--strategy">
+    <div class="section-head"><div><p class="eyebrow">Strategie & Zukunft</p><h2>Zukunftsstrategie 2027–2030</h2><p class="muted">PROdigitalTV gemeinsam weiterdenken und die nächsten Schritte mitgestalten.</p></div></div>
+    ${strategyDocument?.htmlContent
+      ? `<div class="member-strategy-frame-wrap"><iframe class="member-strategy-frame" data-member-strategy-frame title="PROdigitalTV Zukunftsstrategie 2027 bis 2030" sandbox="allow-scripts" scrolling="no" srcdoc="${escapeHtml(strategyFrameSrcdoc(strategyDocument.htmlContent))}"></iframe></div>`
+      : `<div class="alert alert--warning">Die Zukunftsstrategie ist derzeit nicht verfügbar. Bitte versuchen Sie es später erneut.</div>`}
+  </section>`;
   const profileSection = `<section class="member-portal-section"><div class="section-head"><h2>Mein Profil</h2></div>${memberProfileForm(ownMember, user, { adminMode: false })}${pushControls()}</section>`;
   const renderedDirectorySection = `<section class="member-portal-section"><div class="section-head"><h2>Mitgliederverzeichnis</h2></div><div class="card-grid card-grid--three member-directory-grid">${visibleMembers.length ? visibleMembers.map(memberDirectoryCard).join("") : `<div class="alert">Noch keine freigegebenen Mitglieder.</div>`}</div></section>`;
   if (!cachedDirectorySection && activeTab === "directory" && visibleMembers.length) {
@@ -3363,10 +3850,11 @@ export async function memberPortalPage() {
   const eventsSection = `<section class="member-portal-section"><div class="section-head"><h2>Mitglieder-Events</h2></div><div class="card-grid card-grid--three">${events.length ? events.map((event) => eventCard(event, false, sponsors)).join("") : `<div class="alert">Aktuell keine Mitglieder-Events.</div>`}</div></section>`;
   const uploadSection = `<section class="member-portal-section member-portal-section--upload"><div class="section-head"><div><h2>Foto-Upload</h2><p class="muted">Bilder an die Redaktion senden.</p></div></div><form id="member-material-upload-form" class="form-card member-upload-form"><div class="member-upload-form__top"><label class="button button--primary member-photo-upload-button">Fotos auswaehlen<input name="files" type="file" accept="image/*" multiple hidden></label><label class="checkbox-line member-upload-form__rights"><input type="checkbox" name="rightsConfirmed" value="1" required> Nutzungsfreigabe</label></div><div class="member-photo-upload-state" data-member-photo-state>Keine Bilder ausgewaehlt.</div><div class="member-photo-preview" data-member-photo-preview hidden></div><div class="field member-upload-form__note"><label>Hinweis</label><textarea name="note" rows="2" placeholder="Event, Ort oder kurzer Hinweis"></textarea></div><button class="button button--primary member-upload-form__send" type="submit">Bilder senden</button><div id="member-material-upload-result"></div></form></section>`;
   const directoryCount = needsMembers ? visibleMembers.length : ">";
-  const overviewSection = `<section class="member-portal-section"><div class="member-portal-overview"><article class="member-portal-card member-portal-card--infos"><span>${visibleMemberArticles.length}</span><h3>Member Infos</h3><p>Mitgliederbeiträge, Dokumente und Anlagen abrufen.</p><a href="#/portal?tab=documents">Öffnen</a></article><article class="member-portal-card member-portal-card--directory"><span>${escapeHtml(String(directoryCount))}</span><h3>Mitgliederliste</h3><p>Aktuelle Mitglieder und freigegebene Kontaktdaten.</p><a href="#/portal?tab=directory">Öffnen</a></article><article class="member-portal-card member-portal-card--profile"><span>1</span><h3>Mein Profil</h3><p>Eigene Mitgliedsdaten pflegen.</p><a href="#/portal?tab=profile">Bearbeiten</a></article><article class="member-portal-card member-portal-card--upload"><span>+</span><h3>Foto-Upload</h3><p>Fotos an die Redaktion senden.</p><a href="#/portal?tab=upload">Hochladen</a></article></div></section>`;
+  const overviewSection = `<section class="member-portal-section"><div class="member-portal-overview"><article class="member-portal-card member-portal-card--strategy"><span>2030</span><h3>Zukunftsstrategie</h3><p>Strategie, Fahrplan und Mitgliederfragen gemeinsam bearbeiten.</p><a href="#/portal?tab=strategy">Öffnen</a></article><article class="member-portal-card member-portal-card--infos"><span>${visibleMemberArticles.length}</span><h3>Member Infos</h3><p>Mitgliederbeiträge, Dokumente und Anlagen abrufen.</p><a href="#/portal?tab=documents">Öffnen</a></article><article class="member-portal-card member-portal-card--directory"><span>${escapeHtml(String(directoryCount))}</span><h3>Mitgliederliste</h3><p>Aktuelle Mitglieder und freigegebene Kontaktdaten.</p><a href="#/portal?tab=directory">Öffnen</a></article><article class="member-portal-card member-portal-card--profile"><span>1</span><h3>Mein Profil</h3><p>Eigene Mitgliedsdaten pflegen.</p><a href="#/portal?tab=profile">Bearbeiten</a></article><article class="member-portal-card member-portal-card--upload"><span>+</span><h3>Foto-Upload</h3><p>Fotos an die Redaktion senden.</p><a href="#/portal?tab=upload">Hochladen</a></article></div></section>`;
   const content = activeTab === "profile" ? profileSection
     : activeTab === "directory" ? directorySection
     : activeTab === "documents" ? memberInfosSection
+    : activeTab === "strategy" ? strategySection
     : activeTab === "events" ? eventsSection
     : activeTab === "upload" ? uploadSection
     : overviewSection;
@@ -3388,7 +3876,8 @@ export async function memberArticleDetailPage(id) {
     || await getOne("editorialContent", id).catch(() => null);
   const itemStatus = String(item?.status || "published").toLowerCase();
   const isMemberArticle = item && ((item.visibility || "members") === "members" || item.page === "member-area" || item.section === "member-area");
-  if (!item || ["archived", "deleted", "hidden"].includes(itemStatus) || item.visible === false || !isMemberArticle) return notFoundPage();
+  const events = memberArticleEventIds(item || {}).length ? await listPublicEvents(true).catch(() => []) : [];
+  if (!item || ["archived", "deleted", "hidden"].includes(itemStatus) || item.visible === false || !isMemberArticle || !memberArticleIsVisibleNow(item, events)) return notFoundPage();
   const date = item.publishDate || item.validFrom || item.date || "";
   const text = item.articleText || item.bodyText || item.longDescription || item.introText || "";
   const selectedGallery = articleGallery(item, galleries);
@@ -3402,7 +3891,7 @@ export async function memberArticleDetailPage(id) {
         <h1>${escapeHtml(item.title || "Redaktioneller Beitrag")}</h1>
         ${item.subtitle ? `<p class="article-subline">${escapeHtml(item.subtitle)}</p>` : ""}
         ${memberArticleAssetBar(item, galleries)}
-        ${ttsReader({ rubric: item.category || "Member Info", title: item.title || "", text: [item.subtitle, text].filter(Boolean).join("\n\n"), inlineOffsetText: item.subtitle || "", audio: item.audio || {}, audioProvider: item.audioProvider || item.auaioProvider || "", audioUrl: item.audioUrl || item.auaioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || item.auaioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || item.auaioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || item.auaioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || item.auaioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || item.auaioNaturalStatus || "" })}
+        ${ttsReader({ rubric: item.category || "Member Info", title: item.title || "", text: [item.subtitle, richTextPlainText(text)].filter(Boolean).join("\n\n"), inlineOffsetText: item.subtitle || "", audio: item.audio || {}, audioProvider: item.audioProvider || item.auaioProvider || "", audioUrl: item.audioUrl || item.auaioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || item.auaioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || item.auaioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || item.auaioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || item.auaioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || item.auaioNaturalStatus || "" })}
         <div class="editorial-text">${articleParagraphs(text)}</div>
         ${galleryImages.length ? galleryPlayCta(selectedGallery, galleryImages) : ""}
         ${articlePdfBlock(item)}
@@ -3423,8 +3912,6 @@ export async function legalPage(type) {
 export function notFoundPage() {
   return publicShell("", `<section class="section"><div class="container empty"><h1>Seite nicht gefunden</h1><p>Die angeforderte Seite ist nicht verfuegbar.</p><a class="button button--primary" style="margin-top:20px" href="#/home">Zur Startseite</a></div></section>`);
 }
-
-
 
 
 

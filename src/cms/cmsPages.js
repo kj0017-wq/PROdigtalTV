@@ -1,8 +1,10 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=475";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=479";
 import { list, getOne } from "../firebase/dataService.js?v=504";
 import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=471";
 import { accessLabels, lifecycleLabels, normalizeLifecyclePhase } from "../data/platformConstants.js";
-import { escapeHtml, formatDate, formatDateTime, formatShortDate } from "../utils/format.js";
+import { escapeHtml, formatDate, formatDateTime, formatShortDate, richTextHtml } from "../utils/format.js?v=4";
+import { normalizeLinkedIn } from "../utils/linkedin.js";
+import { hiddenTalkTitles, isVisibleEventTalk, removeHiddenTalkMentions } from "../utils/eventTalkVisibility.js";
 
 function localCmsAccessBypass() {
   return false;
@@ -64,7 +66,7 @@ function editorialActionButtons(item, section, module, activeStatus, inactiveSta
   const isActive = ["published", "active", "approved"].includes(item.status);
   const toggleStatus = isActive ?inactiveStatus : activeStatus;
   const toggleClass = isActive ?"icon-button--visible" : "icon-button--hidden";
-  const toggleLabel = isActive ?"Aktiv: auf inaktiv setzen" : "Inaktiv: auf aktiv setzen";
+  const toggleLabel = isActive ?"Veroeffentlicht" : "Nicht veroeffentlicht";
   return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-record-status="${module}" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ?"eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="${module}" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
 }
 
@@ -72,15 +74,23 @@ function cmsListActionButtons(item, section, module, activeStatus, inactiveStatu
   const isActive = ["published", "active", "approved"].includes(item.status);
   const toggleStatus = isActive ?inactiveStatus : activeStatus;
   const toggleClass = isActive ?"icon-button--visible" : "icon-button--hidden";
-  const toggleLabel = isActive ?"Aktiv: auf inaktiv setzen" : "Inaktiv: auf aktiv setzen";
+  const toggleLabel = isActive ?"Veroeffentlicht" : "Nicht veroeffentlicht";
   return `<div class="table-actions table-actions--icons">${editable ?`<a class="icon-button icon-button--edit" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a>` : ""}${manageable ?`<button class="icon-button ${toggleClass}" type="button" data-record-status="${module}" data-record-id="${item.id}" data-status="${toggleStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isActive ?"eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="${module}" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button>` : ""}</div>`;
 }
 
 function editorialVisibilityActionButtons(item, section) {
   const isVisible = item.visible === true;
   const toggleClass = isVisible ?"icon-button--visible" : "icon-button--hidden";
-  const toggleLabel = isVisible ?"Sichtbar: ausblenden" : "Unsichtbar: sichtbar machen";
-  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=editorialContent&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-news-visible-toggle="${escapeHtml(item.id)}" data-visible="${isVisible ?"false" : "true"}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isVisible ?"eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="editorialContent" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
+  const toggleLabel = isVisible ?"Veroeffentlicht" : "Nicht veroeffentlicht";
+  const isMemberArticle = section === "member-area";
+  const wasSent = Boolean(item.memberCommunicationSentAt || item.memberCommunicationMailingId);
+  const canSend = isMemberArticle && item.status === "published" && !wasSent;
+  const mailAction = canSend
+    ? `<button class="icon-button icon-button--mail" type="button" data-send-member-communication="${escapeHtml(item.id)}" title="An alle Mitglieder senden" aria-label="An alle Mitglieder senden"><span aria-hidden="true">&#9993;</span></button><span class="member-communication-send-result" data-member-communication-send-result></span>`
+    : isMemberArticle && wasSent
+      ? `<button class="icon-button icon-button--mail" type="button" disabled title="Bereits an Mitglieder versendet" aria-label="Bereits an Mitglieder versendet"><span aria-hidden="true">&#10003;</span></button>`
+      : "";
+  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/edit?module=editorialContent&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a>${mailAction}<button class="icon-button ${toggleClass}" type="button" data-news-visible-toggle="${escapeHtml(item.id)}" data-visible="${isVisible ?"false" : "true"}" title="${toggleLabel}" aria-label="${toggleLabel}">${eyeSvgIcon(isVisible)}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="editorialContent" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
 }
 
 function lockedEditorialActionButtons(item, section, module) {
@@ -91,7 +101,7 @@ function internalEditorialActionButtons(item, section, module) {
   const isActive = ["aktiv", "published", "active"].includes(String(item.status || "").toLowerCase());
   const toggleStatus = isActive ?"inaktiv" : "aktiv";
   const toggleClass = isActive ?"icon-button--visible" : "icon-button--hidden";
-  const toggleLabel = isActive ?"Sichtbar: ausblenden" : "Unsichtbar: sichtbar machen";
+  const toggleLabel = isActive ?"Veroeffentlicht" : "Nicht veroeffentlicht";
   const usageKey = internalUsageKey(item);
   const visibilityButton = usageKey === "legacy"
     ?""
@@ -335,7 +345,8 @@ function mediaAssetUrl(asset = {}) {
 }
 
 function blockedMemberLogoUrl(item = {}, url = "") {
-  return item.id === "goldvisite-media" && /goldbach/i.test(String(url || ""));
+  const isGoldvisite = item.id === "goldvisite-media" || /goldvisite/i.test(String(item.name || ""));
+  return isGoldvisite && /goldbach/i.test(String(url || ""));
 }
 
 function safeMemberLogoUrl(item = {}, url = "") {
@@ -421,7 +432,8 @@ function recordMediaAsset(item = {}, mediaAssets = [], collection = "", field = 
 
 function memberLogoUrl(item = {}, mediaAssets = []) {
   const asset = memberLogoAsset(item, mediaAssets);
-  return safeMemberLogoUrl(item, asset ?mediaAssetUrl(asset) || item.logoUrl || "" : item.logoUrl || "");
+  const officialLogo = /^\/assets\/official\/members\//i.test(String(item.logoUrl || "")) ?item.logoUrl : "";
+  return safeMemberLogoUrl(item, officialLogo || (asset ?mediaAssetUrl(asset) || item.logoUrl || "" : item.logoUrl || ""));
 }
 
 function memberLogoInitials(item = {}) {
@@ -482,7 +494,7 @@ function galleryActionButtons(item, section) {
   const nextVisibility = isVisible ?"internal" : "public";
   const nextStatus = isVisible ?item.status : "published";
   const toggleClass = isVisible ?"icon-button--visible" : "icon-button--hidden";
-  const toggleLabel = isVisible ?"Sichtbar: ausblenden" : "Unsichtbar: sichtbar machen";
+  const toggleLabel = isVisible ?"Veroeffentlicht" : "Nicht veroeffentlicht";
   return `<div class="table-actions table-actions--icons">${galleryPlayerButton(item)}<a class="icon-button icon-button--edit" href="#/cms/edit?module=galleries&id=${item.id}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a><button class="icon-button ${toggleClass}" type="button" data-record-visibility="galleries" data-record-id="${item.id}" data-visibility="${nextVisibility}" data-status="${nextStatus}" title="${toggleLabel}" aria-label="${toggleLabel}">${iconImage(isVisible ?"eye" : "eyeOff")}</button><button class="icon-button icon-button--danger" type="button" data-delete-record="galleries" data-record-id="${item.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
 }
 
@@ -569,7 +581,8 @@ function mailReference(item) {
 function aiButton(action, target, label = "Mit ChatGPT bearbeiten", extra = {}) {
   const promptField = extra.promptField ?` data-ai-prompt-field="${escapeHtml(extra.promptField)}"` : "";
   const contextTarget = extra.contextTarget ?` data-ai-context="${escapeHtml(extra.contextTarget)}"` : "";
-  return `<button type="button" class="button button--secondary button--small ai-action" data-ai-action="${action}" data-ai-target="${target}" data-ai-entity-type="${extra.entityType || "event"}" data-ai-entity-id="${extra.entityId || ""}" data-ai-field="${extra.fieldName || target}"${promptField}${contextTarget}>${label}</button>`;
+  const targetWords = Number(extra.targetWords) > 0 ?` data-ai-target-words="${Math.round(Number(extra.targetWords))}"` : "";
+  return `<button type="button" class="button button--secondary button--small ai-action" data-ai-action="${action}" data-ai-target="${target}" data-ai-entity-type="${extra.entityType || "event"}" data-ai-entity-id="${extra.entityId || ""}" data-ai-field="${extra.fieldName || target}"${promptField}${contextTarget}${targetWords}>${label}</button>`;
 }
 
 function aiFieldActions(actions) {
@@ -1172,14 +1185,14 @@ export async function dashboardPage() {
       <div class="stat"><span>Kommende Events</span><strong>${upcoming.length}</strong></div>
       <div class="stat"><span>Anmeldungen</span><strong>${registrations.length}</strong></div>
       <div class="stat"><span>Unbestaetigt</span><strong>${pending}</strong></div>
-      <div class="stat"><span>Event Rückblick / Archiv</span><strong>${openPost}</strong></div>
+      <div class="stat"><span>Rückblicke</span><strong>${openPost}</strong></div>
       <div class="stat"><span>Mailfehler</span><strong>${mails.filter((mail) => mail.status === "failed").length}</strong></div>
     </div>
     ${chatGptHints(events, media, downloads)}
     <div class="cms-columns">
       <section class="panel"><h2>Naechste Events</h2><div class="table-wrap"><table class="table"><thead><tr><th>Event</th><th>Termin</th><th>Phase</th></tr></thead><tbody>${upcoming.map((event) => `<tr><td><a class="link" href="#/cms/event/${event.id}">${escapeHtml(event.title)}</a></td><td>${formatDate(event.date)}</td><td>${status(lifecycleLabels[event.lifecyclePhase])}</td></tr>`).join("")}</tbody></table></div></section>
       <section class="panel"><h2>Aufmerksamkeit erforderlich</h2>
-        <div class="setup-steps"><div class="setup-step"><span>Unbestätigte Anmeldungen</span><strong>${pending}</strong></div><div class="setup-step"><span>Medien in Prüfung</span><strong>${media.filter((item) => item.status === "in_review").length}</strong></div><div class="setup-step"><span>Event Rückblick offen</span><strong>${openPost}</strong></div></div>
+        <div class="setup-steps"><div class="setup-step"><span>Unbestätigte Anmeldungen</span><strong>${pending}</strong></div><div class="setup-step"><span>Medien in Prüfung</span><strong>${media.filter((item) => item.status === "in_review").length}</strong></div><div class="setup-step"><span>Rückblicke offen</span><strong>${openPost}</strong></div></div>
         <div class="actions" style="margin-top:20px"><a class="button button--secondary button--small" href="#/cms/editorial">Redaktion bearbeiten</a><a class="button button--secondary button--small" href="#/cms/members">Mitglied anlegen</a></div>
       </section>
     </div>
@@ -1213,10 +1226,12 @@ function normalizeCmsEventRecord(event = {}) {
 
 function isPastCmsEvent(event) {
   const date = eventDateValue(event);
-  if (date && date >= todayString()) return false;
   if (normalizeLifecyclePhase(event.lifecyclePhase) === "archived") return true;
   if (event.expiresAt && new Date(event.expiresAt).getTime() <= Date.now()) return true;
-  return Boolean(date && date < todayString());
+  if (!date) return false;
+  const endTime = String(event.endTime || "").trim();
+  const end = new Date(`${date}T${endTime || "23:59:59"}`).getTime();
+  return Number.isFinite(end) && end <= Date.now();
 }
 
 function normalizedCmsState(value = "") {
@@ -1278,14 +1293,185 @@ export async function eventFollowUpPage() {
     .filter(hasLiveCmsEventIdentity)
     .filter((event) => isPastCmsEvent(event))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
-  return protect(cmsShell("cms/followup", `${cmsTitle("Event-Management", "Event Rückblick")}
+  return protect(cmsShell("cms/editorial/retrospectives", `${cmsTitle("Redaktion", "Rückblicke")}
   ${eventFollowUpTable(events, mediaAssets, allEditorial)}`));
 }
 
-function eventTabs(id, active) {
-  return `<nav class="tabs">${[["base", "Stammdaten"], ["topics", "Vortraege/Referenten"], ["pre", "Einladung"], ["registration", "Anmeldung"], ["schedule", "Ablauf"], ["post", "Rückblick"], ["media", "Foto"]].map(([key, label]) => `<button data-event-tab="${key}" data-event-id="${id}" class="${active === key ?"active" : ""}">${label}</button>`).join("")}</nav>`;
+const feedbackFollowUpLabels = {
+  personal_membership_interest: "Persoenliches Mitglied",
+  corporate_membership_interest: "Unternehmen interessant",
+  send_information_and_follow_up: "Infos senden / nachfassen",
+  keep_as_event_contact: "Eventkontakt behalten",
+  no_membership_follow_up: "Kein Mitgliedschafts-Follow-up",
+  open: "Offen"
+};
+
+const feedbackManualStatusLabels = {
+  offen: "offen",
+  kontaktiert: "kontaktiert",
+  erledigt: "erledigt",
+  kein_follow_up: "kein Follow-up"
+};
+
+function eventFeedbackAnswerLabel(value) {
+  if (Array.isArray(value)) return value.filter(Boolean).join(", ");
+  return String(value || "");
 }
 
+function eventFeedbackCard(feedback = {}, eventById = new Map(), showEvent = true) {
+  const eventRecord = eventById.get(feedback.eventId) || {};
+  const answerRows = Object.entries(feedback.answers || {}).map(([key, answer]) => {
+    const comment = feedback.comments?.[key] || "";
+    const label = {
+      relevance: "Relevanz",
+      benefit: "Groesster Nutzen",
+      industry_fit: "Branchenbezug",
+      attend_again: "Weitere Teilnahme",
+      membership_interest: "Netzwerk / Mitgliedschaft"
+    }[key] || key;
+    return `<div class="event-feedback-answer"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(eventFeedbackAnswerLabel(answer) || "-")}</span>${comment ? `<p>${escapeHtml(comment)}</p>` : ""}</div>`;
+  }).join("");
+  const manualStatus = feedback.manualStatus || "offen";
+  return `<details class="event-feedback-card">
+    <summary class="event-feedback-card__summary">
+      <span class="event-feedback-card__person"><strong>${escapeHtml(feedback.guestName || feedback.guestEmail || "Gast")}</strong><small>${escapeHtml([feedback.guestCompany, feedback.guestEmail].filter(Boolean).join(" · ") || "-")}</small></span>
+      ${showEvent ? `<span class="event-feedback-card__event">${escapeHtml(eventRecord.title || feedback.eventId || "Event")}</span>` : ""}
+      <span class="event-feedback-card__followup">${escapeHtml(feedbackFollowUpLabels[feedback.followUpStatus] || feedback.followUpStatus || "Offen")}</span>
+      <time class="event-feedback-card__date">${escapeHtml(formatDateTime(feedback.submittedAt) || "-")}</time>
+      <span class="event-feedback-card__toggle" aria-hidden="true">⌄</span>
+    </summary>
+    <div class="event-feedback-card__body">
+      <div class="event-feedback-answers">${answerRows || `<p class="muted">Keine Antworten gespeichert.</p>`}</div>
+      <div class="event-feedback-admin-row"><label>Status Nachbearbeitung <select data-feedback-manual-status="${escapeHtml(feedback.id)}">${Object.entries(feedbackManualStatusLabels).map(([value, label]) => `<option value="${escapeHtml(value)}" ${manualStatus === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label><span class="muted" data-feedback-status-result="${escapeHtml(feedback.id)}"></span></div>
+    </div>
+  </details>`;
+}
+
+export async function eventFeedbackAdminPage(query = new URLSearchParams()) {
+  if (!hasCmsAccess()) return denied();
+  const [events, feedbackRecords] = await Promise.all([list("events"), list("event_feedback").catch(() => [])]);
+  const eventById = new Map(events.map((event) => [event.id, event]));
+  const eventId = query.get("eventId") || "";
+  const followUpStatus = query.get("followUpStatus") || "";
+  const filtered = feedbackRecords
+    .filter((item) => !eventId || item.eventId === eventId)
+    .filter((item) => !followUpStatus || item.followUpStatus === followUpStatus)
+    .sort((a, b) => String(b.submittedAt?.seconds || b.submittedAt || "").localeCompare(String(a.submittedAt?.seconds || a.submittedAt || "")));
+  const eventIdsWithFeedback = new Set(feedbackRecords.map((item) => item.eventId).filter(Boolean));
+  const eventsWithFeedback = events.filter((event) => eventIdsWithFeedback.has(event.id))
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  const eventOptions = [`<option value="">Alle Veranstaltungen</option>`, ...eventsWithFeedback.map((event) => `<option value="${escapeHtml(event.id)}" ${eventId === event.id ? "selected" : ""}>${escapeHtml(event.title || event.id)}</option>`)].join("");
+  const followOptions = [`<option value="">Alle Follow-ups</option>`, ...Object.entries(feedbackFollowUpLabels).map(([value, label]) => `<option value="${escapeHtml(value)}" ${followUpStatus === value ? "selected" : ""}>${escapeHtml(label)}</option>`)].join("");
+  const selectedEventTitle = eventId ? eventById.get(eventId)?.title || eventId : "Alle Veranstaltungen";
+  return protect(cmsShell("cms/event-feedback", `${cmsTitle("Event-Management", "Gästebefragung", `<button class="button button--secondary button--small" type="button" data-export-event-feedback data-event-id="${escapeHtml(eventId)}" data-follow-up-status="${escapeHtml(followUpStatus)}">CSV exportieren</button>`)}
+    <section class="panel event-feedback-admin">
+      <div class="event-feedback-toolbar">
+        <label>Veranstaltung<select data-feedback-event-filter>${eventOptions}</select></label>
+        <label>Follow-up<select data-feedback-followup-filter>${followOptions}</select></label>
+        <button type="button" class="button button--primary button--small" data-send-event-feedback="${escapeHtml(eventId)}" ${eventId ? "" : "disabled"}>Gästebefragung senden</button>
+      </div>
+      <div id="event-feedback-admin-result"></div>
+      <p class="event-feedback-count"><strong>${filtered.length}</strong> Rückmeldungen · ${escapeHtml(selectedEventTitle)}</p>
+      <div class="event-feedback-list">${filtered.length ? filtered.map((item) => eventFeedbackCard(item, eventById, !eventId)).join("") : `<div class="alert">Keine Rückmeldungen für diese Auswahl.</div>`}</div>
+    </section>`));
+}
+function eventTabs(id, active) {
+  return `<nav class="tabs">${[["base", "Stammdaten"], ["topics", "Vortraege/Referenten"], ["pre", "Einladung"], ["registration", "Anmeldung"], ["schedule", "Ablauf"], ["survey", "Live-Umfrage"], ["feedback", "Gästebefragung"], ["post", "Rückblick"], ["media", "Foto"]].map(([key, label]) => `<a href="#/cms/event/${encodeURIComponent(id)}?tab=${encodeURIComponent(key)}" data-event-tab="${key}" data-event-id="${id}" class="${active === key ?"active" : ""}">${label}</a>`).join("")}</nav>`;
+}
+
+function eventSurveyDrafts(event = {}) {
+  return (Array.isArray(event.liveSurveyDrafts) ? event.liveSurveyDrafts : []).map((survey, surveyIndex) => ({
+    id: survey.id || `survey-${surveyIndex + 1}`,
+    title: survey.title || "Live-Umfrage",
+    introText: survey.introText || "Bitte nehmen Sie kurz an unserer Live-Umfrage teil.",
+    questions: (Array.isArray(survey.questions) ? survey.questions : []).map((question, questionIndex) => ({
+      id: question.id || `question-${questionIndex + 1}`,
+      type: ["single", "multiple", "text"].includes(question.type) ? question.type : "single",
+      question: question.question || "",
+      required: question.required !== false,
+      options: (Array.isArray(question.options) ? question.options : []).map((option, optionIndex) => ({
+        id: option.id || `option-${optionIndex + 1}`,
+        label: typeof option === "string" ? option : option.label || ""
+      })).filter((option) => option.label)
+    }))
+  }));
+}
+
+function eventSurveyQuestionEditor(question = {}, index = 0) {
+  const type = ["single", "multiple", "text"].includes(question.type) ? question.type : "single";
+  const optionText = (question.options || []).map((option) => typeof option === "string" ? option : option.label || "").filter(Boolean).join("\n");
+  return `<article class="event-survey-question" data-event-survey-question data-question-id="${escapeHtml(question.id || `question-${index + 1}`)}">
+    <div class="event-survey-question__head"><strong>Frage ${index + 1}</strong><button class="icon-button icon-button--danger" type="button" data-remove-event-survey-question title="Frage entfernen" aria-label="Frage entfernen">${iconImage("trash")}</button></div>
+    <div class="field"><label>Frage</label><input data-event-survey-question-text value="${escapeHtml(question.question || "")}" placeholder="Frage formulieren"></div>
+    <div class="form-grid--two"><div class="field"><label>Antworttyp</label><select data-event-survey-question-type><option value="single" ${type === "single" ? "selected" : ""}>Einzelauswahl</option><option value="multiple" ${type === "multiple" ? "selected" : ""}>Mehrfachauswahl</option><option value="text" ${type === "text" ? "selected" : ""}>Freitext-Eingabefeld</option></select></div><label class="checkbox"><input type="checkbox" data-event-survey-question-required ${question.required !== false ? "checked" : ""}> Pflichtfrage</label></div>
+    <div class="field" data-event-survey-options-field ${type === "text" ? "hidden" : ""}><label>Antwortmöglichkeiten</label><textarea rows="5" data-event-survey-question-options placeholder="Eine Antwort pro Zeile">${escapeHtml(optionText)}</textarea><p class="muted">Eine Antwort pro Zeile.</p></div>
+  </article>`;
+}
+
+function eventSurveyDraftEditor(survey = {}, index = 0) {
+  const questions = survey.questions?.length ? survey.questions : [{ id: "question-1", type: "single", question: "", required: true, options: [] }];
+  return `<article class="event-survey-draft" data-event-survey-draft data-survey-id="${escapeHtml(survey.id || `survey-${index + 1}`)}">
+    <div class="event-survey-draft__head"><div><p class="eyebrow">Vorbereitete Umfrage</p><h3>Umfrage ${index + 1}</h3></div><button class="icon-button icon-button--danger" type="button" data-remove-event-survey-draft title="Umfrage entfernen" aria-label="Umfrage entfernen">${iconImage("trash")}</button></div>
+    <div class="field"><label>Titel</label><input data-event-survey-title value="${escapeHtml(survey.title || "Live-Umfrage")}" required></div>
+    <div class="field"><label>Einleitung</label><textarea rows="3" data-event-survey-intro>${escapeHtml(survey.introText || "Bitte nehmen Sie kurz an unserer Live-Umfrage teil.")}</textarea></div>
+    <div class="event-survey-questions" data-event-survey-questions>${questions.map(eventSurveyQuestionEditor).join("")}</div>
+    <button class="button button--secondary button--small" type="button" data-add-event-survey-question>Frage hinzufügen</button>
+  </article>`;
+}
+
+function eventSurveyEditorContent(event = {}) {
+  const surveyDrafts = eventSurveyDrafts(event);
+  return `<form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="survey" class="form-grid is-save-aware event-survey-editor">
+    <div><h2>Live-Umfragen vorbereiten</h2><p class="muted">Hier vorbereitete Umfragen stehen im Mobile Cockpit für dieses Event zur Auswahl. Eine Umfrage kann mehrere Auswahl- und Freitextfragen enthalten.</p></div>
+    <input type="hidden" name="liveSurveyDraftsJson" data-event-survey-drafts-json value="${escapeHtml(JSON.stringify(surveyDrafts))}">
+    <div class="event-survey-drafts" data-event-survey-drafts>${surveyDrafts.map(eventSurveyDraftEditor).join("")}</div>
+    <div class="actions"><button class="button button--secondary" type="button" data-add-event-survey-draft>Neue Umfrage</button><button class="button button--primary" type="submit">Umfragen speichern</button></div>
+    <div id="event-save-result"></div>
+  </form>`;
+}
+
+const defaultEventFeedbackQuestions = [
+  { id: "relevance", type: "single", title: "Wie relevant war die Veranstaltung für Sie persönlich oder beruflich?", options: ["Sehr relevant", "Eher relevant", "Teilweise relevant", "Weniger relevant", "Nicht relevant"], commentPrompt: "Was war für Sie besonders relevant – oder was hat gefehlt?" },
+  { id: "benefit", type: "multiple", title: "Was war für Sie der größte Nutzen der Veranstaltung?", options: ["Neue Kontakte", "Fachlicher Input", "Austausch mit anderen Gästen", "Einblick in aktuelle Branchenthemen", "Inspiration für eigene Projekte", "Sichtbarkeit / eigene Positionierung", "Sonstiges"], commentPrompt: "Welcher konkrete Moment, Kontakt oder Inhalt war für Sie besonders wertvoll?" },
+  { id: "industry_fit", type: "single", title: "Wie gut passten Thema, Gäste und Format zur aktuellen Entwicklung der Medienbranche?", options: ["Sehr gut", "Gut", "Teilweise", "Eher weniger", "Gar nicht"], commentPrompt: "Welche Themen sollten wir künftig stärker aufgreifen?" },
+  { id: "attend_again", type: "single", title: "Würden Sie an einer weiteren PROdigitalTV-Veranstaltung teilnehmen?", options: ["Ja, auf jeden Fall", "Wahrscheinlich ja", "Vielleicht", "Eher nicht", "Nein"], commentPrompt: "Was müsste eine nächste Veranstaltung bieten, damit sie für Sie besonders interessant ist?" },
+  { id: "membership_interest", type: "single", title: "Könnten Sie sich vorstellen, Teil des PROdigitalTV-Netzwerks zu werden?", options: ["Ja, als persönliches Mitglied", "Ja, für mein Unternehmen interessant", "Vielleicht, ich möchte mehr Informationen", "Derzeit eher nicht", "Nein"], commentPrompt: "Was müsste PROdigitalTV Ihnen oder Ihrem Unternehmen konkret bieten, damit eine Mitgliedschaft interessant wird?", memberHidden: true }
+];
+
+function eventFeedbackQuestionsForEditor(event = {}) {
+  const customById = new Map((Array.isArray(event.feedbackQuestions) ? event.feedbackQuestions : []).map((question) => [question.id, question]));
+  return defaultEventFeedbackQuestions.map((base) => {
+    const custom = customById.get(base.id) || {};
+    return {
+      ...base,
+      title: custom.title || base.title,
+      commentPrompt: custom.commentPrompt || base.commentPrompt,
+      options: Array.isArray(custom.options) && custom.options.length ? custom.options : base.options
+    };
+  });
+}
+
+function eventFeedbackQuestionEditor(question = {}, index = 0) {
+  return `<article class="event-survey-question event-feedback-question-editor" data-event-feedback-question data-question-id="${escapeHtml(question.id)}" data-question-type="${escapeHtml(question.type || "single")}">
+    <div class="event-survey-question__head"><strong>Frage ${index + 1}</strong>${question.memberHidden ? `<span class="status status--draft">nur Nichtmitglieder</span>` : `<span class="status">alle Gäste</span>`}</div>
+    <div class="field"><label>Fragetext</label><input data-event-feedback-title value="${escapeHtml(question.title || "")}" required></div>
+    <div class="field"><label>Antwortmöglichkeiten</label><textarea rows="5" data-event-feedback-options>${escapeHtml((question.options || []).join("\n"))}</textarea><p class="muted">Eine Antwort pro Zeile. Antworttyp: ${question.type === "multiple" ? "Mehrfachauswahl" : "Einzelauswahl"}.</p></div>
+    <div class="field"><label>Kommentarfeld</label><input data-event-feedback-comment value="${escapeHtml(question.commentPrompt || "")}" placeholder="Kommentarfrage"></div>
+  </article>`;
+}
+
+function eventFeedbackEditorContent(event = {}, eventFeedback = []) {
+  const questions = eventFeedbackQuestionsForEditor(event);
+  return `<h2>Gästebefragung</h2>
+    <form id="event-edit-form" data-event-id="${escapeHtml(event.id)}" data-event-form-section="feedback" class="form-grid is-save-aware event-survey-editor event-feedback-editor">
+      <div class="alert"><strong>Mitgliederlogik:</strong> Die Mitgliedschaftsfrage wird automatisch nur Nichtmitgliedern angezeigt. Mitglieder beantworten die übrigen Fragen.</div>
+      <input type="hidden" name="feedbackQuestionsJson" data-event-feedback-questions-json value="${escapeHtml(JSON.stringify(questions))}">
+      <div class="event-survey-drafts" data-event-feedback-questions>${questions.map(eventFeedbackQuestionEditor).join("")}</div>
+      <div class="actions"><button class="button button--primary" type="submit">Gästebefragung speichern</button><a class="button button--secondary" href="#/cms/event-feedback?eventId=${encodeURIComponent(event.id)}">Auswertung öffnen</a><button type="button" class="button button--secondary" data-send-event-feedback="${escapeHtml(event.id)}">Gästebefragung senden</button></div>
+      <div id="event-save-result"></div><div id="event-feedback-admin-result"></div>
+    </form>
+    ${eventFeedback.length ? `<div class="event-feedback-list">${eventFeedback.slice(0, 5).map((item) => eventFeedbackCard(item, new Map([[event.id, event]]))).join("")}</div>` : `<div class="alert">Noch keine Rückmeldungen für dieses Event.</div>`}`;
+}
 function shortText(value = "", length = 112) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   return text.length > length ?`${text.slice(0, Math.max(0, length - 3))}...` : text;
@@ -1317,12 +1503,38 @@ function topicImageUrl(topic = {}, mediaAssets = []) {
     || "";
 }
 
+function topicImageTransform(topic = {}) {
+  const scale = Math.min(180, Math.max(50, Number(topic.imageScale) || 100));
+  const offsetX = Math.min(50, Math.max(-50, Number(topic.imageOffsetX) || 0));
+  const offsetY = Math.min(50, Math.max(-50, Number(topic.imageOffsetY) || 0));
+  const fit = topic.imageFit === "cover" ? "cover" : "contain";
+  return { scale, offsetX, offsetY, fit };
+}
+
+function topicImagePositionEditor(topic = {}, mediaAssets = []) {
+  const imageUrl = topicImageUrl(topic, mediaAssets);
+  if (!imageUrl) return `<p class="muted">Nach dem Hochladen eines Themenbildes kann der sichtbare Ausschnitt hier angepasst werden.</p>`;
+  const { scale, offsetX, offsetY, fit } = topicImageTransform(topic);
+  return `<div class="member-logo-editor topic-image-editor">
+    <div class="member-logo-editor__preview" data-member-logo-drag><img src="${escapeHtml(imageUrl)}" alt="Vorschau ${escapeHtml(topic.title || "Themenbild")}" style="position:relative;left:${offsetX}%;top:${offsetY}%;transform:scale(${scale / 100});object-fit:${fit}"></div>
+    <div class="member-logo-controls">
+      <label class="member-logo-control"><span>Bildansicht</span><select name="imageFit" data-topic-image-fit><option value="cover" ${fit === "cover" ? "selected" : ""}>Rahmen f&uuml;llen</option><option value="contain" ${fit === "contain" ? "selected" : ""}>Ganzes Bild zeigen</option></select></label>
+      <label class="member-logo-control"><span>Gr&ouml;&szlig;e <output data-member-logo-scale-output>${scale}%</output></span><input type="range" name="imageScale" min="50" max="180" step="5" value="${scale}" data-member-logo-control="scale"></label>
+      <label class="member-logo-control"><span>Horizontal <output data-member-logo-x-output>${offsetX}%</output></span><input type="range" name="imageOffsetX" min="-50" max="50" step="1" value="${offsetX}" data-member-logo-control="x"></label>
+      <label class="member-logo-control"><span>Vertikal <output data-member-logo-y-output>${offsetY}%</output></span><input type="range" name="imageOffsetY" min="-50" max="50" step="1" value="${offsetY}" data-member-logo-control="y"></label>
+      <button class="button button--secondary button--small member-logo-controls__reset" type="button" data-member-logo-reset>Zentrieren</button>
+    </div>
+    <p class="muted">Das Bild kann auch direkt in der Vorschau verschoben werden.</p>
+  </div>`;
+}
+
 function topicThumb(topic, mediaAssets = []) {
   const asset = Array.isArray(mediaAssets) && mediaAssets.length
     ?recordMediaAsset(topic, mediaAssets, "topics", "thumbnail_url")
     : null;
   const url = mediaAssetUrl(asset || {}) || topic.thumbnail_url || topic.thumbnailUrl || topicImageUrl(topic, mediaAssets);
-  const content = url ?`<img src="${escapeHtml(url)}" alt="">` : `<span>Bild</span>`;
+  const { scale, offsetX, offsetY, fit } = topicImageTransform(topic);
+  const content = url ?`<img src="${escapeHtml(url)}" alt="" style="position:relative;left:${offsetX}%;top:${offsetY}%;transform:scale(${scale / 100});object-fit:${fit}">` : `<span>Bild</span>`;
   const targetTopic = asset?.id ?{ ...topic, thumbnail_media_asset_id: asset.id } : topic;
   return `<a class="cms-thumb-action" href="${cmsThumbTarget("topics", targetTopic, "", "thumbnail_url", "thumbnail_alt")}" title="${url ?"Listen-Thumb bearbeiten / croppen" : "Thumb mit KI erstellen"}" aria-label="${url ?"Listen-Thumb bearbeiten / croppen" : "Thumb mit KI erstellen"}">${content}</a>`;
 }
@@ -1352,12 +1564,17 @@ function cmsThumbTarget(collection = "", item = {}, section = "", field = "image
 
 function editorialThumb(item = {}, { collection = "editorialContent", section = "", field = "imageUrl", altField = "thumbnail_alt", mediaAssets = [] } = {}) {
   const asset = recordMediaAsset(item, mediaAssets, collection, field);
-  const url = mediaAssetUrl(asset || {}) || editorialThumbUrl(item);
+  const directUrl = editorialThumbUrl(item);
+  const assetUrl = mediaAssetUrl(asset || {});
+  const url = directUrl || assetUrl;
   const content = url
     ?`<img src="${escapeHtml(url)}" alt="">`
     : `<span>Bild</span>`;
   if (!collection || !item.id) return content;
-  const targetItem = asset?.id ?{ ...item, thumbnail_media_asset_id: asset.id } : item;
+  const assetMatchesCurrentImage = Boolean(asset?.id && (!directUrl || assetUrl === directUrl));
+  const targetItem = assetMatchesCurrentImage
+    ?{ ...item, thumbnail_media_asset_id: asset.id }
+    :{ ...item, thumbnail_media_asset_id: "", mediaAssetId: "", media_asset_id: "" };
   return `<a class="cms-thumb-action" href="${cmsThumbTarget(collection, targetItem, section, field, altField)}" title="${url ?"Bild bearbeiten" : "Thumb mit KI erstellen"}" aria-label="${url ?"Bild bearbeiten" : "Thumb mit KI erstellen"}">${content}</a>`;
 }
 
@@ -1383,6 +1600,7 @@ function eventActionButtons(event = {}) {
 }
 
 function cmsEventRegistrationIsOpen(event = {}) {
+  if (event.preStatus === "save_the_date" || ["inactive", "draft", "archived", "deleted", "hidden"].includes(String(event.status || "").toLowerCase())) return false;
   return Boolean(event.registrationEnabled)
     || (event.accessType === "public" && event.allowPublicRegistration === true)
     || (event.accessType === "members_only" && event.allowMemberRegistration === true)
@@ -1400,7 +1618,7 @@ function defaultGlobalEventRegistrationMailText(variant = "confirmation") {
       "Termin: {{eventDate}}",
       "Ort: {{eventLocation}}",
       "",
-      "Falls Sie doch nicht teilnehmen koennen, sagen Sie bitte rechtzeitig ab, damit wir den Platz weitergeben und besser planen koennen.",
+      "Falls Sie doch nicht teilnehmen koennen, nutzen Sie bitte den Button Teilnahme absagen, damit wir den Platz weitergeben und besser planen koennen.",
       "",
       "Viele Gruesse",
       "PROdigitalTV"
@@ -1540,7 +1758,7 @@ function eventRegistrationTogglePanel(event = {}) {
       <div>
         <p class="eyebrow">Anmeldestatus</p>
         <h2>${isOpen ?"Anmeldung offen" : "Anmeldung geschlossen"}</h2>
-        <p class="muted">Ein Klick auf Aktiv veroeffentlicht das Event und oeffnet die passende Anmeldung. Der Startseiten-Schalter steuert nur die prominente Anzeige auf der Startseite.</p>
+        <p class="muted">Aktiv oeffnet die Anmeldung. Inaktiv zeigt das Event nur als Save the Date. Der Startseiten-Schalter steuert die prominente Anzeige auf der Startseite.</p>
       </div>
       <div class="actions" style="gap:14px;align-items:center">
         <label class="cms-switch ${isOpen ?"is-active" : ""}" title="Event aktivieren und Anmeldung oeffnen">
@@ -1565,7 +1783,7 @@ function eventRegistrationTogglePanel(event = {}) {
 }
 
 function eventFollowUpActionButtons(event = {}) {
-  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/event/${event.id}?tab=post" title="Rückblick bearbeiten" aria-label="Rückblick bearbeiten">${iconImage("edit")}</a><button class="icon-button icon-button--danger" type="button" data-delete-event="${escapeHtml(event.id)}" data-delete-return="cms/followup" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
+  return `<div class="table-actions table-actions--icons"><a class="icon-button icon-button--edit" href="#/cms/event/${event.id}?tab=post" title="Rückblick bearbeiten" aria-label="Rückblick bearbeiten">${iconImage("edit")}</a><button class="icon-button icon-button--danger" type="button" data-delete-event="${escapeHtml(event.id)}" data-delete-return="cms/editorial/retrospectives" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div>`;
 }
 
 function eventImageUrl(event = {}, mediaAssets = []) {
@@ -1582,7 +1800,7 @@ function eventFollowUpTable(events = [], mediaAssets = [], allEditorial = []) {
         && (item.page === "press" || item.section === "pressRelease");
     });
     return `<tr>
-    <td><div class="topic-thumb topic-thumb--table editorial-thumb--table event-thumb--table">${eventThumb(event, mediaAssets, "#/cms/followup")}</div></td>
+    <td><div class="topic-thumb topic-thumb--table editorial-thumb--table event-thumb--table">${eventThumb(event, mediaAssets, "#/cms/editorial/retrospectives")}</div></td>
     <td><a class="link editorial-title-link" href="#/cms/event/${event.id}?tab=post" title="${escapeHtml(event.title || "-")}">${escapeHtml(shortText(event.title || "-", 70))}</a>${event.subtitle ?`<small>${escapeHtml(shortText(event.subtitle, 95))}</small>` : ""}</td>
     <td>${escapeHtml(formatDate(event.date))}</td>
     <td>${status(normalizeLifecyclePhase(event.lifecyclePhase) === "archived" ?"published" : event.status || event.lifecyclePhase || "draft")}</td>
@@ -1683,8 +1901,9 @@ function linkedMediaActions({ collection = "", id = "", field = "imageUrl", altF
   if (!collection || !id) return "";
   const params = new URLSearchParams({ targetCollection: collection, targetId: id, targetField: field, targetAltField: altField, returnTo });
   const editHref = assetId ?`#/cms/media/edit?id=${encodeURIComponent(assetId)}&${params.toString()}` : "";
+  const libraryHref = `#/cms/media/library?${params.toString()}`;
   return `<div class="linked-media-actions">
-    <a class="button button--secondary button--small" href="${editHref || `#/cms/media/library?${params.toString()}`}">${escapeHtml(label)} ${assetId ?"bearbeiten" : "aus Mediathek waehlen"}</a>
+    ${assetId ?`<a class="button button--secondary button--small" href="${editHref}">${escapeHtml(label)} bearbeiten</a><a class="button button--secondary button--small" href="${libraryHref}">Anderes Bild wählen</a>` : `<a class="button button--secondary button--small" href="${libraryHref}">${escapeHtml(label)} aus Mediathek wählen</a>`}
     <a class="button button--secondary button--small" href="#/cms/media/ai?${params.toString()}">KI-Bild erstellen</a>
   </div>`;
 }
@@ -1710,8 +1929,17 @@ function memberLogoEditor(item = {}, mediaAssets = [], returnTo = "") {
     ?`#/cms/media/edit?id=${encodeURIComponent(currentAsset.id)}&${params.toString()}`
     : `#/cms/media/library?${params.toString()}`;
   const libraryHref = `#/cms/media/library?${params.toString()}`;
+  const logoScale = Math.min(180, Math.max(50, Number(item.logoScale) || 100));
+  const logoOffsetX = Math.min(50, Math.max(-50, Number(item.logoOffsetX) || 0));
+  const logoOffsetY = Math.min(50, Math.max(-50, Number(item.logoOffsetY) || 0));
   return `<div class="member-logo-editor">
-    <div class="member-logo-editor__preview">${logoUrl ?`<img src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(item.name || "")}">` : memberLogoFallback(item)}</div>
+    <div class="member-logo-editor__preview" data-member-logo-drag>${logoUrl ?`<img src="${escapeHtml(logoUrl)}" alt="Logo ${escapeHtml(item.name || "")}" style="position:relative;left:${logoOffsetX}%;top:${logoOffsetY}%;transform:scale(${logoScale / 100})">` : memberLogoFallback(item)}</div>
+    <div class="member-logo-controls">
+      <label class="member-logo-control"><span>Gr&ouml;&szlig;e <output data-member-logo-scale-output>${logoScale}%</output></span><input type="range" name="logoScale" min="50" max="180" step="5" value="${logoScale}" data-member-logo-control="scale"></label>
+      <label class="member-logo-control"><span>Horizontal <output data-member-logo-x-output>${logoOffsetX}%</output></span><input type="range" name="logoOffsetX" min="-50" max="50" step="1" value="${logoOffsetX}" data-member-logo-control="x"></label>
+      <label class="member-logo-control"><span>Vertikal <output data-member-logo-y-output>${logoOffsetY}%</output></span><input type="range" name="logoOffsetY" min="-50" max="50" step="1" value="${logoOffsetY}" data-member-logo-control="y"></label>
+      <button class="button button--secondary button--small member-logo-controls__reset" type="button" data-member-logo-reset>Zentrieren</button>
+    </div>
     <div class="member-logo-editor__actions">
       <a class="button button--primary button--small" href="${editHref}">Logo bearbeiten</a>
       <a class="button button--secondary button--small" href="${libraryHref}">Logo austauschen</a>
@@ -1724,8 +1952,11 @@ function memberLogoEditor(item = {}, mediaAssets = [], returnTo = "") {
 function memberLogoThumb(item = {}, mediaAssets = [], section = "all") {
   const currentAsset = memberLogoAsset(item, mediaAssets);
   const logoUrl = memberLogoUrl(item, mediaAssets);
+  const logoScale = Math.min(180, Math.max(50, Number(item.logoScale) || 100)) / 100;
+  const logoOffsetX = Math.min(50, Math.max(-50, Number(item.logoOffsetX) || 0));
+  const logoOffsetY = Math.min(50, Math.max(-50, Number(item.logoOffsetY) || 0));
   const content = logoUrl
-    ?`<img src="${escapeHtml(logoUrl)}" alt="">`
+    ?`<img src="${escapeHtml(logoUrl)}" alt="" style="position:relative;left:${logoOffsetX}%;top:${logoOffsetY}%;transform:scale(${logoScale})">`
     : memberLogoFallback(item);
   if (!item.id) return content;
   const targetItem = { ...item, logoUrl, logo_media_asset_id: currentAsset?.id || item.logo_media_asset_id || "", thumbnail_media_asset_id: currentAsset?.id || item.thumbnail_media_asset_id || item.mediaAssetId || "" };
@@ -1797,7 +2028,9 @@ function eventTopicSpeakerActions(event, topic, topicSpeakers) {
       <a class="button button--secondary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}&speaker=${speaker.id}">Bearbeiten</a>
       <button type="button" class="button button--secondary button--small" data-remove-event-topic-speaker="${speaker.id}" data-event-id="${event.id}" data-topic-id="${topic.id}">Loeschen</button>
     </div>
-  </div>`).join("")}</div>`;
+  </div>`).join("")}
+    ${topicSpeakers.length < 2 ? `<div class="actions"><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}">Co-Referent hinzufuegen</a></div>` : `<p class="muted">Hauptreferent und Co-Referent sind zugeordnet.</p>`}
+  </div>`;
 }
 
 function speakerNameParts(speaker = {}) {
@@ -1807,11 +2040,12 @@ function speakerNameParts(speaker = {}) {
   const parts = String(speaker.name || "").trim().split(/\s+/).filter(Boolean);
   return { firstName: parts.slice(0, -1).join(" "), lastName: parts.slice(-1).join(" ") };
 }
-function speakerProfileSelect(speakers = [], selectedSpeakerId = "") {
+function speakerProfileSelect(speakers = [], selectedSpeakerId = "", excludedSpeakerIds = []) {
+  const excluded = new Set(excludedSpeakerIds);
   const options = [
     `<option value="">Neues Referentenprofil anlegen</option>`,
     ...speakers
-      .filter((speaker) => speaker?.id && (speaker.name || speaker.firstName || speaker.lastName))
+      .filter((speaker) => speaker?.id && (speaker.name || speaker.firstName || speaker.lastName) && (speaker.id === selectedSpeakerId || !excluded.has(speaker.id)))
       .slice()
       .sort((a, b) => String(a.name || `${a.firstName || ""} ${a.lastName || ""}`).localeCompare(String(b.name || `${b.firstName || ""} ${b.lastName || ""}`), "de", { sensitivity: "base" }))
       .map((speaker) => {
@@ -1822,7 +2056,7 @@ function speakerProfileSelect(speakers = [], selectedSpeakerId = "") {
   return `<div class="field"><label>Bestehendes Referentenprofil zuordnen</label><select name="existingSpeakerId" data-existing-speaker-select>${options}</select><p class="muted">Vorhandenes Profil auswählen, wenn dieselbe Person einen neuen Vortrag hält. Foto, Vita und Kontaktdaten werden übernommen.</p></div>`;
 }
 
-function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [], mediaAssets = [], mode, selectedTopicId, selectedSpeakerId) {
+function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [], mediaAssets = [], mode, selectedTopicId, selectedSpeakerId, speakerApprovals = []) {
   if (!mode) return "";
   const selectedTopic = mode === "new" ?{ id: "", title: "", subtitle: "", subline: "", shortDescription: "", longDescription: "", imageUrl: "" } : topics.find((topic) => topic.id === selectedTopicId);
   if (mode === "assign") return "";
@@ -1832,17 +2066,47 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
       <div class="topic-remove-list">${assignedTopics.length ?assignedTopics.map((topic) => `<div class="topic-remove-row"><div><strong>${escapeHtml(topic.title || "")}</strong><p>${escapeHtml(shortText(topic.shortDescription || topic.longDescription || ""))}</p></div><button class="button button--secondary button--small" data-unassign-event-topic="${topic.id}" data-event-id="${event.id}">Zuordnung entfernen</button></div>`).join("") : `<div class="alert">Dieses Event hat noch keine Vortragszuordnung.</div>`}</div>
     </aside>`;
   }
+  if (["approval", "referent"].includes(mode) && selectedTopic) {
+    const selectedSpeaker = speakers.find((speaker) => speaker.id === selectedSpeakerId) || {};
+    const selectedApproval = speakerApprovals
+      .filter((approval) => approval.eventId === event.id && approval.topicId === selectedTopic.id && approval.speakerId === selectedSpeakerId)
+      .sort((a, b) => String(b.completedAt || b.approvedAt || b.submittedAt || b.updatedAt || "").localeCompare(String(a.completedAt || a.approvedAt || a.submittedAt || a.updatedAt || "")))[0] || null;
+    const approvalState = String(selectedApproval?.status || "").toLowerCase();
+    const protocolOnly = mode === "approval" || approvalState === "approved" || (approvalState === "submitted" && selectedApproval?.speakerDecision === "approved");
+    if (protocolOnly) {
+      const approvalAction = approvalState === "submitted"
+        ? `<button class="button button--primary button--small" type="button" data-speaker-approval-action="apply" data-approval-id="${escapeHtml(selectedApproval.id || "")}">Änderungen freigeben und veröffentlichen</button>`
+        : "";
+      return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">Referentenfreigabe</p><h2>${escapeHtml(selectedSpeaker.name || "Freigabeprotokoll")}</h2><p class="muted">${escapeHtml(selectedTopic.title || "")}</p></div><div class="topic-panel-actions">${approvalAction}<a class="button button--secondary button--small" href="#/cms/event/${event.id}?tab=topics">Schließen</a></div></div>
+        ${selectedApproval ? `<section class="panel speaker-approval-editor-panel"><h3>Freigabeprotokoll</h3>${speakerApprovalReviewMarkup(selectedApproval)}</section>` : `<div class="alert">Für diesen Referenten liegt kein Freigabeprotokoll vor.</div>`}
+      </aside>`;
+    }
+  }
   if (mode === "referent" && selectedTopic) {
     const topicSpeakers = topicSpeakersForEvent(selectedTopic, event, speakers);
     const speakerEntityId = selectedSpeakerId || `speakers-${crypto.randomUUID()}`;
     const existingSelectedSpeaker = speakers.find((speaker) => speaker.id === selectedSpeakerId);
     const selectedSpeaker = existingSelectedSpeaker || { id: speakerEntityId, name: "", company: "", position: "", photoUrl: "" };
+    const isAssignedSpeaker = topicSpeakers.some((speaker) => speaker.id === selectedSpeakerId);
+    const isCoSpeakerEntry = topicSpeakers.length === 1 && !isAssignedSpeaker;
     const speakerParts = speakerNameParts(selectedSpeaker);
-    return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">Referent</p><h2>${existingSelectedSpeaker ?"Referent bearbeiten" : "Referent anlegen"}</h2></div><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${selectedTopic.id}">Vortrag bearbeiten</a></div>
+    const selectedApproval = speakerApprovals
+      .filter((approval) => approval.eventId === event.id && approval.topicId === selectedTopic.id && approval.speakerId === selectedSpeaker.id)
+      .sort((a, b) => String(b.submittedAt || b.openedAt || b.sentAt || b.updatedAt || "").localeCompare(String(a.submittedAt || a.openedAt || a.sentAt || a.updatedAt || "")))[0] || null;
+    const approvalState = String(selectedApproval?.status || "").toLowerCase();
+    const approvalEditorAction = approvalState === "submitted"
+      ? `<button class="button button--primary button--small" type="button" data-speaker-approval-action="apply" data-approval-id="${escapeHtml(selectedApproval.id || "")}">Änderungen freigeben und veröffentlichen</button>`
+      : approvalState === "applied"
+        ? `<button class="button button--primary button--small" type="button" data-speaker-approval-action="approve" data-approval-id="${escapeHtml(selectedApproval.id || "")}">Vorgang abschließen</button>`
+        : "";
+    const approvalEditor = selectedApproval
+      ? `<section class="panel speaker-approval-editor-panel"><div class="topic-panel-head"><div><p class="eyebrow">Referentenfreigabe</p><h3>Freigabestatus und Protokoll</h3></div>${approvalEditorAction}</div>${speakerApprovalReviewMarkup(selectedApproval)}</section>`
+      : "";
+    return `<aside class="topic-detail-panel"><div class="topic-panel-head"><div><p class="eyebrow">${isCoSpeakerEntry ? "Co-Referent" : "Referent"}</p><h2>${isCoSpeakerEntry ? "Co-Referent hinzufuegen" : existingSelectedSpeaker ? "Referent bearbeiten" : "Referent anlegen"}</h2></div><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${selectedTopic.id}">Vortrag bearbeiten</a></div>
       <form id="event-topic-speaker-form" data-event-id="${event.id}" data-topic-id="${selectedTopic.id}" data-speaker-id="${speakerEntityId}" class="form-grid is-save-aware">
         <section class="panel" style="background:var(--pdt-bg)">
-          <h3>Referent</h3>
-          ${speakerProfileSelect(speakers, existingSelectedSpeaker?.id || "")}
+          <h3>${isCoSpeakerEntry ? "2. Referent" : "Referent"}</h3>
+          ${speakerProfileSelect(speakers, existingSelectedSpeaker?.id || "", isCoSpeakerEntry ? topicSpeakers.map((speaker) => speaker.id) : [])}
           <div class="form-grid--two">
             <div class="field"><label>Vorname</label><input name="speakerFirstName" value="${escapeHtml(speakerParts.firstName || "")}" required></div>
             <div class="field"><label>Nachname</label><input name="speakerLastName" value="${escapeHtml(speakerParts.lastName || "")}" required></div>
@@ -1862,7 +2126,7 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
         <div class="actions"><button class="button button--secondary" type="button" onclick="location.hash='#/cms/event/${event.id}?tab=topics&mode=edit&topic=${selectedTopic.id}'">Abbrechen</button><button class="button button--primary">Speichern</button></div>
         <div id="event-topic-speaker-result"></div>
       </form>
-      ${eventTopicSpeakerActions(event, selectedTopic, topicSpeakers)}
+      ${approvalEditor}
     </aside>`;
   }
   if (!selectedTopic && mode !== "new") return "";
@@ -1909,7 +2173,7 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
         <div class="field"><label>Beschreibung</label><textarea name="text" required>${escapeHtml(selectedTopic.longDescription || selectedTopic.description || selectedTopic.shortDescription || "")}</textarea>${aiFieldActions([{ action: "generateTopicDescription", target: "text", label: "Beitragstext mit KI erzeugen", entityType: "topics", entityId: topicEntityId, fieldName: "longDescription" }])}</div>
         <div class="form-grid--two">
           <div class="field"><label>Unternehmenslogo</label>${imageDropzone({ inputName: "topicCompanyLogo", removeName: "removeTopicCompanyLogo", imageUrl: selectedTopic.companyLogoUrl || selectedTopic.logoUrl || "", label: "Unternehmenslogo", defaultSize: "600x300", simple: true })}</div>
-          <div class="field"><label>Vortragsbild</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: topicImageUrl(selectedTopic, mediaAssets), label: "Vortragsbild", defaultSize: "1200x675", simple: true, mediaHref: selectedTopic.id ?mediaLibraryHref({ collection: "topics", id: topicEntityId, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topicEntityId}` }) : "" })}</div>
+          <div class="field"><label>Vortragsbild</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: topicImageUrl(selectedTopic, mediaAssets), label: "Vortragsbild", defaultSize: "1200x675", simple: true, mediaHref: selectedTopic.id ?mediaLibraryHref({ collection: "topics", id: topicEntityId, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topicEntityId}` }) : "" })}${topicImagePositionEditor(selectedTopic, mediaAssets)}</div>
         </div>
         <div class="form-grid--two">
           <div class="field"><label>PowerPoint optional</label><select name="downloadId">${documentOptions}</select><p class="muted">PowerPoint/PDF aus der Dokumentenverwaltung zuordnen.</p></div>
@@ -1918,7 +2182,7 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
       </section>
       ${eventTopicSpeakerActions(event, selectedTopic, topicSpeakers)}
       <div class="actions"><a class="button button--secondary" href="#/cms/event/${event.id}?tab=topics">Abbrechen</a><button class="button button--primary">Speichern</button></div>
-      <div id="event-topic-editor-result"></div>
+      <div id="event-topic-editor-result" role="status" aria-live="polite"></div>
     </form>
   </aside>`;
 }
@@ -1945,15 +2209,74 @@ function topicAssignPanel(event, topics, mode) {
   </div>`;
 }
 
-function eventTopicsEditor(event, topics, speakers, allEvents, galleries = [], downloads = [], mediaAssets = [], query = new URLSearchParams(), sponsors = [], members = []) {
+function speakerApprovalReviewMarkup(approval = {}, { showEventLink = false } = {}) {
+  const submitted = approval.submitted || {};
+  const hasSubmission = Boolean(approval.submitted);
+  const originalSpeaker = approval.snapshot?.speaker || {};
+  const originalTopic = approval.snapshot?.topic || {};
+  const rows = [
+    ["Name", originalSpeaker.name, submitted.speakerName],
+    ["Firma", originalSpeaker.company, submitted.company],
+    ["Position", originalSpeaker.position, submitted.position],
+    ["E-Mail", originalSpeaker.email, submitted.email],
+    ["Telefon", originalSpeaker.phone, submitted.phone],
+    ["LinkedIn", originalSpeaker.linkedIn, submitted.linkedIn],
+    ["Kurzvita", originalSpeaker.shortBio, submitted.shortBio],
+    ["Ausführliche Vita", originalSpeaker.longBio, submitted.longBio],
+    ["Vortragstitel", originalTopic.title || approval.topicTitle, submitted.topicTitle],
+    ["Vortragsbeschreibung", originalTopic.description, submitted.topicDescription]
+  ];
+  const comparison = rows.map(([label, before, after]) => {
+    const beforeText = String(before || "").trim();
+    const afterText = String(after || "").trim();
+    const changed = beforeText !== afterText;
+    return `<div class="speaker-approval-diff${changed ?" speaker-approval-diff--changed" : ""}"><strong>${escapeHtml(label)}</strong><div><small>Bisher</small><p>${escapeHtml(beforeText || "-")}</p></div><div><small>Eingereicht</small><p>${escapeHtml(afterText || "-")}</p></div></div>`;
+  }).join("");
+  const state = approval.status || "submitted";
+  const speakerApproved = approval.speakerDecision === "approved";
+  const stateText = state === "approved" ?"Verbindlich freigegeben" : state === "applied" ?"Änderungen übernommen" : state === "submitted" && speakerApproved ? "Vom Referenten verbindlich freigegeben" : state === "submitted" ? "Änderungen eingereicht" : state === "opened" ? "Prüflink geöffnet" : state === "queued" ? "Prüfmail versendet" : "Prüfung vorbereitet";
+  const decisionNotice = hasSubmission
+    ? speakerApproved
+      ? `<div class="alert alert--success"><strong>Verbindliche Referentenfreigabe:</strong> Der Referent hat Profil und Vortrag in dieser Fassung bestätigt.</div>`
+      : `<div class="alert"><strong>Korrekturmeldung:</strong> Der Referent hat Änderungen zur Prüfung eingereicht.</div>`
+    : `<div class="alert"><strong>Prüfung läuft:</strong> Es liegt noch keine Rückmeldung des Referenten vor.</div>`;
+  const completionMailLabel = {
+    queued: "Abschlussmail vorbereitet",
+    sent: "Abschlussmail versendet",
+    failed: "Abschlussmail fehlgeschlagen"
+  }[approval.completionMailStatus] || "";
+  const speakerApprovalDetail = speakerApproved
+    ? `${submitted.speakerName || originalSpeaker.name || approval.speakerName || "Referent"} · IP: ${approval.speakerApprovedIpAddress || approval.submissionIpAddress || "nicht erfasst"}`
+    : submitted.speakerName || originalSpeaker.name || approval.speakerName || "";
+  const protocolRows = [
+    ["Prüfanfrage versendet", approval.sentAt, approval.sentByEmail || approval.speakerEmail],
+    ["Prüflink geöffnet", approval.openedAt, ""],
+    [speakerApproved ? "Vom Referenten freigegeben" : "Korrekturen eingereicht", approval.submittedAt, speakerApprovalDetail],
+    ["Änderungen übernommen und veröffentlicht", approval.completedAt || approval.approvedAt || approval.appliedAt, approval.appliedByEmail || approval.approvedByEmail],
+    [completionMailLabel, approval.completionMailSentAt || (approval.completionMailStatus ? approval.completedAt : ""), approval.completionMailStatus === "failed" ? approval.completionMailError || "Versand fehlgeschlagen" : approval.speakerEmail]
+  ].filter(([label, date]) => label && date);
+  const protocol = `<section class="speaker-approval-protocol"><h4>Freigabeprotokoll</h4>${protocolRows.length ? `<div class="speaker-approval-protocol__list"><div class="speaker-approval-protocol__head"><span>Schritt</span><span>Zeitpunkt</span><span>Bearbeiter / Empfänger</span></div>${protocolRows.map(([label, date, detail]) => `<div class="speaker-approval-protocol__row"><strong>${escapeHtml(label)}</strong><time>${escapeHtml(formatDateTime(date))}</time><span>${escapeHtml(detail || "-")}</span></div>`).join("")}</div>` : `<p class="muted">Noch keine protokollierten Schritte.</p>`}</section>`;
+  const actions = hasCmsAccess(true)
+    ? `<button class="button button--danger button--small" type="button" data-speaker-approval-action="reset" data-approval-id="${escapeHtml(approval.id || "")}">Freigabeprozess zurücksetzen</button>`
+    : "";
+  const speakerLabel = originalSpeaker.name || approval.speakerName || "Referent";
+  const topicLabel = originalTopic.title || approval.topicTitle || "Vortrag";
+  return `<details class="speaker-list-approval" data-speaker-approval-protocol-id="${escapeHtml(approval.id || "")}" ${state === "submitted" ?"open" : ""}><summary>${escapeHtml(stateText)} · ${escapeHtml(speakerLabel)} · ${escapeHtml(topicLabel)}</summary>${decisionNotice}${protocol}${hasSubmission ? `<div class="speaker-approval-diff-list">${comparison}</div>` : ""}${submitted.note ?`<div class="alert"><strong>Hinweis des Referenten:</strong> ${escapeHtml(submitted.note)}</div>` : ""}<div class="actions">${actions}${showEventLink ?`<a class="button button--secondary button--small" href="#/cms/event/${encodeURIComponent(approval.eventId || "")}?tab=topics">Im Event prüfen</a>` : ""}</div><div data-speaker-approval-result></div></details>`;
+}
+
+function eventTopicsEditor(event, topics, speakers, allEvents, galleries = [], downloads = [], mediaAssets = [], query = new URLSearchParams(), sponsors = [], members = [], speakerApprovals = []) {
   const assignedTopicIds = new Set(event.topicIds || []);
   const assignedTopics = (event.topicIds || []).map((topicId) => topics.find((topic) => topic.id === topicId)).filter(Boolean);
-  const topicLimitReached = assignedTopics.length >= 6;
+  const talkTopics = assignedTopics.filter((topic) => !isNeutralEventProgramItem(topic));
+  const topicLimitReached = talkTopics.length >= 6;
   const requestedMode = query.get("mode") || "";
   const mode = topicLimitReached && ["new", "assign"].includes(requestedMode) ?"" : requestedMode;
+  const savedNotice = query.get("saved") === "talk"
+    ? `<div class="alert alert--success event-topic-save-notice" role="status">Referent und Vortrag wurden erfolgreich gespeichert.</div>`
+    : "";
   const selectedTopicId = query.get("topic") || "";
   const selectedSpeakerId = query.get("speaker") || "";
-  const detailPanel = mode && mode !== "assign" ?topicEditorPanel(event, topics, speakers, galleries, downloads, mediaAssets, mode, selectedTopicId, selectedSpeakerId) : "";
+  const detailPanel = mode && mode !== "assign" ?topicEditorPanel(event, topics, speakers, galleries, downloads, mediaAssets, mode, selectedTopicId, selectedSpeakerId, speakerApprovals) : "";
   const assignPanel = topicAssignPanel(event, topics, mode);
   const newHref = topicLimitReached && mode !== "new" ?`#/cms/event/${event.id}?tab=topics` : mode === "new" ?`#/cms/event/${event.id}?tab=topics` : `#/cms/event/${event.id}?tab=topics&mode=new`;
   const newClass = mode === "new" ?"button button--primary button--small" : `button button--secondary button--small${topicLimitReached ?" disabled" : ""}`;
@@ -1961,6 +2284,18 @@ function eventTopicsEditor(event, topics, speakers, allEvents, galleries = [], d
   const assignClass = mode === "assign" ?"button button--primary button--small" : `button button--secondary button--small${topicLimitReached ?" disabled" : ""}`;
   const removeHref = mode === "remove" ?`#/cms/event/${event.id}?tab=topics` : `#/cms/event/${event.id}?tab=topics&mode=remove`;
   const removeClass = mode === "remove" ?"button button--primary button--small" : "button button--secondary button--small";
+  const approvalFor = (topicId = "", speakerId = "") => speakerApprovals.find((item) => item.eventId === event.id && item.topicId === topicId && item.speakerId === speakerId) || null;
+  const eventHasEnded = isPastCmsEvent(event);
+  const approvalControl = (approval, topicId = "", speakerId = "") => {
+    const sendButton = (label) => `<button class="button button--secondary button--tiny speaker-approval-send" type="button" data-send-speaker-approval data-event-id="${escapeHtml(event.id)}" data-topic-id="${escapeHtml(topicId)}" data-speaker-id="${escapeHtml(speakerId)}">${escapeHtml(label)}</button>`;
+    if (!approval) return sendButton("Prüfung an Referenten senden");
+    const state = String(approval.status || "").toLowerCase();
+    const label = state === "approved" ? "Verbindlich freigegeben" : state === "applied" ? "Bearbeitung läuft" : state === "submitted" && approval.speakerDecision === "approved" ? "Verbindlich freigegeben" : state === "submitted" ? "Änderungen eingereicht" : state === "opened" ? "Prüflink geöffnet" : state === "queued" ? "Prüfmail versendet" : "Freigabe in Bearbeitung";
+    const resend = ["queued", "opened"].includes(state) ? sendButton("Prüfmail erneut senden") : "";
+    const approvalIsProtocolOnly = state === "approved" || (state === "submitted" && approval.speakerDecision === "approved");
+    const editorHref = `#/cms/event/${encodeURIComponent(event.id)}?tab=topics&mode=${approvalIsProtocolOnly ? "approval" : "referent"}&topic=${encodeURIComponent(topicId)}&speaker=${encodeURIComponent(speakerId)}`;
+    return `<a class="status speaker-approval-status-link${(state === "submitted" && approval.speakerDecision !== "approved") || state === "applied" ? " status--draft" : ""}" href="${editorHref}" ${approvalIsProtocolOnly ? "" : "data-focus-speaker-editor"} title="${approvalIsProtocolOnly ? "Freigabeprotokoll öffnen" : "Im Referenten-Editor öffnen"}">${escapeHtml(label)}</a>${resend}`;
+  };
   return `<div class="topic-workspace">
     <section class="topic-list-panel">
       <div class="topic-actionbar">
@@ -1968,11 +2303,12 @@ function eventTopicsEditor(event, topics, speakers, allEvents, galleries = [], d
         <a class="${assignClass}" href="${assignHref}">+ Aus Ordner</a>
         <a class="${removeClass}" href="${removeHref}">Loeschen</a>
       </div>
-      <p class="muted">Pro Medienfruehstueck sind maximal 6 Vortraege vorgesehen. Jeder Vortrag besteht aus Thema, Beschreibung und Referent.</p>
+      <p class="muted">Pro Medienfrühstück sind maximal 6 Vorträge vorgesehen. Jeder Vortrag besteht aus Thema, Beschreibung und Referent.</p>
+      ${savedNotice}
       ${topicLimitReached ?`<div class="alert">Maximal 6 Vortraege sind erreicht. Bitte zuerst einen Vortrag entfernen, bevor ein neuer hinzugefuegt wird.</div>` : ""}
       ${assignPanel}
       ${detailPanel}
-      <div class="assigned-topic-list-head">
+      ${["referent", "approval"].includes(mode) ? "" : `<div class="assigned-topic-list-head">
         <div>
           <h2>Referenten und Vortraege</h2>
           <p class="muted">Reihenfolge per Griff verschieben. Titel oder Stift oeffnen die Bearbeitung.</p>
@@ -1983,6 +2319,10 @@ function eventTopicsEditor(event, topics, speakers, allEvents, galleries = [], d
         const topicSpeakers = topicSpeakersForEvent(topic, event, speakers);
         const summary = topic.subline || topic.subtitle || topic.shortDescription || topic.description || topic.longDescription || "";
         const companyInfo = companyLogoForSpeakers(topic, topicSpeakers, sponsors, members, mediaAssets);
+        const topicIsActive = ["published", "active", "approved"].includes(String(topic.status || "").toLowerCase());
+        const topicVisibilityTitle = topicIsActive
+          ? eventHasEnded ? "Im Portal sichtbar - zum Verbergen klicken" : "Für Veröffentlichung nach Veranstaltungsende freigegeben - zum Sperren klicken"
+          : eventHasEnded ? "Im Portal verborgen - zum Veröffentlichen klicken" : "Nicht für die spätere Veröffentlichung freigegeben - zum Aktivieren klicken";
         return `<div class="assigned-topic-card ${selectedTopicId === topic.id ?"active" : ""}" draggable="true" data-topic-drag-id="${topic.id}" data-event-id="${event.id}">
           <button type="button" class="drag-handle" aria-label="Vortrag verschieben">::</button>
           <div class="assigned-topic-card__index">${index + 1}</div>
@@ -1991,17 +2331,56 @@ function eventTopicsEditor(event, topics, speakers, allEvents, galleries = [], d
           <div class="assigned-topic-card__body">
             <a class="assigned-topic-card__title" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}" title="${escapeHtml(topic.title || "")}">${escapeHtml(topic.title || "")}</a>
             ${summary ?`<p>${escapeHtml(shortText(summary, 180))}</p>` : `<p class="muted">Noch keine Kurzbeschreibung hinterlegt.</p>`}
-            <div class="topic-speaker-badges">${topicSpeakers.length ?topicSpeakers.map((speaker) => `<a class="speaker-badge" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}&speaker=${speaker.id}" title="${escapeHtml([speaker.name, speaker.company, speaker.position].filter(Boolean).join(" - "))}">${speakerAvatar(speaker, "speaker-badge__avatar")}<span><strong>${escapeHtml(speaker.name || "")}</strong><small>${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" - ") || "Referent")}</small></span></a>`).join("") : `<a class="speaker-badge speaker-badge--empty" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}">Referent hinzufuegen</a>`}</div>
+            <div class="topic-speaker-badges">${topicSpeakers.length ?topicSpeakers.map((speaker) => { const approval = approvalFor(topic.id, speaker.id); return `<span class="speaker-badge-stack"><a class="speaker-badge" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}&speaker=${speaker.id}" title="${escapeHtml([speaker.name, speaker.company, speaker.position].filter(Boolean).join(" - "))}">${speakerAvatar(speaker, "speaker-badge__avatar")}<span><strong>${escapeHtml(speaker.name || "")}</strong><small>${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" - ") || "Referent")}</small></span></a>${approvalControl(approval, topic.id, speaker.id)}</span>`; }).join("") : `<a class="speaker-badge speaker-badge--empty" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}">Referent hinzufuegen</a>`}</div>
           </div>
           <div class="assigned-topic-card__actions table-actions table-actions--icons">
-            <a class="icon-button icon-button--visible" href="#/topic/${topic.id}" title="Anzeigen" aria-label="Anzeigen">${iconImage("eye")}</a>
+            <button class="icon-button ${topicIsActive ? "icon-button--visible" : "icon-button--hidden"}" type="button" data-record-status="topics" data-record-id="${escapeHtml(topic.id)}" data-status="${topicIsActive ? "inactive" : "active"}" title="${escapeHtml(topicVisibilityTitle)}" aria-label="${escapeHtml(topicVisibilityTitle)}">${iconImage(topicIsActive ? "eye" : "eyeOff")}</button>
             <a class="icon-button icon-button--edit" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}" title="Vortrag bearbeiten" aria-label="Vortrag bearbeiten">${iconImage("edit")}</a>
             <button class="icon-button icon-button--danger" type="button" data-unassign-event-topic="${topic.id}" data-event-id="${event.id}" title="Zuordnung entfernen" aria-label="Zuordnung entfernen">${iconImage("trash")}</button>
           </div>
         </div>`;
-      }).join("") : `<div class="empty">Noch keine Vortraege zugeordnet. Starte mit Neu oder Zuordnen.</div>`}</div>
+      }).join("") : `<div class="empty">Noch keine Vortraege zugeordnet. Starte mit Neu oder Zuordnen.</div>`}</div>`}
     </section>
   </div>`;
+}
+
+function registrationPartySize(registration = {}) {
+  return Math.max(1, Number(registration.participantCount) || (registration.hasCompanion || registration.companion ? 2 : 1));
+}
+
+function registrationCompanionName(registration = {}) {
+  const companion = registration.companion || {};
+  return [companion.firstName, companion.lastName].filter(Boolean).join(" ").trim();
+}
+
+function eventCheckinSpeakers(event = {}, speakers = []) {
+  const eventSpeakerIds = new Set(event.speakerIds || []);
+  const topicIds = new Set(event.topicIds || []);
+  return speakers.filter((speaker) => eventSpeakerIds.has(speaker.id)
+    || (speaker.eventIds || []).includes(event.id)
+    || (speaker.topicIds || []).some((topicId) => topicIds.has(topicId))
+    || topicIds.has(speaker.topicId));
+}
+
+function groupCheckinForm(event = {}, groupType = "speakers", people = [], { compact = false } = {}) {
+  const isSpeakerGroup = groupType === "speakers";
+  const title = isSpeakerGroup ? "Referenten einloggen" : "Vorstand einloggen";
+  const eligible = people.filter((person) => !["archived", "deleted", "inactive"].includes(String(person.status || "").toLowerCase()));
+  const rows = eligible.map((person) => {
+    const name = person.name || [person.firstName, person.lastName].filter(Boolean).join(" ") || person.id;
+    const email = person.email || person.mail || person.contactEmail || "";
+    const meta = [person.position || person.role, person.company || person.organization, email || "E-Mail fehlt"].filter(Boolean).join(" · ");
+    return `<label class="selection-item"><input type="checkbox" name="personIds" value="${escapeHtml(person.id)}" ${email ? "checked" : "disabled"}><span><strong>${escapeHtml(name)}</strong><small>${escapeHtml(meta)}</small></span></label>`;
+  }).join("");
+  return `<details class="panel cms-disclosure-panel${compact ? " mobile-live-collapsible" : ""}" data-group-checkin-panel data-group-type="${groupType}"><summary><strong>${title}</strong><span>Personen auswählen</span></summary>
+    <form data-event-group-checkin data-event-id="${escapeHtml(event.id || "")}" data-group-type="${groupType}" class="form-grid form-grid--compact">
+      <p class="muted">Alle Personen sind vorausgewählt. Nicht anwesende Personen vor dem Einloggen abwählen. Die Welcome-Mail kann vor dem Einloggen ausgeschaltet werden.</p>
+      <div class="selection-grid">${rows || `<div class="alert">Keine Personen mit dieser Veranstaltung verknüpft.</div>`}</div>
+      <label class="checkbox"><input type="checkbox" name="sendWelcomeMail" checked> Welcome-Mail an die eingeloggten Personen senden</label>
+      <div class="actions"><button class="button button--primary button--small" type="submit" ${rows ? "" : "disabled"}>Ausgewählte ${isSpeakerGroup ? "Referenten" : "Vorstandsmitglieder"} einloggen</button></div>
+      <div data-event-group-checkin-result></div>
+    </form>
+  </details>`;
 }
 
 function eventTimeToMinutes(value = "") {
@@ -2042,7 +2421,12 @@ function eventTopicSpeakerNames(event = {}, topic = {}, speakers = []) {
 function eventTopicSpeakers(event = {}, topic = {}, speakers = []) {
   const topicSpeakerIds = new Set([
     ...(Array.isArray(topic.speakerIds) ? topic.speakerIds : []),
-    ...(Array.isArray(topic.speakers) ? topic.speakers : [])
+    ...(Array.isArray(topic.speakers) ? topic.speakers : []),
+    ...(Array.isArray(topic.moderatorIds) ? topic.moderatorIds : []),
+    ...(Array.isArray(topic.coModeratorIds) ? topic.coModeratorIds : []),
+    topic.speakerId,
+    topic.moderatorId,
+    topic.coModeratorId
   ]);
   return speakers
     .filter((speaker) => topicSpeakerIds.has(speaker.id)
@@ -2066,15 +2450,109 @@ function eventScheduleTopicLabel(event = {}, topic = {}, speakers = []) {
   return `${topic.title || "Programmpunkt"}${speakerNames.length ?` (${speakerNames.join(", ")})` : ""}`;
 }
 
-function eventInvitationTalkHints(event = {}, topics = [], speakers = []) {
-  const assignedTopics = eventAssignedTopics(event, topics);
-  return assignedTopics.map((topic) => {
-    const names = eventTopicSpeakers(event, topic, speakers).map(invitationSpeakerDisplayName).filter(Boolean);
-    const title = String(topic.title || topic.headline || "").trim();
-    if (!title || !names.length) return "";
-    const speakerText = names.length === 1 ? names[0] : names.slice(0, -1).join(", ") + " und " + names.slice(-1);
-    return `Unter anderem erwartet Sie ein Vortrag von ${speakerText} zum Thema "${title}".`;
-  }).filter(Boolean).slice(0, 6);
+function eventInvitationProgramContext(event = {}, topics = [], speakers = []) {
+  const allTopics = eventAssignedTopics(event, topics);
+  const assignedTopics = allTopics.filter(isVisibleEventTalk);
+  const hiddenSpeakerIds = new Set(allTopics.filter((topic) => !isVisibleEventTalk(topic))
+    .flatMap((topic) => eventTopicSpeakers(event, topic, speakers).map((speaker) => speaker.id)));
+  const visibleSpeakerIds = new Set(assignedTopics
+    .flatMap((topic) => eventTopicSpeakers(event, topic, speakers).map((speaker) => speaker.id)));
+  const assignedSpeakers = new Map();
+  const speakerData = (speaker = {}, role = "Referent") => ({
+    name: invitationSpeakerDisplayName(speaker),
+    company: String(speaker.company || speaker.organization || speaker.employer || "").trim(),
+    role
+  });
+  (event.speakerIds || []).forEach((speakerId) => {
+    const speaker = speakers.find((item) => item.id === speakerId);
+    if (speaker && (!hiddenSpeakerIds.has(speaker.id) || visibleSpeakerIds.has(speaker.id))) assignedSpeakers.set(speaker.id, speaker);
+  });
+  const talks = assignedTopics.map((topic) => {
+    const talkSpeakers = eventTopicSpeakers(event, topic, speakers);
+    talkSpeakers.forEach((speaker) => assignedSpeakers.set(speaker.id || invitationSpeakerDisplayName(speaker), speaker));
+    return {
+      title: String(topic.title || topic.headline || "").trim(),
+      speakers: talkSpeakers.map((speaker, index) => speakerData(speaker, eventTopicSpeakerRole(topic, speaker, index))).filter((speaker) => speaker.name)
+    };
+  }).filter((talk) => talk.title || talk.speakers.length);
+  const speakerList = Array.from(assignedSpeakers.values()).map(speakerData).filter((speaker) => speaker.name);
+  const eventStatus = isPastCmsEvent(event) ? "past" : "upcoming";
+  return {
+    eventStatus,
+    event: {
+      id: String(event.id || "").trim(),
+      title: String(event.title || "").trim(),
+      subtitle: String(event.subtitle || "").trim(),
+      eventType: String(event.eventType || "").trim(),
+      date: eventDateValue(event),
+      startTime: String(event.startTime || "").trim(),
+      endTime: String(event.endTime || "").trim(),
+      locationName: String(event.locationName || "").trim(),
+      address: String(event.address || "").trim(),
+      postalCode: String(event.postalCode || event.zipCode || "").trim(),
+      city: String(event.city || "").trim(),
+      accessType: String(event.accessType || "").trim(),
+      isVirtualEvent: Boolean(event.isVirtualEvent),
+      organizer: String(event.organizer || event.organizerName || "PROdigitalTV").trim(),
+      primaryHostName: String(event.primaryHostName || event.primaryHostLabel || "PROdigitalTV").trim(),
+      eventStatus
+    },
+    talks,
+    speakers: speakerList,
+    companies: Array.from(new Set(speakerList.map((speaker) => speaker.company).filter(Boolean)))
+  };
+}
+
+function eventInvitationTalkHints(event = {}, topics = [], speakers = [], currentText = "") {
+  const existingText = String(currentText || "").toLocaleLowerCase("de");
+  const talks = eventInvitationProgramContext(event, topics, speakers).talks.filter((talk) => {
+    const title = String(talk.title || "").trim().toLocaleLowerCase("de");
+    return !title || !existingText.includes(title);
+  });
+  if (!talks.length) return [];
+  const sentences = talks.map((talk, index) => {
+    const labels = talk.speakers.map((speaker) => speaker.company ? `${speaker.name} von ${speaker.company}` : speaker.name).filter(Boolean);
+    if (!labels.length) return `Zum Programm gehört der Vortrag „${talk.title}“.`;
+    const subject = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(", ")} und ${labels.at(-1)}`;
+    const plural = labels.length > 1;
+    const variants = [
+      `${subject} ${plural ? "stellen" : "stellt"} den Vortrag „${talk.title}“ vor.`,
+      `${subject} ${plural ? "sprechen" : "spricht"} über „${talk.title}“.`,
+      `${subject} ${plural ? "setzen" : "setzt"} mit „${talk.title}“ einen weiteren fachlichen Schwerpunkt.`,
+      `${subject} ${plural ? "präsentieren" : "präsentiert"} „${talk.title}“.`
+    ];
+    return variants[index % variants.length];
+  });
+  return [`Das Programm verbindet mehrere Perspektiven aus der digitalen Medienwirtschaft: ${sentences.join(" ")}`];
+}
+
+function eventTopicSpeakerRole(topic = {}, speaker = {}, index = 0) {
+  const explicitRoles = topic.speakerRoles || topic.speakerRoleById || {};
+  const explicitRole = !Array.isArray(explicitRoles) ? String(explicitRoles[speaker.id] || "").trim() : "";
+  if (explicitRole) return explicitRole;
+  const moderatorIds = new Set([
+    ...(Array.isArray(topic.moderatorIds) ? topic.moderatorIds : []),
+    ...(Array.isArray(topic.coModeratorIds) ? topic.coModeratorIds : []),
+    topic.moderatorId,
+    topic.coModeratorId
+  ].filter(Boolean));
+  if (moderatorIds.has(speaker.id)) return "Co-Moderator";
+  if (speaker.id === topic.speakerId || index === 0) return "Referent";
+  return "Co-Referent / Co-Moderator";
+}
+
+function eventEditablePublicDescription(event = {}, topics = [], speakers = []) {
+  const description = removeHiddenTalkMentions(event.description || "", hiddenTalkTitles(event, topics)).trim();
+  if (event.descriptionMode === "complete" || isPastCmsEvent(event)) return description;
+  const programText = eventInvitationTalkHints(event, topics, speakers, description).join("\n\n");
+  const city = String(event.city || "").trim();
+  const welcome = city
+    ? `Wir freuen uns darauf, Sie in ${city} persönlich zu begrüßen.`
+    : "Wir freuen uns darauf, Sie persönlich begrüßen zu dürfen.";
+  const closingText = cmsEventRegistrationIsOpen(event)
+    ? `${welcome} Bitte melden Sie sich frühzeitig an, damit wir Ihre Teilnahme verbindlich einplanen können.`
+    : welcome;
+  return [description, programText, closingText].filter(Boolean).join("\n\n");
 }
 
 function eventInvitationTalkHintPanel(event = {}, topics = [], speakers = []) {
@@ -2082,12 +2560,20 @@ function eventInvitationTalkHintPanel(event = {}, topics = [], speakers = []) {
   if (!hints.length) return "";
   return `<section class="panel invitation-talk-hints" style="background:var(--pdt-bg)"><div class="field-label-row"><div><p class="eyebrow">Vorträge</p><h3>Hinweise für die Einladung</h3></div><span class="muted">lokal aus Themen/Referenten</span></div><div class="invitation-talk-hints__list">${hints.map((hint) => `<article><p>${escapeHtml(hint)}</p><div class="actions"><button type="button" class="button button--secondary button--small" data-insert-invitation-talk="invitationText" data-talk-hint="${escapeHtml(hint)}">In Einladung</button><button type="button" class="button button--secondary button--small" data-insert-invitation-talk="invitationUpdateText" data-talk-hint="${escapeHtml(hint)}">In Update</button></div></article>`).join("")}</div></section>`;
 }
+function eventScheduleTopicIsActive(topic = {}) {
+  return isVisibleEventTalk(topic);
+}
+
 function eventScheduleTopicData(event = {}, topic = {}, speakers = []) {
-  const speakerNames = eventTopicSpeakerNames(event, topic, speakers);
+  const topicSpeakers = eventTopicSpeakers(event, topic, speakers);
+  const speakerNames = topicSpeakers.map((speaker) => speaker.name).filter(Boolean);
   return {
     type: "Vortrag",
     person: speakerNames.join(", ") || "Referent wird ergaenzt",
-    title: topic.title || "Vortrag wird ergaenzt"
+    title: topic.title || "Vortrag wird ergaenzt",
+    topicId: topic.id,
+    speakerId: topicSpeakers[0]?.id || "",
+    speakerIds: topicSpeakers.map((speaker) => speaker.id)
   };
 }
 
@@ -2095,7 +2581,7 @@ function defaultEventScheduleItems(event = {}, topics = [], speakers = []) {
   const start = eventTimeToMinutes(event.startTime) ?? 10 * 60;
   const plannedEnd = eventTimeToMinutes(event.endTime) ?? Math.min(start + 315, 23 * 60 + 59);
   const talkDuration = eventTalkDurationMinutes(event);
-  const assignedTopics = eventAssignedTopics(event, topics);
+  const assignedTopics = eventAssignedTopics(event, topics).filter(eventScheduleTopicIsActive);
   const rows = [
     { type: "Einlass", time: eventMinutesToTime(Math.max(0, start - 30)), duration: 30, person: "Einlass", title: "Empfang, Registrierung und Ankommen" },
     { type: "Begruessung", time: eventMinutesToTime(start), duration: 15, person: "Moderation", title: "Begruessung durch PROdigitalTV und organisatorische Hinweise" }
@@ -2108,7 +2594,8 @@ function defaultEventScheduleItems(event = {}, topics = [], speakers = []) {
       time: eventMinutesToTime(cursor),
       duration: talkDuration,
       person: topicData?.person || "Referent wird ergaenzt",
-      title: topicData?.title || `Vortrag ${index + 1} wird ergaenzt`
+      title: topicData?.title || `Vortrag ${index + 1} wird ergaenzt`,
+      ...(topicData?.topicId ? { topicId: topicData.topicId, speakerId: topicData.speakerId, speakerIds: topicData.speakerIds } : {})
     });
     cursor += talkDuration;
     if (index === 1) {
@@ -2194,15 +2681,22 @@ function eventScheduleCheckList(items = []) {
   return `<aside class="event-schedule-check" data-event-schedule-check-list><div class="event-schedule-check__head"><div><p class="eyebrow">Check</p><h4>Listenansicht</h4></div><span class="status ${warningCount ?"status--draft" : ""}">${warningCount ?`${warningCount} Hinweise` : "OK"}</span></div><div class="event-schedule-check__stats"><span>${items.length} Punkte</span><span>${totalDuration} Min.</span></div><ol>${rows || `<li class="event-schedule-check__item has-warning"><span class="event-schedule-check__badge" aria-hidden="true">!</span><div><strong>Ablauf fehlt</strong><p>Noch keine Programmpunkte vorhanden.</p><small>Bitte Ablauf erzeugen oder Zeilen anlegen.</small></div></li>`}</ol></aside>`;
 }
 function eventScheduleItems(event = {}, topics = [], speakers = []) {
-  const savedItems = Array.isArray(event.scheduleItems) ?event.scheduleItems : [];
-  if (savedItems.length && !isLegacyEventScheduleItems(savedItems)) return savedItems;
+  const savedItems = Array.isArray(event.scheduleItems) ? event.scheduleItems : [];
+  const inactiveTopics = topics.filter((topic) => !eventScheduleTopicIsActive(topic));
+  if (savedItems.length && !isLegacyEventScheduleItems(savedItems)) {
+    return savedItems.filter((item) => !inactiveTopics.some((topic) =>
+      item.topicId === topic.id
+      || (!item.topicId && /^Vortrag(?:\s+\d+)?$/i.test(String(item.type || "").trim())
+        && String(item.title || "").trim().toLocaleLowerCase("de") === String(topic.title || "").trim().toLocaleLowerCase("de"))
+    ));
+  }
   return defaultEventScheduleItems(event, topics, speakers);
 }
 
 function eventScheduleEditor(event = {}, topics = [], speakers = []) {
   const scheduleItems = eventScheduleItems(event, topics, speakers);
   const scheduleText = scheduleItemsToText(scheduleItems);
-  const assignedTopicData = eventAssignedTopics(event, topics).map((topic) => eventScheduleTopicData(event, topic, speakers));
+  const assignedTopicData = eventAssignedTopics(event, topics).filter(eventScheduleTopicIsActive).map((topic) => eventScheduleTopicData(event, topic, speakers));
   const rowMarkup = scheduleItems.map((item) => eventScheduleEditorRow(item)).join("");
   return `<section class="panel event-schedule-editor" style="background:var(--pdt-bg)" data-event-schedule-editor data-event-schedule-topics="${escapeHtml(JSON.stringify(assignedTopicData))}">
     <div class="field-label-row">
@@ -2259,12 +2753,15 @@ function eventScheduleEditor(event = {}, topics = [], speakers = []) {
 
 function eventScheduleEditorRow(item = {}) {
   return `<article class="event-schedule-editor__row" draggable="true" data-event-schedule-row>
-    <button type="button" class="event-schedule-editor__drag" aria-label="Programmpunkt verschieben">::</button>
+    <button type="button" class="event-schedule-editor__drag" draggable="true" aria-label="Programmpunkt verschieben">::</button>
     <div class="field"><label>Uhrzeit</label><input type="time" data-schedule-time value="${escapeHtml(item.time || "")}"></div>
     <div class="field"><label>Laenge</label><input type="number" data-schedule-duration min="0" max="240" step="5" value="${escapeHtml(item.duration ?? "")}" placeholder="Min."></div>
     <div class="field"><label>Referent / Moderator</label><input data-schedule-person value="${escapeHtml(item.person || item.type || "")}" placeholder="Referent, Moderator, Pause"></div>
     <div class="field event-schedule-editor__title"><label>Titel des Vortrages / Programmpunkt</label><input data-schedule-title value="${escapeHtml(item.title || "")}" placeholder="Titel oder Beschreibung"></div>
     <input type="hidden" data-schedule-type value="${escapeHtml(item.type || "Programmpunkt")}">
+    <input type="hidden" data-schedule-topic-id value="${escapeHtml(item.topicId || "")}">
+    <input type="hidden" data-schedule-speaker-id value="${escapeHtml(item.speakerId || "")}">
+    <input type="hidden" data-schedule-speaker-ids value="${escapeHtml(JSON.stringify(item.speakerIds || []))}">
     <button type="button" class="icon-button icon-button--danger event-schedule-editor__remove" data-remove-event-schedule-row aria-label="Programmpunkt entfernen">${iconImage("trash")}</button>
   </article>`;
 }
@@ -2294,8 +2791,12 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     id: `event-${crypto.randomUUID()}`, title: "", subtitle: "", date: "2026-08-01", startTime: "10:00", endTime: "13:00", locationName: "", address: "", postalCode: "", city: "", description: "", eventType: "Panel", accessType: "public", status: "draft", lifecyclePhase: "planning", registrationEnabled: false, maxParticipants: 50, expiresAt: "", phone: "", topicIds: [], speakerIds: [], sponsorIds: []
   } : await getOne("events", id);
   if (!event) return eventsAdminPage();
-  const [topics, speakers, sponsors, registrations, media, settings, allEvents, galleries, allEditorial, mediaAssets, audioProviders, videoLibrary, downloads, members] = await Promise.all([list("topics"), list("speakers"), list("sponsors"), list("registrations"), list("eventMedia"), list("settings"), list("events"), list("galleries"), list("editorialContent"), list("media_assets").catch(() => []), getOne("settings", "audioProviders").catch(() => null), list("media_videos").catch(() => []), list("downloads").catch(() => []), list("members").catch(() => [])]);
-  const defaultEventTypes = ["Medienfruehstueck", "Jahreshauptversammlung", "Summit", "Roundtable", "Panel", "Webinar", "Konferenz", "Workshop"];
+  if (tab === "survey") {
+    const activeSection = isPastCmsEvent(event) ? "cms/editorial/retrospectives" : "cms/events";
+    return protect(cmsShell(activeSection, `${cmsTitle("Event bearbeiten", escapeHtml(event.title || "Neues Event"), `<a class="button button--secondary button--small" href="#/event/${event.id}?preview=1">Vorschau</a>`)}<section class="panel">${eventTabs(event.id, tab)}${eventSurveyEditorContent(event)}</section>`));
+  }
+  const [topics, speakers, sponsors, registrations, media, settings, allEvents, galleries, allEditorial, mediaAssets, audioProviders, videoLibrary, downloads, members, speakerApprovals, eventFeedbackRecords, boardMembers] = await Promise.all([list("topics"), list("speakers"), list("sponsors"), list("registrations"), list("eventMedia"), list("settings"), list("events"), list("galleries"), list("editorialContent"), list("media_assets").catch(() => []), getOne("settings", "audioProviders").catch(() => null), list("media_videos").catch(() => []), list("downloads").catch(() => []), list("members").catch(() => []), list("speakerApprovals").catch(() => []), list("event_feedback").catch(() => []), list("boardMembers").catch(() => [])]);
+  const defaultEventTypes = ["Medienfrühstück", "Jahreshauptversammlung", "Summit", "Roundtable", "Panel", "Webinar", "Konferenz", "Workshop"];
   const eventTypes = Array.from(new Set([...settingValue(settings, "eventTypes", defaultEventTypes), ...defaultEventTypes]));
   const availableGalleries = galleries
     .filter((gallery) => gallery.status !== "archived")
@@ -2347,7 +2848,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   const galleryPicker = customSelect({ name: "galleryId", label: "Bildergalerie", value: selectedGalleryId, options: galleryPickerOptions, note: "Bilder werden im Bereich Bildergalerien freigegeben und dieser Galerie zugeordnet." });
   const eventGalleryCreateButton = `<button class="button button--secondary button--small" type="button" data-create-event-gallery>Event-Galerie anlegen</button>`;
   const galleryManageButton = `<a class="button button--secondary button--small" href="#/cms/galleries">Galerien verwalten</a>`;
-  if (!["base", "pre", "schedule", "topics", "partners", "registration", "post", "media", "ai"].includes(tab)) tab = "base";
+  if (!["base", "pre", "schedule", "topics", "partners", "registration", "survey", "feedback", "post", "media", "ai"].includes(tab)) tab = "base";
   const retrospectiveArticle = allEditorial.find((item) => {
     const category = String(item.category || "").toLowerCase();
     return retrospectiveMatchesEvent(item, event)
@@ -2376,7 +2877,19 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
   let content;
   if (tab === "base") {
     const expiresAtInput = timestampInputDateTime(event.expiresAt);
-    content = `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid is-save-aware event-base-form"><div class="field"><label>Titel</label><input name="title" value="${escapeHtml(event.title)}" required></div><div class="field"><label>Untertitel</label><input name="subtitle" value="${escapeHtml(event.subtitle)}"></div><div class="field"><div class="field-label-row"><label>Beschreibung</label>${aiButton("improveText", "description", "Mit ChatGPT bearbeiten", { entityId: event.id, fieldName: "description" })}</div><textarea name="description">${escapeHtml(event.description)}</textarea></div><div class="form-grid--four" data-event-location-fields ${event.isVirtualEvent && allowsZoomMeeting ?"hidden" : ""}><div class="field"><label>Location</label><input name="locationName" value="${escapeHtml(event.locationName || "")}"></div><div class="field"><label>Straße / Nr.</label><input name="address" value="${escapeHtml(event.address || "")}"></div><div class="field"><label>PLZ</label><input name="postalCode" value="${escapeHtml(event.postalCode || event.zipCode || "")}"></div><div class="field"><label>Stadt</label><input name="city" value="${escapeHtml(event.city || "")}"></div></div>${virtualEventFields}<div class="form-grid--four"><div class="field"><label>Datum</label><input type="date" name="date" value="${escapeHtml(event.date || "")}"></div><div class="field"><label>Beginn</label><input type="time" name="startTime" value="${escapeHtml(event.startTime || "")}"></div><div class="field"><label>Ende</label><input type="time" name="endTime" value="${escapeHtml(event.endTime || "")}"></div><div class="field"><label>Ablaufdatum</label><input type="datetime-local" name="expiresAt" value="${escapeHtml(expiresAtInput)}"></div></div><div class="form-grid--two"><div class="event-base-form__event-type-stack">${eventTypePicker}<div class="field field--nested" data-new-event-type-field hidden><label>Neuer Eventtyp</label><input name="newEventType" placeholder="z. B. Fachgespräch"></div></div>${accessTypePicker}${primaryHostPicker}${coHostPicker}${eventImageEditor(event, mediaAssets, `#/cms/event/${event.id}?tab=base`)}</div>${hostCreateLayer}<div class="actions"><button class="button button--primary">Event speichern</button>${id !== "new" ?`<button type="button" class="button button--secondary" data-delete-event="${event.id}">Event loeschen</button>` : ""}<a class="button button--secondary" href="#/cms/event/${event.id}?tab=schedule">Ablauf planen</a></div><div id="event-save-result"></div></form>`;
+    const eventTextAiContextId = `ai-event-text-context-${event.id}`;
+    const eventTextAiContext = eventInvitationProgramContext(event, topics, speakers);
+    const editableDescription = eventEditablePublicDescription(event, topics, speakers);
+    content = `<form id="event-edit-form" data-event-id="${event.id}" class="form-grid is-save-aware event-base-form"><div id="${eventTextAiContextId}" hidden>${escapeHtml(JSON.stringify(eventTextAiContext))}</div><div class="field"><label>Titel</label><input name="title" value="${escapeHtml(event.title)}" required></div><div class="field"><label>Untertitel</label><input name="subtitle" value="${escapeHtml(event.subtitle)}"></div><div class="field"><div class="field-label-row"><label>Beschreibung</label>${aiButton("improveText", "description", "Mit ChatGPT bearbeiten", { entityId: event.id, fieldName: "description", contextTarget: eventTextAiContextId })}</div><textarea name="description">${escapeHtml(event.description)}</textarea></div><div class="form-grid--four" data-event-location-fields ${event.isVirtualEvent && allowsZoomMeeting ?"hidden" : ""}><div class="field"><label>Location</label><input name="locationName" value="${escapeHtml(event.locationName || "")}"></div><div class="field"><label>Straße / Nr.</label><input name="address" value="${escapeHtml(event.address || "")}"></div><div class="field"><label>PLZ</label><input name="postalCode" value="${escapeHtml(event.postalCode || event.zipCode || "")}"></div><div class="field"><label>Stadt</label><input name="city" value="${escapeHtml(event.city || "")}"></div></div>${virtualEventFields}<div class="form-grid--four"><div class="field"><label>Datum</label><input type="date" name="date" value="${escapeHtml(event.date || "")}"></div><div class="field"><label>Beginn</label><input type="time" name="startTime" value="${escapeHtml(event.startTime || "")}"></div><div class="field"><label>Ende</label><input type="time" name="endTime" value="${escapeHtml(event.endTime || "")}"></div><div class="field"><label>Ablaufdatum</label><input type="datetime-local" name="expiresAt" value="${escapeHtml(expiresAtInput)}"></div></div><fieldset class="registration-section registration-section--compact"><legend>Kalenderfunktion</legend><div class="registration-consents registration-consents--inline"><label class="checkbox"><input type="checkbox" name="calendarSaveEnabled" ${event.calendarSaveEnabled !== false ? "checked" : ""}> Kalender-Vormerkung anbieten</label><label class="checkbox"><input type="checkbox" name="calendarReminderEnabled" ${event.calendarReminderEnabled !== false ? "checked" : ""}> Wiedervorlage anbieten</label></div><div class="form-grid--two"><div class="field"><label>Wiedervorlage</label><select name="calendarReminderDays"><option value="1" ${Number(event.calendarReminderDays ?? 7) === 1 ? "selected" : ""}>1 Tag vor Veranstaltung</option><option value="3" ${Number(event.calendarReminderDays ?? 7) === 3 ? "selected" : ""}>3 Tage vor Veranstaltung</option><option value="7" ${Number(event.calendarReminderDays ?? 7) === 7 ? "selected" : ""}>7 Tage vor Veranstaltung</option><option value="14" ${Number(event.calendarReminderDays ?? 7) === 14 ? "selected" : ""}>14 Tage vor Veranstaltung</option></select></div><div class="field"><label>Zeitzone</label><input name="timeZone" value="${escapeHtml(event.timeZone || event.timezone || "Europe/Berlin")}" placeholder="Europe/Berlin"></div></div><p class="muted">Termin vormerken ist unverbindlich und erzeugt keine Anmeldung. Die Wiedervorlage wird in ICS als Kalender-Erinnerung hinterlegt.</p></fieldset><div class="form-grid--two"><div class="event-base-form__event-type-stack">${eventTypePicker}<div class="field field--nested" data-new-event-type-field hidden><label>Neuer Eventtyp</label><input name="newEventType" placeholder="z. B. Fachgespräch"></div></div>${accessTypePicker}${primaryHostPicker}${coHostPicker}${eventImageEditor(event, mediaAssets, `#/cms/event/${event.id}?tab=base`)}</div>${hostCreateLayer}<div class="actions"><button class="button button--primary">Event speichern</button>${id !== "new" ?`<button type="button" class="button button--secondary" data-delete-event="${event.id}">Event loeschen</button>` : ""}<a class="button button--secondary" href="#/cms/event/${event.id}?tab=schedule">Ablauf planen</a></div><div id="event-save-result"></div></form>`;
+    content = content
+      .replace(
+        `<div id="${eventTextAiContextId}" hidden>`,
+        `<input type="hidden" name="descriptionMode" value="complete"><div id="${eventTextAiContextId}" hidden>`
+      )
+      .replace(
+        `<textarea name="description">${escapeHtml(event.description)}</textarea>`,
+        `<textarea name="description" rows="14">${escapeHtml(editableDescription)}</textarea><p class="muted">Vollständiger öffentlicher Eventtext einschließlich Vorträge und Abschluss. Der Text wird in dieser Reihenfolge veröffentlicht und kann hier frei bearbeitet werden.</p>`
+      );
     if (isPastCmsEvent(event)) {
       content = content
         .replace(`<div class="field"><label>Telefon Location</label><input name="phone" value="${escapeHtml(event.phone || "")}"></div>`, "")
@@ -2386,8 +2899,10 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     }
   } else if (tab === "schedule") {
     content = `<form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="schedule" class="form-grid is-save-aware"><input type="hidden" name="date" value="${escapeHtml(event.date || "")}"><input type="hidden" name="startTime" value="${escapeHtml(event.startTime || "")}"><input type="hidden" name="endTime" value="${escapeHtml(event.endTime || "")}">${eventScheduleEditor(event, topics, speakers)}<div class="actions"><button class="button button--primary">Ablauf speichern</button><a class="button button--secondary" href="#/cms/event/${event.id}?tab=topics">Vortraege / Referenten uebernehmen</a></div><div id="event-save-result"></div></form>`;
+  } else if (tab === "survey") {
+    content = eventSurveyEditorContent(event);
   } else if (tab === "topics") {
-    content = eventTopicsEditor(event, topics, speakers, allEvents, galleries, downloads, mediaAssets, query, sponsors, members);
+    content = eventTopicsEditor(event, topics, speakers, allEvents, galleries, downloads, mediaAssets, query, sponsors, members, speakerApprovals);
   } else if (tab === "__old_topics") {
     content = `<h2>Zugeordnete Themen</h2><div class="filters">${topics.map((topic) => `<span class="filter ${event.topicIds.includes(topic.id) ?"active" : ""}">${escapeHtml(topic.title)}</span>`).join("")}</div><p>Themenspezifische Beschreibung und Sortierung koennen hier redaktionell erweitert werden.</p><div class="table-wrap" style="margin-top:22px"><table class="table"><thead><tr><th>Thema</th><th>Referenten</th></tr></thead><tbody>${topics.filter((topic) => event.topicIds.includes(topic.id)).map((topic) => { const topicSpeakers = speakers.filter((speaker) => speaker.topicId === topic.id || (event.speakerIds || []).includes(speaker.id)); return `<tr><td>${escapeHtml(topic.title)}</td><td>${topicSpeakers.length ?topicSpeakers.map((speaker) => `<div class="person"><div>${speaker.photoUrl ?`<img src="${escapeHtml(speaker.photoUrl)}" alt="">` : ""}</div><div><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" · "))}</small>${speaker.shortBio ?`<p>${escapeHtml(speaker.shortBio)}</p>` : ""}</div></div>`).join("") : "Noch kein Referent zugeordnet."}</td></tr>`; }).join("")}</tbody></table></div>`;
   } else if (tab === "speakers") {
@@ -2397,24 +2912,27 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     content = eventPartnersEditor(event, sponsors, mediaAssets);
   } else if (tab === "registration") {
     const assigned = registrations.filter((item) => item.eventId === event.id);
-    const checkinScreenUrl = `#/event-checkin-screen/${event.id}`;
+    const assignedPeopleCount = assigned.reduce((sum, registration) => sum + registrationPartySize(registration), 0);
     const mailAiContextId = `ai-mail-context-${event.id}`;
     const globalMailTemplates = mailTemplateSettings(settings.find((item) => item.id === "mailTemplates" || item.key === "mailTemplates"));
     const registrationMailText = event.mailText || defaultEventRegistrationMailText(event, "confirmation", globalMailTemplates);
     const waitlistMailText = event.waitlistMail || defaultEventRegistrationMailText(event, "waitlist", globalMailTemplates);
     const reminderMailText = event.reminderMail || defaultEventRegistrationMailText(event, "reminder", globalMailTemplates);
     const adminAddRegistrationPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)" open><summary><strong>Person manuell hinzufuegen</strong><span>Admin-Anmeldung</span></summary><form id="admin-registration-form" data-event-id="${event.id}" class="form-grid form-grid--compact"><div class="form-grid--two"><div class="field"><label>Vorname *</label><input name="firstName" autocomplete="given-name" required></div><div class="field"><label>Nachname *</label><input name="lastName" autocomplete="family-name" required></div></div><div class="form-grid--two"><div class="field"><label>Unternehmen</label><input name="company" autocomplete="organization"></div><div class="field"><label>Position / Funktion</label><input name="position" autocomplete="organization-title"></div></div><div class="form-grid--two"><div class="field"><label>E-Mail *</label><input name="email" type="email" autocomplete="email" required></div><div class="field"><label>Telefon</label><input name="phone" autocomplete="tel"></div></div><label class="checkbox checkbox--required"><input type="checkbox" name="privacyAccepted" required> Einwilligung / Datenschutz liegt vor *</label><div class="actions"><button class="button button--primary button--small" type="submit">Person hinzufuegen</button><div id="admin-registration-result"></div></div></form></details>`;
-    const registrationsToolbar = `<div class="actions" style="justify-content:space-between;margin-bottom:18px"><h2>Anmeldungen (${assigned.length})</h2><div class="actions"><button class="button button--secondary button--small" data-export-event="${event.id}">Anmeldungen als CSV herunterladen</button><button class="button button--danger button--small" data-delete-selected-registrations data-event-id="${event.id}" disabled>Ausgewaehlte loeschen</button></div></div>`;
-    const registrationsTable = `<div id="registration-bulk-result"></div><div class="table-wrap"><table class="table"><thead><tr><th><input type="checkbox" data-registration-select-all aria-label="Alle Anmeldungen auswaehlen"></th><th>Teilnehmer</th><th>Unternehmen</th><th>E-Mail</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((registration) => `<tr data-registration-row="${registration.id}"><td><input type="checkbox" data-registration-select value="${registration.id}" aria-label="Anmeldung von ${escapeHtml([registration.firstName, registration.lastName].filter(Boolean).join(" ") || registration.email || "Teilnehmer")} auswaehlen"></td><td>${escapeHtml([registration.firstName, registration.lastName].filter(Boolean).join(" ") || "-")}</td><td>${escapeHtml(registration.company || "-")}</td><td>${escapeHtml(registration.email || "-")}</td><td>${status(registration.status)}</td><td><div class="table-actions table-actions--icons"><button class="icon-button icon-button--danger" type="button" data-delete-registration="${registration.id}" data-event-id="${event.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div></td></tr>`).join("")}</tbody></table></div>`;
+    const registrationsToolbar = `<div class="actions people-list-head" style="justify-content:space-between;margin-bottom:10px"><h2>Anmeldungen (${assignedPeopleCount} Personen in ${assigned.length} Buchungen)</h2><div class="actions"><button class="button button--secondary button--small" data-export-event="${event.id}">Anmeldungen als CSV herunterladen</button><button class="button button--danger button--small" data-delete-selected-registrations data-event-id="${event.id}" disabled>Ausgewaehlte loeschen</button></div></div>`;
+    const registrationsTable = `<div id="registration-bulk-result"></div><div class="table-wrap"><table class="table"><thead><tr><th><input type="checkbox" data-registration-select-all aria-label="Alle Anmeldungen auswaehlen"></th><th>Teilnehmer</th><th>Unternehmen</th><th>E-Mail</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((registration) => { const companion = registration.companion || {}; const companionName = registrationCompanionName(registration); return `<tr data-registration-row="${registration.id}"><td><input type="checkbox" data-registration-select value="${registration.id}" aria-label="Anmeldung von ${escapeHtml([registration.firstName, registration.lastName].filter(Boolean).join(" ") || registration.email || "Teilnehmer")} auswaehlen"></td><td>${escapeHtml([registration.firstName, registration.lastName].filter(Boolean).join(" ") || "-")}${companionName ? `<small style="display:block;margin-top:5px"><strong>Begleitperson:</strong> ${escapeHtml(companionName)}</small>` : ""}</td><td>${escapeHtml(registration.company || "-")}</td><td>${escapeHtml(registration.email || "-")}${companion.email ? `<small style="display:block;margin-top:5px">${escapeHtml(companion.email)}${companion.phone ? ` · ${escapeHtml(companion.phone)}` : ""}</small>` : ""}</td><td>${status(registration.status)}${registrationPartySize(registration) > 1 ? `<small style="display:block;margin-top:5px">2 Personen</small>` : ""}</td><td><div class="table-actions table-actions--icons"><button class="icon-button icon-button--danger" type="button" data-delete-registration="${registration.id}" data-event-id="${event.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div></td></tr>`; }).join("")}</tbody></table></div>`;
     const checkinPanel = cmsEventHandyTicketEnabled(event)
-      ? `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Einlass / Event-QR</strong><span>QR-Code anzeigen</span></summary><p>Diese Seite zeigt den QR-Code, den Teilnehmer vor Ort mit dem Handy scannen.</p><div class="actions"><a class="button button--primary button--small" href="${checkinScreenUrl}" target="_blank" rel="noreferrer">Event-QR oeffnen</a><a class="button button--secondary button--small" href="${checkinScreenUrl}">Event-QR im Browser oeffnen</a></div></details>`
+      ? `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Einlass / Event-QR</strong><span>QR-Code anzeigen</span></summary><p>Diese Seite zeigt den geschuetzten QR-Code, den Teilnehmer vor Ort mit dem Handy scannen.</p><div class="actions"><button class="button button--primary button--small" type="button" data-open-event-checkin-screen="new" data-event-id="${event.id}">Event-QR oeffnen</button><button class="button button--secondary button--small" type="button" data-open-event-checkin-screen="same" data-event-id="${event.id}">Event-QR im Browser oeffnen</button></div><div id="event-checkin-access-result"></div></details>`
       : `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Einlass / Event-QR</strong><span>deaktiviert</span></summary><p>Fuer dieses Event ist das Handy-Ticket ausgeschaltet. Die Anmeldung wird per E-Mail bestaetigt, aber es wird kein Einlass-QR benoetigt.</p></details>`;
-    const mailPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Mailtexte und Erinnerungen</strong><span>anzeigen / bearbeiten</span></summary><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="registration" class="form-grid is-save-aware"><p>KI erzeugt Mailtexte mit Platzhaltern und ohne echte Teilnehmerdaten. Der Diff-Layer zeigt den vorhandenen Text und den neuen Vorschlag; gespeichert wird erst nach Uebernehmen.</p><div id="${mailAiContextId}" hidden>${escapeHtml(JSON.stringify({ event, registrations: assigned.slice(0, 3) }))}</div><fieldset class="registration-section registration-section--compact"><legend>Automatische Erinnerungen</legend><div class="registration-consents registration-consents--inline"><label class="checkbox"><input type="checkbox" name="reminder7d" ${event.reminder7d ? "checked" : ""}> 7 Tage vorher</label><label class="checkbox"><input type="checkbox" name="reminder1d" ${event.reminder1d ? "checked" : ""}> 1 Tag vorher</label><label class="checkbox"><input type="checkbox" name="reminder2h" ${event.reminder2h ? "checked" : ""}> 2 Stunden vorher</label><label class="checkbox"><input type="checkbox" name="notifyOnEventChange" ${event.notifyOnEventChange ? "checked" : ""}> Sofort bei Termin- oder Ortsaenderung</label><label class="checkbox"><input type="checkbox" name="checkinWelcomeMailEnabled" ${(event.checkinWelcomeMailEnabled ?? event.checkinAgendaMailEnabled) ? "checked" : ""}> Welcome-Mail beim Check-in</label></div></fieldset><div class="field"><label>Erinnerungsmail an Teilnehmer</label><textarea name="reminderMail" rows="9">${escapeHtml(reminderMailText)}</textarea><p class="muted">Dieser Text wird fuer automatische Teilnehmer-Erinnerungen verwendet. Ziel: Termin nicht vergessen und bei Verhinderung rechtzeitig absagen.</p>${aiFieldActions([{ action: "generateRegistrationMailText", target: "reminderMail", contextTarget: mailAiContextId, label: "Erinnerungsmail erzeugen", entityId: event.id, fieldName: "reminderMail" }])}</div><div class="field"><label>Bestaetigungsmail</label><textarea name="mailText" rows="10">${escapeHtml(registrationMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "mailText", contextTarget: mailAiContextId, label: "Bestaetigungsmail erzeugen", entityId: event.id, fieldName: "mailText" }])}</div><div class="field"><label>Wartelistenmail</label><textarea name="waitlistMail" rows="10">${escapeHtml(waitlistMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "waitlistMail", contextTarget: mailAiContextId, label: "Wartelistenmail erzeugen", entityId: event.id, fieldName: "waitlistMail" }])}</div><div class="actions"><button class="button button--primary button--small" type="submit">Mailtexte und Erinnerungen speichern</button></div><div id="event-save-result"></div></form></details>`;
-    content = `${eventRegistrationTogglePanel(event)}${checkinPanel}${mailPanel}${adminAddRegistrationPanel}${registrationsToolbar}${registrationsTable}`;
+    const groupCheckinPanel = `<section class="cms-group-checkin-section"><div class="section-head"><div><p class="eyebrow">Gruppen-Check-in</p><h2>Referenten und Vorstand einloggen</h2></div></div>${groupCheckinForm(event, "speakers", eventCheckinSpeakers(event, speakers))}${groupCheckinForm(event, "board", boardMembers)}</section>`;
+    const mailPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Mailtexte und Erinnerungen</strong><span>anzeigen / bearbeiten</span></summary><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="registration" class="form-grid is-save-aware"><p>KI erzeugt Mailtexte mit Platzhaltern und ohne echte Teilnehmerdaten. Der Diff-Layer zeigt den vorhandenen Text und den neuen Vorschlag; gespeichert wird erst nach Uebernehmen.</p><div id="${mailAiContextId}" hidden>${escapeHtml(JSON.stringify({ event, registrations: assigned.slice(0, 3) }))}</div><fieldset class="registration-section registration-section--compact"><legend>Automatische Erinnerungen</legend><div class="registration-consents registration-consents--inline"><label class="checkbox"><input type="checkbox" name="reminder7d" ${event.reminder7d ? "checked" : ""}> 7 Tage vorher</label><label class="checkbox"><input type="checkbox" name="reminder1d" ${event.reminder1d ? "checked" : ""}> 1 Tag vorher</label><label class="checkbox"><input type="checkbox" name="reminder2h" ${event.reminder2h ? "checked" : ""}> 2 Stunden vorher</label><label class="checkbox"><input type="checkbox" name="notifyOnEventChange" ${event.notifyOnEventChange ? "checked" : ""}> Sofort bei Termin- oder Ortsaenderung</label><label class="checkbox"><input type="checkbox" name="checkinWelcomeMailEnabled" ${(event.checkinWelcomeMailEnabled ?? event.checkinAgendaMailEnabled) ? "checked" : ""}> Welcome-Mail beim Check-in</label></div></fieldset><div class="field"><label>Erinnerungsmail an Teilnehmer</label><textarea name="reminderMail" rows="9">${escapeHtml(reminderMailText)}</textarea><p class="muted">Dieser Text wird fuer automatische Teilnehmer-Erinnerungen verwendet. Bei angemeldeten Empfaengern wird automatisch ein persoenlicher Button „Teilnahme absagen“ angefuegt.</p>${aiFieldActions([{ action: "generateRegistrationMailText", target: "reminderMail", contextTarget: mailAiContextId, label: "Erinnerungsmail erzeugen", entityId: event.id, fieldName: "reminderMail" }])}</div><div class="field"><label>Bestaetigungsmail</label><textarea name="mailText" rows="10">${escapeHtml(registrationMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "mailText", contextTarget: mailAiContextId, label: "Bestaetigungsmail erzeugen", entityId: event.id, fieldName: "mailText" }])}</div><div class="field"><label>Wartelistenmail</label><textarea name="waitlistMail" rows="10">${escapeHtml(waitlistMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "waitlistMail", contextTarget: mailAiContextId, label: "Wartelistenmail erzeugen", entityId: event.id, fieldName: "waitlistMail" }])}</div><div class="actions"><button class="button button--primary button--small" type="submit">Mailtexte und Erinnerungen speichern</button></div><div id="event-save-result"></div></form></details>`;
+    content = `${eventRegistrationTogglePanel(event)}${checkinPanel}${mailPanel}${adminAddRegistrationPanel}${groupCheckinPanel}${registrationsToolbar}${registrationsTable}`;
   } else if (tab === "pre") {
     const mailingType = event.mailingType || "save_the_date";
-    const saveTheDateText = event.saveTheDateText || `Save the date: ${event.title || "PROdigitalTV Event"} am ${event.date ?formatDate(event.date) : "geplanten Termin"}.`;
-        const invitationText = event.invitationText || `Sehr geehrte {{firstName}} {{lastName}},
+    const invitationAiContextId = `ai-invitation-context-${event.id}`;
+    const invitationAiContext = eventInvitationProgramContext(event, topics, speakers);
+    const saveTheDateText = removeHiddenTalkMentions(event.saveTheDateText || `Save the date: ${event.title || "PROdigitalTV Event"} am ${event.date ?formatDate(event.date) : "geplanten Termin"}.`, hiddenTalkTitles(event, topics));
+        const invitationText = removeHiddenTalkMentions(event.invitationText || `Sehr geehrte {{firstName}} {{lastName}},
 
 wir laden Sie herzlich zum ${event.title || "PROdigitalTV Event"} ein.
 
@@ -2425,19 +2943,23 @@ Zur Anmeldung klicken Sie bitte auf den folgenden Link: {{confirmationLink}}
 Wir würden uns sehr freuen, Sie persönlich begrüßen zu dürfen.
 
 Mit freundlichen Grüßen
-Ihr PROdigitalTV-Team`;
-    const invitationUpdateText = event.invitationUpdateText || `Update zur Einladung: ${event.title || "PROdigitalTV Event"}.`;
-    const mailingTextPanel = (key, label, field, text, aiLabel) => `<div class="field" data-mailing-text-panel="${key}" ${mailingType === key ?"" : "hidden"}><label>${label}</label><textarea name="${field}" rows="10">${escapeHtml(text)}</textarea>${aiFieldActions([{ action: "generateEventInvitation", target: field, label: aiLabel, entityId: event.id, fieldName: field }])}</div>`;
-    content = `<h2>Einladung</h2><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="pre" class="form-grid is-save-aware"><div class="alert">Der Anmeldestatus wird zentral im Reiter Anmeldung geoeffnet oder geschlossen. Dieser Bereich speichert die Einladungstexte.</div>${eventInvitationTalkHintPanel(event, topics, speakers)}<div class="field"><label>Mailing-Art</label><select name="mailingType" data-mailing-type-select><option value="save_the_date" ${mailingType === "save_the_date" ?"selected" : ""}>Save the date</option><option value="invitation" ${mailingType === "invitation" ?"selected" : ""}>Einladung</option><option value="invitation_update" ${mailingType === "invitation_update" ?"selected" : ""}>Einladungsupdate</option></select></div>${mailingTextPanel("save_the_date", "Save-the-date-Text", "saveTheDateText", saveTheDateText, "Save-the-date Vorschlag erzeugen")}${mailingTextPanel("invitation", "Einladungstext", "invitationText", invitationText, "Einladungsvorschlag erzeugen")}${mailingTextPanel("invitation_update", "Einladungsupdate", "invitationUpdateText", invitationUpdateText, "Update-Vorschlag erzeugen")}<div class="actions"><button class="button button--primary">Einladung speichern</button></div><div id="event-save-result"></div></form>`;
+Ihr PROdigitalTV-Team`, hiddenTalkTitles(event, topics));
+    const invitationUpdateText = removeHiddenTalkMentions(event.invitationUpdateText || `Update zur Einladung: ${event.title || "PROdigitalTV Event"}.`, hiddenTalkTitles(event, topics));
+    const mailingTextPanel = (key, label, field, text, aiLabel) => `<div class="field" data-mailing-text-panel="${key}" ${mailingType === key ?"" : "hidden"}><label>${label}</label><textarea name="${field}" rows="10">${escapeHtml(text)}</textarea>${aiFieldActions([{ action: "generateEventInvitation", target: field, contextTarget: invitationAiContextId, label: aiLabel, entityId: event.id, fieldName: field }])}</div>`;
+    content = `<h2>Einladung</h2><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="pre" class="form-grid is-save-aware"><div id="${invitationAiContextId}" hidden>${escapeHtml(JSON.stringify(invitationAiContext))}</div><div class="alert">Der Anmeldestatus wird zentral im Reiter Anmeldung geoeffnet oder geschlossen. Dieser Bereich speichert die Einladungstexte.</div>${eventInvitationTalkHintPanel(event, topics, speakers)}<div class="field"><label>Mailing-Art</label><select name="mailingType" data-mailing-type-select><option value="save_the_date" ${mailingType === "save_the_date" ?"selected" : ""}>Save the date</option><option value="invitation" ${mailingType === "invitation" ?"selected" : ""}>Einladung</option><option value="invitation_update" ${mailingType === "invitation_update" ?"selected" : ""}>Einladungsupdate</option></select></div>${mailingTextPanel("save_the_date", "Save-the-date-Text", "saveTheDateText", saveTheDateText, "Save-the-date Vorschlag erzeugen")}${mailingTextPanel("invitation", "Einladungstext", "invitationText", invitationText, "Einladungsvorschlag erzeugen")}${mailingTextPanel("invitation_update", "Einladungsupdate", "invitationUpdateText", invitationUpdateText, "Update-Vorschlag erzeugen")}<div class="actions"><button class="button button--primary">Einladung speichern</button></div><div id="event-save-result"></div></form>`;
+  } else if (tab === "feedback") {
+    const eventFeedback = (eventFeedbackRecords || []).filter((item) => item.eventId === event.id);
+    content = eventFeedbackEditorContent(event, eventFeedback);
   } else if (tab === "ai") {
     const eventMedia = media.filter((item) => item.eventId === event.id);
     content = `<h2>KI-Prüfung</h2><p class="muted" style="margin-bottom:18px">Diese Prüfung erzeugt redaktionelle Empfehlungen. Blocker kommen weiterhin aus der regelbasierten Pipeline-Validierung.</p><div class="ai-quality-card"><button type="button" class="button button--primary ai-action" data-ai-action="analyzeEventPipelineQuality" data-ai-target="ai-quality-context" data-ai-entity-type="event" data-ai-entity-id="${event.id}" data-ai-field="pipelineQuality">Pipeline mit ChatGPT prüfen</button><div id="ai-quality-context" hidden>${escapeHtml(JSON.stringify({ event, media: eventMedia }))}</div></div><div class="setup-steps" style="margin-top:20px"><div class="setup-step"><span>Pflichtfelder fehlen?</span><strong>${event.title && event.date && event.locationName ?"ok" : "prüfen"}</strong></div><div class="setup-step"><span>SEO-Daten vorhanden?</span><strong>${event.seoTitle && event.seoDescription ?"ok" : "Empfehlung"}</strong></div><div class="setup-step"><span>Alt-Texte bei Bildern?</span><strong>${eventMedia.some((item) => !item.altText) ?"Empfehlung" : "ok"}</strong></div></div>`;
   } else {
     const assigned = media.filter((item) => item.eventId === event.id);
-    content = `<h2>${tab === "post" ?"Event-Nacharbeit" : "Medien zum Event"}</h2>${tab === "post" ?`<section class="panel" style="background:var(--pdt-bg)"><h2>Event-Nachlauf mit KI</h2>${aiFieldActions([{ action: "generateArchiveText", target: "longDescription", label: "Nachbericht erzeugen", entityId: event.id, fieldName: "archiveText" }, { action: "generateEventSummary", target: "postEventSummary", label: "Kurztext erzeugen", entityId: event.id, fieldName: "postEventSummary" }])}</section>` : `<section class="panel" style="background:var(--pdt-bg)"><h2>Fotogalerie und Downloads mit KI</h2><p>Galerie und Downloads bleiben optional. Wenn keine Bilder oder Downloads vorhanden sind, entsteht kein Pflichtfehler.</p>${aiFieldActions([{ action: "generateGalleryIntro", target: "ai-media-context", label: "Galerie-Einleitung", entityId: event.id, fieldName: "galleryIntro" }, { action: "generateImageAltText", target: "ai-media-context", label: "Alt-Texte vorbereiten", entityId: event.id, fieldName: "altTexts" }, { action: "generateDownloadDescription", target: "ai-media-context", label: "Downloadbeschreibung", entityId: event.id, fieldName: "downloadDescription" }])}<div id="ai-media-context" hidden>${escapeHtml(JSON.stringify({ event, media: assigned }))}</div></section>`}${tab === "post" ?`${retrospectiveControl}<form id="event-edit-form" data-event-id="${event.id}" class="form-grid" style="margin-bottom:22px"><div class="field"><label>Nachbericht Kurztext</label><textarea name="postEventSummary">${escapeHtml(event.postEventSummary || event.postEventummary || "")}</textarea></div><div class="field"><label>Langtext / Rückblicktext</label><textarea name="longDescription">${escapeHtml(event.longDescription || event.bodyText || event.articleText || event.archiveText || "")}</textarea><p class="muted">Dieser Text wird als Langtext für den redaktionellen Rückblick verwendet.</p></div><div class="actions"><button class="button button--primary button--small">Rückblicktext speichern</button></div><div id="event-save-result"></div></form>` : ""}<form id="media-upload-form" data-event-id="${event.id}" class="upload"><p><strong>Fotos, PDFs oder Praesentationen hochladen</strong></p><p>Drag-and-drop oder Dateiauswahl; Inhalte bleiben bis zur Freigabe intern.</p><input type="file" name="files" multiple style="margin-top:17px"><button class="button button--primary button--small" type="submit" style="margin:15px auto 0">Upload starten</button><div id="upload-result"></div></form><div class="table-wrap"><table class="table"><thead><tr><th>Datei</th><th>Typ</th><th>Sichtbarkeit</th><th>Freigabe</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((item) => `<tr><td>${escapeHtml(item.title)}</td><td>${item.mediaType}</td><td>${item.visibility}</td><td>${status(item.status)}</td><td><div class="table-actions"><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="approved">Aktiv</button><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="archived">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="eventMedia" data-record-id="${item.id}">Loeschen</button></div></td></tr>`).join("")}</tbody></table></div>`;
+    content = `<h2>${tab === "post" ?"Event-Nacharbeit" : "Medien zum Event"}</h2>${tab === "post" ?`<section class="panel" style="background:var(--pdt-bg)"><h2>Event-Nachlauf mit KI</h2>${aiFieldActions([{ action: "generateArchiveText", target: "longDescription", label: "Nachbericht erzeugen", entityId: event.id, fieldName: "archiveText" }, { action: "generateEventSummary", target: "postEventSummary", label: "Kurztext erzeugen", entityId: event.id, fieldName: "postEventSummary", targetWords: 90 }])}</section>` : `<section class="panel" style="background:var(--pdt-bg)"><h2>Fotogalerie und Downloads mit KI</h2><p>Galerie und Downloads bleiben optional. Wenn keine Bilder oder Downloads vorhanden sind, entsteht kein Pflichtfehler.</p>${aiFieldActions([{ action: "generateGalleryIntro", target: "ai-media-context", label: "Galerie-Einleitung", entityId: event.id, fieldName: "galleryIntro" }, { action: "generateImageAltText", target: "ai-media-context", label: "Alt-Texte vorbereiten", entityId: event.id, fieldName: "altTexts" }, { action: "generateDownloadDescription", target: "ai-media-context", label: "Downloadbeschreibung", entityId: event.id, fieldName: "downloadDescription" }])}<div id="ai-media-context" hidden>${escapeHtml(JSON.stringify({ event, media: assigned }))}</div></section>`}${tab === "post" ?`${retrospectiveControl}<form id="event-edit-form" data-event-id="${event.id}" class="form-grid" style="margin-bottom:22px"><div class="field"><label>Nachbericht Kurztext</label><textarea name="postEventSummary">${escapeHtml(event.postEventSummary || event.postEventummary || "")}</textarea></div><div class="field"><label>Langtext / Rückblicktext</label><textarea name="longDescription">${escapeHtml(event.longDescription || event.bodyText || event.articleText || event.archiveText || "")}</textarea><p class="muted">Dieser Text wird als Langtext für den redaktionellen Rückblick verwendet.</p></div><div class="actions"><button class="button button--primary button--small">Rückblicktext speichern</button></div><div id="event-save-result"></div></form>` : ""}<form id="media-upload-form" data-event-id="${event.id}" class="upload"><p><strong>Fotos, PDFs oder Praesentationen hochladen</strong></p><p>Drag-and-drop oder Dateiauswahl; Inhalte bleiben bis zur Freigabe intern.</p><input type="file" name="files" multiple style="margin-top:17px"><button class="button button--primary button--small" type="submit" style="margin:15px auto 0">Upload starten</button><div id="upload-result"></div></form><div class="table-wrap"><table class="table"><thead><tr><th>Datei</th><th>Typ</th><th>Sichtbarkeit</th><th>Freigabe</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((item) => `<tr><td>${escapeHtml(item.title)}</td><td>${item.mediaType}</td><td>${item.visibility}</td><td>${status(item.status)}</td><td><div class="table-actions"><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="approved">Aktiv</button><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="archived">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="eventMedia" data-record-id="${item.id}">Loeschen</button></div></td></tr>`).join("")}</tbody></table></div>`;
   }
   if (tab === "post") {
     const assigned = media.filter((item) => item.eventId === event.id);
+    const retrospectiveProgramContext = eventInvitationProgramContext(event, topics, speakers);
     const selectedGallery = event.galleryId
       ?galleries.find((gallery) => gallery.id === event.galleryId)
       : galleries.find((gallery) => gallery.eventId === event.id && gallery.status !== "archived") || null;
@@ -2462,7 +2984,19 @@ Ihr PROdigitalTV-Team`;
       : `<details class="editorial-tool-details" data-editor-tool-panel="videos"><summary><span>Medien</span><strong>Videoanhaenge</strong><em>optional</em></summary><div class="editor-tool-section editor-tool-section--videos"><p class="muted">Bitte zuerst den Rückblicktext speichern. Danach wird der redaktionelle Rückblick-Beitrag angelegt und Videos koennen am Beitrag angehaengt werden.</p></div></details>`;
     content = `<h2>Event-Nacharbeit</h2>
       <section class="panel event-post-ai-panel" style="background:var(--pdt-bg)">
-        ${aiFieldActions([{ action: "generateArchiveText", target: "longDescription", label: "Nachbericht erzeugen", entityId: event.id, fieldName: "archiveText" }, { action: "generateEventSummary", target: "postEventSummary", label: "Kurztext erzeugen", entityId: event.id, fieldName: "postEventSummary" }])}
+        ${aiFieldActions([{ action: "generateArchiveText", target: "longDescription", label: "Nachbericht erzeugen", entityId: event.id, fieldName: "archiveText", contextTarget: "event-retrospective-ai-context" }, { action: "generateEventSummary", target: "postEventSummary", label: "Kurztext erzeugen", entityId: event.id, fieldName: "postEventSummary", contextTarget: "event-retrospective-ai-context", targetWords: 90 }])}
+        <div id="event-retrospective-ai-context" hidden>${escapeHtml(JSON.stringify({
+          event,
+          invitationText: event.invitationText || event.saveTheDateText || event.invitationUpdateText || "",
+          agenda: event.scheduleItems || event.scheduleText || "",
+          topics: topics.filter((topic) => (event.topicIds || []).includes(topic.id)),
+          talks: retrospectiveProgramContext.talks,
+          speakers: retrospectiveProgramContext.speakers,
+          companies: retrospectiveProgramContext.companies,
+          media: assigned.map((item) => ({ title: item.title || "", description: item.description || "", caption: item.caption || "", mediaType: item.mediaType || "" })),
+          linkedRetrospective: retrospectiveArticle ? { title: retrospectiveArticle.title || "", introText: retrospectiveArticle.introText || "", bodyText: retrospectiveArticle.bodyText || retrospectiveArticle.longDescription || "" } : null,
+          isRetrospective: true
+        }))}</div>
       </section>
       <form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="post" class="form-grid is-save-aware event-post-workspace" style="margin-bottom:22px">
         <input type="hidden" data-retrospective-article-id value="${escapeHtml(retrospectiveArticleId)}">
@@ -2520,7 +3054,7 @@ Ihr PROdigitalTV-Team`;
       <form id="media-upload-form" data-event-id="${event.id}" class="event-post-hidden-upload-form"></form>
       <div class="table-wrap"><table class="table"><thead><tr><th>Datei</th><th>Typ</th><th>Sichtbarkeit</th><th>Freigabe</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((item) => `<tr><td>${escapeHtml(item.title)}</td><td>${item.mediaType}</td><td>${item.visibility}</td><td>${status(item.status)}</td><td><div class="table-actions"><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="approved">Aktiv</button><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="archived">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="eventMedia" data-record-id="${item.id}">Loeschen</button></div></td></tr>`).join("")}</tbody></table></div>`;
   }
-  const activeSection = isPastCmsEvent(event) ?"cms/followup" : "cms/events";
+  const activeSection = isPastCmsEvent(event) ?"cms/editorial/retrospectives" : "cms/events";
   return protect(cmsShell(activeSection, `${cmsTitle("Event bearbeiten", escapeHtml(event.title || "Neues Event"), `<a class="button button--secondary button--small" href="#/event/${event.id}?preview=1">Vorschau</a>`)}<section class="panel">${eventTabs(event.id, tab)}${content}</section>`));
 }
 
@@ -2583,13 +3117,10 @@ export async function registrationsPage(query = new URLSearchParams()) {
 
 export async function eventNotificationsPage() {
   if (!hasCmsAccess()) return denied();
-  const [events, notifications, members, contacts, users, testGroup] = await Promise.all([
+  const [events, notifications, topics] = await Promise.all([
     list("events"),
     list("eventNotifications").catch(() => []),
-    list("members"),
-    list("contacts"),
-    isAdmin(currentUser()) ? list("users") : Promise.resolve([]),
-    getOne("settings", "notificationTestGroup")
+    list("topics")
   ]);
   const activeEvents = events
     .filter((event) => !["archived", "deleted", "inactive", "draft"].includes(String(event.status || "").toLowerCase()) && !isPastCmsEvent(event))
@@ -2606,7 +3137,7 @@ export async function eventNotificationsPage() {
       mailText: event.mailText || `Bitte bestaetigen Sie Ihre Anmeldung zur Veranstaltung ${title}.`,
       description: event.description || `Aktuelle Informationen zur Veranstaltung ${title}.`
     };
-    return event[key] || fallback[key] || fallback.invitationText;
+    return removeHiddenTalkMentions(event[key] || fallback[key] || fallback.invitationText, hiddenTalkTitles(event, topics));
   };
   const notificationEventPayload = (event = {}) => escapeHtml(JSON.stringify({
     id: event.id || "",
@@ -2627,19 +3158,8 @@ export async function eventNotificationsPage() {
       const event = events.find((candidate) => candidate.id === item.eventId) || {};
       return `<tr><td>${escapeHtml(item.title || "-")}</td><td>${escapeHtml(event.title || item.eventId || "-")}</td><td>${status(item.status || "draft")}</td><td>${escapeHtml(String(item.targetCount ?? "-"))}</td><td>${escapeHtml(String(item.queuedMailCount ?? "-"))}</td><td>${Number(item.pushedCount || 0)} gesendet${item.pushFailedCount ? `<small>${Number(item.pushFailedCount)} fehlgeschlagen</small>` : ""}${item.pushErrors?.length ? `<small>${escapeHtml([...new Set(item.pushErrors.map((error) => error.code))].join(", "))}</small>` : ""}</td></tr>`;
     }).join("");
-  const selectedTestEmails = new Set((testGroup ? testGroup.emails || [] : members
-    .filter((member) => peopleMemberIsActive(member) && !peopleMailingDisabled(member))
-    .filter((member) => typeof member.notificationTestGroup === "boolean" ? member.notificationTestGroup : member.isNotificationTestGroup || member.testGroup || member.notificationTester)
-    .flatMap(peopleMemberEmails)).map((email) => String(email).trim().toLowerCase()));
-  const testPeople = new Map();
-  mergePeopleContactsAndMembers(contacts, members, users).forEach((person) => {
-    const email = String(person.email || person.contactEmail || person.primaryEmail || "").trim().toLowerCase();
-    if (email) testPeople.set(email, peopleContactName(person));
-  });
-  selectedTestEmails.forEach((email) => { if (!testPeople.has(email)) testPeople.set(email, email); });
-  const testMembers = [...testPeople].sort(([a], [b]) => Number(selectedTestEmails.has(b)) - Number(selectedTestEmails.has(a)) || a.localeCompare(b))
-    .map(([email, label]) => `<label class="checkbox notification-test-group-item" data-test-recipient data-search="${escapeHtml(`${label} ${email}`.toLowerCase())}"><input type="checkbox" name="testEmails" value="${escapeHtml(email)}" ${selectedTestEmails.has(email) ? "checked" : ""}><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(email)}</small></span></label>`).join("");
-  return protect(cmsShell("cms/event-notifications", `${cmsTitle("Kommunikation", "Event-Benachrichtigungen")}
+
+  return protect(cmsShell("cms/event-notifications", `${cmsTitle("Kommunikation", "Event Versand")}
     <section class="panel">
       <form id="event-notification-form" class="form-grid">
         <div class="form-grid--two">
@@ -2648,7 +3168,7 @@ export async function eventNotificationsPage() {
         </div>
         <div class="field" data-notification-event-field><label>Veranstaltung</label><select name="eventId" data-notification-event-select required>${activeEvents.map((event) => `<option value="${escapeHtml(event.id)}" data-event-title="${escapeHtml(event.title || "")}" data-event-link="${publicBaseUrl}/event/${escapeHtml(event.id)}?v=943" data-event-payload="${notificationEventPayload(event)}">${escapeHtml(event.title || event.id)}</option>`).join("")}</select>${activeEvents.length ? "" : `<p class="muted">Keine aktive zukuenftige Veranstaltung vorhanden.</p>`}</div>
         <div class="field" data-notification-text-source-field>
-          <label>Einladungstext aus Event verwenden</label>
+          <div class="field-label-row"><label>Einladungstext aus Event verwenden</label><a class="button button--secondary button--small" href="#/cms/event/${escapeHtml(firstEvent.id || "")}?tab=pre" data-notification-event-editor-link ${firstEvent.id ? "" : "hidden"}>Im Editor bearbeiten</a></div>
           <select name="messageSource" data-notification-text-source>
             <option value="invitationText">Einladungstext</option>
             <option value="saveTheDateText">Save-the-Date</option>
@@ -2659,8 +3179,15 @@ export async function eventNotificationsPage() {
           </select>
           <p class="muted">Der Text wird unten in die Vorschau uebernommen und kann vor dem Versand noch angepasst werden.</p>
         </div>
-        <div class="form-grid--two">
-          <div class="field"><label>Empfaenger</label><select name="recipientGroup" data-notification-recipient-group><option value="members_contacts">Mitglieder und Kontakte</option><option value="members">Nur Mitglieder</option><option value="contacts">Nur Kontakte</option><option value="test_group">Testgruppe</option><option value="test_person">Testpersonen</option></select></div>
+        <div class="form-grid--two event-notification-recipient-grid">
+          <div class="field"><label>Empfaenger</label><select name="recipientGroup" data-notification-recipient-group><option value="members_contacts">Mitglieder und Kontakte</option><option value="members">Nur Mitglieder</option><option value="contacts">Nur Kontakte</option><option value="test_group">Testgruppe</option><option value="test_person">Testpersonen</option></select>
+            <div class="notification-test-inline" data-notification-test-field hidden>
+              <label>Testpersonen</label>
+              <textarea name="testRecipients" rows="3" placeholder="E-Mail-Adressen, getrennt durch Komma oder neue Zeile"></textarea>
+              <div class="field"><label>Mobilnummern für SMS</label><input name="testRecipientMobiles" placeholder="+491701234567, getrennt durch Komma oder neue Zeile"></div>
+              <p class="muted">Im Testmodus wird nur an diese Personen gesendet. Push wird automatisch über die registrierte E-Mail-Adresse erkannt.</p>
+            </div>
+          </div>
           <div class="field"><label>Anmeldestatus</label><select name="registrationStatus"><option value="all">Alle</option><option value="unregistered">Noch nicht angemeldet</option><option value="registered">Bereits angemeldet</option></select></div>
         </div>
         <input type="hidden" name="includeMembers" value="true" data-notification-include-members>
@@ -2670,15 +3197,18 @@ export async function eventNotificationsPage() {
           <div class="field" data-notification-offset-field hidden><label>Automatisch vor Veranstaltung</label><select name="offsetMinutes"><option value="10080">7 Tage vorher</option><option value="1440">1 Tag vorher</option><option value="120">2 Stunden vorher</option></select></div>
         </div>
         <div class="field"><label>Titel</label><input name="title" data-notification-title value="${escapeHtml(firstEvent.title ? `Einladung: ${firstEvent.title}` : "Einladung zur Veranstaltung")}" required></div>
-        <div class="field"><label>Mailtext kurz pruefen / bearbeiten</label><textarea name="shortText" rows="7" data-notification-shorttext>${escapeHtml(firstEvent.id ?eventNotificationText(firstEvent, "invitationText") : "Aktuelle Informationen zur PROdigitalTV-Veranstaltung.")}</textarea></div>
+        <div class="field"><label>Nachrichtentext</label><textarea name="shortText" rows="7" data-notification-shorttext>${escapeHtml(firstEvent.id ?eventNotificationText(firstEvent, "invitationText") : "Aktuelle Informationen zur PROdigitalTV-Veranstaltung.")}</textarea></div>
+        <div class="field"><label>SMS-Text</label><textarea name="smsText" rows="4" data-notification-sms-text placeholder="Kurzer SMS-Text, max. 612 Zeichen"></textarea><label class="checkbox"><input type="checkbox" name="smsLinkEnabled" data-notification-sms-link checked> Kurzen Event-Link automatisch anhängen</label><p class="muted">Eigener Text für SMS. Platzhalter: <code>{{firstName}}</code>, <code>{{lastName}}</code>, <code>{{eventTitle}}</code>, <code>{{link}}</code>. Maximal 612 Zeichen.</p></div>
+        <div class="field"><label>Versandkanäle</label><div class="actions" data-notification-channels>
+          <label class="checkbox"><input type="checkbox" data-notification-channel value="mail" checked> E-Mail</label>
+          <label class="checkbox"><input type="checkbox" data-notification-channel value="push" checked> Browser-Push</label>
+          <label class="checkbox"><input type="checkbox" data-notification-channel value="sms"> SMS</label>
+        </div><p class="muted">SMS werden nur an Empfänger mit gültiger internationaler Telefonnummer versendet. Vor dem Senden werden die voraussichtlichen Nettokosten anhand der aktuellen Anbietertarife angezeigt und gespeichert. Maximal 612 Zeichen pro SMS-Nachricht.</p></div>
         <section class="panel" style="background:var(--pdt-bg)">
-          <label class="checkbox"><input type="checkbox" name="linkEnabled" data-notification-link-toggle checked> Link mitsenden</label>
-          <div class="field"><label>Link optional</label><input name="link" data-notification-link value="${escapeHtml(eventLink)}" placeholder="https://... oder leer lassen"></div>
+          <label class="checkbox"><input type="checkbox" name="linkEnabled" data-notification-link-toggle checked> Link in Mail und Push mitsenden</label>
+          <div class="field"><label>Zielseite / Link</label><input name="link" data-notification-link value="${escapeHtml(eventLink)}" placeholder="https://... oder leer lassen"><p class="muted">Dieser Link wird als Ziel fuer den Button in der Mail und als Oeffnen-Link in der Push-Nachricht verwendet. Bei Event-Einladungen ist das normalerweise die Eventseite.</p></div>
         </section>
-        <div class="registration-section registration-section--compact" data-notification-test-field hidden>
-          <div class="field"><label>Testpersonen</label><textarea name="testRecipients" rows="3" placeholder="E-Mail-Adressen, getrennt durch Komma oder neue Zeile"></textarea><p class="muted">Im Testmodus wird nur an diese Adressen gesendet. Zielgruppen und Anmeldestatus bleiben unberuehrt.</p></div>
-        </div>
-        <div class="event-notification-preview" data-notification-preview>
+<div class="event-notification-preview" data-notification-preview>
           <p class="eyebrow">Live-Vorschau</p>
           <h3>${escapeHtml(firstEvent.title ? `Einladung: ${firstEvent.title}` : "Einladung zur Veranstaltung")}</h3>
           <p>${escapeHtml(firstEvent.title ? `Aktuelle Informationen zur Veranstaltung ${firstEvent.title}.` : "Aktuelle Informationen zur PROdigitalTV-Veranstaltung.")}</p>
@@ -2687,17 +3217,7 @@ export async function eventNotificationsPage() {
         <div class="actions"><button class="button button--primary">Versand starten</button><div id="event-notification-result"></div></div>
       </form>
     </section>
-    <section class="panel">
-      <details class="cms-disclosure-panel">
-        <summary><strong>Testgruppe bearbeiten</strong><span data-test-group-count>${selectedTestEmails.size} Adressen gespeichert</span></summary>
-        <form id="notification-test-group-form" class="notification-test-group-form">
-          <div class="field"><label for="test-group-search">Empfaenger suchen</label><input id="test-group-search" type="search" data-test-group-search></div>
-          <div class="notification-test-group-list">${testMembers || `<p class="muted">Noch keine Mitglieder vorhanden.</p>`}</div>
-          <div class="field"><label for="test-group-additions">Weitere Testadressen</label><textarea id="test-group-additions" name="additionalTestEmails" rows="3" placeholder="name@firma.de"></textarea></div>
-          <div class="actions"><button class="button button--secondary button--small">Testgruppe speichern</button><div id="notification-test-group-result"></div></div>
-        </form>
-      </details>
-    </section>
+
     <section class="panel">
       <h2>Letzte Benachrichtigungen</h2>
       <div class="table-wrap"><table class="table"><thead><tr><th>Titel</th><th>Event</th><th>Status</th><th>Empfaenger</th><th>E-Mail</th><th>Push</th></tr></thead><tbody>${rows || `<tr><td colspan="6">Noch keine Benachrichtigungen erstellt.</td></tr>`}</tbody></table></div>
@@ -2708,6 +3228,101 @@ export async function memberAreaAdminPage() {
   return moduleListPage("editorialContent", "member-area");
 }
 
+export async function memberStrategyResponsesPage() {
+  if (!hasCmsAccess(true)) return denied(true);
+  const records = (await list("memberStrategyResponses").catch(() => []))
+    .slice()
+    .sort((a, b) => String(b.submittedAt || b.updatedAt || "").localeCompare(String(a.submittedAt || a.updatedAt || "")));
+  const surveys = records.filter((item) => item.responseType === "survey");
+  const ideas = records.filter((item) => item.responseType === "idea");
+  const participants = new Set(records.map((item) => item.userId).filter(Boolean));
+  const questionLabels = {
+    qa1: "Ursprünglicher Beitrittsgrund",
+    qa2: "Heutiger Bindungsgrund",
+    qa3: "Was fehlen würde",
+    qa4: "Was sich ändern müsste",
+    qa5: "Nützlichstes Format",
+    qa6: "Wichtige Zukunftsthemen",
+    qa7: "Fehlende Menschen und Unternehmen",
+    qa8: "Weiterempfehlung",
+    qa8text: "Begründung zur Empfehlung",
+    qa9: "Persönlich mitbringen",
+    qa10: "Was erhalten bleiben muss",
+    qa11: "Heute erneut Mitglied werden",
+    qa12: "Neu gründen: was anders machen",
+    qa13: "Braucht die Branche PROdigitalTV 2030",
+    qa14: "Was LinkedIn und Konferenzen nicht ersetzen",
+    qa15: "Empfehlung an 35-jährige Kollegen"
+  };
+  const recommendationOrder = ["Ja, auf jeden Fall", "Eher ja", "Unentschieden", "Eher nein", "Nein"];
+  const recommendationCounts = Object.fromEntries(recommendationOrder.map((label) => [label, 0]));
+  surveys.forEach((item) => {
+    const value = String(item.answers?.qa8 || "").trim();
+    if (Object.prototype.hasOwnProperty.call(recommendationCounts, value)) recommendationCounts[value] += 1;
+  });
+  const recommendationTotal = Object.values(recommendationCounts).reduce((sum, count) => sum + count, 0);
+  const recommendationRows = recommendationOrder.map((label) => {
+    const count = recommendationCounts[label];
+    const percent = recommendationTotal ? Math.round((count / recommendationTotal) * 100) : 0;
+    return `<div class="strategy-analysis-bar"><span>${escapeHtml(label)}</span><div><i style="width:${percent}%"></i></div><strong>${count} · ${percent}%</strong></div>`;
+  }).join("");
+
+  const stopWords = new Set(["aber", "auch", "dass", "eine", "einem", "einen", "einer", "eines", "für", "haben", "mehr", "nicht", "oder", "sich", "sind", "und", "unsere", "unser", "werden", "wird", "wir", "mit", "bei", "der", "die", "das", "den", "dem", "des", "von", "ist", "als", "auf", "ich", "mir", "mich", "mein", "sehr", "noch"]);
+  const themeCounts = new Map();
+  surveys.flatMap((item) => [item.answers?.qa4, item.answers?.qa6].filter(Boolean)).forEach((text) => {
+    String(text).toLowerCase().split(/[^a-z0-9äöüß-]+/i).filter((word) => word.length > 3 && !stopWords.has(word)).forEach((word) => {
+      themeCounts.set(word, (themeCounts.get(word) || 0) + 1);
+    });
+  });
+  const topThemes = Array.from(themeCounts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 12);
+  const themeCloud = topThemes.length
+    ? `<div class="strategy-theme-cloud">${topThemes.map(([word, count]) => `<span>${escapeHtml(word)} <b>${count}</b></span>`).join("")}</div>`
+    : `<p class="muted">Noch nicht genügend Antworten für eine Themenauswertung.</p>`;
+
+  const surveyDetails = surveys.map((item) => {
+    const identity = item.displayName || item.email || item.memberId || item.userId || "Mitglied";
+    const answers = Object.entries(questionLabels)
+      .filter(([key]) => String(item.answers?.[key] || "").trim())
+      .map(([key, label]) => `<div class="strategy-response-answer"><strong>${escapeHtml(label)}</strong><p>${escapeHtml(item.answers[key])}</p></div>`)
+      .join("");
+    return `<details class="strategy-response-card"><summary><span><strong>${escapeHtml(identity)}</strong><small>${escapeHtml(item.email || item.memberId || "")}</small></span><time>${escapeHtml(formatDateTime(item.submittedAt || item.updatedAt || ""))}</time></summary><div class="strategy-response-card__body">${answers || `<p class="muted">Keine Antworten vorhanden.</p>`}</div></details>`;
+  }).join("");
+
+  const strategyLink = "https://prodigitaltv-da47b.web.app/#/portal?tab=strategy";
+  const ideaRows = ideas.map((item) => {
+    const idea = item.idea || {};
+    return `<tr><td><strong>${escapeHtml(idea.subject || "Vorschlag")}</strong><small>${escapeHtml(idea.ideaType || "Idee")}</small></td><td>${escapeHtml(idea.name || item.displayName || "")}<small>${escapeHtml(idea.company || item.email || "")}</small></td><td class="strategy-idea-text">${escapeHtml(idea.message || "")}</td><td>${escapeHtml(formatDateTime(item.submittedAt || item.updatedAt || ""))}</td></tr>`;
+  }).join("");
+
+  return protect(cmsShell("cms/member-strategy-responses", `${cmsTitle("Mitglieder", "Strategie-Auswertung")}
+    <section class="panel strategy-mail-panel">
+      <div class="section-head"><div><p class="eyebrow">Mitglieder aktivieren</p><h2>Einladung per E-Mail</h2><p class="muted">Versand an mailingfähige Mitglieder mit direktem Link zur Zukunftsstrategie. Vor dem Live-Versand wird die Empfängerzahl noch einmal bestätigt.</p></div></div>
+      <form class="form-grid" data-member-strategy-mail-form>
+        <div class="field"><label>Betreff</label><input name="subject" value="Ihre Meinung zur Zukunft von PROdigitalTV" maxlength="180" required></div>
+        <div class="field"><label>Einladungstext</label><textarea name="introText" rows="5" required>PROdigitalTV entwickelt die Zukunftsstrategie 2027–2030 gemeinsam mit seinen Mitgliedern. Bitte nehmen Sie sich einige Minuten für die Fragen und Ihre Vorschläge.</textarea></div>
+        <div class="field"><label>Direkter Link</label><div class="strategy-mail-link-row"><input name="link" value="${escapeHtml(strategyLink)}" readonly><a class="button button--secondary button--small" href="${escapeHtml(strategyLink)}" target="_blank" rel="noreferrer">Öffnen</a></div></div>
+        <div class="actions"><button class="button button--secondary" type="button" data-send-member-strategy-mail="test">An Testgruppe senden</button><button class="button button--primary" type="button" data-send-member-strategy-mail="live">An Mitglieder senden</button></div>
+        <div class="member-communication-send-result" data-member-strategy-mail-result></div>
+      </form>
+    </section>
+    <section class="panel">
+      <div class="stat-grid strategy-analysis-stats">
+        <div class="stat"><strong>${participants.size}</strong><span>Teilnehmende</span></div>
+        <div class="stat"><strong>${surveys.length}</strong><span>Fragebögen</span></div>
+        <div class="stat"><strong>${ideas.length}</strong><span>Vorschläge</span></div>
+        <div class="stat"><strong>${recommendationTotal}</strong><span>Empfehlungsbewertungen</span></div>
+      </div>
+    </section>
+    <section class="strategy-analysis-grid">
+      <article class="panel"><h2>Weiterempfehlung</h2><p class="muted">Verteilung der Antworten auf Frage 8.</p><div class="strategy-analysis-bars">${recommendationRows}</div></article>
+      <article class="panel"><h2>Häufige Zukunftsthemen</h2><p class="muted">Automatische Worthäufigkeit aus Zukunftserwartungen und Themenwünschen.</p>${themeCloud}</article>
+    </section>
+    <section class="panel"><div class="section-head"><div><h2>Mitgliederantworten</h2><p class="muted">Vollständige Antworten, neueste zuerst.</p></div></div><div class="strategy-response-list">${surveyDetails || `<div class="alert">Noch keine Fragebögen eingegangen.</div>`}</div></section>
+    <section class="panel"><div class="section-head"><div><h2>Ideen und Vorschläge</h2><p class="muted">Einzelne Einreichungen aus dem Bereich „Mitmachen“.</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Titel</th><th>Absender</th><th>Beschreibung</th><th>Eingang</th></tr></thead><tbody>${ideaRows || `<tr><td colspan="4">Noch keine Vorschläge eingegangen.</td></tr>`}</tbody></table></div></section>
+  `), true);
+}
 export async function mailAdminPage() {
   if (!hasCmsAccess(true)) return denied(true);
   const templates = mailTemplateSettings(await getOne("settings", "mailTemplates").catch(() => null));
@@ -2801,13 +3416,29 @@ const editorialSections = {
     createParams: "&page=news&section=news",
     filter: (item) => isNewsEditorialItem(item)
   },
+  retrospectives: {
+    active: "cms/editorial/retrospectives",
+    title: "Rückblicke",
+    itemLabel: "Rückblick",
+    route: "cms/editorial/retrospectives",
+    createParams: "&page=press&section=retrospectives&category=Rückblicke",
+    filter: (item) => isEventRetrospectiveAudioItem(item)
+  },
+  "member-communication": {
+    active: "cms/member-area",
+    title: "Mitgliederbereich",
+    itemLabel: "Beitrag",
+    route: "cms/member-area",
+    createParams: "&page=member-area&section=member-area&visibility=members&category=Mitgliederbereich",
+    filter: (item) => isMemberAreaEditorialItem(item) || isMemberCommunicationEditorialItem(item)
+  },
   "member-area": {
-    active: "cms/editorial/member-area",
-    title: "Mitgliederbeiträge",
-    itemLabel: "Mitgliederbeitrag",
-    route: "cms/editorial/member-area",
-    createParams: "&page=member-area&section=member-area&visibility=members",
-    filter: (item) => isMemberAreaEditorialItem(item)
+    active: "cms/member-area",
+    title: "Mitgliederbereich",
+    itemLabel: "Beitrag",
+    route: "cms/member-area",
+    createParams: "&page=member-area&section=member-area&visibility=members&category=Mitgliederbereich",
+    filter: (item) => isMemberAreaEditorialItem(item) || isMemberCommunicationEditorialItem(item)
   },
   interna: {
     active: "cms/editorial/interna",
@@ -2819,7 +3450,16 @@ const editorialSections = {
   }
 };
 
+function isMemberCommunicationEditorialItem(item = {}) {
+  return item.section === "member-communication"
+    || item.publication_target === "member-communication"
+    || item.publicationTarget === "member-communication"
+    || item.communicationType === "member-news"
+    || item.contentType === "member-news";
+}
+
 function isMemberAreaEditorialItem(item = {}) {
+  if (isMemberCommunicationEditorialItem(item)) return false;
   return item.page === "member-area"
     || item.section === "member-area"
     || item.visibility === "members"
@@ -2828,7 +3468,7 @@ function isMemberAreaEditorialItem(item = {}) {
 }
 
 function isPressEditorialItem(item = {}) {
-  if (isMemberAreaEditorialItem(item)) return false;
+  if (isMemberAreaEditorialItem(item) || isMemberCommunicationEditorialItem(item)) return false;
   if (isEventRetrospectiveAudioItem(item)) return false;
   const category = String(item.category || "").toLowerCase();
   return item.page === "press"
@@ -2840,7 +3480,7 @@ function isPressEditorialItem(item = {}) {
 }
 
 function isNewsEditorialItem(item = {}) {
-  if (isMemberAreaEditorialItem(item)) return false;
+  if (isMemberAreaEditorialItem(item) || isMemberCommunicationEditorialItem(item)) return false;
   const category = String(item.category || "").toLowerCase();
   const target = item.publication_target || item.publicationTarget || "";
   if (isPressEditorialItem(item)) return false;
@@ -3001,19 +3641,22 @@ function memberLoginCreatePanel(members = []) {
     .map((member) => `<option value="${escapeHtml(member.id)}" data-email="${escapeHtml(memberLoginEmail(member))}" data-name="${escapeHtml(memberLoginName(member))}">${escapeHtml([member.name || member.id, memberLoginEmail(member)].filter(Boolean).join(" / "))}</option>`)
     .join("");
   return `<section class="panel">
-    <h2>Mitglieder-Login anlegen</h2>
-    <p class="muted" style="margin-bottom:16px">Mitglied auswaehlen, Mailadresse pruefen und Rolle setzen. Das Mitglied erhaelt danach einen Legitimationslink und vergibt sein Passwort selbst. Bei Unternehmensmitgliedern koennen mehrere Logins mit derselben Mitglied-ID verknuepft werden.</p>
+    <h2>Zugang anlegen</h2>
+    <p class="muted" style="margin-bottom:16px">Mitglieder-Logins werden mit einem Memberprofil verknuepft. Fuer Sekretariat, Redaktion oder externe Betreuung kann ein Editor- oder Admin-Zugang ohne Mitglied angelegt werden.</p>
     <form id="member-user-create-form" class="form-grid">
-      <div class="field"><label>Mitglied</label><select name="memberId" data-member-login-select required><option value="">Mitglied waehlen</option>${options}</select></div>
       <div class="form-grid--two">
-        <div class="field"><label>Name</label><input name="displayName" data-member-login-name placeholder="Name aus Mitglied"></div>
+        <div class="field"><label>Zugangstyp</label><select name="accountType" data-member-login-account-type><option value="member" selected>Mitglied</option><option value="external">Externer CMS-Zugang</option></select></div>
+        <div class="field" data-member-login-member-field><label>Mitglied</label><select name="memberId" data-member-login-select required><option value="">Mitglied waehlen</option>${options}</select></div>
+      </div>
+      <div class="form-grid--two">
+        <div class="field"><label>Name</label><input name="displayName" data-member-login-name placeholder="Name der Person"></div>
         <div class="field"><label>Mailadresse</label><input name="email" data-member-login-email type="email" required placeholder="name@example.de"></div>
       </div>
       <div class="form-grid--two">
-        <div class="field"><label>Rolle</label><select name="role" required><option value="member" selected>Member</option><option value="editor">Editor</option><option value="admin">Admin</option></select><p class="muted">Admin und Editor erhalten CMS-Zugriff. Member erhalten nur Zugriff auf den Mitgliederbereich.</p></div>
+        <div class="field"><label>Rolle</label><select name="role" data-member-login-role required><option value="member" selected>Member</option><option value="editor">Editor</option><option value="admin">Admin</option></select><p class="muted" data-member-login-role-hint>Admin und Editor erhalten CMS-Zugriff. Member erhalten nur Zugriff auf den Mitgliederbereich.</p></div>
         <div class="field"><label>Einladungsmail</label><label class="cms-switch" title="Einladung automatisch versenden"><input type="checkbox" name="sendInvitationAuto"><span class="cms-switch__track" aria-hidden="true"></span><span class="cms-switch__text">Automatisch versenden</span></label><input type="hidden" name="invitationDelivery" value="manual"><p class="muted">Standard ist manuell. Nach dem Anlegen kann die Einladung gezielt ausgeloest werden.</p></div>
       </div>
-      <div class="actions"><button class="button button--primary" type="submit">Mitglieder-Login anlegen</button></div>
+      <div class="actions"><button class="button button--primary" type="submit">Zugang anlegen</button></div>
       <div id="member-user-create-result"></div>
     </form>
   </section>`;
@@ -3055,9 +3698,10 @@ function memberLoginSummaryCell(member = {}, users = []) {
 function userMemberProfileLabel(user = {}, membersById = new Map()) {
   const memberId = String(user.memberId || user.memberProfileId || "");
   const member = membersById.get(memberId);
-  return member
-    ? [member.name || member.company || member.title || member.id, member.city].filter(Boolean).join(" / ")
-    : memberId || "-";
+  if (member) return [member.name || member.company || member.title || member.id, member.city].filter(Boolean).join(" / ");
+  if (memberId) return memberId;
+  const role = String(user.role || "").toLowerCase();
+  return user.accountType === "external" || ["admin", "editor"].includes(role) ? "CMS-Zugang ohne Mitglied" : "-";
 }
 
 function memberUsersListSection(users = [], members = [], activeStatus = "active", inactiveStatus = "inactive") {
@@ -3347,7 +3991,7 @@ function qualityEditHref(collection, item = {}) {
   const id = encodeURIComponent(item.id || "");
   if (!id) return "";
   if (collection === "events") return `#/cms/event/${id}`;
-  if (collection === "eventMedia") return `#/cms/followup`;
+  if (collection === "eventMedia") return `#/cms/editorial/retrospectives`;
   if (collection === "media_assets") return `#/cms/media/edit?id=${id}`;
   if (collection === "videos") return `#/cms/media/videos?mode=edit&id=${id}`;
   if (collection === "galleries") return `#/cms/edit?module=galleries&id=${id}&section=all`;
@@ -4581,6 +5225,7 @@ export async function moduleListPage(module, section = "all") {
         if (sortA !== sortB) return sortA - sortB;
         return String(a.name || "").localeCompare(String(b.name || ""), "de", { sensitivity: "base" });
       }
+      if (module === "speakers") return 0;
       if (module === "editorialContent" && section === "interna") {
         const areaOrder = { ueber_uns: 1, mitglied_werden: 2, sonstiges: 3 };
         const areaA = areaOrder[internalAreaKey(a)] || 9;
@@ -4602,7 +5247,12 @@ export async function moduleListPage(module, section = "all") {
   const memberMediaAssets = module === "members" ?await list("media_assets").catch(() => []) : [];
   const memberUsers = module === "members" ?await list("users").catch(() => []) : [];
   const linkedMediaAssets = ["editorialContent", "topics", "boardMembers", "speakers", "sponsors"].includes(module) ?await list("media_assets").catch(() => []) : [];
-  const active = editorialConfig?.active || { topics: "cms/topics", galleries: "cms/galleries", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", membershipApplications: "cms/membership-applications", memberDocuments: "cms/member-documents", memberDirectories: "cms/member-directories", users: "cms/members", boardMembers: "cms/board", editorialContent: "cms/editorial", mailQueue: "cms/mail", eventMedia: "cms/followup" }[module];
+  const retrospectiveEvents = module === "editorialContent" && section === "retrospectives" ?await list("events").catch(() => []) : [];
+  const retrospectiveEventById = new Map(retrospectiveEvents.map((event) => [event.id, event]));
+  const speakerApprovals = module === "speakers" ?await list("speakerApprovals").catch(() => []) : [];
+  const speakerTopics = module === "speakers" ?await list("topics") : [];
+  const speakerEvents = module === "speakers" ?await list("events") : [];
+  const active = editorialConfig?.active || { topics: "cms/topics", galleries: "cms/galleries", speakers: "cms/speakers", sponsors: "cms/sponsors", members: "cms/members", membershipApplications: "cms/membership-applications", memberDocuments: "cms/member-documents", memberDirectories: "cms/member-directories", users: "cms/members", boardMembers: "cms/board", editorialContent: "cms/editorial", mailQueue: "cms/mail", eventMedia: "cms/editorial/retrospectives" }[module];
   const editable = !["mailQueue", "eventMedia"].includes(module);
   const manageable = module !== "mailQueue";
   const inactiveStatus = module === "editorialContent" || module === "eventMedia" || module === "speakers" || module === "sponsors" || module === "galleries" || module === "memberDocuments" ?"archived" : "inactive";
@@ -4612,26 +5262,32 @@ export async function moduleListPage(module, section = "all") {
   const createParams = editorialConfig?.createParams || "";
   const emptyText = editorialConfig ?`Noch keine Inhalte in ${escapeHtml(title)}.` : "Noch keine Eintraege vorhanden.";
   if (module === "topics") {
-    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${cmsBulkToolbar(records, { collection: "topics", label: "Themen" })}<div class="table-wrap"><table class="table table--editorial table--topics table--with-audio"><thead><tr><th class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-select-all ${records.length ?"" : "disabled"} aria-label="Alle Themen auswaehlen"></th><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "Thema")} auswaehlen"></td><td><div class="topic-thumb topic-thumb--table">${topicThumb(item, linkedMediaAssets)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a>${newsImportBadge(item)}</td><td><strong class="ai-article-date">${escapeHtml(listDate(item))}</strong></td><td>Thema</td><td>${audioListCell("topics", item)}</td><td>${editorialMediaFlags(item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${cmsBulkToolbar(records, { collection: "topics", label: "Themen" })}<div class="table-wrap"><table class="table table--editorial table--topics table--with-audio"><thead><tr><th class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-select-all ${records.length ?"" : "disabled"} aria-label="Alle Themen auswaehlen"></th><th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "Thema")} auswaehlen"></td><td><div class="topic-thumb topic-thumb--table">${topicThumb(item, linkedMediaAssets)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a></td><td><strong class="ai-article-date">${escapeHtml(listDate(item))}</strong></td><td>Thema</td><td>${audioListCell("topics", item)}</td><td>${editorialMediaFlags(item)}</td><td>${editorialActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "galleries") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--galleries"><thead><tr><th>Bild</th><th>Titel</th><th>Bilder</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table gallery-thumb--table">${galleryThumb(item)}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a><small>${escapeHtml(shortText(item.description || "-", 90))}</small></td><td>${(item.images || []).length}</td><td>${galleryListStatus(item)}</td><td>${galleryActionButtons(item, section)}</td></tr>`).join("") : `<tr><td colspan="5">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "editorialContent") {
     const actionButtons = section === "interna" ?internalEditorialActionButtons : editorialVisibilityActionButtons;
-    const isBulkEditorialList = ["news", "press"].includes(section);
+    const isBulkEditorialList = ["news", "press", "retrospectives"].includes(section);
     if (section === "interna") {
       const legacyCount = records.filter((item) => internalUsageKey(item) === "legacy").length;
       const legacyAction = legacyCount ?`<button class="button button--danger button--small" type="button" data-delete-internal-legacy>Altbestand löschen (${legacyCount})</button>` : "";
       return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<div class="actions">${legacyAction}<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a></div>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--interna"><thead><tr><th>Bereich</th><th>Titel</th><th>Typ</th><th>Nutzung</th><th>Sortierung</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => { const usageKey = internalUsageKey(item); return `<tr class="internal-row internal-row--${escapeHtml(internalAreaKey(item))}" data-internal-usage="${escapeHtml(usageKey)}" data-record-id="${escapeHtml(item.id)}"><td>${internalAreaButton(item)}</td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || item.titel || "-")}">${escapeHtml(shortText(item.title || item.titel || "-", 76))}</a><small>${escapeHtml(shortText(item.introText || item.kurztext || item.bodyText || item.langtext || "-", 110))}</small></td><td><button class="internal-type-pill internal-preview-button" type="button" data-internal-preview="${escapeHtml(item.id)}">${escapeHtml(internalTypeLabel(item.typ || item.type || item.section))}</button></td><td><button class="internal-type-pill internal-usage-pill internal-usage-pill--${usageKey === "portal" ?"portal" : usageKey === "legacy" ?"legacy" : "other"} internal-preview-button" type="button" data-internal-preview="${escapeHtml(item.id)}">${escapeHtml(internalUsageLabel(item))}</button></td><td>${escapeHtml(String(item.sortOrder ?? item.sortierung ?? "-"))}</td><td>${status(internalStatusValue(item))}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`; }).join("") : `<tr><td colspan="7">${emptyText}</td></tr>`}</tbody></table></div><div id="internal-legacy-delete-result"></div></section>`));
     }
-    const bulkLabel = section === "press" ?"Presse" : "News";
+    const bulkLabel = section === "press" ?"Presse" : section === "retrospectives" ?"Rückblicke" : "News";
     const selectHead = isBulkEditorialList ?`<th class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-select-all ${records.length ?"" : "disabled"} aria-label="Alle ${bulkLabel} auswaehlen"></th>` : "";
     const selectCell = (item) => isBulkEditorialList ?`<td class="cms-bulk-select-col"><input type="checkbox" data-cms-bulk-item="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || bulkLabel)} auswaehlen"></td>` : "";
-    const emptyColspan = isBulkEditorialList ?8 : 7;
+    const eventHead = section === "retrospectives" ?"<th>Veranstaltung</th>" : "";
+    const eventCell = (item) => {
+      if (section !== "retrospectives") return "";
+      const event = retrospectiveEventById.get(item.linkedEventId || item.galleryEventId);
+      return `<td>${event ?`<a class="link" href="#/cms/event/${escapeHtml(event.id)}?tab=post"><strong>${escapeHtml(shortText(event.title || "Veranstaltung", 54))}</strong></a>` : `<strong>Nicht zugeordnet</strong>`}<small>${escapeHtml(event?.date ?formatDate(event.date) : item.linkedEventId || "-")}</small></td>`;
+    };
+    const emptyColspan = (isBulkEditorialList ?8 : 7) + (section === "retrospectives" ?1 : 0);
     const latestNewsImport = section === "news" ?cmsLatestImportMarker(records) : null;
     const newsRowClass = (item) => section === "news" && cmsIsLatestImportItem(item, latestNewsImport) ?` class="ai-article-row--latest-import"` : "";
-    const newsImportBadge = (item) => section === "news" && cmsIsLatestImportItem(item, latestNewsImport) ?`<span class="ai-import-badge">Neuester Import</span>` : "";    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${isBulkEditorialList ?cmsBulkToolbar(records, { collection: "editorialContent", label: bulkLabel }) : ""}<div class="table-wrap"><table class="table table--editorial table--with-audio${section === "press" ?" table--press" : ""}${section === "news" ?" table--news" : ""}"><thead><tr>${selectHead}<th>Bild</th><th>Titel</th><th>Datum</th><th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr${newsRowClass(item)}>${selectCell(item)}<td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a>${newsImportBadge(item)}</td><td><strong class="ai-article-date">${escapeHtml(listDate(item))}</strong></td><td>${escapeHtml(item.category || item.page || "-")}</td><td>${audioListCell("editorialContent", item, { showMeta: false })}</td><td>${editorialMediaFlags(item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${emptyColspan}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+    const newsImportBadge = (item) => section === "news" && cmsIsLatestImportItem(item, latestNewsImport) ?`<span class="ai-import-badge">Neuester Import</span>` : "";    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel">${isBulkEditorialList ?cmsBulkToolbar(records, { collection: "editorialContent", label: bulkLabel }) : ""}<div class="table-wrap"><table class="table table--editorial table--with-audio${section === "press" ?" table--press" : ""}${section === "news" ?" table--news" : ""}${section === "retrospectives" ?" table--retrospectives" : ""}"><thead><tr>${selectHead}<th>Bild</th><th>Titel</th><th>Datum</th>${eventHead}<th>Rubrik</th><th>Audio</th><th>Medien</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr${newsRowClass(item)}>${selectCell(item)}<td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "editorialContent", section, field: "imageUrl", altField: "thumbnail_alt", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item.title || "-")}">${escapeHtml(shortText(item.title || "-", 60))}</a>${newsImportBadge(item)}</td><td><strong class="ai-article-date">${escapeHtml(listDate(item))}</strong></td>${eventCell(item)}<td>${escapeHtml(section === "retrospectives" ?"Rückblicke" : item.category || item.page || "-")}</td><td>${audioListCell("editorialContent", item, { showMeta: false })}</td><td>${editorialMediaFlags(item)}</td><td>${actionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="${emptyColspan}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "members") {
     const view = section === "users" ? "users" : "members";
@@ -4653,7 +5309,87 @@ export async function moduleListPage(module, section = "all") {
         <div class="actions"><a class="button button--primary" href="#/cms/members">Mitglieder öffnen</a></div>
       </section>`));
   }
-  if (["boardMembers", "speakers", "sponsors"].includes(module)) {
+  if (module === "speakers") {
+    const currentEvent = speakerEvents
+      .map(normalizeCmsEventRecord)
+      .filter((event) => event.id && event.date && !isPastCmsEvent(event)
+        && !["archived", "deleted", "inactive", "draft"].includes(String(event.status || "").toLowerCase()))
+      .sort((a, b) => a.date.localeCompare(b.date))[0];
+    const currentTopicIds = new Set(currentEvent?.topicIds || []);
+    const currentSpeakerIds = new Set(currentEvent?.speakerIds || []);
+    for (const topic of speakerTopics) {
+      if (!currentEvent || !(currentTopicIds.has(topic.id) || topic.eventId === currentEvent.id
+        || topic.linkedEventId === currentEvent.id || (topic.eventIds || []).includes(currentEvent.id))) continue;
+      currentTopicIds.add(topic.id);
+      [
+        topic.speakerId, topic.moderatorId, topic.coModeratorId,
+        ...(Array.isArray(topic.speakerIds) ? topic.speakerIds : []),
+        ...(Array.isArray(topic.speakers) ? topic.speakers : []),
+        ...(Array.isArray(topic.moderatorIds) ? topic.moderatorIds : []),
+        ...(Array.isArray(topic.coModeratorIds) ? topic.coModeratorIds : []),
+        ...Object.keys(topic.speakerRoles || {})
+      ].filter(Boolean).forEach((id) => currentSpeakerIds.add(id));
+    }
+    const speakerInCurrentEvent = (speaker) => currentSpeakerIds.has(speaker.id)
+      || (Array.isArray(speaker.eventIds) && speaker.eventIds.includes(currentEvent?.id))
+      || (Array.isArray(speaker.topicIds) && speaker.topicIds.some((id) => currentTopicIds.has(id)))
+      || currentTopicIds.has(speaker.topicId);
+    const speakerNameParts = (speaker) => {
+      const parts = String(speaker.name || "").trim().split(/\s+/);
+      return [String(speaker.lastName || parts.at(-1) || ""), String(speaker.firstName || parts.slice(0, -1).join(" ") || "")];
+    };
+    const orderedSpeakers = [...records].sort((a, b) => {
+      const eventOrder = Number(speakerInCurrentEvent(b)) - Number(speakerInCurrentEvent(a));
+      if (eventOrder) return eventOrder;
+      const aName = speakerNameParts(a);
+      const bName = speakerNameParts(b);
+      return aName[0].localeCompare(bName[0], "de", { sensitivity: "base" })
+        || aName[1].localeCompare(bName[1], "de", { sensitivity: "base" });
+    });
+    const speakerLinkedToTopic = (speaker) => speakerTopics.some((topic) => {
+      const assignedIds = [topic.speakerId, topic.moderatorId, topic.coModeratorId,
+        ...(Array.isArray(topic.speakerIds) ? topic.speakerIds : []),
+        ...(Array.isArray(topic.speakers) ? topic.speakers : []),
+        ...(Array.isArray(topic.moderatorIds) ? topic.moderatorIds : []),
+        ...(Array.isArray(topic.coModeratorIds) ? topic.coModeratorIds : [])];
+      return assignedIds.includes(speaker.id) || topic.speakerRoles?.[speaker.id]
+        || speaker.topicId === topic.id || (Array.isArray(speaker.topicIds) && speaker.topicIds.includes(topic.id));
+    });
+    const speakerLinkedToEvent = (speaker) => speakerEvents.some((event) => event.speakerId === speaker.id
+      || (Array.isArray(event.speakerIds) && event.speakerIds.includes(speaker.id))
+      || (Array.isArray(speaker.eventIds) && speaker.eventIds.includes(event.id)));
+    const speakerActions = (speaker) => {
+      const edit = `<a class="icon-button icon-button--edit" href="#/cms/edit?module=speakers&id=${escapeHtml(speaker.id)}&section=${section}" title="Bearbeiten" aria-label="Bearbeiten">${iconImage("edit")}</a>`;
+      const adminCanManage = isAdmin(currentUser());
+      const isActive = speaker.status === "published" && (speaker.visibility || "public") === "public";
+      const toggleLabel = adminCanManage ? isActive ? "Referent sperren" : "Referent freischalten" : "Sichtbarkeit nur für Admins änderbar";
+      const toggle = `<button class="icon-button ${isActive ? "icon-button--visible" : "icon-button--hidden"}" type="button" data-record-status="speakers" data-record-id="${escapeHtml(speaker.id)}" data-status="${isActive ? "archived" : "published"}" title="${toggleLabel}" aria-label="${toggleLabel}" ${adminCanManage ? "" : "disabled"}>${iconImage(isActive ? "eye" : "eyeOff")}</button>`;
+      const linked = speakerLinkedToTopic(speaker) || speakerLinkedToEvent(speaker);
+      const deleteTitle = !adminCanManage ? "Löschen nur für Admins" : linked ? "Referent ist mit einem Vortrag oder Event verknüpft" : "Referent löschen";
+      const removeButton = `<button class="icon-button icon-button--danger" type="button" data-delete-record="speakers" data-record-id="${escapeHtml(speaker.id)}" data-speaker-linked="${linked ? "yes" : "no"}" title="${deleteTitle}" aria-label="${deleteTitle}" ${adminCanManage ? "" : "disabled"}>${iconImage("trash")}</button>`;
+      return `<div class="table-actions table-actions--icons">${edit}${toggle}${removeButton}</div>`;
+    };
+    const approvalsForSpeaker = (speakerId = "") => speakerApprovals
+      .filter((approval) => approval.speakerId === speakerId)
+      .sort((a, b) => String(b.submittedAt || b.updatedAt || b.sentAt || "").localeCompare(String(a.submittedAt || a.updatedAt || a.sentAt || "")));
+    const approvalStatusLabel = (approval = null) => {
+      if (!approval) return `<span class="muted">Noch keine Freigabe</span>`;
+      if (approval.status === "approved") return `<span class="status">Freigabe erteilt</span>`;
+      if (approval.status === "applied") return `<span class="status status--draft">Änderungen übernommen</span>`;
+      if (approval.status === "submitted" && approval.speakerDecision === "approved") return `<span class="status">Verbindlich freigegeben</span>`;
+      if (approval.status === "submitted") return `<span class="status status--draft">Rückmeldung vorhanden</span>`;
+      if (approval.status === "opened") return `<span class="status">Link geöffnet</span>`;
+      if (approval.status === "queued") return `<span class="status">Freigabe gesendet</span>`;
+      return status(approval.status || "open");
+    };
+    const approvalEditorLink = (approval = null) => {
+      if (!approval?.eventId || !approval?.topicId || !approval?.speakerId) return "";
+      const approved = approval.status === "approved" || (approval.status === "submitted" && approval.speakerDecision === "approved");
+      return `<a class="link" href="#/cms/event/${encodeURIComponent(approval.eventId)}?tab=topics&mode=${approved ? "approval" : "referent"}&topic=${encodeURIComponent(approval.topicId)}&speaker=${encodeURIComponent(approval.speakerId)}">${approved ? "Protokoll ansehen" : "Editor öffnen"}</a>`;
+    };
+    return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=speakers&id=new" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="table table--editorial table--speakers"><thead><tr><th>Bild</th><th>Referent</th><th>Firma / Position</th><th>Referenten-Rückmeldung</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${orderedSpeakers.length ?orderedSpeakers.map((item, index) => { const approvals = approvalsForSpeaker(item.id); const latest = approvals[0] || null; const current = speakerInCurrentEvent(item); const group = index === 0 && current ? `<tr class="speaker-list-group"><th colspan="6">Aktuelle Veranstaltung · ${escapeHtml(currentEvent.title || "Event")}</th></tr>` : index > 0 && !current && speakerInCurrentEvent(orderedSpeakers[index - 1]) ? `<tr class="speaker-list-group"><th colspan="6">Weitere Referenten</th></tr>` : ""; return `${group}<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: "speakers", section, field: "photoUrl", altField: "altText", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=speakers&id=${item.id}&section=${section}" title="${escapeHtml(item.name || "-")}">${escapeHtml(shortText(item.name || "-", 60))}</a><small>${escapeHtml(item.email || item.contactEmail || "")}</small></td><td>${escapeHtml([item.company, item.position].filter(Boolean).join(" · ") || "-")}</td><td>${approvalStatusLabel(latest)}${approvalEditorLink(latest)}</td><td>${status(item.status || item.visibility || "active")}${item.visibilityApprovalMode === "manual" ? `<small>Freigabe manuell</small>` : ""}</td><td>${speakerActions(item)}</td></tr>`; }).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+  }
+  if (["boardMembers", "sponsors"].includes(module)) {
     const imageField = module === "sponsors" ?"logoUrl" : "photoUrl";
     const titleField = config[2];
     const subField = config[3];
@@ -4859,6 +5595,38 @@ function normalizeMemberLookup(value = "") {
     .trim();
 }
 
+function isNeutralEventProgramItem(item = {}) {
+  const value = [item.type, item.person, item.title].filter(Boolean).join(" ");
+  return /pause|lunch|fruehstueck|frühstück|networking|begr[uü]ßung|begr[uü]ssung/i.test(String(value));
+}
+
+function linkedInEditor(item = {}, { articleUrl = "", imageUrl = "" } = {}) {
+  const linkedin = normalizeLinkedIn(item.linkedin, { articleUrl, imageUrl, enabled: true });
+  const tags = linkedin.hashtags.join(", ");
+  const previewImage = imageUrl || linkedin.imageUrl;
+  const approved = linkedin.status === "approved";
+  const published = linkedin.status === "published";
+  return `<details class="editorial-tool-details editorial-linkedin-panel" data-linkedin-editor open>
+    <summary><span>Social Media</span><strong>LinkedIn-Vorschau</strong><small class="linkedin-workflow-state ${approved || published ? "is-approved" : ""}" data-linkedin-status-label>${published ? "veroeffentlicht" : approved ? "freigegeben" : "Entwurf"}</small></summary>
+    <div class="editor-tool-section linkedin-workflow">
+      <input type="checkbox" name="linkedinEnabled" checked hidden>
+      <input type="hidden" name="linkedinHashtags" value="${escapeHtml(tags)}">
+      <input type="checkbox" name="linkedinUseArticleImage" checked hidden>
+      <input type="hidden" name="linkedinImageUrl" value="">
+      <input type="hidden" name="linkedinArticleUrl" value="${escapeHtml(linkedin.articleUrl)}">
+      <input type="hidden" name="linkedinStatus" value="${escapeHtml(linkedin.status || "draft")}">
+      <input type="hidden" name="linkedinScheduledAt" value="">
+      <div class="linkedin-teaser-card" data-linkedin-preview-box>
+        ${previewImage ? `<img data-linkedin-preview-image data-linkedin-article-image="${escapeHtml(imageUrl)}" src="${escapeHtml(previewImage)}" alt="">` : `<div class="linkedin-preview__image" data-linkedin-preview-image data-linkedin-article-image="${escapeHtml(imageUrl)}" hidden></div>`}
+        <div class="linkedin-teaser-card__body"><strong data-linkedin-preview-headline>${escapeHtml(item.title || "")}</strong><div data-linkedin-preview-text>${escapeHtml(linkedin.text || "LinkedIn-Teaser wird aus dem Artikel erstellt.")}</div><small>prodigitaltv.de</small></div>
+      </div>
+      <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>LinkedIn-Text</label><button class="button button--primary button--small" type="button" data-linkedin-ai-generate>Automatisch erstellen</button></div><textarea name="linkedinText" rows="5" placeholder="Wird automatisch aus dem Artikel erstellt; bei Bedarf hier feinjustieren">${escapeHtml(linkedin.text)}</textarea></div>
+      <div class="tool-button-row linkedin-workflow__actions"><button class="button button--secondary button--small" type="button" data-linkedin-approve>Freigeben</button><button class="button button--primary button--small" type="button" data-linkedin-transfer ${approved ? "" : "disabled"}>${published ? "Veroeffentlicht" : "Auf LinkedIn veroeffentlichen"}</button><button class="button button--secondary button--small" type="button" data-linkedin-copy>Text kopieren</button></div>
+      <p class="muted" data-linkedin-transfer-hint>${published ? "Dieser Beitrag wurde bereits auf LinkedIn veroeffentlicht." : approved ? "Freigegeben: Beim Veroeffentlichen wird der Beitrag direkt an LinkedIn uebertragen." : "Teaser pruefen, freigeben, danach direkt auf LinkedIn veroeffentlichen."}</p>
+    </div>
+  </details>`;
+}
+
 async function resolveMemberEditorItem(id = "") {
   const exact = await getOne("members", id).catch(() => null);
   if (exact) return exact;
@@ -4907,13 +5675,14 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
   };
   const definition = definitions[module];
   if (!definition) return dashboardPage();
-  const fallbackItem = { id, page: query.get("page") || "", section: query.get("section") || "", key: query.get("page") && query.get("section") ?`${query.get("page")}.${query.get("section")}` : "", category: module === "topics" ?"Thema" : "", title: id, status: module === "topics" ?"active" : module === "galleries" ?"published" : "draft", visibility: "public", images: [], createdAt: new Date().toISOString() };
+  const fallbackItem = { id, page: query.get("page") || "", section: query.get("section") || "", key: query.get("page") && query.get("section") ?`${query.get("page")}.${query.get("section")}` : "", category: query.get("category") || (module === "topics" ?"Thema" : ""), publication_target: query.get("publication_target") || "", title: id, status: module === "topics" ?"active" : module === "galleries" ?"published" : "draft", visibility: query.get("visibility") || "public", images: [], createdAt: new Date().toISOString() };
   const item = id === "new"
     ?{ ...fallbackItem, id: `${module}-${crypto.randomUUID()}` }
     : module === "members"
       ?await resolveMemberEditorItem(id) || fallbackItem
       : (await getOne(module, id)) || fallbackItem;
   const topicSpeakers = module === "topics" ?await list("speakers") : [];
+  const topicEvents = module === "topics" ?await list("events").catch(() => []) : [];
   const memberMediaAssets = module === "members" ?await list("media_assets").catch(() => []) : [];
   const editMediaAssets = ["editorialContent", "topics", "sponsors"].includes(module) ?await list("media_assets").catch(() => []) : [];
   const audioProviders = ["editorialContent", "topics"].includes(module) ?await getOne("settings", "audioProviders").catch(() => null) : null;
@@ -4986,18 +5755,22 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
   const editorialKind = item.page || item.section || query.get("page") || query.get("section");
   const isMemberAreaEditor = module === "editorialContent"
     && (editorialKind === "member-area" || query.get("section") === "member-area" || isMemberAreaEditorialItem(item));
-  if (module === "editorialContent" && (isMemberAreaEditor || ["press", "news", "pressRelease"].includes(editorialKind) || isPressEditorialItem(item) || isNewsEditorialItem(item))) {
-    const sectionKey = isMemberAreaEditor
+  const isMemberCommunicationEditor = module === "editorialContent"
+    && (editorialKind === "member-communication" || query.get("section") === "member-communication" || isMemberCommunicationEditorialItem(item));
+  if (module === "editorialContent" && (isMemberAreaEditor || isMemberCommunicationEditor || ["press", "news", "pressRelease", "retrospectives"].includes(editorialKind) || isPressEditorialItem(item) || isNewsEditorialItem(item))) {
+    const sectionKey = isMemberAreaEditor || isMemberCommunicationEditor
       ?"member-area"
-      : item.page === "news" || item.section === "news" || query.get("page") === "news" || query.get("section") === "news" ?"news" : "press";
+        : item.page === "news" || item.section === "news" || query.get("page") === "news" || query.get("section") === "news" ?"news" : "press";
     const [allEditorial, events, sponsors, galleries] = await Promise.all([list("editorialContent"), list("events"), list("sponsors"), list("galleries")]);
     const categories = Array.from(new Set(allEditorial
-      .filter((entry) => entry.page === sectionKey)
-      .map((entry) => entry.category || (sectionKey === "press" ?"Presse" : sectionKey === "member-area" ?"Member Infos" : "News"))
+      .filter((entry) => sectionKey === "member-area" ? isMemberAreaEditorialItem(entry) || isMemberCommunicationEditorialItem(entry) : entry.page === sectionKey || entry.section === sectionKey)
+      .map((entry) => entry.category || (sectionKey === "press" ?"Presse" : sectionKey === "member-area" ?"Mitgliederbereich" : "News"))
       .filter(Boolean))).sort((a, b) => a.localeCompare(b));
-    const categoryValue = item.category || (sectionKey === "press" ?"Presse" : sectionKey === "member-area" ?"Member Infos" : "News");
+    const categoryValue = item.category || (sectionKey === "press" ?"Presse" : sectionKey === "member-area" ?"Mitgliederbereich" : "News");
     const categoryOptions = Array.from(new Set([categoryValue, sectionKey === "press" ?"Rückblicke" : "", ...categories])).filter(Boolean);
-    const backPath = sectionKey === "press" ?"editorial/press" : sectionKey === "member-area" ?"editorial/member-area" : "editorial/news";
+    const isRetrospectiveEditor = sectionKey === "press" && (query.get("section") === "retrospectives" || item.isRetrospective || ["Rückblicke", "Rueckblicke"].includes(item.category) || item.linkedEventId);
+    const backPath = isRetrospectiveEditor ?"editorial/retrospectives" : sectionKey === "press" ?"editorial/press" : sectionKey === "member-area" ?"member-area" : "editorial/news";
+    const editorSection = isRetrospectiveEditor ?"retrospectives" : sectionKey;
     const defaultRetrospectivePrompt = `Erstelle aus der folgenden Pressemitteilung einen redaktionellen Rückblicksbeitrag für PROdigitalTV.
 
 Ziel:
@@ -5052,7 +5825,6 @@ Ausgangstext:
           ${galleryPlayerButton(selectedGallery, "Galerie abspielen")}
         </div>`
       : `<div class="editor-gallery-preview editor-gallery-preview--empty" data-editor-gallery-preview><p class="muted">Keine Galerie ausgewaehlt. Nach dem Speichern erscheint hier der Playbutton für die verknuepfte Galerie.</p></div>`;
-    const isRetrospectiveEditor = sectionKey === "press" && (item.isRetrospective || ["Rückblicke", "Rückblicke"].includes(item.category) || item.linkedEventId);
     const thumbState = `${editorialSummaryThumb(item)}${item.imageUrl ?`<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`}`;
     const audioState = item.audioUrl ?`<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
     const galleryState = selectedGallery ?`<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
@@ -5067,12 +5839,19 @@ Ausgangstext:
     const publicArticleHref = `/?real=1#/${escapeHtml(publicArticlePath)}`;
     const sourceJsonValue = JSON.stringify(item.source_snapshot_json || item.sources || [], null, 2);
     const tagsValue = Array.isArray(item.tags) ?item.tags.join(", ") : item.tags || "";
-    const editorTitle = sectionKey === "press" ?"Pressemeldung bearbeiten" : sectionKey === "member-area" ?"Mitgliederbeitrag bearbeiten" : "News bearbeiten";
-    return protect(cmsShell(`cms/${backPath}`, `${cmsTitle("Redaktion", editorTitle, `<a class="button button--secondary button--small" href="#/cms/${backPath}">Zurueck</a><button class="button button--primary button--small" type="submit" form="content-edit-form">Speichern</button>`)}
+    const editorTitle = isRetrospectiveEditor ?"Rückblick bearbeiten" : sectionKey === "press" ?"Pressemeldung bearbeiten" : sectionKey === "member-area" ?"Beitrag im Mitgliederbereich bearbeiten" : "News bearbeiten";
+    const memberCommunicationMailAction = sectionKey === "member-area" && item.status === "published"
+      ? item.memberCommunicationSentAt || item.memberCommunicationMailingId
+        ? `<span class="tag">Versendet: ${escapeHtml(String(item.memberCommunicationQueuedMailCount || 0))} Mails</span>`
+        : `<button class="button button--secondary button--small" type="button" data-send-member-communication-test="${escapeHtml(item.id)}">Test senden</button><button class="button button--primary button--small" type="button" data-send-member-communication="${escapeHtml(item.id)}">An alle Mitglieder senden</button><span class="member-communication-send-result" data-member-communication-send-result></span>`
+      : sectionKey === "member-area"
+        ? `<span class="tag">Versand nach Veröffentlichung</span>`
+        : "";
+    return protect(cmsShell(`cms/${backPath}`, `${cmsTitle("Redaktion", editorTitle, `<a class="button button--secondary button--small" href="#/cms/${backPath}">Zurueck</a>${memberCommunicationMailAction}<button class="button button--primary button--small" type="submit" form="content-edit-form">Speichern</button>`)}
       <section class="panel"><form id="content-edit-form" data-module="${module}" data-id="${item.id}" class="form-grid">
         <input type="hidden" name="page" value="${escapeHtml(sectionKey)}">
         <input type="hidden" name="section" value="${escapeHtml(sectionKey === "press" ?"pressRelease" : sectionKey)}">
-        ${sectionKey === "member-area" ?`<input type="hidden" name="visibility" value="members">` : ""}
+        ${sectionKey === "member-area" ?`<input type="hidden" name="visibility" value="members"><input type="hidden" name="publication_target" value="member-area">` : ""}
         <input type="hidden" name="key" value="${escapeHtml(item.key || `${sectionKey}.${item.id}`)}">
         <input type="hidden" name="validFrom" value="${escapeHtml(item.validFrom || item.publishDate || "")}">
         <div class="editorial-workspace editorial-workspace--text-editor">
@@ -5086,7 +5865,7 @@ Ausgangstext:
             </div>
             <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Titel / Headline</label>${aiFieldActions([{ action: "improveText", target: "title", label: "Headline erzeugen", entityType: module, entityId: item.id, fieldName: "title" }])}</div><textarea name="title" rows="2" required>${escapeHtml(item.title || "")}</textarea></div>
             <div class="field editorial-text-field editorial-text-field--compact"><div class="editorial-field-head"><label>Subline</label>${aiFieldActions([{ action: "improveText", target: "subtitle", label: "Subline erzeugen", entityType: module, entityId: item.id, fieldName: "subtitle" }])}</div><textarea name="subtitle" rows="2">${escapeHtml(item.subtitle || "")}</textarea></div>
-            <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Haupttext</label>${aiFieldActions(sectionKey === "press" ?[{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }, { action: "rewritePressRetrospective", target: "bodyText", label: "Rückblick aus Pressemitteilung", entityType: module, entityId: item.id, fieldName: "bodyText", promptField: "retrospectivePrompt" }] : [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div><textarea name="bodyText" required>${escapeHtml(item.bodyText || "")}</textarea></div>
+            <div class="field editorial-text-field editorial-text-field--body"><div class="editorial-field-head"><label>Haupttext</label>${aiFieldActions(sectionKey === "press" ?[{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }, { action: "rewritePressRetrospective", target: "bodyText", label: "Rückblick aus Pressemitteilung", entityType: module, entityId: item.id, fieldName: "bodyText", promptField: "retrospectivePrompt" }] : [{ action: "improveText", target: "bodyText", label: "Text bearbeiten", entityType: module, entityId: item.id, fieldName: "bodyText" }])}</div><div class="editorial-format-toolbar" role="toolbar" aria-label="Text formatieren"><button type="button" data-editorial-format="bold" title="Markierten Text fett formatieren"><strong>B</strong><span>Fett</span></button><button type="button" data-editorial-format="italic" title="Markierten Text kursiv formatieren"><em>I</em><span>Kursiv</span></button><button type="button" data-editorial-format="underline" title="Markierten Text unterstreichen"><u>U</u><span>Unterstrichen</span></button><button type="button" data-editorial-format="link" title="Linktext und Webadresse eingeben"><span aria-hidden="true">&#128279;</span><span>Link</span></button><button type="button" data-editorial-format="heading" title="Zwischenüberschrift einfügen"><strong>H2</strong><span>Überschrift</span></button><button type="button" data-editorial-format="list" title="Aufzählung einfügen"><span aria-hidden="true">&#8226;</span><span>Liste</span></button></div><div class="editorial-wysiwyg" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Haupttext bearbeiten" data-editorial-wysiwyg>${richTextHtml(item.bodyText || "", "<p><br></p>")}</div><textarea class="editorial-wysiwyg-source" name="bodyText" aria-hidden="true" tabindex="-1">${escapeHtml(item.bodyText || "")}</textarea><dialog class="editorial-link-dialog" data-editorial-link-dialog><div data-editorial-link-form><div class="editorial-link-dialog__head"><h3>Hyperlink einfügen</h3><button type="button" class="icon-button" data-editorial-link-cancel aria-label="Schließen">&times;</button></div><label>Linktext<input name="linkText" placeholder="Angezeigter Text"></label><label>Webadresse<input name="linkUrl" type="url" placeholder="https://example.com"></label><div class="actions"><button type="button" class="button button--secondary button--small" data-editorial-link-cancel>Abbrechen</button><button type="button" class="button button--primary button--small" data-editorial-link-submit>Link einfügen</button></div></div></dialog></div>
             <div class="field editorial-text-field"><div class="editorial-field-head"><label>Shorttext / Intro</label>${aiFieldActions([{ action: "shortenText", target: "introText", label: "Kurztext erzeugen", entityType: module, entityId: item.id, fieldName: "introText" }])}</div><textarea name="introText">${escapeHtml(item.introText || "")}</textarea></div>
             <div class="actions editorial-save-inline">
               <button class="button button--primary">Speichern</button>
@@ -5100,10 +5879,12 @@ Ausgangstext:
               ${sectionKey === "news" ?`<div class="field"><label>Tags</label><input name="tags" value="${escapeHtml(tagsValue)}" placeholder="Streaming, KI, Vermarktung"></div>` : ""}
               <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ?"selected" : ""}>Entwurf</option><option value="published" ${item.status === "published" ?"selected" : ""}>Veroeffentlicht / Aktiv</option><option value="archived" ${item.status === "archived" ?"selected" : ""}>Archiviert</option></select></div>
               <div class="meta-date-row"><div class="field"><label>Veroeffentlichungsdatum</label><input type="date" name="publishDate" value="${escapeHtml(item.publishDate || "")}"></div><div class="field"><label>Enddatum</label><input type="date" name="validTo" value="${escapeHtml(item.validTo || "")}"></div></div>
+              ${sectionKey === "member-communication" ?`<div class="field"><label>Verknuepfte Veranstaltung</label><select name="linkedEventId">${eventOptions}</select><p class="muted">Ist eine Veranstaltung verknuepft, verschwindet diese Info automatisch aus dem Mitgliederbereich, sobald die Veranstaltung beendet ist. Alternativ steuert das Enddatum die Ausblendung.</p></div>` : ""}
             </section>
+            ${linkedInEditor(item, { articleUrl: item.linkedin?.articleUrl || publicArticleHref, imageUrl: item.imageUrl || "" })}
             <details class="editorial-tool-details">
               <summary><span>Medien</span><strong>Bild / Thumb</strong>${thumbState}</summary>
-              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultize: "1200x675", aiCollage: false })}${linkedMediaActions({ collection: module, id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=${module}&id=${item.id}&section=${sectionKey}`, assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, module, "imageUrl")?.id || "" })}</div>${sectionKey === "news" ?`<div class="field"><label>Thumbnail-Prompt</label><textarea name="thumbnail_prompt">${escapeHtml(item.thumbnail_prompt || item.thumbnailPrompt || "")}</textarea></div><div class="field"><label>Thumbnail-Alt-Text</label><input name="thumbnail_alt" value="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || "")}"></div>` : ""}</div>
+              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultize: "1200x675", aiCollage: false })}${linkedMediaActions({ collection: module, id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=${module}&id=${item.id}&section=${editorSection}`, assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, module, "imageUrl")?.id || "" })}</div>${sectionKey === "news" ?`<div class="field"><label>Thumbnail-Prompt</label><textarea name="thumbnail_prompt">${escapeHtml(item.thumbnail_prompt || item.thumbnailPrompt || "")}</textarea></div><div class="field"><label>Thumbnail-Alt-Text</label><input name="thumbnail_alt" value="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || "")}"></div>` : ""}</div>
             </details>
             <details class="editorial-tool-details" data-editor-tool-panel="audio">
               <summary><span>Audio</span><strong>Vorlesen</strong>${audioState}</summary>
@@ -5129,7 +5910,7 @@ Ausgangstext:
               </div>
             </details>
             ${articleVideoAttachmentEditor(item, videoLibrary)}
-            ${sectionKey === "member-area" ?"" : `<details class="editorial-tool-details">
+            ${["member-area", "member-communication"].includes(sectionKey) ?"" : `<details class="editorial-tool-details">
               <summary><span>Werkzeuge</span><strong>Rückblick & Verknüpfungen</strong></summary>
             <section class="retrospective-tool">
               ${sectionKey === "news" ?`<div class="field"><label>Quellen</label><textarea name="source_snapshot_json_text" placeholder='[{ "title": "", "url": "", "source_type": "" }]'>${escapeHtml(sourceJsonValue)}</textarea></div><div class="field"><label>Interne Hinweise</label><textarea name="editorial_note">${escapeHtml(item.editorial_note || item.editorialNote || "")}</textarea></div>` : ""}
@@ -5145,7 +5926,7 @@ Ausgangstext:
             </details>`}
           </aside>
         </div>
-        <input type="hidden" name="visibility" value="${escapeHtml(item.visibility || "public")}">
+        <input type="hidden" name="visibility" value="${escapeHtml(sectionKey === "member-area" ? "members" : item.visibility || "public")}">
       </form></section>`));
   }
   if (module === "topics") {
@@ -5167,6 +5948,16 @@ Ausgangstext:
     const thumbState = `${editorialSummaryThumb(item)}${item.imageUrl ?`<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`}`;
     const audioState = item.audioUrl ?`<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
     const galleryState = selectedGallery ?`<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
+    const topicArticleHref = `/?real=1#/topic/${escapeHtml(item.id)}`;
+    const linkedTopicEventIds = new Set([item.eventId, item.linkedEventId, ...(item.eventIds || [])].filter(Boolean));
+    const publicationEvent = topicEvents
+      .filter((event) => event?.id && (linkedTopicEventIds.has(event.id) || (event.topicIds || []).includes(item.id)))
+      .filter((event) => event.date)
+      .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")) || String(a.endTime || "").localeCompare(String(b.endTime || "")))[0] || null;
+    const automaticPublishDate = publicationEvent?.date || item.publishDate || "";
+    const publicationHint = publicationEvent
+      ? `Automatisch nach Ende von ${escapeHtml(publicationEvent.title || "der Veranstaltung")} am ${escapeHtml(publicationEvent.date || "")}${publicationEvent.endTime ? `, ${escapeHtml(publicationEvent.endTime)} Uhr` : ""}.`
+      : "Noch keine Veranstaltung zugeordnet. Das Datum wird nach der Zuordnung automatisch gesetzt.";
     return protect(cmsShell("cms/topics", `${cmsTitle("Redaktion", "Thema bearbeiten", `<a class="button button--secondary button--small" href="#/cms/topics">Zurueck</a>`)}
       <section class="panel"><form id="topic-editor-form" data-topic-id="${item.id}" class="form-grid is-save-aware">
         <div class="editorial-workspace editorial-workspace--text-editor">
@@ -5182,11 +5973,12 @@ Ausgangstext:
               ${aiDisclosureField(item)}
               <div class="field"><label>Kategorie</label><input name="category" value="${escapeHtml(item.category || "Thema")}"></div>
               <div class="field"><label>Status</label><select name="status"><option value="draft" ${item.status === "draft" ?"selected" : ""}>Entwurf</option><option value="active" ${item.status === "active" ?"selected" : ""}>Veroeffentlicht / Aktiv</option><option value="inactive" ${item.status === "inactive" ?"selected" : ""}>Inaktiv</option><option value="archived" ${item.status === "archived" ?"selected" : ""}>Archiviert</option></select></div>
-              <div class="meta-date-row"><div class="field"><label>Veroeffentlichungsdatum</label><input type="date" name="publishDate" value="${escapeHtml(item.publishDate || "")}"></div><div class="field"><label>Enddatum</label><input type="date" name="validTo" value="${escapeHtml(item.validTo || "")}"></div></div>
+              <div class="meta-date-row"><div class="field"><label>Veroeffentlichungsdatum</label><input type="date" name="publishDate" value="${escapeHtml(automaticPublishDate)}" readonly aria-readonly="true"><p class="muted">${publicationHint}</p></div><div class="field"><label>Enddatum</label><input type="date" name="validTo" value="${escapeHtml(item.validTo || "")}"></div></div>
             </section>
+            ${linkedInEditor(item, { articleUrl: item.linkedin?.articleUrl || topicArticleHref, imageUrl: topicImageUrl(item, editMediaAssets) || item.imageUrl || "" })}
             <details class="editorial-tool-details">
               <summary><span>Medien</span><strong>Bild / Thumb</strong>${thumbState}</summary>
-              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: topicImageUrl(item, editMediaAssets), label: "Themenbild", defaultize: "1200x675", aiCollage: false })}${linkedMediaActions({ collection: "topics", id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=topics&id=${item.id}`, assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, "topics", "imageUrl")?.id || "" })}</div></div>
+              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: topicImageUrl(item, editMediaAssets), label: "Themenbild", defaultize: "1200x675", aiCollage: false })}${linkedMediaActions({ collection: "topics", id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=topics&id=${item.id}`, assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, "topics", "imageUrl")?.id || "" })}${topicImagePositionEditor(item, editMediaAssets)}</div></div>
             </details>
             <details class="editorial-tool-details">
               <summary><span>Medien</span><strong>Galerie</strong>${galleryState}</summary>
@@ -5453,7 +6245,7 @@ Ausgangstext:
         </div>
         <label class="cms-switch ${item?.mailingDisabled || item?.notificationOptOut || item?.reminderConsent === false ?"" : "is-active"}" title="Mailabo fuer Event- und Umfragehinweise steuern"><input type="checkbox" name="mailingEnabled" ${item?.mailingDisabled || item?.notificationOptOut || item?.reminderConsent === false ?"" : "checked"}><span class="cms-switch__track" aria-hidden="true"></span><span class="cms-switch__text">${item?.mailingDisabled || item?.notificationOptOut || item?.reminderConsent === false ?"Mailabo aus" : "Mailabo aktiv"}</span></label>
         <p class="muted">Betrifft Event-Hinweise, Umfragen und Newsletter. Systemmails wie Login oder Passwort bleiben moeglich.</p>
-        <a href="#/cms/event-notifications">Testgruppe verwalten</a>
+        <a href="#/cms/people">Testgruppe verwalten</a>
       </div>`
     : "";
   const imageUpload = module === "topics"
@@ -5661,7 +6453,8 @@ function peopleMemberEmails(member = {}) {
   for (const key of ["eventContacts", "contacts"]) {
     if (Array.isArray(member[key])) member[key].forEach((contact) => values.push(contact.email, contact.contactEmail));
   }
-  return [...new Set(values.filter(Boolean).map((email) => String(email).trim().toLowerCase()))];
+  const excluded = new Set((Array.isArray(member.mailingExcludedEmails) ?member.mailingExcludedEmails : []).map((email) => String(email || "").trim().toLowerCase()).filter(Boolean));
+  return [...new Set(values.filter(Boolean).map((email) => String(email).trim().toLowerCase()).filter((email) => !excluded.has(email)))];
 }
 
 function peopleMemberIsActive(member = {}) {
@@ -5689,37 +6482,31 @@ function peopleContactRow(item = {}, membersByEmail = new Map(), highlightEmail 
   const company = item.company || item.organization || item.organisation || member?.name || "";
   const position = item.position || item.role || item.function || "";
   const search = [name, company, position, email, type, member?.name].filter(Boolean).join(" ").toLowerCase();
-  const editableContactButton = isMemberOnly || isUserOnly ?"" : `<button class="button button--secondary button--small" type="button"
-        data-people-edit-open
-        data-contact-id="${escapeHtml(item.id || "")}"
-        data-first-name="${escapeHtml(item.firstName || "")}"
-        data-last-name="${escapeHtml(item.lastName || "")}"
-        data-company="${escapeHtml(company)}"
-        data-position="${escapeHtml(position)}"
-        data-email="${escapeHtml(email)}"
-        data-mobile="${escapeHtml(item.mobile || item.phone || "")}"
-        data-type="${escapeHtml(type)}"
-        data-newsletter-allowed="${item.newsletterAllowed || item.newsletterConsent ? "yes" : "no"}"
-        data-consent-source="${escapeHtml(item.newsletterConsentSource || item.consentSource || item.source || "")}"
-        data-consent-at="${escapeHtml(contactConsentInputDateTime(item.newsletterConsentAt || item.consentAt || item.optInAt || ""))}"
-        data-consent-note="${escapeHtml(item.newsletterConsentNote || item.consentNote || "")}">Bearbeiten</button>`;
-  return `<tr data-people-row data-email="${escapeHtml(email.toLowerCase())}" data-name="${escapeHtml(search)}" data-type="${escapeHtml(type)}" data-push="unknown" ${email && email.toLowerCase() === highlightEmail ?"class=\"is-highlighted\"" : ""}>
-    <td><strong>${escapeHtml(name)}</strong>${company ?`<small>${escapeHtml(company)}</small>` : ""}</td>
+  const sourceCollection = isUserOnly ?"users" : isMemberOnly ?"members" : "contacts";
+  const sourceId = isUserOnly ?item.__userId || "" : isMemberOnly ?item.__memberId || "" : item.id || "";
+  const sourceMemberId = item.__memberId || item.memberId || "";
+  const editAttrs = `data-people-edit-open data-contact-id="${sourceCollection === "contacts" ?escapeHtml(item.id || "") : ""}" data-source-collection="${sourceCollection}" data-source-id="${escapeHtml(sourceId)}" data-source-member-id="${escapeHtml(sourceMemberId)}" data-source-email="${escapeHtml(email.toLowerCase())}" data-first-name="${escapeHtml(item.firstName || "")}" data-last-name="${escapeHtml(item.lastName || "")}" data-company="${escapeHtml(company)}" data-position="${escapeHtml(position)}" data-email="${escapeHtml(email)}" data-mobile="${escapeHtml(item.mobile || item.phone || "")}" data-type="${escapeHtml(type)}" data-newsletter-allowed="${item.newsletterAllowed || item.newsletterConsent ? "yes" : "no"}" data-consent-source="${escapeHtml(item.newsletterConsentSource || item.consentSource || item.source || "")}" data-consent-at="${escapeHtml(contactConsentInputDateTime(item.newsletterConsentAt || item.consentAt || item.optInAt || ""))}" data-consent-note="${escapeHtml(item.newsletterConsentNote || item.consentNote || "")}"`;
+  const nameAction = `<button class="people-name-action" type="button" ${editAttrs}>${escapeHtml(name)}</button>`;
+  const editAction = `<button class="button button--secondary button--small" type="button" ${editAttrs}>Bearbeiten</button>`;
+  const deleteAction = `<button class="icon-button icon-button--danger" type="button" data-people-delete-source="${sourceCollection}" data-people-delete-id="${escapeHtml(sourceId)}" data-people-delete-member-id="${escapeHtml(sourceMemberId)}" data-people-delete-email="${escapeHtml(email.toLowerCase())}" data-people-name="${escapeHtml(name)}" title="Mailing-Adresse löschen" aria-label="Mailing-Adresse von ${escapeHtml(name)} löschen">${iconImage("trash")}</button>`;
+  return `<tr data-people-row data-email="${escapeHtml(email.toLowerCase())}" data-contact-id="${sourceCollection === "contacts" ?escapeHtml(item.id || "") : ""}" data-source-collection="${sourceCollection}" data-source-id="${escapeHtml(sourceId)}" data-name="${escapeHtml(search)}" data-type="${escapeHtml(type)}" data-push="unknown" ${email && email.toLowerCase() === highlightEmail ?"class=\"is-highlighted\"" : ""}>
+    <td><strong>${nameAction}</strong>${company ?`<small>${escapeHtml(company)}</small>` : ""}</td>
     <td>${escapeHtml(email || "-")}</td>
     <td>${escapeHtml(position || "-")}</td>
     <td>${status(type === "member" ?"member" : "contact")}</td>
     <td data-people-push-status>Wird geprueft ...</td>
     <td>${status(disabled ?"inactive" : "active")}<small>${disabled ?"Mailabo aus" : "Mailabo aktiv"}</small></td>
-    <td><div class="table-actions">
-      ${editableContactButton}
-      ${isUserOnly ?`<a class="button button--secondary button--small" href="#/cms/edit?module=users&id=${encodeURIComponent(item.__userId || "")}">Login oeffnen</a>${item.__memberId ?`<a class="button button--secondary button--small" href="#/cms/edit?module=members&id=${encodeURIComponent(item.__memberId)}">Mitglied</a>` : ""}` : isMemberOnly ?`<a class="button button--secondary button--small" href="#/cms/edit?module=members&id=${encodeURIComponent(item.__memberId || item.id || "")}">Mitglied oeffnen</a>` : `<button class="button button--secondary button--small" type="button" data-people-toggle-active="${escapeHtml(item.id || "")}" data-people-disabled="${disabled ? "yes" : "no"}">${disabled ?"Mailabo aktivieren" : "Mailabo pausieren"}</button>
-      <button class="button button--secondary button--small" type="button" data-people-delete="contacts:${escapeHtml(item.id || "")}" data-people-name="${escapeHtml(name)}">Loeschen</button>`}
+    <td><div class="table-actions table-actions--icons">
+      ${editAction}
+      ${sourceCollection === "contacts" ?`<button class="button button--secondary button--small" type="button" data-people-toggle-active="${escapeHtml(item.id || "")}" data-people-disabled="${disabled ? "yes" : "no"}">${disabled ?"Mailabo aktivieren" : "Mailabo pausieren"}</button>` : ""}
+      ${deleteAction}
     </div></td>
   </tr>`;
 }
 
 function peopleMemberContactRows(member = {}) {
   const baseName = member.name || member.company || member.title || "";
+  const excludedEmails = new Set((Array.isArray(member.mailingExcludedEmails) ?member.mailingExcludedEmails : []).map((email) => String(email || "").trim().toLowerCase()).filter(Boolean));
   const contacts = Array.isArray(member.eventContacts) ?member.eventContacts : [];
   const explicitContacts = contacts
     .map((contact, index) => ({
@@ -5737,8 +6524,8 @@ function peopleMemberContactRows(member = {}) {
       newsletterAllowed: true,
       mailingDisabled: member.mailingDisabled || member.membershipAccessStatus === "inactive" || member.membershipAccessStatus === "cancelled"
     }))
-    .filter((contact) => contact.email);
-  const fallbackEmail = member.email || member.contactEmail || member.primaryEmail || "";
+    .filter((contact) => contact.email && !excludedEmails.has(String(contact.email).trim().toLowerCase()));
+  const fallbackEmail = peopleMemberEmails(member)[0] || "";
   if (explicitContacts.length || !fallbackEmail) return explicitContacts;
   return [{
     id: `member-${member.id}`,
@@ -5758,6 +6545,7 @@ function peopleMemberContactRows(member = {}) {
 function peopleUserContactRows(users = [], membersById = new Map()) {
   return users
     .filter((user) => user?.email && userIsActive(user))
+    .filter((user) => !(user.mailingExcludedEmails || []).map((email) => String(email || "").trim().toLowerCase()).includes(String(user.email || "").trim().toLowerCase()))
     .filter((user) => String(user.role || "member").toLowerCase() === "member" || user.memberId)
     .map((user) => {
       const member = membersById.get(String(user.memberId || ""));
@@ -5818,15 +6606,17 @@ export async function peoplePage(query = new URLSearchParams()) {
   let contacts = [];
   let members = [];
   let users = [];
+  let testGroup = null;
   let loadError = "";
   try {
-    [contacts, members, users] = await Promise.all([
+    [contacts, members, users, testGroup] = await Promise.all([
       list("contacts").catch((error) => {
         loadError = error?.message || String(error);
         return [];
       }),
       list("members").catch(() => []),
-      list("users").catch(() => [])
+      list("users").catch(() => []),
+      getOne("settings", "notificationTestGroup").catch(() => null)
     ]);
   } catch (error) {
     loadError = error?.message || String(error);
@@ -5841,6 +6631,22 @@ export async function peoplePage(query = new URLSearchParams()) {
   const memberCount = sortedPeople.filter((item) => peopleContactType(item) === "member").length;
   const pushCount = sortedPeople.filter((item) => peopleContactPushState(item) === "yes").length;
   const rows = sortedPeople.map((item) => peopleContactRow(item, membersByEmail, highlightEmail)).join("");
+  const selectedTestEmails = new Set((testGroup ? testGroup.emails || [] : members
+    .filter((member) => peopleMemberIsActive(member) && !peopleMailingDisabled(member))
+    .filter((member) => typeof member.notificationTestGroup === "boolean" ? member.notificationTestGroup : member.isNotificationTestGroup || member.testGroup || member.notificationTester)
+    .flatMap(peopleMemberEmails)).map((email) => String(email).trim().toLowerCase()));
+  const testPeople = new Map();
+  sortedPeople.forEach((person) => {
+    const email = String(person.email || person.contactEmail || person.primaryEmail || "").trim().toLowerCase();
+    if (email) testPeople.set(email, { name: peopleContactName(person), mobile: person.mobile || person.phone || "" });
+  });
+  selectedTestEmails.forEach((email) => { if (!testPeople.has(email)) testPeople.set(email, { name: email, mobile: "" }); });
+  const testMembers = [...testPeople].sort(([a], [b]) => Number(selectedTestEmails.has(b)) - Number(selectedTestEmails.has(a)) || a.localeCompare(b, "de"))
+    .map(([email, person]) => {
+      const selected = selectedTestEmails.has(email);
+      const mobile = person.mobile ? `Mobil: ${person.mobile}` : "Mobilnummer fehlt";
+      return `<div class="notification-test-group-row ${selected ? "is-selected" : ""}" data-test-recipient data-search="${escapeHtml(`${person.name} ${email} ${mobile}`.toLowerCase())}"><label class="checkbox notification-test-group-item"><input type="checkbox" name="testEmails" value="${escapeHtml(email)}" ${selected ? "checked" : ""}><span><strong>${escapeHtml(person.name)}</strong><small>${escapeHtml(email)} · ${escapeHtml(mobile)} · Push wird beim Versand geprüft</small></span></label>${selected ? `<button class="icon-button icon-button--danger" type="button" data-remove-test-recipient="${escapeHtml(email)}" title="Aus Testgruppe loeschen" aria-label="Aus Testgruppe loeschen">${iconImage("trash")}</button>` : ""}</div>`;
+    }).join("");
   const importMessage = (() => {
     try {
       const stored = JSON.parse(sessionStorage.getItem("pdtv-people-import-message") || "null");
@@ -5853,17 +6659,30 @@ export async function peoplePage(query = new URLSearchParams()) {
   })();
   return protect(cmsShell("cms/people", `${cmsTitle("Kommunikation", "Mailingadressen")}
     ${loadError ?`<section class="panel"><div class="alert alert--error">Mailingadressen konnten nicht geladen werden: ${escapeHtml(loadError)}</div></section>` : ""}
-    <section class="panel">
-      <div class="setup-steps">
+    <section class="panel panel--people-compact">
+      <div class="setup-steps setup-steps--compact">
         <div class="setup-step"><span>Adressen</span><strong>${sortedPeople.length}</strong></div>
         <div class="setup-step"><span>Aktiv</span><strong>${activeCount}</strong></div>
         <div class="setup-step"><span>Mitglieder</span><strong>${memberCount}</strong></div>
         <div class="setup-step"><span>Push registriert</span><strong data-people-push-count>...</strong></div>
       </div>
     </section>
-    <section class="panel">
-      <h2>Mailing-Adresse anlegen</h2>
-      <form class="form-grid" data-people-edit-form>
+    <section class="panel panel--people-compact">
+      <details class="cms-disclosure-panel">
+        <summary><strong>Mailinglisten</strong><span data-test-group-count>${selectedTestEmails.size} Testadressen</span></summary>
+        <p class="muted">Testgruppe für Event-Versand und Beiträge im Mitgliederbereich.</p>
+        <form id="notification-test-group-form" class="notification-test-group-form">
+          <div class="field"><label for="test-group-search">Empfaenger suchen</label><input id="test-group-search" type="search" data-test-group-search></div>
+          <div class="notification-test-group-list">${testMembers || `<p class="muted">Noch keine Mailingadressen vorhanden.</p>`}</div>
+          <div class="field"><label for="test-group-additions">Weitere Testpersonen</label><textarea id="test-group-additions" name="additionalTestEmails" rows="3" placeholder="E-Mail-Adressen, getrennt durch Komma oder neue Zeile"></textarea><p class="muted">Mobilnummern werden aus dem Adressbestand übernommen. Push funktioniert, sobald die Person Browser-Push mit derselben E-Mail-Adresse aktiviert hat.</p></div>
+          <div class="actions"><button class="button button--secondary button--small">Testgruppe speichern</button><div id="notification-test-group-result"></div></div>
+        </form>
+      </details>
+    </section>
+    <section class="panel panel--people-compact">
+      <details class="cms-disclosure-panel">
+        <summary><strong>Mailing-Adresse anlegen</strong><span>Neuer Kontakt</span></summary>
+        <form class="form-grid form-grid--compact" data-people-edit-form>
         <div class="form-grid--two">
           <div class="field"><label>Vorname</label><input name="firstName"></div>
           <div class="field"><label>Nachname</label><input name="lastName"></div>
@@ -5888,18 +6707,20 @@ export async function peoplePage(query = new URLSearchParams()) {
         <div class="actions"><button class="button button--primary button--small" type="submit">Mailing-Adresse speichern</button></div>
       </form>
       <div id="people-import-result" style="margin-top:14px">${importMessage}</div>
+      </details>
     </section>
-    <section class="panel">
-      <div class="actions" style="justify-content:space-between;margin-bottom:18px">
+    <section class="panel panel--people-compact">
+      <div class="actions people-list-head" style="justify-content:space-between;margin-bottom:10px">
         <h2>Adressbestand</h2>
         <label class="button button--secondary button--small">CSV importieren<input type="file" data-people-import-file accept=".csv,text/csv" hidden></label>
       </div>
-      <div class="form-grid--three" style="margin-bottom:18px">
+      <p class="muted">Push wird von der jeweiligen Person im Mitgliederbereich unter <a class="link" href="/#/portal?tab=profile" target="_blank" rel="noopener">Mein Profil</a> aktiviert. Die Spalte zeigt, ob fuer diese Mailadresse bereits ein Browser registriert ist.</p>
+      <div class="form-grid--three people-filter-grid" style="margin-bottom:10px">
         <div class="field"><label>Suche</label><input data-people-search placeholder="Name, Firma, E-Mail"></div>
         <div class="field"><label>Typ</label><select data-people-type-filter><option value="all">Alle</option><option value="contact">Kontakte</option><option value="member">Mitglieder</option></select></div>
         <div class="field"><label>Push</label><select data-people-push-filter><option value="all">Alle</option><option value="yes">Push vorhanden</option><option value="no">Ohne Push</option></select></div>
       </div>
-      <div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>E-Mail</th><th>Funktion</th><th>Typ</th><th>Push</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>
+      <div class="table-wrap"><table class="table table--people"><thead><tr><th>Name</th><th>E-Mail</th><th>Funktion</th><th>Typ</th><th>Push</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>
         ${rows || `<tr data-people-empty><td colspan="7">Noch keine Mailingadressen vorhanden.</td></tr>`}
         <tr data-people-empty hidden><td colspan="7">Keine Adressen fuer diesen Filter gefunden.</td></tr>
       </tbody></table></div>

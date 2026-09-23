@@ -9,6 +9,7 @@ const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https")
 const { defineSecret } = require("firebase-functions/params");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const nodemailer = require("nodemailer");
+const QRCode = require("qrcode");
 const { createPushService } = require("./pushService");
 
 initializeApp();
@@ -23,7 +24,16 @@ const SMTP_PASS = defineSecret("SMTP_PASS");
 const MAIL_FROM = defineSecret("MAIL_FROM");
 const MAIL_TO = defineSecret("MAIL_TO");
 const smtpSecrets = [SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM, MAIL_TO];
+const LINKEDIN_ACCESS_TOKEN = defineSecret("LINKEDIN_ACCESS_TOKEN");
+const LINKEDIN_AUTHOR_URN = defineSecret("LINKEDIN_AUTHOR_URN");
+const LINKEDIN_VERSION = defineSecret("LINKEDIN_VERSION");
+const linkedinSecrets = [LINKEDIN_ACCESS_TOKEN, LINKEDIN_AUTHOR_URN, LINKEDIN_VERSION];
+const SMS_API_URL = defineSecret("SMS_API_URL");
+const SMS_API_TOKEN = defineSecret("SMS_API_TOKEN");
+const SMS_SENDER = defineSecret("SMS_SENDER");
+const smsSecrets = [SMS_API_URL, SMS_API_TOKEN, SMS_SENDER];
 const PUBLIC_APP_BASE_URL = "https://prodigitaltv-da47b.web.app";
+const PUBLIC_CHECKIN_HTML_URL = "https://prodigitaltv-da47b.firebaseapp.com/checkin.html";
 const PUBLIC_CONFIRMATION_BASE_URL = `${PUBLIC_APP_BASE_URL}/confirm.html`;
 const transparentPixel = Buffer.from("R0lGODlhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==", "base64");
 
@@ -50,6 +60,33 @@ async function queueMail(payload) {
 
 function clean(value = "") {
   return String(value || "").trim();
+}
+
+function cleanSmsBody(value = "") {
+  return clean(value)
+    .replace(/(^|[\s([{"'“„])test(?=$|[\s.,;:!?)}\]"'”])/gi, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .trim();
+}
+
+function phoneNumber(value = "") {
+  const raw = clean(value).replace(/[()\s.-]/g, "");
+  if (!raw) return "";
+  const normalized = raw.startsWith("00") ? `+${raw.slice(2)}` : raw.startsWith("49") ? `+${raw}` : raw;
+  const isGermanMobile = /^\+491[567]\d{7,12}$/.test(normalized) && !/^\+4916[4689]/.test(normalized);
+  return isGermanMobile ? normalized : "";
+}
+
+function normalizedMemberPhones(member = {}) {
+  const values = [member.phone, member.mobile, member.mobilePhone, member.contactPhone, member.primaryPhone];
+  for (const key of ["phones", "additionalPhones", "contactPhones", "notificationPhones"]) {
+    if (Array.isArray(member[key])) values.push(...member[key]);
+  }
+  for (const collection of [member.eventContacts, member.contacts]) {
+    if (Array.isArray(collection)) collection.forEach((contact) => values.push(contact?.phone, contact?.mobile, contact?.mobilePhone));
+  }
+  return values.map(phoneNumber).filter(Boolean);
 }
 
 function cleanUsageValue(value = "", maxLength = 120) {
@@ -150,6 +187,7 @@ exports.logPwaPrivacyConsent = onRequest({ region, invoker: "public" }, async (r
 });
 
 function eventRegistrationIsOpen(event = {}) {
+  if (event.preStatus === "save_the_date" || ["inactive", "draft", "archived", "deleted", "hidden"].includes(clean(event.status).toLowerCase())) return false;
   return Boolean(event.registrationEnabled)
     || (event.accessType === "public" && event.allowPublicRegistration === true)
     || (event.accessType === "members_only" && event.allowMemberRegistration === true)
@@ -159,6 +197,14 @@ function eventRegistrationIsOpen(event = {}) {
 
 function registrationInput(data = {}) {
   const input = data.input || data.registration || {};
+  const hasCompanion = Boolean(input.hasCompanion);
+  const companionInput = input.companion || {};
+  const companion = hasCompanion ? {
+    firstName: stripTags(companionInput.firstName || input.companionFirstName),
+    lastName: stripTags(companionInput.lastName || input.companionLastName),
+    email: clean(companionInput.email || input.companionEmail).toLowerCase(),
+    phone: stripTags(companionInput.phone || input.companionPhone)
+  } : null;
   return {
     firstName: stripTags(input.firstName),
     lastName: stripTags(input.lastName),
@@ -173,8 +219,21 @@ function registrationInput(data = {}) {
     photoVideoConsent: Boolean(input.photoVideoConsent),
     newsletterConsent: Boolean(input.newsletterConsent),
     notifyForThisEvent: Boolean(input.notifyForThisEvent),
-    notifyFutureEvents: Boolean(input.notifyFutureEvents)
+    notifyFutureEvents: Boolean(input.notifyFutureEvents),
+    hasCompanion,
+    companion,
+    participantCount: hasCompanion ? 2 : 1
   };
+}
+
+function mailingExcludedEmails(record = {}) {
+  return new Set((Array.isArray(record.mailingExcludedEmails) ? record.mailingExcludedEmails : [])
+    .map((value) => clean(value).toLowerCase())
+    .filter(Boolean));
+}
+
+function mailingEmailIsExcluded(record = {}, email = "") {
+  return mailingExcludedEmails(record).has(clean(email).toLowerCase());
 }
 
 function normalizedMemberEmails(member = {}) {
@@ -196,7 +255,8 @@ function normalizedMemberEmails(member = {}) {
   if (Array.isArray(member.contacts)) {
     member.contacts.forEach((contact) => values.push(contact?.email || contact?.contactEmail));
   }
-  return values.map((value) => clean(value).toLowerCase()).filter(Boolean);
+  const excluded = mailingExcludedEmails(member);
+  return [...new Set(values.map((value) => clean(value).toLowerCase()).filter((email) => email && !excluded.has(email)))];
 }
 
 function memberCanMatchRegistration(member = {}) {
@@ -231,7 +291,47 @@ async function notificationTestGroupTargets() {
   if (!unique.length || unique.some((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
     throw new HttpsError("failed-precondition", "Bitte mindestens eine gueltige Adresse in der Testgruppe speichern.");
   }
-  return unique.map((email) => ({ email, source: "test_group", audienceType: "test" }));
+  const [contactsSnapshot, membersSnapshot] = await Promise.all([
+    db.collection("contacts").get().catch(() => ({ docs: [] })),
+    db.collection("members").get().catch(() => ({ docs: [] }))
+  ]);
+  const profiles = new Map();
+  contactsSnapshot.docs.forEach((doc) => {
+    const data = doc.data() || {};
+    const email = clean(data.email || data.contactEmail || data.primaryEmail).toLowerCase();
+    if (email) profiles.set(email, data);
+  });
+  membersSnapshot.docs.forEach((doc) => {
+    const data = doc.data() || {};
+    normalizedMemberEmails(data).forEach((email) => { if (!profiles.has(email)) profiles.set(email, data); });
+  });
+  return unique.map((email) => {
+    const profile = profiles.get(email) || {};
+    const mobile = phoneNumber(profile.mobile || profile.phone || profile.mobilePhone || profile.contactPhone);
+    return { email, phone: mobile, mobile, source: "test_group", audienceType: "test" };
+  });
+}
+
+async function notificationTestPersonTargets(emails = [], mobiles = []) {
+  const [contactsSnapshot, membersSnapshot] = await Promise.all([
+    db.collection("contacts").get().catch(() => ({ docs: [] })),
+    db.collection("members").get().catch(() => ({ docs: [] }))
+  ]);
+  const profiles = new Map();
+  contactsSnapshot.docs.forEach((doc) => {
+    const data = doc.data() || {};
+    const email = clean(data.email || data.contactEmail || data.primaryEmail).toLowerCase();
+    if (email) profiles.set(email, data);
+  });
+  membersSnapshot.docs.forEach((doc) => {
+    const data = doc.data() || {};
+    normalizedMemberEmails(data).forEach((email) => { if (!profiles.has(email)) profiles.set(email, data); });
+  });
+  return emails.map((email, index) => {
+    const profile = profiles.get(email) || {};
+    const mobile = phoneNumber(mobiles[index] || profile.mobile || profile.phone || profile.mobilePhone || profile.contactPhone || profile.contactMobile);
+    return { email, phone: mobile, mobile, audienceType: "test", firstName: profile.firstName || "", lastName: profile.lastName || "", company: profile.company || profile.name || "" };
+  });
 }
 
 async function emailBelongsToMember(email = "") {
@@ -308,6 +408,15 @@ async function findPersonByEmail(email = "") {
   return { matched: false, isMember: false };
 }
 
+function notificationExtraSpeakerEventIds(input = {}, eventId = "") {
+  const primaryEventId = clean(eventId);
+  const values = [
+    ...(Array.isArray(input.extraSpeakerEventIds) ? input.extraSpeakerEventIds : []),
+    input.extraSpeakerEventId
+  ];
+  return [...new Set(values.map(clean).filter(Boolean).filter((id) => id !== primaryEventId))].slice(0, 10);
+}
+
 async function eventNotificationTargets(eventId = "", options = {}) {
   const hasEvent = Boolean(clean(eventId));
   const recipientGroup = clean(options.recipientGroup || "");
@@ -331,10 +440,12 @@ async function eventNotificationTargets(eventId = "", options = {}) {
   const registeredEmails = new Set(activeRegistrations.map((registration) => clean(registration.email).toLowerCase()).filter(Boolean));
   const officialMemberEmails = new Set();
   const eligibleMemberIds = new Set();
+  const eligibleMembersById = new Map();
   membersSnapshot.docs.forEach((document) => {
     const member = { id: document.id, ...document.data() };
     if (!memberIsMailingEligible(member)) return;
     eligibleMemberIds.add(member.id);
+    eligibleMembersById.set(member.id, member);
     normalizedMemberEmails(member).forEach((email) => officialMemberEmails.add(email));
   });
   usersSnapshot.docs.forEach((document) => {
@@ -344,19 +455,25 @@ async function eventNotificationTargets(eventId = "", options = {}) {
     const email = clean(user.email).toLowerCase();
     if (!email || ["inactive", "archived", "deleted", "disabled"].includes(status)) return;
     if (!eligibleMemberIds.has(clean(user.memberId)) && !officialMemberEmails.has(email)) return;
+    const linkedMember = eligibleMembersById.get(clean(user.memberId));
+    if (mailingEmailIsExcluded(user, email) || mailingEmailIsExcluded(linkedMember, email)) return;
     officialMemberEmails.add(email);
   });
   const people = new Map();
-  const addPerson = (email, person = {}, source = "contact") => {
+  const addPerson = (email, person = {}, source = "contact", phones = []) => {
     const normalizedEmail = clean(email).toLowerCase();
-    if (!normalizedEmail || !normalizedEmail.includes("@")) return;
-    if (hasEvent && options.registrationStatus === "registered" && !registeredEmails.has(normalizedEmail)) return;
-    if (hasEvent && options.registrationStatus === "unregistered" && registeredEmails.has(normalizedEmail)) return;
-    const existing = people.get(normalizedEmail) || {};
-    people.set(normalizedEmail, {
+    const normalizedPhones = [...new Set(phones.map(phoneNumber).filter(Boolean))];
+    if ((!normalizedEmail || !normalizedEmail.includes("@")) && !normalizedPhones.length) return;
+    const personKey = normalizedEmail || `phone:${normalizedPhones[0]}`;
+    if (source !== "speaker" && hasEvent && normalizedEmail && options.registrationStatus === "registered" && !registeredEmails.has(normalizedEmail)) return;
+    if (source !== "speaker" && hasEvent && normalizedEmail && options.registrationStatus === "unregistered" && registeredEmails.has(normalizedEmail)) return;
+    const existing = people.get(personKey) || {};
+    people.set(personKey, {
       ...existing,
       ...person,
-      email: normalizedEmail,
+      email: normalizedEmail || existing.email || "",
+      phone: normalizedPhones[0] || existing.phone || "",
+      phones: [...new Set([...(existing.phones || []), ...normalizedPhones])],
       source: existing.source === "member" ? "member" : source,
       audienceType: registeredEmails.has(normalizedEmail) ? "registered" : "unregistered"
     });
@@ -371,7 +488,7 @@ async function eventNotificationTargets(eventId = "", options = {}) {
       lastName: member.lastName || "",
       company: member.name || member.company || member.title || "",
       memberId: member.id
-    }, "member"));
+    }, "member", normalizedMemberPhones(member)));
   });
   usersSnapshot.docs.forEach((document) => {
     const user = { id: document.id, ...document.data() };
@@ -380,6 +497,8 @@ async function eventNotificationTargets(eventId = "", options = {}) {
     const email = clean(user.email).toLowerCase();
     if (!email || ["inactive", "archived", "deleted", "disabled"].includes(status)) return;
     if (!eligibleMemberIds.has(clean(user.memberId)) && !officialMemberEmails.has(email)) return;
+    const linkedMember = eligibleMembersById.get(clean(user.memberId));
+    if (mailingEmailIsExcluded(user, email) || mailingEmailIsExcluded(linkedMember, email)) return;
     if (user.notificationOptOut === true || user.mailingDisabled === true || user.reminderConsent === false) return;
     addPerson(email, {
       firstName: user.firstName || "",
@@ -388,7 +507,7 @@ async function eventNotificationTargets(eventId = "", options = {}) {
       company: user.company || "",
       memberId: user.memberId || "",
       userId: user.id
-    }, "member");
+    }, "member", [user.phone, user.mobile, user.mobilePhone]);
   });
   contactsSnapshot.docs.forEach((document) => {
     const contact = { id: document.id, ...document.data() };
@@ -396,7 +515,7 @@ async function eventNotificationTargets(eventId = "", options = {}) {
     if (contact.notificationOptOut === true || contact.mailingDisabled === true || contact.reminderConsent === false) return;
     const email = clean(contact.email).toLowerCase();
     if (officialMemberEmails.has(email)) return;
-    addPerson(email, contact, "contact");
+    addPerson(email, contact, "contact", [contact.phone, contact.mobile, contact.mobilePhone, contact.contactPhone]);
   });
   if (includeRegistered) {
     activeRegistrations.forEach((registration) => {
@@ -407,20 +526,32 @@ async function eventNotificationTargets(eventId = "", options = {}) {
         name: compactNameParts(registration),
         company: registration.company || "",
         registrationId: registration.id
-      }, "registration");
+      }, "registration", [registration.phone, registration.mobile, registration.mobilePhone]);
     });
   }
   if (includeSpeakers && hasEvent) {
-    const eventSnapshot = await db.collection("events").doc(eventId).get();
-    const eventRecord = eventSnapshot.exists ? { id: eventSnapshot.id, ...eventSnapshot.data() } : { id: eventId };
-    const eventSpeakerIds = new Set([...(eventRecord.speakerIds || []), eventRecord.speakerId].filter(Boolean));
-    const eventTopicIds = new Set([...(eventRecord.topicIds || []), eventRecord.topicId].filter(Boolean));
+    const speakerEventIds = [...new Set([eventId, ...notificationExtraSpeakerEventIds(options, eventId)].map(clean).filter(Boolean))];
+    const speakerEventIdSet = new Set(speakerEventIds);
+    const eventSpeakerIds = new Set();
+    const eventTopicIds = new Set();
+    const eventSnapshots = await Promise.all(speakerEventIds.map((id) => db.collection("events").doc(id).get().catch(() => null)));
+    const primarySpeakerEventYear = clean(eventSnapshots[0]?.data?.().date || "").slice(0, 4);
+    const allowedSpeakerEventIds = new Set();
+    eventSnapshots.forEach((eventSnapshot, index) => {
+      const record = eventSnapshot?.exists ? { id: eventSnapshot.id, ...eventSnapshot.data() } : { id: speakerEventIds[index] };
+      const recordYear = clean(record.date || "").slice(0, 4);
+      if (record.id !== eventId && primarySpeakerEventYear && recordYear !== primarySpeakerEventYear) return;
+      allowedSpeakerEventIds.add(record.id);
+      [record.speakerId, ...(record.speakerIds || [])].filter(Boolean).forEach((id) => eventSpeakerIds.add(id));
+      [record.topicId, ...(record.topicIds || [])].filter(Boolean).forEach((id) => eventTopicIds.add(id));
+    });
     topicsSnapshot.docs.forEach((document) => {
       const topic = { id: document.id, ...document.data() };
       const linkedToEvent = eventTopicIds.has(topic.id)
-        || (topic.eventIds || []).includes(eventId)
-        || topic.eventId === eventId;
+        || (topic.eventIds || []).some((id) => allowedSpeakerEventIds.has(id))
+        || allowedSpeakerEventIds.has(topic.eventId);
       if (!linkedToEvent) return;
+      eventTopicIds.add(topic.id);
       [topic.speakerId, ...(topic.speakerIds || [])].filter(Boolean).forEach((id) => eventSpeakerIds.add(id));
     });
     speakersSnapshot.docs.forEach((document) => {
@@ -428,8 +559,8 @@ async function eventNotificationTargets(eventId = "", options = {}) {
       const status = clean(speaker.status || "published").toLowerCase();
       if (["archived", "deleted", "inactive"].includes(status)) return;
       const linkedToEvent = eventSpeakerIds.has(speaker.id)
-        || (speaker.eventIds || []).includes(eventId)
-        || speaker.eventId === eventId
+        || (speaker.eventIds || []).some((id) => allowedSpeakerEventIds.has(id))
+        || allowedSpeakerEventIds.has(speaker.eventId)
         || (speaker.topicIds || []).some((topicId) => eventTopicIds.has(topicId))
         || eventTopicIds.has(speaker.topicId);
       if (!linkedToEvent) return;
@@ -441,25 +572,98 @@ async function eventNotificationTargets(eventId = "", options = {}) {
         name: compactNameParts(speaker),
         company: speaker.company || "",
         speakerId: speaker.id
-      }, "speaker");
+      }, "speaker", [speaker.phone, speaker.mobile, speaker.mobilePhone, speaker.contactPhone]);
     });
   }
   return [...people.values()];
 }
 
+function eventNotificationSmsBody(notification = {}, eventRecord = {}, target = {}) {
+  const defaultLink = notification.linkEnabled === false ? "" : clean(notification.link || eventUrl(eventRecord.id));
+  const smsLink = eventRecord.id ? compactEventUrl(eventRecord.id) : defaultLink.replace(/[?&]v=\d+/, "");
+  const rawBody = target.audienceType === "registered"
+    ? notification.registeredText || notification.shortText
+    : notification.invitationText || notification.shortText;
+  let smsBody = renderTemplateText(notification.smsText || rawBody, {
+    registration: {
+      firstName: target.firstName || "",
+      lastName: target.lastName || "",
+      company: target.company || "",
+      email: target.email || "",
+      eventTitle: eventRecord.title || ""
+    },
+    eventRecord,
+    variables: { eventLink: smsLink, link: smsLink }
+  });
+  if (notification.smsLinkEnabled !== false && !String(notification.smsText || "").includes("{{link}}") && smsLink) smsBody += `\n${smsLink}`;
+  return cleanSmsBody(smsBody).slice(0, 612);
+}
+
+function smsEstimateFingerprint(input = {}) {
+  const values = {
+    notificationKind: clean(input.notificationKind) === "member_message" ? "member_message" : "event",
+    eventId: clean(input.eventId),
+    recipientGroup: clean(input.recipientGroup),
+    registrationStatus: clean(input.registrationStatus),
+    channels: Array.isArray(input.channels) ? input.channels.map(clean).sort() : [],
+    smsText: stripTags(input.smsText).slice(0, 612),
+    smsLinkEnabled: input.smsLinkEnabled !== false && clean(input.smsLinkEnabled) !== "false",
+    linkEnabled: input.linkEnabled !== false && clean(input.linkEnabled) !== "false",
+    link: clean(input.link),
+    testRecipients: clean(input.testRecipients),
+    testRecipientMobiles: clean(input.testRecipientMobiles),
+    extraSpeakerEventIds: notificationExtraSpeakerEventIds(input, clean(input.eventId)).sort()
+  };
+  return createHash("sha256").update(JSON.stringify(values)).digest("hex");
+}
+
+
+async function assertNoHiddenTalkMentions(eventRecord = {}, message = {}) {
+  const ids = [...new Set(eventRecord.topicIds || [])];
+  if (!ids.length) return;
+  const snapshots = await db.getAll(...ids.map((id) => db.collection("topics").doc(id)));
+  const normalize = (value) => clean(value).replace(/[\u2010-\u2015]/g, "-").replace(/\s+/g, " ").toLocaleLowerCase("de");
+  const content = normalize([
+    message.shortText, message.invitationText, message.registeredText, message.smsText
+  ].filter(Boolean).join(" "));
+  const hidden = snapshots.map((snapshot) => snapshot.exists ? snapshot.data() : null)
+    .filter((topic) => topic && ["inactive", "archived", "draft", "deleted", "hidden", "invisible"].includes(clean(topic.status).toLowerCase()))
+    .map((topic) => clean(topic.title || topic.headline))
+    .filter((title) => title && content.includes(normalize(title)));
+  if (hidden.length) throw new HttpsError("failed-precondition", `Ausgeblendeter Vortrag im Einladungstext: ${hidden.join(", ")}. Bitte Text anpassen.`);
+}
+
 async function queueEventNotificationDelivery(notification = {}, eventRecord = {}) {
+  if (notification.notificationKind !== "member_message") await assertNoHiddenTalkMentions(eventRecord, notification);
   const explicitRecipients = Array.isArray(notification.testRecipients) ? notification.testRecipients : [];
   const targets = notification.recipientGroup === "test_group"
     ? await notificationTestGroupTargets()
     : explicitRecipients.length
-    ? explicitRecipients.map((email) => ({ email, audienceType: "test", firstName: "", lastName: "", company: "" }))
+    ? await notificationTestPersonTargets(explicitRecipients, notification.testRecipientMobiles || [])
     : await eventNotificationTargets(eventRecord.id, notification);
   let queued = 0;
   let pushed = 0;
   let pushAttempted = 0;
   let pushFailed = 0;
   const pushErrors = [];
+  const mailQueueIds = [];
+  const smsQueueIds = [];
+  const channels = Array.isArray(notification.channels) && notification.channels.length
+    ? notification.channels
+    : ["mail", "push"];
+  let smsQueued = 0;
   for (const target of targets) {
+    let cancelUrl = "";
+    if (notification.allowRegistrationCancellation === true && target.audienceType === "registered" && target.registrationId) {
+      const cancelToken = randomBytes(32).toString("hex");
+      const cancelTokenHash = hashToken(cancelToken);
+      await db.collection("registrations").doc(target.registrationId).set({
+        cancelTokenHashes: FieldValue.arrayUnion(cancelTokenHash),
+        cancelTokenIssuedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+      cancelUrl = registrationCancelUrl(cancelToken);
+    }
     let link = notification.linkEnabled === false ? "" : clean(notification.link || eventUrl(eventRecord.id));
     let surveyInviteId = "";
     if (notification.linkEnabled !== false && notification.surveyId) {
@@ -496,7 +700,7 @@ async function queueEventNotificationDelivery(notification = {}, eventRecord = {
         eventTitle: eventRecord.title || ""
       },
       eventRecord,
-      variables: { eventLink: link, link }
+      variables: { eventLink: link, link, cancelLink: cancelUrl, cancelUrl }
     });
     const renderedTitle = renderTemplateText(notification.title, {
       registration: {
@@ -509,12 +713,16 @@ async function queueEventNotificationDelivery(notification = {}, eventRecord = {
       eventRecord,
       variables: { eventLink: link, link }
     });
-    const pushResult = await pushService.deliver(target.email, { title: renderedTitle || notification.title, body, eventId: eventRecord.id, id: notification.id, link });
-    pushed += pushResult.sent;
-    pushAttempted += pushResult.attempted;
-    pushFailed += pushResult.failed;
-    pushErrors.push(...pushResult.errors);
-    await queueMail({
+    const smsBody = eventNotificationSmsBody(notification, eventRecord, target);
+    if (channels.includes("push") && target.email) {
+      const pushResult = await pushService.deliver(target.email, { title: renderedTitle || notification.title, body, eventId: eventRecord.id, id: notification.id, link });
+      pushed += pushResult.sent;
+      pushAttempted += pushResult.attempted;
+      pushFailed += pushResult.failed;
+      pushErrors.push(...pushResult.errors);
+    }
+    if (channels.includes("mail") && target.email) {
+      const mailRef = await queueMail({
       type: "event_notification",
       template: "event_notification",
       to: target.email,
@@ -530,15 +738,39 @@ async function queueEventNotificationDelivery(notification = {}, eventRecord = {
       personName: clean(`${target.firstName || ""} ${target.lastName || ""}`) || target.company || "",
       firstName: target.firstName || "",
       lastName: target.lastName || "",
-      company: target.company || ""
-    });
-    queued += 1;
+      company: target.company || "",
+      registrationId: target.registrationId || "",
+      cancelUrl
+      });
+      mailQueueIds.push(mailRef.id);
+      queued += 1;
+    }
+    if (channels.includes("sms") && target.phone) {
+      const smsRef = await db.collection("smsQueue").add({
+        type: "event_notification",
+        to: target.phone,
+        message: smsBody,
+        eventId: eventRecord.id || "",
+        notificationId: notification.id || "",
+        smsCostEstimateId: notification.smsCostEstimateId || "",
+        personName: clean(`${target.firstName || ""} ${target.lastName || ""}`) || target.company || "",
+        status: "queued",
+        queuedAt: FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      });
+      smsQueueIds.push(smsRef.id);
+      smsQueued += 1;
+    }
   }
   await db.collection("eventNotifications").doc(notification.id).set({
     status: "queued",
     testOnly: explicitRecipients.length > 0,
     targetCount: targets.length,
     queuedMailCount: queued,
+    mailQueueIds: mailQueueIds.slice(0, 100),
+    queuedSmsCount: smsQueued,
+    smsQueueIds: smsQueueIds.slice(0, 100),
     pushedCount: pushed,
     pushAttemptedCount: pushAttempted,
     pushFailedCount: pushFailed,
@@ -546,7 +778,7 @@ async function queueEventNotificationDelivery(notification = {}, eventRecord = {
     processedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp()
   }, { merge: true });
-  return { targetCount: targets.length, queuedMailCount: queued, pushedCount: pushed, pushFailedCount: pushFailed };
+  return { targetCount: targets.length, queuedMailCount: queued, mailQueueIds: mailQueueIds.slice(0, 100), queuedSmsCount: smsQueued, smsQueueIds: smsQueueIds.slice(0, 100), pushedCount: pushed, pushFailedCount: pushFailed };
 }
 
 function notificationConsentId(email = "") {
@@ -568,8 +800,28 @@ function liveSurveyOptions(value = "") {
     .map((item) => stripTags(typeof item === "string" ? item : item?.label || ""))
     .filter(Boolean)
     .filter((item, index, all) => all.indexOf(item) === index)
-    .slice(0, 6)
+    .slice(0, 12)
     .map((label, index) => ({ id: `option-${index + 1}`, label }));
+}
+
+function liveSurveyQuestions(value = []) {
+  let source = value;
+  if (typeof source === "string") {
+    try { source = JSON.parse(source); } catch { source = []; }
+  }
+  if (!Array.isArray(source)) return [];
+  return source.slice(0, 12).map((item, index) => {
+    const type = ["single", "multiple", "text"].includes(clean(item?.type)) ? clean(item.type) : "single";
+    const fallbackId = `question-${index + 1}`;
+    const id = (clean(item?.id) || fallbackId).replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 80) || fallbackId;
+    return {
+      id,
+      type,
+      question: stripTags(item?.question || item?.label || "").slice(0, 500),
+      required: item?.required !== false && clean(item?.required) !== "false",
+      options: type === "text" ? [] : liveSurveyOptions(item?.options || [])
+    };
+  }).filter((item) => item.question);
 }
 
 function contactId(email = "") {
@@ -615,7 +867,7 @@ async function upsertMailingContact(person = {}, { source = "manual", eventId = 
     id: ref.id,
     ...payload,
     source: existing.exists ? existing.data()?.source || source : source,
-    reminderConsent: Boolean(reminderConsent || existing.data()?.reminderConsent),
+    reminderConsent: Boolean(reminderConsent || existing.data()?.reminderConsent || (created && source === "speaker")),
     lastEventId: eventId || existing.data()?.lastEventId || "",
     lastRegistrationId: registrationId || existing.data()?.lastRegistrationId || "",
     lastSpeakerId: speakerId || existing.data()?.lastSpeakerId || "",
@@ -645,6 +897,17 @@ async function countNewMailingContactForEvent(eventId = "", source = "", contact
 }
 
 async function upsertContactFromRegistration(registration = {}, eventRecord = {}, now = FieldValue.serverTimestamp()) {
+  const email = clean(registration.email).toLowerCase();
+  const existingPerson = await findPersonByEmail(email);
+  if (existingPerson.matched) {
+    return {
+      created: false,
+      ignored: true,
+      email,
+      contactId: existingPerson.contactId || "",
+      source: existingPerson.source || "existing_person"
+    };
+  }
   return upsertMailingContact(registration, {
     source: registration.source === "cms_admin" ? "cms_admin_registration" : "event_registration",
     eventId: eventRecord.id || registration.eventId || "",
@@ -669,6 +932,10 @@ function eventUrl(eventId = "") {
   return publicHashUrl(`event/${encodeURIComponent(eventId)}`);
 }
 
+function compactEventUrl(eventId = "") {
+  return `${PUBLIC_APP_BASE_URL}/#/event/${encodeURIComponent(eventId)}`;
+}
+
 function publicSpaRouteUrl(path) {
   return `${PUBLIC_APP_BASE_URL}/?v=${Date.now()}#/${String(path || "").replace(/^\/+/, "")}`;
 }
@@ -685,11 +952,15 @@ function publicHashUrl(path) {
   return publicSpaRouteUrl(path);
 }
 
+function publicCheckinUrl(path) {
+  return `${PUBLIC_CHECKIN_HTML_URL}?v=${Date.now()}#/${String(path || "").replace(/^\/+/, "")}`;
+}
+
 function registrationTicketUrl(token, eventId = "") {
   if (eventId) {
-    return publicSpaRouteUrl(`event/${encodeURIComponent(eventId)}?ticket=${encodeURIComponent(token)}`);
+    return publicCheckinUrl(`event/${encodeURIComponent(eventId)}?ticket=${encodeURIComponent(token)}`);
   }
-  return publicSpaRouteUrl(`ticket/link/${encodeURIComponent(token)}`);
+  return publicCheckinUrl(`ticket/link/${encodeURIComponent(token)}`);
 }
 
 function eventUsesHandyTicket(eventRecord = {}, registration = {}) {
@@ -709,8 +980,11 @@ function registrationCancelUrl(token) {
   return publicHashUrl(`registration/cancel/${encodeURIComponent(token)}`);
 }
 
+function eventFeedbackUrl(token) {
+  return `${PUBLIC_APP_BASE_URL}/feedback.html?v=${Date.now()}&token=${encodeURIComponent(token)}`;
+}
 function eventCheckinUrl(eventId) {
-  return publicHashUrl(`event-checkin/${encodeURIComponent(eventId || "")}`);
+  return publicCheckinUrl(`event-checkin/${encodeURIComponent(eventId || "")}`);
 }
 
 function registrationLockId(eventId = "", email = "") {
@@ -740,6 +1014,10 @@ function mailOpenTrackingUrl(mailId = "") {
   return id ? `https://${region}-prodigitaltv-da47b.cloudfunctions.net/trackMailOpen?m=${encodeURIComponent(id)}` : "";
 }
 
+function eventMailClickTrackingUrl(mailId = "") {
+  const id = clean(mailId);
+  return id ? `https://${region}-prodigitaltv-da47b.cloudfunctions.net/trackEventMailClick?m=${encodeURIComponent(id)}` : "";
+}
 function appendMailTrackingPixel(html = "", mailId = "") {
   const url = mailOpenTrackingUrl(mailId);
   if (!url || !html) return html;
@@ -764,7 +1042,7 @@ function defaultGlobalEventRegistrationMailText(variant = "confirmation") {
       "Termin: {{eventDate}}",
       "Ort: {{eventLocation}}",
       "",
-      "Falls Sie doch nicht teilnehmen koennen, sagen Sie bitte rechtzeitig ab, damit wir den Platz weitergeben und besser planen koennen.",
+      "Falls Sie doch nicht teilnehmen koennen, nutzen Sie bitte den Button Teilnahme absagen, damit wir den Platz weitergeben und besser planen koennen.",
       "",
       "Viele Gruesse",
       "PROdigitalTV"
@@ -1109,8 +1387,10 @@ function renderMail(mail, context = {}) {
   }
 
   if (mail.template === "event_notification") {
-    const link = mail.linkEnabled === false ? "" : clean(mail.link || eventUrl(mail.eventId || eventRecord.id || ""));
+    const destinationLink = mail.linkEnabled === false ? "" : clean(mail.link || eventUrl(mail.eventId || eventRecord.id || ""));
+    const link = destinationLink && mail.id && !mail.surveyId ? eventMailClickTrackingUrl(mail.id) : destinationLink;
     const isSurveyMail = Boolean(clean(mail.surveyId));
+    const cancelUrl = !isSurveyMail && mail.audienceType === "registered" ? clean(mail.cancelUrl) : "";
     const mailPerson = {
       firstName: mail.firstName || registration.firstName || "",
       lastName: mail.lastName || registration.lastName || "",
@@ -1145,6 +1425,7 @@ function renderMail(mail, context = {}) {
       body,
       "",
       link ? `${linkLabel}: ${link}` : "",
+      cancelUrl ? `Falls Sie doch nicht teilnehmen koennen: ${cancelUrl}` : "",
       optOutUrl ? `Umfrage- und Veranstaltungshinweise abbestellen: ${optOutUrl}` : "",
       "",
       "Viele Gruesse",
@@ -1158,7 +1439,140 @@ function renderMail(mail, context = {}) {
         `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${intro}</p>`,
         `${textToHtml(body)}`,
         mailButton(linkLabel, link),
+        cancelUrl ? `<p style="font-size:15px;line-height:1.5;color:#5f6b7c;margin:24px 0 8px">Falls Sie doch nicht teilnehmen koennen, geben Sie den Platz bitte fuer andere Interessierte frei.</p><p style="margin:0 0 24px"><a href="${escapeAttribute(cancelUrl)}" target="_blank" rel="noopener" style="display:inline-block;background:#ffffff;color:#b00020;text-decoration:none;font-weight:800;border:2px solid #b00020;border-radius:999px;padding:13px 22px">Teilnahme absagen</a></p>` : "",
         optOutUrl ? `<p style="font-size:12px;line-height:1.5;color:#7a8493;margin:24px 0 0;border-top:1px solid #dbe4f1;padding-top:14px">Sie erhalten diese Nachricht, weil Sie PROdigitalTV-Veranstaltungs- und Umfragehinweise aktiviert haben. <a href="${optOutUrl}" style="color:#5f6b7c">Umfrage- und Veranstaltungshinweise abbestellen</a>.</p>` : ""
+      ].filter(Boolean).join(""))
+    };
+  }
+
+
+  if (mail.template === "event_feedback_invitation") {
+    const title = clean(eventRecord.title || registration.eventTitle || mail.eventTitle || "PROdigitalTV Veranstaltung");
+    const personName = clean(`${registration.firstName || mail.firstName || ""} ${registration.lastName || mail.lastName || ""}`) || clean(mail.personName || "");
+    const salutation = personName ? `Guten Tag ${personName},` : "Guten Tag,";
+    const link = clean(mail.feedbackUrl || mail.link || "");
+    const intro = clean(mail.introText || "vielen Dank, dass Sie bei unserer Veranstaltung dabei waren. Ihre Rueckmeldung hilft uns, Themen, Formate und den konkreten Nutzen fuer Gaeste und Mitglieder weiterzuentwickeln.");
+    const text = [
+      salutation,
+      "",
+      intro,
+      "",
+      title ? `Veranstaltung: ${title}` : "",
+      link ? `Feedback geben: ${link}` : "",
+      "",
+      "Die Rueckmeldung dauert nur wenige Minuten.",
+      "",
+      "Vielen Dank und viele Gruesse",
+      "PROdigitalTV"
+    ].filter(Boolean).join("\n");
+    return {
+      subject: mail.subject || `Ihre Rueckmeldung zu ${title}`,
+      text,
+      html: mailHtmlShell("Ihre Rueckmeldung ist wertvoll", [
+        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${salutation}</p>`,
+        textToHtml(intro),
+        title ? `<p style="font-size:16px;line-height:1.55;margin:18px 0 8px"><strong>Veranstaltung:</strong> ${escapeAttribute(title)}</p>` : "",
+        mailButton("Feedback geben", link),
+        link ? `<p style="font-size:14px;line-height:1.5;color:#5f6b7c;margin:18px 0 0">Falls der Button nicht funktioniert, oeffnen Sie diesen Link:<br><a href="${escapeAttribute(link)}" target="_blank" rel="noopener" style="color:#0b3a66;text-decoration:underline;word-break:break-all">${escapeAttribute(link)}</a></p>` : ""
+      ].filter(Boolean).join(""))
+    };
+  }
+  if (mail.template === "speaker_approval") {
+    const title = clean(mail.title || mail.subject || "Profil und Vortragsbeschreibung pruefen");
+    const link = clean(mail.link || "");
+    const speakerName = clean(mail.speakerName || mail.personName || "");
+    const eventTitle = clean(mail.eventTitle || "PROdigitalTV Veranstaltung");
+    const topicTitle = clean(mail.topicTitle || "Vortrag");
+    const salutation = speakerName ? `Guten Tag ${speakerName},` : "Guten Tag,";
+    const intro = clean(mail.introText || `bitte pruefen Sie Ihr Referentenprofil und die Vortragsbeschreibung fuer ${eventTitle}.`);
+    const text = [
+      salutation,
+      "",
+      intro,
+      "",
+      `Veranstaltung: ${eventTitle}`,
+      `Vortrag: ${topicTitle}`,
+      "",
+      link ? `Prueflink: ${link}` : "",
+      "",
+      "Vielen Dank und viele Gruesse",
+      "PROdigitalTV"
+    ].filter(Boolean).join("\n");
+    return {
+      subject: mail.subject || title,
+      text,
+      html: mailHtmlShell(title, [
+        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${salutation}</p>`,
+        textToHtml(intro),
+        `<p style="font-size:16px;line-height:1.55;margin:18px 0 8px"><strong>Veranstaltung:</strong> ${escapeAttribute(eventTitle)}<br><strong>Vortrag:</strong> ${escapeAttribute(topicTitle)}</p>`,
+        mailButton("Profil und Vortragsbeschreibung pruefen", link),
+        link ? `<p style="font-size:14px;line-height:1.5;color:#5f6b7c;margin:18px 0 0">Falls der Button nicht funktioniert, oeffnen Sie diesen Link:<br><a href="${escapeAttribute(link)}" target="_blank" rel="noopener" style="color:#0b3a66;text-decoration:underline;word-break:break-all">${escapeAttribute(link)}</a></p>` : ""
+      ].filter(Boolean).join(""))
+    };
+  }
+  if (mail.template === "speaker_approval_completed") {
+    const speakerName = clean(mail.speakerName || mail.personName || "");
+    const eventTitle = clean(mail.eventTitle || "PROdigitalTV Veranstaltung");
+    const topicTitle = clean(mail.topicTitle || "Vortrag");
+    const salutation = speakerName ? `Guten Tag ${speakerName},` : "Guten Tag,";
+    const intro = "vielen Dank für Ihre Rückmeldung. Wir haben Ihre Änderungen am Referentenprofil und an der Vortragsbeschreibung übernommen und veröffentlichen die Angaben jetzt.";
+    const closing = "Damit ist der Freigabevorgang abgeschlossen.";
+    const text = [
+      salutation,
+      "",
+      intro,
+      "",
+      `Veranstaltung: ${eventTitle}`,
+      `Vortrag: ${topicTitle}`,
+      "",
+      closing,
+      "",
+      "Vielen Dank und viele Grüße",
+      "PROdigitalTV"
+    ].join("\n");
+    return {
+      subject: mail.subject || "Ihre Änderungen wurden übernommen",
+      text,
+      html: mailHtmlShell("Ihre Änderungen wurden übernommen", [
+        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${salutation}</p>`,
+        textToHtml(intro),
+        `<p style="font-size:16px;line-height:1.55;margin:18px 0 8px"><strong>Veranstaltung:</strong> ${escapeAttribute(eventTitle)}<br><strong>Vortrag:</strong> ${escapeAttribute(topicTitle)}</p>`,
+        `<p style="font-size:17px;line-height:1.55;margin:20px 0 0"><strong>${closing}</strong></p>`
+      ].join(""))
+    };
+  }
+  if (mail.template === "member_communication") {
+    const title = clean(mail.title || mail.subject || "Neue Mitglieder-Info von PROdigitalTV");
+    const link = clean(mail.link || publicHashUrl(`portal/article/${encodeURIComponent(mail.articleId || mail.editorialContentId || "")}`));
+    const personName = clean(mail.personName || `${mail.firstName || ""} ${mail.lastName || ""}`);
+    const salutation = personName ? `Guten Tag ${personName},` : "Guten Tag,";
+    const intro = clean(mail.introText || mail.shortText || mail.subtitle || "im Mitgliederbereich von PROdigitalTV gibt es eine neue Information fuer Sie.");
+    const optOutUrl = notificationOptOutUrl(mail.to);
+    const textBody = [
+      salutation,
+      "",
+      intro,
+      "",
+      title,
+      clean(mail.subtitle || ""),
+      "",
+      link ? `${clean(mail.linkLabel || "Beitrag im Mitgliederbereich oeffnen")}: ${link}` : "",
+      optOutUrl ? `Veranstaltungs- und Mitgliederhinweise abbestellen: ${optOutUrl}` : "",
+      "",
+      "Viele Gruesse",
+      "PROdigitalTV"
+    ].filter(Boolean).join("\n");
+    const imageUrl = clean(mail.imageUrl || mail.thumbnailUrl || mail.thumbnail_url || "");
+    return {
+      subject: mail.subject || title,
+      text: textBody,
+      html: mailHtmlShell(title, [
+        imageUrl ? `<img src="${escapeAttribute(imageUrl)}" alt="" style="display:block;width:100%;max-width:580px;height:auto;border-radius:14px;margin:0 0 22px">` : "",
+        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${salutation}</p>`,
+        textToHtml(intro),
+        mail.subtitle ? `<p style="font-size:17px;line-height:1.55;margin:0 0 14px;color:#334155"><strong>${clean(mail.subtitle)}</strong></p>` : "",
+        mailButton(clean(mail.linkLabel || "Beitrag im Mitgliederbereich oeffnen"), link),
+        optOutUrl ? `<p style="font-size:12px;line-height:1.5;color:#7a8493;margin:24px 0 0;border-top:1px solid #dbe4f1;padding-top:14px">Sie erhalten diese Nachricht, weil Sie PROdigitalTV-Mitgliederhinweise aktiviert haben. <a href="${optOutUrl}" style="color:#5f6b7c">Hinweise abbestellen</a>.</p>` : ""
       ].filter(Boolean).join(""))
     };
   }
@@ -1225,6 +1639,110 @@ async function sendQueuedMail(mail) {
   });
 }
 
+function smsProviderCost(payload = {}, raw = "") {
+  const entries = Array.isArray(payload.list) ? payload.list : Array.isArray(payload.messages) ? payload.messages : [];
+  const entryPoints = entries.map((entry) => Number(entry?.points)).filter(Number.isFinite);
+  const textParts = /^OK:/i.test(raw) ? raw.replace(/^OK:/i, "").split(":") : [];
+  const textPoints = textParts.length > 1 ? Number(textParts[1]) : NaN;
+  const points = entryPoints.length ? entryPoints.reduce((sum, value) => sum + value, 0) : textPoints;
+  const partValues = entries.map((entry) => Number(entry?.parts || entry?.message_parts || entry?.messages || 1)).filter(Number.isFinite);
+  const parts = partValues.length ? partValues.reduce((sum, value) => sum + value, 0) : 1;
+  return {
+    points: Number.isFinite(points) ? Number(points.toFixed(6)) : null,
+    netEur: Number.isFinite(points) ? Number(points.toFixed(6)) : null,
+    parts: Math.max(1, Math.round(parts)),
+    currency: "EUR"
+  };
+}
+
+function smsMessagePartCount(message = "") {
+  const text = String(message || "");
+  if (!text) return 0;
+  const gsmBasic = "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà";
+  const gsmExtended = "^{}\\[~]|\u20ac";
+  let gsmUnits = 0;
+  let unicodeUnits = 0;
+  let isGsm = true;
+  for (const character of Array.from(text)) {
+    unicodeUnits += character.length;
+    if (gsmBasic.includes(character)) gsmUnits += 1;
+    else if (gsmExtended.includes(character)) gsmUnits += 2;
+    else isGsm = false;
+  }
+  const units = isGsm ? gsmUnits : unicodeUnits;
+  const singleLimit = isGsm ? 160 : 70;
+  const joinedLimit = isGsm ? 153 : 67;
+  return units <= singleLimit ? 1 : Math.ceil(units / joinedLimit);
+}
+
+async function currentSmsPrices() {
+  const apiUrl = clean(SMS_API_URL.value()) || "https://api.smsapi.com/sms.do";
+  const token = clean(SMS_API_TOKEN.value());
+  if (!token) throw new Error("SMS-Dienst ist noch nicht konfiguriert.");
+  const pricesUrl = new URL("/profile/prices?limit=ALL", apiUrl).toString();
+  const response = await fetch(pricesUrl, { headers: { authorization: `Bearer ${token}` } });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.error) throw new Error(`SMSAPI ${response.status}: ${clean(payload.message || payload.error || "Preisliste nicht verfuegbar.").slice(0, 300)}`);
+  const prices = (Array.isArray(payload.collection) ? payload.collection : [])
+    .filter((entry) => clean(entry.type).toLowerCase() === "sms" && clean(entry.price?.currency).toUpperCase() === "EUR")
+    .map((entry) => ({ mcc: Number(entry.country?.mcc), amount: Number(entry.price?.amount) }))
+    .filter((entry) => Number.isFinite(entry.amount) && entry.amount >= 0);
+  if (!prices.length) throw new Error("SMSAPI hat keine EUR-SMS-Preise geliefert.");
+  return prices;
+}
+
+function smsCountryMcc(phone = "") {
+  const digits = String(phone || "").replace(/\D/g, "");
+  const prefixes = [
+    ["49", 262], ["43", 232], ["41", 228], ["44", 234], ["31", 204], ["32", 206],
+    ["33", 208], ["39", 222], ["34", 214], ["45", 238], ["46", 240], ["47", 242],
+    ["48", 260], ["420", 230], ["421", 231], ["352", 270], ["1", 310]
+  ];
+  return prefixes.find(([prefix]) => digits.startsWith(prefix))?.[1] || null;
+}
+
+function smsRateForPhone(phone = "", prices = []) {
+  const mcc = smsCountryMcc(phone);
+  const countryRates = mcc ? prices.filter((entry) => entry.mcc === mcc).map((entry) => entry.amount) : [];
+  const candidates = countryRates.length ? countryRates : prices.map((entry) => entry.amount);
+  return Math.max(...candidates);
+}
+
+async function sendQueuedSms(sms, options = {}) {
+  const apiUrl = clean(SMS_API_URL.value()) || "https://api.smsapi.com/sms.do";
+  const token = clean(SMS_API_TOKEN.value());
+  const sender = clean(SMS_SENDER.value());
+  if (!apiUrl || !token || !sender) throw new Error("SMS-Dienst ist noch nicht konfiguriert.");
+  const params = new URLSearchParams({
+    from: sender,
+    to: sms.to,
+    message: sms.message,
+    format: "json",
+    details: "1"
+  });
+  if (options.test === true) params.set("test", "1");
+  const response = await fetch(apiUrl, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", authorization: `Bearer ${token}` },
+    body: params.toString()
+  });
+  const raw = await response.text();
+  let payload = {};
+  try { payload = raw ? JSON.parse(raw) : {}; } catch {}
+  const errorText = clean(payload.error || payload.message || raw);
+  if (!response.ok || /^ERROR:/i.test(raw) || payload.error) throw new Error(`SMSAPI ${response.status}: ${errorText.slice(0, 400)}`);
+  const textMessageId = /^OK:/i.test(raw) ? raw.replace(/^OK:/i, "").split(":")[0] : "";
+  const messageId = clean(payload.messageId || payload.id || payload.sid || payload.requestId || payload.request_id || payload.list?.[0]?.id || payload.messages?.[0]?.id || "")
+    || textMessageId;
+  const providerCost = smsProviderCost(payload, raw);
+  return {
+    messageId,
+    response: raw.slice(0, 500),
+    ...providerCost,
+    parts: Math.max(providerCost.parts, smsMessagePartCount(sms.message))
+  };
+}
+
 async function requireEditor(request) {
   if (!request.auth) throw new HttpsError("unauthenticated", "Login erforderlich.");
   const profile = (await db.collection("users").doc(request.auth.uid).get()).data();
@@ -1235,9 +1753,41 @@ async function requireEditor(request) {
 async function requireAdmin(request) {
   if (!request.auth) throw new HttpsError("unauthenticated", "Login erforderlich.");
   const profile = (await db.collection("users").doc(request.auth.uid).get()).data();
-  if (profile?.role !== "admin") throw new HttpsError("permission-denied", "Nur Admins duerfen Mitglieder-Logins anlegen.");
+  if (profile?.role !== "admin") throw new HttpsError("permission-denied", "Nur Admins duerfen diese Funktion ausfuehren.");
   return profile;
 }
+
+exports.deleteUnlinkedSpeaker = onCall({ region }, async (request) => {
+  await requireAdmin(request);
+  const speakerId = clean(request.data?.speakerId);
+  if (!speakerId) throw new HttpsError("invalid-argument", "Referent fehlt.");
+  const speakerRef = db.collection("speakers").doc(speakerId);
+  const [speakerSnapshot, topicsSnapshot, eventsSnapshot] = await Promise.all([
+    speakerRef.get(), db.collection("topics").get(), db.collection("events").get()
+  ]);
+  if (!speakerSnapshot.exists) throw new HttpsError("not-found", "Referent wurde nicht gefunden.");
+  const speaker = speakerSnapshot.data() || {};
+  const linkedToTopic = topicsSnapshot.docs.some((document) => {
+    const topic = document.data() || {};
+    const assignedIds = [topic.speakerId, topic.moderatorId, topic.coModeratorId,
+      ...(Array.isArray(topic.speakerIds) ? topic.speakerIds : []),
+      ...(Array.isArray(topic.speakers) ? topic.speakers : []),
+      ...(Array.isArray(topic.moderatorIds) ? topic.moderatorIds : []),
+      ...(Array.isArray(topic.coModeratorIds) ? topic.coModeratorIds : [])];
+    return assignedIds.includes(speakerId) || topic.speakerRoles?.[speakerId]
+      || speaker.topicId === document.id || (Array.isArray(speaker.topicIds) && speaker.topicIds.includes(document.id));
+  });
+  const linkedToEvent = eventsSnapshot.docs.some((document) => {
+    const event = document.data() || {};
+    return event.speakerId === speakerId || (Array.isArray(event.speakerIds) && event.speakerIds.includes(speakerId))
+      || (Array.isArray(speaker.eventIds) && speaker.eventIds.includes(document.id));
+  });
+  if (linkedToTopic || linkedToEvent) {
+    throw new HttpsError("failed-precondition", "Referent ist noch mit einem Vortrag oder Event verknuepft und kann nicht geloescht werden.");
+  }
+  await speakerRef.delete();
+  return { deleted: true };
+});
 
 function memberInvitationLink(invitationId = "", token = "") {
   return `${PUBLIC_APP_BASE_URL}/user-invite/${encodeURIComponent(invitationId)}/${encodeURIComponent(token)}`;
@@ -1247,6 +1797,59 @@ function memberInvitationExpiresAtDate() {
   return new Date(Date.now() + 12 * 60 * 60 * 1000);
 }
 
+function speakerApprovalExpiresAtDate() {
+  return new Date(Date.now() + 21 * 24 * 60 * 60 * 1000);
+}
+
+function speakerApprovalLink(approvalId = "", token = "") {
+  return publicHashUrl(`speaker-approval/${encodeURIComponent(approvalId)}?token=${encodeURIComponent(token)}`);
+}
+
+function speakerEmailAddress(speaker = {}) {
+  return mailAddress(speaker.email || speaker.mail || speaker.contactEmail || speaker.contact_email || speaker.primaryEmail || "").toLowerCase();
+}
+
+function topicDescriptionText(topic = {}) {
+  return clean(topic.longDescription || topic.description || topic.shortDescription || topic.text || topic.bodyText || "");
+}
+
+function speakerApprovalPublicPayload(approval = {}, speaker = {}, topic = {}, eventRecord = {}) {
+  return {
+    approvalId: approval.id || "",
+    status: approval.status || "open",
+    event: {
+      id: eventRecord.id || approval.eventId || "",
+      title: eventRecord.title || approval.eventTitle || "",
+      date: eventRecord.date || "",
+      locationName: eventRecord.locationName || eventRecord.location || "",
+      city: eventRecord.city || ""
+    },
+    speaker: {
+      id: speaker.id || approval.speakerId || "",
+      name: compactNameParts(speaker) || approval.speakerName || "",
+      company: speaker.company || "",
+      position: speaker.position || speaker.role || "",
+      email: speakerEmailAddress(speaker) || approval.speakerEmail || "",
+      phone: speaker.phone || speaker.mobile || speaker.telephone || "",
+      shortBio: speaker.shortBio || "",
+      longBio: speaker.longBio || speaker.vita || speaker.biography || "",
+      photoUrl: speaker.photoUrl || speaker.imageUrl || speaker.thumbnailUrl || "",
+      website: speaker.website || "",
+      linkedIn: speaker.linkedIn || speaker.linkedin || ""
+    },
+    topic: {
+      id: topic.id || approval.topicId || "",
+      title: topic.title || approval.topicTitle || "",
+      subline: topic.subline || topic.subtitle || "",
+      description: topicDescriptionText(topic),
+      imageUrl: topic.imageUrl || topic.thumbnailUrl || topic.thumbnail_url || ""
+    },
+    submitted: approval.submitted || null,
+    submittedAt: approval.submittedAt || "",
+    speakerDecision: approval.speakerDecision || "",
+    speakerApprovedAt: approval.speakerApprovedAt || ""
+  };
+}
 function memberLoginInvitationMailPayload(invitation = {}, mailText = "") {
   return {
     type: "member_login_invitation",
@@ -1281,22 +1884,981 @@ async function queueMemberLoginInvitationMail(invitation = {}, mailText = "") {
   return ref;
 }
 
+
+const CALENDAR_DECISION_REMINDER_DAYS = 7;
+
+function calendarPad(value) {
+  return String(value).padStart(2, "0");
+}
+
+function calendarText(value = "") {
+  return clean(value).replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").trim();
+}
+
+function calendarDateValue(event = {}) {
+  return clean(event.date || event.startDate || event.eventDate || event.datum).slice(0, 10);
+}
+
+function calendarTimeValue(value = "") {
+  const text = clean(value);
+  return /^\d{1,2}:\d{2}/.test(text) ? text.slice(0, 5) : "";
+}
+
+function calendarLocalDate(date = "", time = "00:00") {
+  const [year, month, day] = clean(date).split("-").map(Number);
+  const [hour, minute] = clean(time || "00:00").split(":").map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day, hour || 0, minute || 0, 0, 0);
+}
+
+function calendarAddMinutes(date, minutes) {
+  const next = new Date(date.getTime());
+  next.setMinutes(next.getMinutes() + minutes);
+  return next;
+}
+
+function calendarAddDays(date, days) {
+  const next = new Date(date.getTime());
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function calendarUtcStamp(date = new Date()) {
+  return `${date.getUTCFullYear()}${calendarPad(date.getUTCMonth() + 1)}${calendarPad(date.getUTCDate())}T${calendarPad(date.getUTCHours())}${calendarPad(date.getUTCMinutes())}${calendarPad(date.getUTCSeconds())}Z`;
+}
+
+function calendarIcsLocal(date) {
+  return `${date.getFullYear()}${calendarPad(date.getMonth() + 1)}${calendarPad(date.getDate())}T${calendarPad(date.getHours())}${calendarPad(date.getMinutes())}00`;
+}
+
+function calendarIcsDate(date) {
+  return `${date.getFullYear()}${calendarPad(date.getMonth() + 1)}${calendarPad(date.getDate())}`;
+}
+
+function calendarIcsEscape(value = "") {
+  return calendarText(value).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+}
+
+function calendarIcsFold(line = "") {
+  const chunks = [];
+  let rest = String(line || "");
+  while (rest.length > 73) {
+    chunks.push(rest.slice(0, 73));
+    rest = ` ${rest.slice(73)}`;
+  }
+  chunks.push(rest);
+  return chunks.join("\r\n");
+}
+
+function calendarPublicEventAllowed(event = {}) {
+  return ["published", "active", "aktiv"].includes(clean(event.status).toLowerCase())
+    && ["public", "oeffentlich", "öffentlich", ""].includes(clean(event.visibility || "public").toLowerCase())
+    && event.calendarSaveEnabled !== false
+    && event.calendar_vormerkung !== false;
+}
+
+function calendarLocation(event = {}) {
+  if (event.isVirtualEvent) return event.onlineMeetingLabel || "Online";
+  return [event.locationName, event.address, [event.postalCode || event.zipCode, event.city].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+}
+
+function calendarDescription(event = {}, url = "", registrationUrl = "") {
+  const description = calendarText(event.description || event.publicTeaser || event.teaserText || event.shortDescription || event.introText || event.subtitle || "");
+  return [description, url ? `Eventseite: ${url}` : "", registrationUrl ? `Anmeldung: ${registrationUrl}` : ""].filter(Boolean).join("\n\n");
+}
+
+function calendarEventData(event = {}) {
+  const date = calendarDateValue(event);
+  const startTime = calendarTimeValue(event.startTime || event.start_time || event.time);
+  const endTime = calendarTimeValue(event.endTime || event.end_time);
+  const allDay = Boolean(event.allDay || event.isAllDay || event.fullDay || event.ganztag || !startTime);
+  const startLocal = calendarLocalDate(date, startTime || "00:00");
+  const endLocal = allDay ? startLocal ? calendarAddDays(startLocal, 1) : null : endTime ? calendarLocalDate(date, endTime) : startLocal ? calendarAddMinutes(startLocal, Number(event.defaultDurationMinutes || event.durationMinutes || 90)) : null;
+  const title = calendarText(event.title || event.titel || "PROdigitalTV Event");
+  const url = eventUrl(event.id || "");
+  const registrationUrl = event.registrationUrl || event.registration_url || publicHashUrl(`register/${encodeURIComponent(event.id || "")}`);
+  const timeZone = clean(event.timeZone || event.timezone || event.tz) || "Europe/Berlin";
+  const reminderDays = Math.max(1, Math.round(Number(event.calendarReminderDays ?? event.decisionReminderDays ?? CALENDAR_DECISION_REMINDER_DAYS) || CALENDAR_DECISION_REMINDER_DAYS));
+  return {
+    id: event.id || randomBytes(8).toString("hex"),
+    title,
+    date,
+    startLocal,
+    endLocal,
+    allDay,
+    timeZone,
+    location: calendarLocation(event),
+    url,
+    registrationUrl,
+    description: calendarDescription(event, url, registrationUrl),
+    reminderDays,
+    reminderEnabled: event.calendarReminderEnabled !== false && event.decisionReminderEnabled !== false,
+    alarmMinutesBefore: event.calendarReminderEnabled !== false && event.decisionReminderEnabled !== false ? reminderDays * 1440 : 0
+  };
+}
+
+function calendarDecisionReminderData(data = {}) {
+  if (!data.startLocal) return null;
+  const startLocal = calendarAddDays(data.startLocal, -data.reminderDays);
+  const endLocal = calendarAddMinutes(startLocal, 30);
+  const eventDate = data.startLocal ? `${calendarPad(data.startLocal.getDate())}.${calendarPad(data.startLocal.getMonth() + 1)}.${data.startLocal.getFullYear()}` : data.date;
+  const description = [
+    "Diese Veranstaltung hast du vorgemerkt. Moechtest du teilnehmen? Jetzt Veranstaltung ansehen und ggf. anmelden.",
+    `Veranstaltung: ${data.title}`,
+    eventDate ? `Datum der Veranstaltung: ${eventDate}` : "",
+    data.location ? `Ort: ${data.location}` : "",
+    data.url ? `Eventseite: ${data.url}` : "",
+    data.registrationUrl ? `Anmeldung: ${data.registrationUrl}` : ""
+  ].filter(Boolean).join("\n\n");
+  return {
+    id: `${data.id}-decision-${data.reminderDays}d`,
+    title: `Teilnahme entscheiden: ${data.title}`,
+    startLocal,
+    endLocal,
+    allDay: false,
+    timeZone: data.timeZone,
+    location: data.location,
+    url: data.url,
+    description
+  };
+}
+
+function appendCalendarIcsEvent(lines, data = {}, uid = "") {
+  lines.push("BEGIN:VEVENT", `UID:${calendarIcsEscape(`${uid || data.id}@prodigitaltv.de`)}`, `DTSTAMP:${calendarUtcStamp()}`, `SUMMARY:${calendarIcsEscape(data.title)}`, "STATUS:TENTATIVE");
+  if (data.allDay && data.startLocal && data.endLocal) lines.push(`DTSTART;VALUE=DATE:${calendarIcsDate(data.startLocal)}`, `DTEND;VALUE=DATE:${calendarIcsDate(data.endLocal)}`);
+  else if (data.startLocal && data.endLocal) lines.push(`DTSTART;TZID=${data.timeZone}:${calendarIcsLocal(data.startLocal)}`, `DTEND;TZID=${data.timeZone}:${calendarIcsLocal(data.endLocal)}`);
+  if (data.location) lines.push(`LOCATION:${calendarIcsEscape(data.location)}`);
+  if (data.url) lines.push(`URL:${calendarIcsEscape(data.url)}`);
+  if (data.description) lines.push(`DESCRIPTION:${calendarIcsEscape(data.description)}`);
+  if (data.alarmMinutesBefore > 0) lines.push("BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${calendarIcsEscape(`Erinnerung: ${data.title}`)}`, `TRIGGER:-PT${data.alarmMinutesBefore}M`, "END:VALARM");
+  lines.push("END:VEVENT");
+}
+
+function eventCalendarIcs(event = {}, options = {}) {
+  const data = calendarEventData(event);
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//PROdigitalTV//Event Calendar//DE", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
+  appendCalendarIcsEvent(lines, data, data.id);
+  lines.push("END:VCALENDAR");
+  return `${lines.map(calendarIcsFold).join("\r\n")}\r\n`;
+}
+
+function calendarFileNameForEvent(event = {}) {
+  const safe = calendarText(event.title || event.id || "prodigitaltv-event").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ß/g, "ss").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "prodigitaltv-event";
+  return `${safe}.ics`;
+}
+
+exports.eventCalendarIcs = onRequest({ region, invoker: "public" }, async (req, res) => {
+  try {
+    const eventId = clean(req.query.eventId || req.query.id || "");
+    if (!eventId) {
+      res.status(400).send("eventId fehlt");
+      return;
+    }
+    const snapshot = await db.collection("events").doc(eventId).get();
+    if (!snapshot.exists) {
+      res.status(404).send("Event wurde nicht gefunden.");
+      return;
+    }
+    const event = { id: snapshot.id, ...snapshot.data() };
+    if (!calendarPublicEventAllowed(event)) {
+      res.status(404).send("Kalender-Vormerkung ist fuer dieses Event nicht oeffentlich aktiv.");
+      return;
+    }
+    const includeDecisionReminder = !["0", "false", "no", "nein", "off", "aus"].includes(clean(req.query.decisionReminder || req.query.reminder || "1").toLowerCase());
+    const ics = eventCalendarIcs(event, { includeDecisionReminder });
+    const fileName = calendarFileNameForEvent(event).replace(/"/g, "");
+    res.set("Content-Type", "text/calendar; charset=utf-8");
+    res.set("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.set("Cache-Control", "public, max-age=300");
+    res.status(200).send(ics);
+  } catch (error) {
+    console.error("eventCalendarIcs failed", error);
+    res.status(500).send("Kalendereintrag konnte nicht erzeugt werden.");
+  }
+});
+function linkedinTextParts(linkedin = {}) {
+  const text = stripTags(linkedin.text || "").slice(0, 2700);
+  const hashtags = Array.isArray(linkedin.hashtags) ? linkedin.hashtags.map((tag) => clean(tag).replace(/^#+/, "")).filter(Boolean) : [];
+  const normalizedTags = [...new Set(hashtags)].slice(0, 8).map((tag) => `#${tag.replace(/\s+/g, "-")}`);
+  return [text, normalizedTags.join(" ")].filter(Boolean).join("\n\n").slice(0, 3000).trim();
+}
+
+function linkedinArticleUrl(item = {}, linkedin = {}) {
+  const raw = clean(linkedin.articleUrl || item.publicUrl || item.url || "");
+  if (raw) {
+    try { return new URL(raw, PUBLIC_APP_BASE_URL).href; } catch {}
+  }
+  if (item.id) return publicHashUrl(item.collectionName === "topics" ? `topic/${encodeURIComponent(item.id)}` : `article/${encodeURIComponent(item.id)}`);
+  return PUBLIC_APP_BASE_URL;
+}
+
+function linkedinDescription(item = {}) {
+  return stripTags(item.introText || item.subtitle || item.shortDescription || item.seoDescription || item.description || item.bodyText || item.longDescription || "").slice(0, 240);
+}
+
+async function createLinkedInPost({ authorUrn, accessToken, version, commentary, article }) {
+  const body = {
+    author: authorUrn,
+    commentary,
+    visibility: "PUBLIC",
+    distribution: {
+      feedDistribution: "MAIN_FEED",
+      targetEntities: [],
+      thirdPartyDistributionChannels: []
+    },
+    lifecycleState: "PUBLISHED",
+    isReshareDisabledByAuthor: false
+  };
+  if (article?.source) {
+    body.content = {
+      article: {
+        source: article.source,
+        title: article.title || "PROdigitalTV",
+        description: article.description || ""
+      }
+    };
+  }
+  const response = await fetch("https://api.linkedin.com/rest/posts", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+      "x-restli-protocol-version": "2.0.0",
+      "linkedin-version": version || "202605"
+    },
+    body: JSON.stringify(body)
+  });
+  const raw = await response.text();
+  let parsed = null;
+  try { parsed = raw ? JSON.parse(raw) : null; } catch {}
+  if (!response.ok) {
+    const detail = clean(parsed?.message || parsed?.error_description || raw).slice(0, 500);
+    throw new HttpsError("internal", `LinkedIn konnte den Beitrag nicht veroeffentlichen (${response.status}). ${detail}`);
+  }
+  return {
+    postId: response.headers.get("x-restli-id") || parsed?.id || "",
+    response: parsed || raw.slice(0, 500)
+  };
+}
+
+exports.publishLinkedInPost = onCall({ region, secrets: linkedinSecrets, timeoutSeconds: 120 }, async (request) => {
+  const profile = await requireEditor(request);
+  const entityType = clean(request.data?.entityType) === "topics" ? "topics" : "editorialContent";
+  const entityId = clean(request.data?.entityId || request.data?.id || "");
+  if (!entityId) throw new HttpsError("invalid-argument", "Beitrag fehlt.");
+  const ref = db.collection(entityType).doc(entityId);
+  const snapshot = await ref.get();
+  if (!snapshot.exists) throw new HttpsError("not-found", "Beitrag wurde nicht gefunden.");
+  const item = { id: snapshot.id, collectionName: entityType, ...snapshot.data() };
+  const linkedin = item.linkedin && typeof item.linkedin === "object" ? item.linkedin : {};
+  if (linkedin.status === "published" && linkedin.linkedinPostId) {
+    throw new HttpsError("already-exists", "Dieser Beitrag wurde bereits auf LinkedIn veroeffentlicht.");
+  }
+  if (linkedin.status !== "approved") throw new HttpsError("failed-precondition", "Bitte LinkedIn-Teaser vor dem Veroeffentlichen freigeben.");
+  const commentary = linkedinTextParts(linkedin);
+  if (!commentary) throw new HttpsError("failed-precondition", "LinkedIn-Text fehlt.");
+  const accessToken = clean(LINKEDIN_ACCESS_TOKEN.value());
+  const authorUrn = clean(LINKEDIN_AUTHOR_URN.value());
+  const version = clean(LINKEDIN_VERSION.value()) || "202605";
+  if (!accessToken || !authorUrn) throw new HttpsError("failed-precondition", "LinkedIn ist noch nicht konfiguriert. Bitte LINKEDIN_ACCESS_TOKEN und LINKEDIN_AUTHOR_URN als Firebase Secrets setzen.");
+  if (!/^urn:li:(organization|person):/.test(authorUrn)) throw new HttpsError("failed-precondition", "LINKEDIN_AUTHOR_URN muss z. B. urn:li:organization:123456 sein.");
+  const articleUrl = linkedinArticleUrl(item, linkedin);
+  const payload = await createLinkedInPost({
+    authorUrn,
+    accessToken,
+    version,
+    commentary,
+    article: {
+      source: articleUrl,
+      title: stripTags(item.title || item.name || "PROdigitalTV").slice(0, 200),
+      description: linkedinDescription(item)
+    }
+  });
+  const publishedAt = new Date().toISOString();
+  await ref.set({
+    linkedin: {
+      ...linkedin,
+      articleUrl,
+      status: "published",
+      publishedAt,
+      linkedinPostId: payload.postId,
+      publishedBy: profile.email || request.auth.uid,
+      publishedByUid: request.auth.uid,
+      lastPublishResponse: payload.response,
+      updatedAt: publishedAt
+    },
+    updatedAt: publishedAt
+  }, { merge: true });
+  await db.collection("linkedinPosts").doc(payload.postId || `linkedin-${Date.now()}`).set({
+    id: payload.postId || "",
+    entityType,
+    entityId,
+    articleUrl,
+    authorUrn,
+    commentary,
+    status: "published",
+    response: payload.response,
+    createdBy: profile.email || request.auth.uid,
+    createdByUid: request.auth.uid,
+    createdAt: FieldValue.serverTimestamp(),
+    publishedAt
+  }, { merge: true });
+  return { ok: true, postId: payload.postId, publishedAt, articleUrl };
+});
+exports.sendSpeakerApprovalInvitation = onCall({ region }, async (request) => {
+  const actorProfile = await requireEditor(request);
+  const eventId = clean(request.data?.eventId || "");
+  const topicId = clean(request.data?.topicId || "");
+  const speakerId = clean(request.data?.speakerId || "");
+  const introText = clean(request.data?.introText || "bitte pruefen Sie Ihr Referentenprofil und die Vortragsbeschreibung. Ueber den Link koennen Sie Korrekturen direkt an PROdigitalTV uebermitteln.").slice(0, 2000);
+  if (!eventId || !topicId || !speakerId) throw new HttpsError("invalid-argument", "Event, Vortrag und Referent muessen angegeben sein.");
+  const [eventSnapshot, topicSnapshot, speakerSnapshot] = await Promise.all([
+    db.collection("events").doc(eventId).get(),
+    db.collection("topics").doc(topicId).get(),
+    db.collection("speakers").doc(speakerId).get()
+  ]);
+  if (!eventSnapshot.exists) throw new HttpsError("not-found", "Event wurde nicht gefunden.");
+  if (!topicSnapshot.exists) throw new HttpsError("not-found", "Vortrag wurde nicht gefunden.");
+  if (!speakerSnapshot.exists) throw new HttpsError("not-found", "Referent wurde nicht gefunden.");
+  const eventRecord = { id: eventSnapshot.id, ...eventSnapshot.data() };
+  const topic = { id: topicSnapshot.id, ...topicSnapshot.data() };
+  const speaker = { id: speakerSnapshot.id, ...speakerSnapshot.data() };
+  const eventTopicIds = new Set([...(eventRecord.topicIds || []), eventRecord.topicId].filter(Boolean));
+  const topicSpeakerIds = new Set([topic.speakerId, ...(topic.speakerIds || [])].filter(Boolean));
+  const speakerTopicIds = new Set([speaker.topicId, ...(speaker.topicIds || [])].filter(Boolean));
+  const topicLinked = eventTopicIds.has(topic.id) || topic.eventId === eventId || (topic.eventIds || []).includes(eventId);
+  const speakerLinked = topicSpeakerIds.has(speaker.id) || speakerTopicIds.has(topic.id) || (eventRecord.speakerIds || []).includes(speaker.id) || (speaker.eventIds || []).includes(eventId);
+  if (!topicLinked || !speakerLinked) throw new HttpsError("failed-precondition", "Referent und Vortragsbeschreibung sind diesem Event nicht eindeutig zugeordnet.");
+  const email = speakerEmailAddress(speaker);
+  if (!email) throw new HttpsError("failed-precondition", "Beim Referenten ist keine E-Mail-Adresse hinterlegt.");
+  const token = randomBytes(32).toString("base64url");
+  const approvalId = `speaker-approval-${hashToken(`${eventId}:${topicId}:${speakerId}`).slice(0, 24)}`;
+  const approvalRef = db.collection("speakerApprovals").doc(approvalId);
+  const existingApprovalSnapshot = await approvalRef.get();
+  const existingApproval = existingApprovalSnapshot.exists ? existingApprovalSnapshot.data() || {} : {};
+  const acceptedTokenHashes = Array.from(new Set([
+    ...(Array.isArray(existingApproval.tokenHashes) ? existingApproval.tokenHashes : []),
+    existingApproval.tokenHash,
+    hashToken(token)
+  ].filter(Boolean))).slice(-10);
+  const expiresAt = speakerApprovalExpiresAtDate();
+  const link = speakerApprovalLink(approvalId, token);
+  const now = FieldValue.serverTimestamp();
+  await approvalRef.set({
+    id: approvalId,
+    eventId,
+    topicId,
+    speakerId,
+    speakerEmail: email,
+    speakerName: compactNameParts(speaker),
+    eventTitle: eventRecord.title || "",
+    topicTitle: topic.title || "",
+    tokenHash: hashToken(token),
+    tokenHashes: acceptedTokenHashes,
+    status: "queued",
+    link,
+    expiresAt: Timestamp.fromDate(expiresAt),
+    snapshot: speakerApprovalPublicPayload({ id: approvalId, eventId, topicId, speakerId }, speaker, topic, eventRecord),
+    sentBy: request.auth.uid,
+    sentByEmail: actorProfile.email || request.auth.token.email || "",
+    sentAt: now,
+    updatedAt: now,
+    createdAt: now
+  }, { merge: true });
+  const mailRef = await queueMail({
+    type: "speaker_approval",
+    template: "speaker_approval",
+    speakerApprovalId: approvalId,
+    eventId,
+    topicId,
+    speakerId,
+    to: email,
+    subject: `Bitte pruefen: ${topic.title || "Vortragsbeschreibung"}`,
+    title: "Profil und Vortragsbeschreibung pruefen",
+    introText,
+    link,
+    speakerName: compactNameParts(speaker),
+    eventTitle: eventRecord.title || "PROdigitalTV Veranstaltung",
+    topicTitle: topic.title || "Vortrag"
+  });
+  await approvalRef.set({ mailQueueId: mailRef.id, updatedAt: now }, { merge: true });
+  await db.collection("auditLog").add({
+    action: "send_speaker_approval_invitation",
+    entityType: "speakerApproval",
+    entityId: approvalId,
+    userId: request.auth.uid,
+    userEmail: actorProfile.email || request.auth.token.email || "",
+    details: { eventId, topicId, speakerId, to: email },
+    createdAt: now
+  });
+  return { ok: true, approvalId, link, queuedMailId: mailRef.id, to: email };
+});
+
+exports.getSpeakerApproval = onCall({ region, invoker: "public" }, async (request) => {
+  const approvalId = clean(request.data?.approvalId || request.data?.id || "");
+  const token = clean(request.data?.token || "");
+  if (!approvalId || !token) throw new HttpsError("invalid-argument", "Freigabelink ist unvollstaendig.");
+  const approvalSnapshot = await db.collection("speakerApprovals").doc(approvalId).get();
+  if (!approvalSnapshot.exists) throw new HttpsError("not-found", "Freigabelink wurde nicht gefunden.");
+  const approval = { id: approvalSnapshot.id, ...approvalSnapshot.data() };
+  const acceptedTokenHashes = [approval.tokenHash, ...(Array.isArray(approval.tokenHashes) ? approval.tokenHashes : [])].filter(Boolean);
+  if (!acceptedTokenHashes.includes(hashToken(token))) throw new HttpsError("permission-denied", "Freigabelink ist ungueltig.");
+  if (approval.expiresAt?.toMillis?.() && approval.expiresAt.toMillis() < Date.now()) throw new HttpsError("deadline-exceeded", "Freigabelink ist abgelaufen.");
+  const [eventSnapshot, topicSnapshot, speakerSnapshot] = await Promise.all([
+    db.collection("events").doc(approval.eventId).get(),
+    db.collection("topics").doc(approval.topicId).get(),
+    db.collection("speakers").doc(approval.speakerId).get()
+  ]);
+  const eventRecord = eventSnapshot.exists ? { id: eventSnapshot.id, ...eventSnapshot.data() } : {};
+  const topic = topicSnapshot.exists ? { id: topicSnapshot.id, ...topicSnapshot.data() } : {};
+  const speaker = speakerSnapshot.exists ? { id: speakerSnapshot.id, ...speakerSnapshot.data() } : {};
+  const retainedStatus = ["submitted", "applied", "approved"].includes(approval.status) ? approval.status : "opened";
+  await db.collection("speakerApprovals").doc(approvalId).set({ status: retainedStatus, openedAt: approval.openedAt || FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  return { ok: true, approval: speakerApprovalPublicPayload(approval, speaker, topic, eventRecord) };
+});
+
+exports.submitSpeakerApproval = onCall({ region, invoker: "public" }, async (request) => {
+  const approvalId = clean(request.data?.approvalId || request.data?.id || "");
+  const token = clean(request.data?.token || "");
+  const input = request.data?.input || {};
+  if (!approvalId || !token) throw new HttpsError("invalid-argument", "Freigabelink ist unvollstaendig.");
+  const approvalSnapshot = await db.collection("speakerApprovals").doc(approvalId).get();
+  if (!approvalSnapshot.exists) throw new HttpsError("not-found", "Freigabelink wurde nicht gefunden.");
+  const approval = { id: approvalSnapshot.id, ...approvalSnapshot.data() };
+  const acceptedTokenHashes = [approval.tokenHash, ...(Array.isArray(approval.tokenHashes) ? approval.tokenHashes : [])].filter(Boolean);
+  if (!acceptedTokenHashes.includes(hashToken(token))) throw new HttpsError("permission-denied", "Freigabelink ist ungueltig.");
+  if (approval.expiresAt?.toMillis?.() && approval.expiresAt.toMillis() < Date.now()) throw new HttpsError("deadline-exceeded", "Freigabelink ist abgelaufen.");
+  const submitted = {
+    speakerName: stripTags(input.speakerName || "").slice(0, 180),
+    company: stripTags(input.company || "").slice(0, 180),
+    position: stripTags(input.position || "").slice(0, 180),
+    email: mailAddress(input.email || "").toLowerCase().slice(0, 320),
+    phone: stripTags(input.phone || "").slice(0, 80),
+    linkedIn: stripTags(input.linkedIn || "").slice(0, 1000),
+    shortBio: stripTags(input.shortBio || "").slice(0, 1200),
+    longBio: stripTags(input.longBio || "").slice(0, 5000),
+    topicTitle: stripTags(input.topicTitle || "").slice(0, 240),
+    topicDescription: stripTags(input.topicDescription || "").slice(0, 8000),
+    note: stripTags(input.note || "").slice(0, 2000)
+  };
+  const decision = clean(input.decision || "").toLowerCase() === "approved" ? "approved" : "corrections";
+  const ipAddress = clientIp(request);
+  const userAgent = stripTags(request.rawRequest?.headers?.["user-agent"] || "").slice(0, 500);
+  const now = FieldValue.serverTimestamp();
+  await db.collection("speakerApprovals").doc(approvalId).set({
+    status: "submitted",
+    submitted,
+    speakerDecision: decision,
+    speakerApprovedAt: decision === "approved" ? now : null,
+    speakerApprovedIpAddress: decision === "approved" ? ipAddress : null,
+    speakerApprovedIpHash: decision === "approved" && ipAddress ? hashToken(ipAddress).slice(0, 32) : null,
+    submissionIpAddress: ipAddress,
+    submissionIpHash: ipAddress ? hashToken(ipAddress).slice(0, 32) : "",
+    submissionUserAgent: userAgent,
+    submittedAt: now,
+    updatedAt: now
+  }, { merge: true });
+  await db.collection("speakerApprovalSubmissions").add({ approvalId, eventId: approval.eventId, topicId: approval.topicId, speakerId: approval.speakerId, speakerEmail: approval.speakerEmail || "", submitted, decision, ipAddress, ipHash: ipAddress ? hashToken(ipAddress).slice(0, 32) : "", userAgent, createdAt: now });
+  return { ok: true, status: "submitted", decision };
+});
+
+exports.reviewSpeakerApproval = onCall({ region }, async (request) => {
+  const approvalId = clean(request.data?.approvalId || request.data?.id || "");
+  const action = clean(request.data?.action || "").toLowerCase();
+  if (!approvalId || !["apply", "approve", "reset"].includes(action)) {
+    throw new HttpsError("invalid-argument", "Freigabeaktion ist unvollstaendig.");
+  }
+  const actorProfile = action === "reset" ? await requireAdmin(request) : await requireEditor(request);
+  const approvalRef = db.collection("speakerApprovals").doc(approvalId);
+  const approvalSnapshot = await approvalRef.get();
+  if (!approvalSnapshot.exists) throw new HttpsError("not-found", "Referentenfreigabe wurde nicht gefunden.");
+  const approval = { id: approvalSnapshot.id, ...approvalSnapshot.data() };
+  if (!approval.speakerId || !approval.topicId || !approval.eventId) {
+    throw new HttpsError("failed-precondition", "Referent, Vortrag oder Veranstaltung fehlt.");
+  }
+  const now = FieldValue.serverTimestamp();
+  const actorEmail = actorProfile.email || request.auth.token.email || "";
+  const auditRef = db.collection("auditLog").doc();
+  const batch = db.batch();
+  if (action === "reset") {
+    const submissions = await db.collection("speakerApprovalSubmissions").where("approvalId", "==", approvalId).limit(100).get();
+    submissions.docs.forEach((snapshot) => batch.delete(snapshot.ref));
+    batch.delete(approvalRef);
+    batch.set(auditRef, {
+      action: "reset_speaker_approval",
+      module: "events",
+      entityType: "speakerApproval",
+      entityId: approvalId,
+      eventId: approval.eventId,
+      topicId: approval.topicId,
+      speakerId: approval.speakerId,
+      userId: request.auth.uid,
+      userEmail: actorProfile.email || request.auth.token.email || "",
+      timestamp: now,
+      details: { deletedSubmissions: submissions.size }
+    });
+    await batch.commit();
+    return { ok: true, status: "reset" };
+  }
+  const completionMailRef = db.collection("mailQueue").doc();
+  await db.runTransaction(async (transaction) => {
+    const latestSnapshot = await transaction.get(approvalRef);
+    if (!latestSnapshot.exists) throw new HttpsError("not-found", "Referentenfreigabe wurde nicht gefunden.");
+    const latestApproval = { id: latestSnapshot.id, ...latestSnapshot.data() };
+    const submitted = latestApproval.submitted || {};
+    const recipientEmail = mailAddress(submitted.email || latestApproval.speakerEmail || "").toLowerCase();
+    if (!recipientEmail) throw new HttpsError("failed-precondition", "Die E-Mail-Adresse des Referenten fehlt.");
+    if (action === "apply" && (latestApproval.status !== "submitted" || !latestApproval.submitted)) {
+      throw new HttpsError("already-exists", "Diese Änderungen wurden bereits freigegeben und veröffentlicht.");
+    }
+    if (action === "approve" && latestApproval.status !== "applied") {
+      throw new HttpsError("already-exists", "Dieser Freigabevorgang wurde bereits abgeschlossen.");
+    }
+    if (action === "apply") {
+      const name = stripTags(submitted.speakerName || "").slice(0, 180);
+      const nameParts = name.split(/\s+/).filter(Boolean);
+      const firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join(" ") : "";
+      const lastName = nameParts.length ? nameParts[nameParts.length - 1] : "";
+      transaction.set(db.collection("speakers").doc(latestApproval.speakerId), {
+        name,
+        firstName,
+        lastName,
+        company: stripTags(submitted.company || "").slice(0, 180),
+        position: stripTags(submitted.position || "").slice(0, 180),
+        email: mailAddress(submitted.email || "").toLowerCase().slice(0, 320),
+        phone: stripTags(submitted.phone || "").slice(0, 80),
+        linkedIn: stripTags(submitted.linkedIn || "").slice(0, 1000),
+        shortBio: stripTags(submitted.shortBio || "").slice(0, 1200),
+        longBio: stripTags(submitted.longBio || "").slice(0, 5000),
+        updatedAt: now,
+        updatedBy: request.auth.uid
+      }, { merge: true });
+      const topicDescription = stripTags(submitted.topicDescription || "").slice(0, 8000);
+      transaction.set(db.collection("topics").doc(latestApproval.topicId), {
+        title: stripTags(submitted.topicTitle || "").slice(0, 240),
+        description: topicDescription,
+        longDescription: topicDescription,
+        updatedAt: now,
+        updatedBy: request.auth.uid
+      }, { merge: true });
+    }
+    transaction.set(approvalRef, {
+      status: "approved",
+      ...(action === "apply" ? { appliedAt: now, appliedBy: request.auth.uid, appliedByEmail: actorEmail } : {}),
+      approvedAt: now,
+      approvedBy: request.auth.uid,
+      approvedByEmail: actorEmail,
+      completionMailQueueId: completionMailRef.id,
+      completionMailStatus: "queued",
+      completedAt: now,
+      updatedAt: now
+    }, { merge: true });
+    transaction.set(completionMailRef, {
+      type: "speaker_approval_completed",
+      template: "speaker_approval_completed",
+      speakerApprovalId: approvalId,
+      eventId: latestApproval.eventId,
+      topicId: latestApproval.topicId,
+      speakerId: latestApproval.speakerId,
+      to: recipientEmail,
+      subject: "Ihre Änderungen wurden übernommen",
+      speakerName: stripTags(submitted.speakerName || latestApproval.speakerName || "").slice(0, 180),
+      eventTitle: latestApproval.eventTitle || "PROdigitalTV Veranstaltung",
+      topicTitle: stripTags(submitted.topicTitle || latestApproval.topicTitle || "Vortrag").slice(0, 240),
+      status: "queued",
+      queuedAt: now,
+      createdAt: now,
+      updatedAt: now
+    });
+    transaction.set(auditRef, {
+      action: action === "apply" ? "apply_and_approve_speaker_approval" : "approve_speaker_approval",
+      module: "events",
+      entityType: "speakerApproval",
+      entityId: approvalId,
+      eventId: latestApproval.eventId,
+      topicId: latestApproval.topicId,
+      speakerId: latestApproval.speakerId,
+      userId: request.auth.uid,
+      userEmail: actorEmail,
+      timestamp: now,
+      details: { completionMailQueueId: completionMailRef.id, completionMailTo: recipientEmail }
+    });
+  });
+  return { ok: true, status: "approved", completionMailQueueId: completionMailRef.id };
+});
+const eventFeedbackQuestions = [
+  { id: "relevance", type: "single", title: "Wie relevant war die Veranstaltung für Sie persönlich oder beruflich?", options: ["Sehr relevant", "Eher relevant", "Teilweise relevant", "Weniger relevant", "Nicht relevant"], commentPrompt: "Was war für Sie besonders relevant – oder was hat gefehlt?" },
+  { id: "benefit", type: "multiple", title: "Was war für Sie der größte Nutzen der Veranstaltung?", options: ["Neue Kontakte", "Fachlicher Input", "Austausch mit anderen Gästen", "Einblick in aktuelle Branchenthemen", "Inspiration für eigene Projekte", "Sichtbarkeit / eigene Positionierung", "Sonstiges"], commentPrompt: "Welcher konkrete Moment, Kontakt oder Inhalt war für Sie besonders wertvoll?" },
+  { id: "industry_fit", type: "single", title: "Wie gut passten Thema, Gäste und Format zur aktuellen Entwicklung der Medienbranche?", options: ["Sehr gut", "Gut", "Teilweise", "Eher weniger", "Gar nicht"], commentPrompt: "Welche Themen sollten wir künftig stärker aufgreifen?" },
+  { id: "attend_again", type: "single", title: "Würden Sie an einer weiteren PROdigitalTV-Veranstaltung teilnehmen?", options: ["Ja, auf jeden Fall", "Wahrscheinlich ja", "Vielleicht", "Eher nicht", "Nein"], commentPrompt: "Was müsste eine nächste Veranstaltung bieten, damit sie für Sie besonders interessant ist?" },
+  { id: "membership_interest", type: "single", title: "Könnten Sie sich vorstellen, Teil des PROdigitalTV-Netzwerks zu werden?", options: ["Ja, als persönliches Mitglied", "Ja, für mein Unternehmen interessant", "Vielleicht, ich möchte mehr Informationen", "Derzeit eher nicht", "Nein"], commentPrompt: "Was müsste PROdigitalTV Ihnen oder Ihrem Unternehmen konkret bieten, damit eine Mitgliedschaft interessant wird?" }
+];
+
+function normalizedEventFeedbackQuestions(eventRecord = {}, registration = {}) {
+  const custom = Array.isArray(eventRecord.feedbackQuestions) ? eventRecord.feedbackQuestions : [];
+  const byId = new Map(custom.map((question) => [clean(question.id), question]));
+  const questions = eventFeedbackQuestions.map((base) => {
+    const customQuestion = byId.get(base.id) || {};
+    const options = Array.isArray(customQuestion.options)
+      ? customQuestion.options.map(clean).filter(Boolean).slice(0, 12)
+      : base.options;
+    return {
+      ...base,
+      title: clean(customQuestion.title) || base.title,
+      commentPrompt: clean(customQuestion.commentPrompt) || base.commentPrompt,
+      options: options.length ? options : base.options
+    };
+  });
+  if (registration.isMember === true || registration.registrationAudienceType === "member" || registration.matchedMemberId) {
+    return questions.filter((question) => question.id !== "membership_interest");
+  }
+  return questions;
+}
+
+function eventFeedbackFollowUpStatus(answer = "") {
+  const value = clean(answer);
+  return {
+    "Ja, als persönliches Mitglied": "personal_membership_interest",
+    "Ja, für mein Unternehmen interessant": "corporate_membership_interest",
+    "Vielleicht, ich möchte mehr Informationen": "send_information_and_follow_up",
+    "Derzeit eher nicht": "keep_as_event_contact",
+    "Nein": "no_membership_follow_up"
+  }[value] || "open";
+}
+
+async function registrationByFeedbackToken(token = "") {
+  const cleanedToken = clean(token);
+  if (!cleanedToken) throw new HttpsError("invalid-argument", "Feedback-Link ist unvollstaendig.");
+  const tokenHash = hashToken(cleanedToken);
+  let snapshot = await db.collection("registrations").where("feedbackTokenHash", "==", tokenHash).limit(1).get();
+  let tokenReference = "feedbackTokenHash";
+  if (snapshot.empty) {
+    snapshot = await db.collection("registrations").where("feedbackTokenHashes", "array-contains", tokenHash).limit(1).get();
+    tokenReference = "feedbackTokenHashes";
+  }
+  if (snapshot.empty) throw new HttpsError("not-found", "Feedback-Link wurde nicht gefunden.");
+  const document = snapshot.docs[0];
+  const registration = { id: document.id, ...document.data() };
+  if (["cancelled", "expired", "deleted"].includes(clean(registration.status).toLowerCase())) throw new HttpsError("failed-precondition", "Diese Anmeldung ist nicht mehr aktiv.");
+  return { document, registration, tokenHash, tokenReference };
+}
+
+function feedbackGuestPayload(registration = {}) {
+  const name = compactNameParts(registration) || clean(registration.name || registration.personName || registration.email || "");
+  return {
+    guestId: registration.id || registration.registrationId || "",
+    registrationId: registration.id || registration.registrationId || "",
+    guestName: name,
+    guestEmail: clean(registration.email || ""),
+    guestCompany: clean(registration.company || "")
+  };
+}
+
+exports.getEventFeedbackByToken = onCall({ region, invoker: "public" }, async (request) => {
+  const token = clean(request.data?.token || "");
+  const { registration, tokenReference } = await registrationByFeedbackToken(token);
+  const eventSnapshot = registration.eventId ? await db.collection("events").doc(registration.eventId).get().catch(() => null) : null;
+  const eventRecord = eventSnapshot?.exists ? { id: eventSnapshot.id, ...eventSnapshot.data() } : { id: registration.eventId || "", title: registration.eventTitle || "" };
+  const feedbackSnapshot = await db.collection("event_feedback").doc(`event-feedback-${registration.id}`).get().catch(() => null);
+  return {
+    ok: true,
+    feedback: feedbackSnapshot?.exists ? { id: feedbackSnapshot.id, ...feedbackSnapshot.data() } : null,
+    event: {
+      id: eventRecord.id || registration.eventId || "",
+      title: eventRecord.title || registration.eventTitle || "PROdigitalTV Veranstaltung",
+      date: eventRecord.date || registration.eventDate || "",
+      locationName: eventRecord.locationName || "",
+      city: eventRecord.city || ""
+    },
+    guest: feedbackGuestPayload(registration),
+    tokenReference,
+    questions: normalizedEventFeedbackQuestions(eventRecord, registration)
+  };
+});
+
+exports.submitEventFeedback = onCall({ region, invoker: "public" }, async (request) => {
+  const token = clean(request.data?.token || "");
+  const rawAnswers = request.data?.answers && typeof request.data.answers === "object" ? request.data.answers : {};
+  const rawComments = request.data?.comments && typeof request.data.comments === "object" ? request.data.comments : {};
+  const contactConsent = clean(request.data?.contactConsent || "");
+  const { registration, tokenHash, tokenReference } = await registrationByFeedbackToken(token);
+  const eventSnapshot = registration.eventId ? await db.collection("events").doc(registration.eventId).get().catch(() => null) : null;
+  const eventRecord = eventSnapshot?.exists ? { id: eventSnapshot.id, ...eventSnapshot.data() } : {};
+  const feedbackQuestions = normalizedEventFeedbackQuestions(eventRecord, registration);
+  const answers = {};
+  const comments = {};
+  for (const question of feedbackQuestions) {
+    const raw = rawAnswers[question.id];
+    if (question.type === "multiple") {
+      answers[question.id] = (Array.isArray(raw) ? raw : [raw]).map(clean).filter((value) => question.options.includes(value)).slice(0, question.options.length);
+      if (!answers[question.id].length) throw new HttpsError("invalid-argument", "Bitte alle Feedbackfragen beantworten.");
+    } else {
+      const answer = clean(raw);
+      if (!question.options.includes(answer)) throw new HttpsError("invalid-argument", "Bitte alle Feedbackfragen beantworten.");
+      answers[question.id] = answer;
+    }
+    comments[question.id] = stripTags(rawComments[question.id] || "").slice(0, 3000);
+  }
+  if (contactConsent && !["Ja", "Nein"].includes(contactConsent)) throw new HttpsError("invalid-argument", "Kontaktfreigabe ist ungueltig.");
+  const followUpStatus = answers.membership_interest ? eventFeedbackFollowUpStatus(answers.membership_interest) : "keep_as_event_contact";
+  const now = FieldValue.serverTimestamp();
+  const guest = feedbackGuestPayload(registration);
+  const feedbackRef = db.collection("event_feedback").doc(`event-feedback-${registration.id}`);
+  const existing = await feedbackRef.get().catch(() => null);
+  await feedbackRef.set({
+    id: feedbackRef.id,
+    eventId: registration.eventId || "",
+    guestId: registration.id,
+    registrationId: registration.id,
+    tokenId: tokenReference,
+    tokenReference,
+    tokenHashPrefix: tokenHash.slice(0, 12),
+    ...guest,
+    answers,
+    comments,
+    contactConsent,
+    followUpStatus,
+    manualStatus: existing?.exists ? clean(existing.data()?.manualStatus || "offen") : "offen",
+    submittedAt: now,
+    createdAt: existing?.exists ? existing.data()?.createdAt || now : now,
+    updatedAt: now
+  }, { merge: true });
+  await db.collection("registrations").doc(registration.id).set({ feedbackSubmittedAt: now, feedbackFollowUpStatus: followUpStatus, updatedAt: now }, { merge: true });
+  return { ok: true, followUpStatus };
+});
+
+exports.sendEventFeedbackInvitations = onCall({ region }, async (request) => {
+  const actorProfile = await requireEditor(request);
+  const eventId = clean(request.data?.eventId || "");
+  const rawRegistrationIds = Array.isArray(request.data?.registrationIds) ? request.data.registrationIds : [];
+  if (!eventId) throw new HttpsError("invalid-argument", "Event fehlt.");
+  const eventSnapshot = await db.collection("events").doc(eventId).get();
+  if (!eventSnapshot.exists) throw new HttpsError("not-found", "Event wurde nicht gefunden.");
+  const eventRecord = { id: eventSnapshot.id, ...eventSnapshot.data() };
+  let registrations = [];
+  if (rawRegistrationIds.length) {
+    const ids = [...new Set(rawRegistrationIds.map(clean).filter(Boolean))].slice(0, 200);
+    const snapshots = await Promise.all(ids.map((id) => db.collection("registrations").doc(id).get().catch(() => null)));
+    registrations = snapshots.filter((snapshot) => snapshot?.exists).map((snapshot) => ({ id: snapshot.id, ...snapshot.data() })).filter((item) => item.eventId === eventId);
+  } else {
+    const snapshot = await db.collection("registrations").where("eventId", "==", eventId).limit(500).get();
+    registrations = snapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
+  }
+  registrations = registrations.filter((registration) => {
+    const status = clean(registration.status).toLowerCase();
+    const eligibleStatus = ["confirmed", "checked_in", "attended"].includes(status) || registration.emailConfirmed === true;
+    return clean(registration.email).includes("@") && eligibleStatus && !["cancelled", "expired", "deleted"].includes(status);
+  });
+  let queued = 0;
+  const skipped = [];
+  const results = [];
+  for (const registration of registrations) {
+    try {
+      const token = randomBytes(32).toString("hex");
+      const tokenHash = hashToken(token);
+      const feedbackUrl = eventFeedbackUrl(token);
+      await db.collection("registrations").doc(registration.id).set({
+        feedbackTokenHash: tokenHash,
+        feedbackTokenHashes: FieldValue.arrayUnion(tokenHash),
+        feedbackTokenIssuedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+      const mailRef = await queueMail({
+        type: "event_feedback_invitation",
+        template: "event_feedback_invitation",
+        to: registration.email,
+        subject: `Ihre Rueckmeldung zu ${eventRecord.title || registration.eventTitle || "PROdigitalTV Veranstaltung"}`,
+        eventId,
+        registrationId: registration.id,
+        feedbackUrl,
+        link: feedbackUrl,
+        eventTitle: eventRecord.title || registration.eventTitle || "",
+        firstName: registration.firstName || "",
+        lastName: registration.lastName || "",
+        personName: compactNameParts(registration),
+        createdBy: request.auth.uid,
+        createdByEmail: actorProfile.email || request.auth.token.email || ""
+      });
+      queued += 1;
+      results.push({ registrationId: registration.id, email: registration.email, mailQueueId: mailRef.id, status: "queued" });
+    } catch (error) {
+      skipped.push({ registrationId: registration.id, email: registration.email || "", reason: error?.message || String(error) });
+    }
+  }
+  await db.collection("auditLog").add({
+    action: "send_event_feedback_invitations",
+    entityType: "event",
+    entityId: eventId,
+    userId: request.auth.uid,
+    userEmail: actorProfile.email || request.auth.token.email || "",
+    details: { queued, skipped: skipped.length, requested: registrations.length },
+    createdAt: FieldValue.serverTimestamp()
+  });
+  return { ok: true, eventId, queued, skipped: skipped.length, results, skippedItems: skipped };
+});
+exports.sendMemberStrategyInvitation = onCall({ region }, async (request) => {
+  const actorProfile = await requireAdmin(request);
+  const input = request.data || {};
+  const testOnly = input.testOnly === true;
+  const previewOnly = input.previewOnly === true;
+  const subject = clean(input.subject || "Ihre Meinung zur Zukunft von PROdigitalTV").slice(0, 180);
+  const introText = clean(input.introText || "PROdigitalTV entwickelt die Zukunftsstrategie 2027–2030 gemeinsam mit seinen Mitgliedern. Bitte nehmen Sie sich einige Minuten für die Fragen und Ihre Vorschläge.").slice(0, 4000);
+  const link = publicHashUrl("portal?tab=strategy");
+  const targets = testOnly
+    ? await notificationTestGroupTargets()
+    : await eventNotificationTargets("", { recipientGroup: "members", includeMembers: true });
+  if (!targets.length) throw new HttpsError("failed-precondition", testOnly ? "Bitte mindestens eine gueltige Adresse in der Testgruppe speichern." : "Keine mailingfaehigen Mitglieder gefunden.");
+  if (previewOnly) {
+    return {
+      ok: true,
+      previewOnly: true,
+      testOnly,
+      targetCount: targets.length,
+      mailCount: targets.length,
+      recipientEmails: testOnly ? targets.map((target) => target.email) : [],
+      link
+    };
+  }
+  let queued = 0;
+  for (const target of targets) {
+    await queueMail({
+      type: "member_strategy_invitation",
+      template: "member_communication",
+      to: target.email,
+      subject,
+      title: subject,
+      introText,
+      link,
+      linkLabel: "Zukunftsstrategie öffnen",
+      personName: clean(`${target.firstName || ""} ${target.lastName || ""}`) || target.name || target.company || "",
+      firstName: target.firstName || "",
+      lastName: target.lastName || "",
+      company: target.company || "",
+      memberId: target.memberId || "",
+      audienceType: testOnly ? "test" : target.audienceType || "member",
+      testOnly
+    });
+    queued += 1;
+  }
+  const mailingId = `member-strategy-${testOnly ? "test" : "live"}-${Date.now()}`;
+  await db.collection("auditLog").add({
+    action: "send_member_strategy_invitation",
+    entityType: "memberStrategy",
+    entityId: "zukunftsstrategie-2027-2030",
+    userId: request.auth.uid,
+    userEmail: actorProfile.email || request.auth.token.email || "",
+    details: { targetCount: targets.length, queuedMailCount: queued, mailingId, testOnly, subject, link },
+    createdAt: FieldValue.serverTimestamp()
+  });
+  return { ok: true, targetCount: targets.length, queuedMailCount: queued, mailingId, testOnly, link };
+});
+exports.sendMemberCommunication = onCall({ region }, async (request) => {
+  const articleId = clean(request.data?.articleId || request.data?.id || "");
+  const testOnly = request.data?.testOnly === true;
+  const previewOnly = request.data?.previewOnly === true;
+  const actorProfile = testOnly || previewOnly ? await requireEditor(request) : await requireAdmin(request);
+  if (!articleId) throw new HttpsError("invalid-argument", "Beitrag fehlt.");
+  const snapshot = await db.collection("editorialContent").doc(articleId).get();
+  if (!snapshot.exists) throw new HttpsError("not-found", "Mitglieder-News wurde nicht gefunden.");
+  const article = { id: snapshot.id, ...snapshot.data() };
+  const status = clean(article.status || "").toLowerCase();
+  const visibility = clean(article.visibility || "").toLowerCase();
+  const isMemberCommunication = article.section === "member-communication"
+    || article.publication_target === "member-communication"
+    || article.publicationTarget === "member-communication"
+    || article.communicationType === "member-news"
+    || article.contentType === "member-news";
+  if (!isMemberCommunication) throw new HttpsError("failed-precondition", "Dieser Beitrag ist keine Mitglieder-News.");
+  if (status !== "published") throw new HttpsError("failed-precondition", "Bitte den Beitrag vor dem Versand veroeffentlichen.");
+  if (visibility !== "members") throw new HttpsError("failed-precondition", "Mitglieder-News muessen Sichtbarkeit 'members' haben.");
+  if (!testOnly && !previewOnly && (article.memberCommunicationSentAt || article.memberCommunicationMailingId)) {
+    throw new HttpsError("already-exists", "Diese Mitglieder-News wurde bereits versendet.");
+  }
+  const targets = testOnly
+    ? await notificationTestGroupTargets()
+    : await eventNotificationTargets("", { recipientGroup: "members", includeMembers: true });
+  if (!targets.length) throw new HttpsError("failed-precondition", testOnly ? "Bitte mindestens eine gueltige Adresse in der Testgruppe speichern." : "Keine mailingfaehigen Mitglieder gefunden.");
+  if (previewOnly) {
+    return {
+      ok: true,
+      previewOnly: true,
+      testOnly,
+      articleId: article.id,
+      targetCount: targets.length,
+      mailCount: targets.length,
+      recipientEmails: testOnly ? targets.map((target) => target.email) : []
+    };
+  }
+  const title = clean(article.title || "Mitglieder-News von PROdigitalTV");
+  const link = publicHashUrl(`portal/article/${encodeURIComponent(article.id)}`);
+  let queued = 0;
+  for (const target of targets) {
+    await queueMail({
+      type: "member_communication",
+      template: "member_communication",
+      to: target.email,
+      subject: title,
+      articleId: article.id,
+      editorialContentId: article.id,
+      title,
+      subtitle: article.subtitle || "",
+      introText: article.introText || article.shortText || article.bodyText || "",
+      imageUrl: article.imageUrl || article.thumbnailUrl || article.thumbnail_url || "",
+      link,
+      personName: clean(`${target.firstName || ""} ${target.lastName || ""}`) || target.name || target.company || "",
+      firstName: target.firstName || "",
+      lastName: target.lastName || "",
+      company: target.company || "",
+      memberId: target.memberId || "",
+      audienceType: testOnly ? "test" : target.audienceType || "member",
+      testOnly
+    });
+    queued += 1;
+  }
+  const mailingId = `member-communication-${testOnly ? "test" : "live"}-${article.id}-${Date.now()}`;
+  if (!testOnly) {
+    await db.collection("editorialContent").doc(article.id).set({
+      memberCommunicationMailingId: mailingId,
+      memberCommunicationSentAt: FieldValue.serverTimestamp(),
+      memberCommunicationQueuedMailCount: queued,
+      memberCommunicationTargetCount: targets.length,
+      memberCommunicationSentBy: request.auth.uid,
+      memberCommunicationSentByEmail: actorProfile.email || request.auth.token.email || "",
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
+  await db.collection("auditLog").add({
+    action: "send_member_communication",
+    entityType: "editorialContent",
+    entityId: article.id,
+    userId: request.auth.uid,
+    userEmail: actorProfile.email || request.auth.token.email || "",
+    details: { targetCount: targets.length, queuedMailCount: queued, mailingId, testOnly },
+    createdAt: FieldValue.serverTimestamp()
+  });
+  return { ok: true, articleId: article.id, targetCount: targets.length, queuedMailCount: queued, mailingId, testOnly };
+});
 exports.createMemberLogin = onCall({ region }, async (request) => {
   const adminProfile = await requireAdmin(request);
   const input = request.data?.input || {};
-  const memberId = clean(input.memberId);
+  const accountType = clean(input.accountType || (clean(input.memberId) ? "member" : "external")).toLowerCase() === "external" ? "external" : "member";
+  const memberId = accountType === "external" ? "" : clean(input.memberId);
   const email = clean(input.email).toLowerCase();
-  const requestedRole = clean(input.role || "member").toLowerCase();
+  const requestedRole = clean(input.role || (accountType === "external" ? "editor" : "member")).toLowerCase();
   const role = ["admin", "editor", "member"].includes(requestedRole) ? requestedRole : "";
   const invitationDelivery = clean(input.invitationDelivery || "manual").toLowerCase() === "auto" ? "auto" : "manual";
-  if (!memberId) throw new HttpsError("invalid-argument", "Bitte ein Mitglied auswaehlen.");
+  if (accountType === "member" && !memberId) throw new HttpsError("invalid-argument", "Bitte ein Mitglied auswaehlen.");
   if (!email || !email.includes("@")) throw new HttpsError("invalid-argument", "Bitte eine gueltige Mailadresse eintragen.");
   if (!role) throw new HttpsError("invalid-argument", "Bitte eine gueltige Rolle auswaehlen.");
-  const memberSnapshot = await db.collection("members").doc(memberId).get();
-  if (!memberSnapshot.exists) throw new HttpsError("not-found", "Mitglied wurde nicht gefunden.");
-  const member = { id: memberSnapshot.id, ...memberSnapshot.data() };
-  const displayName = clean(input.displayName || member.profileContactName || member.contactName || member.name || email);
-  const memberName = clean(member.name || member.company || member.profileContactName || member.id || memberId);
+  if (accountType === "external" && !["admin", "editor"].includes(role)) throw new HttpsError("invalid-argument", "Externe Zugaenge ohne Mitglied duerfen nur Editor oder Admin sein.");
+  let member = null;
+  if (memberId) {
+    const memberSnapshot = await db.collection("members").doc(memberId).get();
+    if (!memberSnapshot.exists) throw new HttpsError("not-found", "Mitglied wurde nicht gefunden.");
+    member = { id: memberSnapshot.id, ...memberSnapshot.data() };
+  }
+  const displayName = clean(input.displayName || member?.profileContactName || member?.contactName || member?.name || email);
+  const memberName = clean(member?.name || member?.company || member?.profileContactName || input.organization || (accountType === "external" ? "CMS-Zugang ohne Mitglied" : memberId));
   const auth = getAuth();
   let authUser;
   let created = false;
@@ -1321,6 +2883,7 @@ exports.createMemberLogin = onCall({ region }, async (request) => {
     role,
     memberId,
     memberName,
+    accountType,
     invitationLink: memberInvitationLink(invitationId, invitationToken),
     tokenHash: hashToken(invitationToken),
     status: "pending",
@@ -1339,6 +2902,7 @@ exports.createMemberLogin = onCall({ region }, async (request) => {
     role,
     status: "active",
     memberId,
+    accountType,
     providerId: "password",
     emailVerified: Boolean(authUser.emailVerified),
     invitationId,
@@ -1353,23 +2917,25 @@ exports.createMemberLogin = onCall({ region }, async (request) => {
   };
   if (created) userRecord.createdAt = FieldValue.serverTimestamp();
   await db.collection("users").doc(authUser.uid).set(userRecord, { merge: true });
-  const memberUserLink = {
-    uid: authUser.uid,
-    email,
-    displayName,
-    role
-  };
-  const memberUpdate = {
-    linkedUserIds: FieldValue.arrayUnion(authUser.uid),
-    linkedUserEmails: FieldValue.arrayUnion(email),
-    linkedUsers: FieldValue.arrayUnion(memberUserLink),
-    updatedAt: FieldValue.serverTimestamp()
-  };
-  if (!member.linkedUserId) {
-    memberUpdate.linkedUserId = authUser.uid;
-    memberUpdate.linkedUserEmail = email;
+  if (memberId && member) {
+    const memberUserLink = {
+      uid: authUser.uid,
+      email,
+      displayName,
+      role
+    };
+    const memberUpdate = {
+      linkedUserIds: FieldValue.arrayUnion(authUser.uid),
+      linkedUserEmails: FieldValue.arrayUnion(email),
+      linkedUsers: FieldValue.arrayUnion(memberUserLink),
+      updatedAt: FieldValue.serverTimestamp()
+    };
+    if (!member.linkedUserId) {
+      memberUpdate.linkedUserId = authUser.uid;
+      memberUpdate.linkedUserEmail = email;
+    }
+    await db.collection("members").doc(memberId).set(memberUpdate, { merge: true });
   }
-  await db.collection("members").doc(memberId).set(memberUpdate, { merge: true });
   if (invitationDelivery === "auto") {
     const mailTemplatesSnapshot = await db.collection("settings").doc("mailTemplates").get().catch(() => null);
     const templates = mailTemplateSettings(mailTemplatesSnapshot?.exists ? mailTemplatesSnapshot.data() : {});
@@ -1383,9 +2949,9 @@ exports.createMemberLogin = onCall({ region }, async (request) => {
     userId: request.auth.uid,
     userEmail: adminProfile.email || request.auth.token.email || "",
     timestamp: FieldValue.serverTimestamp(),
-    details: { memberId, email, role, invitationId, invitationDelivery }
+    details: { memberId, email, role, accountType, invitationId, invitationDelivery }
   });
-  return { ok: true, created, uid: authUser.uid, email, memberId, displayName, role, invitationId, invitationDelivery, invitationMailStatus: invitation.invitationMailStatus || invitation.mailStatus, invitationLink: invitation.invitationLink };
+  return { ok: true, created, uid: authUser.uid, email, memberId, displayName, role, accountType, invitationId, invitationDelivery, invitationMailStatus: invitation.invitationMailStatus || invitation.mailStatus, invitationLink: invitation.invitationLink };
 });
 
 exports.sendMemberLoginInvitation = onCall({ region }, async (request) => {
@@ -1475,6 +3041,7 @@ async function prepareMemberLoginInvitationForUser(userId = "", adminProfile = {
       role,
       memberId,
       memberName,
+      accountType,
       invitationLink: memberInvitationLink(invitationId, invitationToken),
       tokenHash: hashToken(invitationToken),
       status: "pending",
@@ -1623,6 +3190,71 @@ exports.bootstrapFirstAdmin = onCall({ region }, async (request) => {
   return { ok: true, role: "admin", message: "Erster Admin wurde freigeschaltet." };
 });
 
+exports.getEventCheckinAccess = onCall({ region }, async (request) => {
+  await requireEditor(request);
+  const eventId = clean(request.data?.eventId);
+  if (!eventId) throw new HttpsError("invalid-argument", "Event fehlt.");
+  const eventSnapshot = await db.collection("events").doc(eventId).get();
+  if (!eventSnapshot.exists) throw new HttpsError("not-found", "Event wurde nicht gefunden.");
+  const eventRecord = { id: eventSnapshot.id, ...eventSnapshot.data() };
+  if (!eventUsesHandyTicket(eventRecord)) throw new HttpsError("failed-precondition", "Der Einlass-QR ist fuer dieses Event nicht aktiviert.");
+  const ref = db.collection("eventCheckinAccess").doc(eventId);
+  const snapshot = await ref.get();
+  const existing = snapshot.exists ? snapshot.data() || {} : {};
+  const existingExpiry = existing.expiresAt?.toMillis?.() || 0;
+  const stillValid = Boolean(existing.accessToken && existing.tokenHash && existingExpiry > Date.now());
+  const accessToken = stillValid ? existing.accessToken : randomBytes(32).toString("hex");
+  const eventDate = new Date(`${clean(eventRecord.date || new Date().toISOString().slice(0, 10))}T23:59:59+02:00`);
+  const fallbackExpiry = Date.now() + 30 * 24 * 60 * 60 * 1000;
+  const expiresAtMillis = Math.max(Number.isNaN(eventDate.getTime()) ? 0 : eventDate.getTime() + 2 * 24 * 60 * 60 * 1000, fallbackExpiry);
+  if (!stillValid) {
+    await ref.set({
+      eventId,
+      accessToken,
+      tokenHash: hashToken(accessToken),
+      status: "active",
+      expiresAt: Timestamp.fromMillis(expiresAtMillis),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      createdBy: request.auth.uid
+    }, { merge: true });
+  }
+  const checkinPath = `event-checkin/${encodeURIComponent(eventId)}?access=${encodeURIComponent(accessToken)}`;
+  const checkinUrl = publicCheckinUrl(checkinPath);
+  const [qrDataUrl, qrSvg] = await Promise.all([
+    QRCode.toDataURL(checkinUrl, { width: 900, margin: 2, errorCorrectionLevel: "M" }),
+    QRCode.toString(checkinUrl, { type: "svg", width: 900, margin: 2, errorCorrectionLevel: "M" })
+  ]);
+  return {
+    eventId,
+    accessToken,
+    checkinUrl,
+    qrDataUrl,
+    qrSvg,
+    checkinScreenUrl: publicCheckinUrl(`event-checkin-screen/${encodeURIComponent(eventId)}?access=${encodeURIComponent(accessToken)}`),
+    expiresAt: new Date(stillValid ? existingExpiry : expiresAtMillis).toISOString()
+  };
+});
+
+exports.getPublicEventCheckinQr = onCall({ region, invoker: "public" }, async (request) => {
+  const eventId = clean(request.data?.eventId);
+  const accessToken = clean(request.data?.accessToken);
+  if (!eventId || !accessToken) throw new HttpsError("invalid-argument", "Einlasszugang ist unvollstaendig.");
+  const accessSnapshot = await db.collection("eventCheckinAccess").doc(eventId).get();
+  const access = accessSnapshot.exists ? accessSnapshot.data() || {} : {};
+  const expiresAt = access.expiresAt?.toMillis?.() || 0;
+  if (access.status !== "active" || !access.tokenHash || hashToken(accessToken) !== access.tokenHash) {
+    throw new HttpsError("permission-denied", "Der Einlass-Link ist ungueltig.");
+  }
+  if (expiresAt < Date.now()) throw new HttpsError("deadline-exceeded", "Der Einlass-Link ist abgelaufen.");
+  const checkinUrl = publicCheckinUrl(`event-checkin/${encodeURIComponent(eventId)}?access=${encodeURIComponent(accessToken)}`);
+  const [qrDataUrl, qrSvg] = await Promise.all([
+    QRCode.toDataURL(checkinUrl, { width: 900, margin: 2, errorCorrectionLevel: "M" }),
+    QRCode.toString(checkinUrl, { type: "svg", width: 900, margin: 2, errorCorrectionLevel: "M" })
+  ]);
+  return { eventId, checkinUrl, qrDataUrl, qrSvg, expiresAt: new Date(expiresAt).toISOString() };
+});
+
 exports.createEventRegistration = onCall({ region, invoker: "public" }, async (request) => {
   const eventId = clean(request.data?.eventId);
   if (!eventId) throw new HttpsError("invalid-argument", "Event fehlt.");
@@ -1631,8 +3263,27 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
   const eventRecord = { id: eventSnapshot.id, ...eventSnapshot.data() };
   if (!eventRegistrationIsOpen(eventRecord)) throw new HttpsError("failed-precondition", "Fuer dieses Event ist keine Anmeldung moeglich.");
   const input = registrationInput(request.data || {});
+  const checkinMode = request.data?.checkinMode === true;
+  const checkinToken = clean(request.data?.checkinToken);
+  let checkinAccessExpired = false;
+  if (checkinMode) {
+    if (!checkinToken) throw new HttpsError("permission-denied", "Der Einlass-Link ist unvollstaendig.");
+    const accessSnapshot = await db.collection("eventCheckinAccess").doc(eventRecord.id).get();
+    const access = accessSnapshot.exists ? accessSnapshot.data() || {} : {};
+    if (access.status !== "active" || !access.tokenHash || hashToken(checkinToken) !== access.tokenHash) {
+      throw new HttpsError("permission-denied", "Der Einlass-Link ist ungueltig.");
+    }
+    const expiresAt = access.expiresAt?.toMillis?.() || 0;
+    checkinAccessExpired = expiresAt < Date.now();
+  }
   if (!input.privacyAccepted) throw new HttpsError("failed-precondition", "Bitte stimmen Sie den Datenschutzbestimmungen zu.");
   if (!input.email || !input.email.includes("@")) throw new HttpsError("invalid-argument", "Bitte geben Sie eine gueltige E-Mail-Adresse an.");
+  if (input.hasCompanion) {
+    if (!input.companion?.firstName || !input.companion?.lastName) throw new HttpsError("invalid-argument", "Bitte geben Sie Vor- und Nachname der Begleitperson an.");
+    if (!input.companion?.email || !input.companion.email.includes("@")) throw new HttpsError("invalid-argument", "Bitte geben Sie eine gueltige E-Mail-Adresse der Begleitperson an.");
+    if (!input.companion?.phone) throw new HttpsError("invalid-argument", "Bitte geben Sie die Telefonnummer der Begleitperson an.");
+    if (input.companion.email === input.email) throw new HttpsError("invalid-argument", "Bitte verwenden Sie fuer die Begleitperson eine eigene E-Mail-Adresse.");
+  }
   const existingRegistration = await db.collection("registrations")
     .where("eventId", "==", eventRecord.id)
     .where("email", "==", input.email)
@@ -1644,6 +3295,7 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
   if (duplicate) {
     throw new HttpsError("already-exists", "Diese E-Mail-Adresse ist fuer dieses Event bereits angemeldet.");
   }
+  if (checkinAccessExpired) throw new HttpsError("deadline-exceeded", "Der Einlass-Link ist abgelaufen.");
   const now = FieldValue.serverTimestamp();
   const registrationRef = db.collection("registrations").doc(`registration-${randomBytes(16).toString("hex")}`);
   const lockRef = db.collection("registrationLocks").doc(registrationLockId(eventRecord.id, input.email));
@@ -1651,6 +3303,7 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
   const personMatch = await findPersonByEmail(input.email);
   const isMemberByEmail = Boolean(personMatch.isMember);
   const confirmationToken = randomBytes(32).toString("hex");
+  const checkinTicketToken = checkinMode ? randomBytes(32).toString("hex") : "";
   const confirmationExpiresAt = Timestamp.fromMillis(Date.now() + 48 * 60 * 60 * 1000);
   const registration = {
     id: registrationRef.id,
@@ -1671,10 +3324,23 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
     handyTicketEnabled: eventUsesHandyTicket(eventRecord),
     notificationConsentAccepted: Boolean(input.notifyForThisEvent || input.notifyFutureEvents),
     notificationConsentSource: "event_registration_checkbox",
-    notificationConsentText: "Benachrichtigungen zu dieser Veranstaltung und optional zu zukuenftigen PROdigitalTV-Veranstaltungen.",
+    notificationConsentText: "Freiwillige Event-Erinnerungen und Veranstaltungshinweise von PROdigitalTV per E-Mail, Browser-Push und SMS, soweit die jeweiligen Kontaktdaten bzw. die Browser-Freigabe vorhanden sind. Abmeldung ist jederzeit moeglich.",
+    notificationChannels: (input.notifyForThisEvent || input.notifyFutureEvents) ? ["mail", "push", "sms"] : [],
+    mailConsent: Boolean(input.notifyForThisEvent || input.notifyFutureEvents),
+    pushConsent: Boolean(input.notifyForThisEvent || input.notifyFutureEvents),
+    smsConsent: Boolean(input.notifyForThisEvent || input.notifyFutureEvents),
     emailConfirmed: false,
-    status: "pending_email_confirmation",
-    mailStatus: "queued",
+    status: checkinMode ? "checked_in" : "pending_email_confirmation",
+    mailStatus: checkinMode ? "not_required" : "queued",
+    registrationSource: checkinMode ? "event_checkin" : "online_registration",
+    ...(checkinMode ? {
+      checkedInEventId: eventRecord.id,
+      checkedInAt: now,
+      ticketTokenHash: hashToken(checkinTicketToken),
+      ticketIssuedAt: now,
+      ticketDeviceLinked: true,
+      deviceLinkedAt: now
+    } : {}),
     confirmationTokenHash: hashToken(confirmationToken),
     confirmationExpiresAt,
     confirmationMailQueuedAt: now,
@@ -1703,6 +3369,22 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
       createdAt: lock?.createdAt || now
     }, { merge: true });
   });
+  if (checkinMode) {
+    const companionName = input.hasCompanion ? [input.companion?.firstName, input.companion?.lastName].filter(Boolean).join(" ") : "";
+    const primaryName = [input.firstName, input.lastName].filter(Boolean).join(" ");
+    await db.collection("checkinScreenEvents").doc(eventRecord.id).set({
+      eventId: eventRecord.id,
+      registrationId: registrationRef.id,
+      firstName: input.firstName || "",
+      lastName: input.lastName || "",
+      company: input.company || "",
+      companion: input.companion || null,
+      participantCount: input.participantCount || 1,
+      displayName: [primaryName, companionName].filter(Boolean).join(" und "),
+      checkedInAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
   if (input.notifyFutureEvents) {
     await db.collection("notificationConsents").doc(notificationConsentId(input.email)).set({
       id: notificationConsentId(input.email),
@@ -1711,6 +3393,11 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
       source: "event_registration_checkbox",
       scope: "future_events",
       notifyFutureEvents: true,
+      notificationConsentText: registration.notificationConsentText,
+      notificationChannels: registration.notificationChannels,
+      mailConsent: true,
+      pushConsent: true,
+      smsConsent: true,
       lastEventId: eventRecord.id,
       lastRegistrationId: registrationRef.id,
       createdIp: registration.createdIp,
@@ -1721,6 +3408,7 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
   }
   const contactSync = await upsertContactFromRegistration(registration, eventRecord, now);
   if (contactSync.created) await countNewMailingContactForEvent(eventRecord.id, "event_registration", contactSync, now);
+  if (!checkinMode) {
   await queueMail({
     type: "registration_confirmation",
     to: registration.email,
@@ -1731,6 +3419,7 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
     confirmationUrl: registrationConfirmationUrl(confirmationToken),
     tokenExpiresAt: confirmationExpiresAt
   });
+  }
   await queueMail({
     type: "admin_notification",
     to: adminRegistrationMailTo(),
@@ -1740,6 +3429,8 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
     registrationId: registrationRef.id
   });
   return {
+    checkedIn: checkinMode,
+    ticketToken: checkinTicketToken,
     ...registration,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -1923,6 +3614,8 @@ exports.createEventNotification = onCall({ region }, async (request) => {
   const notificationRef = db.collection("eventNotifications").doc(`event-notification-${randomBytes(16).toString("hex")}`);
   const title = stripTags(input.title) || eventRecord.title || "PROdigitalTV Veranstaltung";
   const shortText = stripTags(input.shortText) || `Informationen zu ${eventRecord.title || "dieser Veranstaltung"}.`;
+  const smsText = stripTags(input.smsText || (notificationKind === "event" ? `Sie sind herzlich eingeladen: ${eventRecord.title || "PROdigitalTV"}. Details und Anmeldung finden Sie im Link.` : "Neue Informationen von PROdigitalTV.")).slice(0, 612);
+  if (notificationKind === "event") await assertNoHiddenTalkMentions(eventRecord, { shortText, smsText });
   const testRecipients = clean(input.testRecipients)
     .split(/[\s,;]+/)
     .map((email) => mailAddress(email))
@@ -1933,6 +3626,8 @@ exports.createEventNotification = onCall({ region }, async (request) => {
   const recipientGroup = ["members", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "test_group", "test_person"].includes(clean(input.recipientGroup))
     ? clean(input.recipientGroup)
     : "members_contacts";
+  const includeEventSpeakers = notificationKind === "event" && !["test_group", "test_person"].includes(recipientGroup);
+  const extraSpeakerEventIds = includeEventSpeakers ? notificationExtraSpeakerEventIds(input, eventId) : [];
   const offsetMinutes = Number(input.offsetMinutes || 0);
   if (recipientGroup === "test_group") {
     const targets = await notificationTestGroupTargets();
@@ -1952,6 +3647,32 @@ exports.createEventNotification = onCall({ region }, async (request) => {
     if (startMs) scheduledAt = Timestamp.fromMillis(Math.max(Date.now(), startMs - offsetMinutes * 60 * 1000));
   }
   const linkEnabled = input.linkEnabled !== false && clean(input.linkEnabled) !== "false";
+  const channels = Array.isArray(input.channels)
+    ? [...new Set(input.channels.map(clean).filter((channel) => ["mail", "push", "sms"].includes(channel)))]
+    : ["mail", "push"];
+  if (!channels.length) throw new HttpsError("invalid-argument", "Bitte mindestens einen Versandkanal auswaehlen.");
+  let smsCostEstimate = null;
+  let smsCostEstimateRef = null;
+  if (channels.includes("sms")) {
+    const smsCostEstimateId = clean(input.smsCostEstimateId);
+    if (!smsCostEstimateId) throw new HttpsError("failed-precondition", "Bitte SMS-Kosten vor dem Versand erneut berechnen.");
+    smsCostEstimateRef = db.collection("smsCostEstimates").doc(smsCostEstimateId);
+    const estimateSnapshot = await smsCostEstimateRef.get();
+    const estimate = estimateSnapshot.exists ? estimateSnapshot.data() : null;
+    if (!estimate || estimate.createdByUid !== request.auth.uid || estimate.status !== "previewed" || estimate.fingerprint !== smsEstimateFingerprint(input)) {
+      throw new HttpsError("failed-precondition", "Die SMS-Kostenschaetzung ist nicht mehr aktuell. Bitte Versand erneut vorbereiten.");
+    }
+    smsCostEstimate = {
+      id: estimateSnapshot.id,
+      provider: clean(estimate.provider),
+      pricingMode: clean(estimate.pricingMode),
+      currency: clean(estimate.currency) || "EUR",
+      estimatedNetEur: Number(estimate.estimatedNetEur || 0),
+      recipientCount: Number(estimate.recipientCount || 0),
+      messagePartCount: Number(estimate.messagePartCount || 0),
+      estimatedAtIso: clean(estimate.estimatedAtIso)
+    };
+  }
   const submittedLink = clean(input.link);
   const defaultLink = notificationKind === "event" ? eventUrl(eventId) : publicHashUrl("members");
   const liveActionMode = clean(input.liveActionMode) === "survey" ? "survey" : "message";
@@ -1962,18 +3683,29 @@ exports.createEventNotification = onCall({ region }, async (request) => {
     const surveyQuestion = stripTags(input.surveyQuestion || shortText);
     const surveyOptions = liveSurveyOptions(input.surveyOptions);
     const surveyAllowMultiple = input.surveyAllowMultiple === true || clean(input.surveyAllowMultiple) === "true";
-    if (!surveyQuestion) throw new HttpsError("invalid-argument", "Bitte eine Umfragefrage eintragen.");
-    if (surveyOptions.length < 1) throw new HttpsError("invalid-argument", "Bitte mindestens eine Antwortmoeglichkeit eintragen.");
+    const submittedQuestions = liveSurveyQuestions(input.surveyQuestions);
+    const surveyQuestions = submittedQuestions.length ? submittedQuestions : [{
+      id: "question-1",
+      type: surveyAllowMultiple ? "multiple" : "single",
+      question: surveyQuestion,
+      required: true,
+      options: surveyOptions
+    }];
+    if (!surveyQuestions.length || surveyQuestions.some((question) => !question.question)) throw new HttpsError("invalid-argument", "Bitte mindestens eine Umfragefrage eintragen.");
+    if (surveyQuestions.some((question) => question.type !== "text" && question.options.length < 1)) throw new HttpsError("invalid-argument", "Bitte fuer jede Auswahlfrage mindestens eine Antwortmoeglichkeit eintragen.");
+    const primaryQuestion = surveyQuestions[0];
     const surveyRef = db.collection("liveSurveys").doc(`live-survey-${randomBytes(16).toString("hex")}`);
     const surveyCreatedAtIso = new Date().toISOString();
     liveSurvey = {
       id: surveyRef.id,
       eventId,
       notificationId: notificationRef.id,
-      title,
-      question: surveyQuestion,
-      options: surveyOptions,
-      allowMultiple: surveyAllowMultiple,
+      title: stripTags(input.surveyTitle || title) || title,
+      question: primaryQuestion.question,
+      options: primaryQuestion.options,
+      allowMultiple: primaryQuestion.type === "multiple",
+      questions: surveyQuestions,
+      schemaVersion: 2,
       status: "active",
       requiresToken: true,
       createdAtIso: surveyCreatedAtIso,
@@ -1990,20 +3722,28 @@ exports.createEventNotification = onCall({ region }, async (request) => {
     notificationKind,
     title,
     shortText,
+    smsText,
+    smsLinkEnabled: input.smsLinkEnabled !== false && clean(input.smsLinkEnabled) !== "false",
+    smsCostEstimateId: smsCostEstimate?.id || "",
+    smsCostEstimate,
     linkEnabled,
+    channels,
     link: notificationLink,
     liveActionMode,
     surveyId: liveSurvey?.id || "",
     surveyQuestion: liveSurvey?.question || "",
     surveyOptions: liveSurvey?.options || [],
     surveyAllowMultiple: liveSurvey?.allowMultiple || false,
+    surveyQuestions: liveSurvey?.questions || [],
     testOnly,
     testRecipients: testOnly ? testRecipients : [],
+    testRecipientMobiles: testOnly ? clean(input.testRecipientMobiles).split(/[\s,;]+/).map(phoneNumber).filter(Boolean) : [],
     recipientGroup,
     includeMembers: ["members", "members_contacts", "test_group"].includes(recipientGroup),
     includeContacts: ["contacts", "members_contacts"].includes(recipientGroup),
     includeRegistered: ["event_registered", "event_registered_speakers"].includes(recipientGroup),
-    includeSpeakers: ["event_speakers", "event_registered_speakers"].includes(recipientGroup),
+    includeSpeakers: includeEventSpeakers || ["event_speakers", "event_registered_speakers"].includes(recipientGroup),
+    extraSpeakerEventIds,
     registrationStatus: ["all", "registered", "unregistered"].includes(clean(input.registrationStatus)) ? clean(input.registrationStatus) : "all",
     sendMode,
     offsetMinutes: Number.isFinite(offsetMinutes) ? offsetMinutes : 0,
@@ -2014,6 +3754,14 @@ exports.createEventNotification = onCall({ region }, async (request) => {
     updatedAt: FieldValue.serverTimestamp()
   };
   await notificationRef.set(notification);
+  if (smsCostEstimateRef) {
+    await smsCostEstimateRef.set({
+      status: "accepted",
+      notificationId: notificationRef.id,
+      acceptedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
   if (sendMode === "now") {
     const result = await queueEventNotificationDelivery({ ...notification, id: notificationRef.id }, eventRecord);
     return { id: notificationRef.id, surveyId: liveSurvey?.id || "", ...result };
@@ -2021,12 +3769,19 @@ exports.createEventNotification = onCall({ region }, async (request) => {
   return { id: notificationRef.id, surveyId: liveSurvey?.id || "", scheduled: true };
 });
 
-exports.previewEventNotification = onCall({ region }, async (request) => {
-  await requireEditor(request);
+exports.previewEventNotification = onCall({ region, secrets: smsSecrets, timeoutSeconds: 120 }, async (request) => {
+  const profile = await requireEditor(request);
   const input = request.data?.input || {};
   const notificationKind = clean(input.notificationKind) === "member_message" ? "member_message" : "event";
   const eventId = clean(input.eventId);
   if (notificationKind === "event" && !eventId) throw new HttpsError("invalid-argument", "Bitte Veranstaltung auswaehlen.");
+  let eventRecord = {};
+  if (notificationKind === "event") {
+    const eventSnapshot = await db.collection("events").doc(eventId).get();
+    if (!eventSnapshot.exists) throw new HttpsError("not-found", "Event wurde nicht gefunden.");
+    eventRecord = { id: eventSnapshot.id, ...eventSnapshot.data() };
+    await assertNoHiddenTalkMentions(eventRecord, input);
+  }
   const testRecipients = clean(input.testRecipients)
     .split(/[\s,;]+/)
     .map((email) => mailAddress(email))
@@ -2038,19 +3793,91 @@ exports.previewEventNotification = onCall({ region }, async (request) => {
     ? clean(input.recipientGroup)
     : "members_contacts";
   const registrationStatus = ["all", "registered", "unregistered"].includes(clean(input.registrationStatus)) ? clean(input.registrationStatus) : "all";
-  const targets = testOnly
-    ? testRecipients.map((email) => ({ email, audienceType: "test" }))
-    : await eventNotificationTargets(notificationKind === "event" ? eventId : "", {
-      recipientGroup,
-      includeMembers: ["members", "members_contacts", "test_group"].includes(recipientGroup),
-      includeContacts: ["contacts", "members_contacts"].includes(recipientGroup),
-      includeRegistered: ["event_registered", "event_registered_speakers"].includes(recipientGroup),
-      includeSpeakers: ["event_speakers", "event_registered_speakers"].includes(recipientGroup),
-      registrationStatus
+  const includeEventSpeakers = notificationKind === "event" && !["test_group", "test_person"].includes(recipientGroup);
+  const extraSpeakerEventIds = includeEventSpeakers ? notificationExtraSpeakerEventIds(input, eventId) : [];
+  const testRecipientMobiles = clean(input.testRecipientMobiles).split(/[\s,;]+/).map(phoneNumber).filter(Boolean);
+  const targets = recipientGroup === "test_group"
+    ? await notificationTestGroupTargets()
+    : testOnly
+      ? await notificationTestPersonTargets(testRecipients, testRecipientMobiles)
+      : await eventNotificationTargets(notificationKind === "event" ? eventId : "", {
+        recipientGroup,
+        includeMembers: ["members", "members_contacts"].includes(recipientGroup),
+        includeContacts: ["contacts", "members_contacts"].includes(recipientGroup),
+        includeRegistered: ["event_registered", "event_registered_speakers"].includes(recipientGroup),
+        includeSpeakers: includeEventSpeakers || ["event_speakers", "event_registered_speakers"].includes(recipientGroup),
+        extraSpeakerEventIds,
+        registrationStatus
+      });
+  const channels = Array.isArray(input.channels)
+    ? [...new Set(input.channels.map(clean).filter((channel) => ["mail", "push", "sms"].includes(channel)))]
+    : ["mail", "push"];
+  if (!channels.length) throw new HttpsError("invalid-argument", "Bitte mindestens einen Versandkanal auswaehlen.");
+  const smsTargets = channels.includes("sms") ? targets.filter((target) => target.phone) : [];
+  let smsCostEstimate = null;
+  let smsCostEstimateId = "";
+  if (channels.includes("sms")) {
+    const linkEnabled = input.linkEnabled !== false && clean(input.linkEnabled) !== "false";
+    const defaultLink = notificationKind === "event" ? eventUrl(eventId) : publicHashUrl("members");
+    const previewNotification = {
+      eventId: notificationKind === "event" ? eventId : "",
+      notificationKind,
+      shortText: stripTags(input.shortText) || `Informationen zu ${eventRecord.title || "dieser Veranstaltung"}.`,
+      smsText: stripTags(input.smsText || (notificationKind === "event" ? `Sie sind herzlich eingeladen: ${eventRecord.title || "PROdigitalTV"}. Details und Anmeldung finden Sie im Link.` : "Neue Informationen von PROdigitalTV.")).slice(0, 612),
+      smsLinkEnabled: input.smsLinkEnabled !== false && clean(input.smsLinkEnabled) !== "false",
+      linkEnabled,
+      link: linkEnabled ? clean(input.link) || defaultLink : ""
+    };
+    let prices = [];
+    if (smsTargets.length) {
+      try {
+        prices = await currentSmsPrices();
+      } catch (error) {
+        console.error("SMS price list failed", error);
+        throw new HttpsError("failed-precondition", `SMS-Kostenschaetzung nicht verfuegbar: ${clean(error.message).slice(0, 240)}`);
+      }
+    }
+    const estimates = smsTargets.map((target) => {
+      const message = eventNotificationSmsBody(previewNotification, eventRecord, target);
+      const parts = smsMessagePartCount(message);
+      const rate = smsRateForPhone(target.phone, prices);
+      return { parts, rate, netEur: parts * rate };
     });
+    const estimatedNetEur = Number(estimates.reduce((sum, estimate) => sum + estimate.netEur, 0).toFixed(2));
+    const smsPartCount = estimates.reduce((sum, estimate) => sum + estimate.parts, 0);
+    const estimateRef = db.collection("smsCostEstimates").doc(`sms-cost-${randomBytes(16).toString("hex")}`);
+    smsCostEstimateId = estimateRef.id;
+    smsCostEstimate = {
+      provider: "smsapi",
+      pricingMode: "current_rate_max_by_country",
+      currency: "EUR",
+      estimatedNetEur,
+      recipientCount: smsTargets.length,
+      messagePartCount: smsPartCount,
+      estimatedAtIso: new Date().toISOString()
+    };
+    await estimateRef.set({
+      id: estimateRef.id,
+      eventId: notificationKind === "event" ? eventId : "",
+      notificationKind,
+      recipientGroup,
+      targetCount: targets.length,
+      ...smsCostEstimate,
+      fingerprint: smsEstimateFingerprint(input),
+      status: "previewed",
+      createdBy: profile.email || request.auth.uid,
+      createdByUid: request.auth.uid,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    });
+  }
   return {
     targetCount: targets.length,
-    mailCount: targets.length,
+    mailCount: channels.includes("mail") ? targets.filter((target) => target.email).length : 0,
+    smsCount: smsTargets.length,
+    pushCount: channels.includes("push") ? targets.filter((target) => target.email).length : 0,
+    smsCostEstimate,
+    smsCostEstimateId,
     recipientEmails: recipientGroup === "test_group" || testOnly ? targets.map((target) => target.email) : [],
     testOnly,
     recipientGroup
@@ -2066,12 +3893,21 @@ exports.getLiveSurvey = onCall({ region, invoker: "public" }, async (request) =>
   if (["archived", "deleted", "inactive"].includes(clean(survey.status).toLowerCase())) {
     throw new HttpsError("failed-precondition", "Diese Umfrage ist nicht aktiv.");
   }
+  const questions = liveSurveyQuestions(survey.questions);
+  const legacyQuestions = questions.length ? questions : [{
+    id: "question-1",
+    type: survey.allowMultiple === true ? "multiple" : "single",
+    question: survey.question || "",
+    required: true,
+    options: Array.isArray(survey.options) ? survey.options : []
+  }];
   return {
     id: survey.id,
     eventId: survey.eventId || "",
     title: survey.title || "PROdigitalTV Umfrage",
     question: survey.question || "",
     allowMultiple: survey.allowMultiple === true,
+    questions: legacyQuestions,
     options: Array.isArray(survey.options) ? survey.options.map((option) => ({
       id: clean(option.id),
       label: clean(option.label)
@@ -2082,22 +3918,57 @@ exports.getLiveSurvey = onCall({ region, invoker: "public" }, async (request) =>
 exports.submitLiveSurveyResponse = onCall({ region, invoker: "public" }, async (request) => {
   const input = request.data?.input || {};
   const surveyId = clean(input.surveyId);
-  const rawOptionIds = Array.isArray(input.optionIds) ? input.optionIds : [input.optionId];
-  const optionIds = rawOptionIds.map((item) => clean(item)).filter(Boolean).filter((item, index, all) => all.indexOf(item) === index).slice(0, 6);
   const responseToken = clean(input.token);
-  if (!surveyId || !optionIds.length) throw new HttpsError("invalid-argument", "Bitte eine Antwort auswaehlen.");
+  if (!surveyId) throw new HttpsError("invalid-argument", "Umfrage fehlt.");
   const surveySnapshot = await db.collection("liveSurveys").doc(surveyId).get();
   if (!surveySnapshot.exists) throw new HttpsError("not-found", "Umfrage wurde nicht gefunden.");
   const survey = { id: surveySnapshot.id, ...surveySnapshot.data() };
   if (["archived", "deleted", "inactive"].includes(clean(survey.status).toLowerCase())) {
     throw new HttpsError("failed-precondition", "Diese Umfrage ist nicht aktiv.");
   }
-  const options = Array.isArray(survey.options) ? survey.options : [];
-  const allowMultiple = survey.allowMultiple === true;
-  if (!allowMultiple && optionIds.length > 1) throw new HttpsError("invalid-argument", "Bitte nur eine Antwort auswaehlen.");
-  const selectedOptions = optionIds.map((optionId) => options.find((option) => clean(option.id) === optionId)).filter(Boolean);
-  if (selectedOptions.length !== optionIds.length) throw new HttpsError("invalid-argument", "Antwort wurde nicht gefunden.");
-  const selectedLabels = selectedOptions.map((option) => clean(option.label)).filter(Boolean);
+  const normalizedQuestions = liveSurveyQuestions(survey.questions);
+  const questions = normalizedQuestions.length ? normalizedQuestions : [{
+    id: "question-1",
+    type: survey.allowMultiple === true ? "multiple" : "single",
+    question: survey.question || "",
+    required: true,
+    options: Array.isArray(survey.options) ? survey.options : []
+  }];
+  let submittedAnswers = Array.isArray(input.answers) ? input.answers : [];
+  if (!submittedAnswers.length && (input.optionId || input.optionIds)) {
+    submittedAnswers = [{ questionId: questions[0].id, optionIds: Array.isArray(input.optionIds) ? input.optionIds : [input.optionId] }];
+  }
+  const answerByQuestion = new Map(submittedAnswers.map((answer) => [clean(answer?.questionId), answer || {}]));
+  const answers = [];
+  questions.forEach((question) => {
+    const submitted = answerByQuestion.get(question.id) || {};
+    if (question.type === "text") {
+      const text = stripTags(submitted.text || "").slice(0, 2000);
+      if (question.required && !text) throw new HttpsError("invalid-argument", `Bitte beantworten Sie: ${question.question}`);
+      if (text) answers.push({ questionId: question.id, question: question.question, type: "text", text });
+      return;
+    }
+    const rawIds = Array.isArray(submitted.optionIds) ? submitted.optionIds : [submitted.optionId];
+    const optionIds = rawIds.map((item) => clean(item)).filter(Boolean).filter((item, index, all) => all.indexOf(item) === index).slice(0, 12);
+    if (question.required && !optionIds.length) throw new HttpsError("invalid-argument", `Bitte beantworten Sie: ${question.question}`);
+    if (question.type === "single" && optionIds.length > 1) throw new HttpsError("invalid-argument", `Bitte waehlen Sie bei „${question.question}“ nur eine Antwort.`);
+    const selectedOptions = optionIds.map((optionId) => question.options.find((option) => clean(option.id) === optionId)).filter(Boolean);
+    if (selectedOptions.length !== optionIds.length) throw new HttpsError("invalid-argument", "Eine ausgewaehlte Antwort wurde nicht gefunden.");
+    if (optionIds.length) answers.push({
+      questionId: question.id,
+      question: question.question,
+      type: question.type,
+      optionId: optionIds[0] || "",
+      optionIds,
+      optionLabel: selectedOptions.map((option) => clean(option.label)).filter(Boolean).join(", "),
+      optionLabels: selectedOptions.map((option) => clean(option.label)).filter(Boolean)
+    });
+  });
+  if (!answers.length) throw new HttpsError("invalid-argument", "Bitte mindestens eine Frage beantworten.");
+  const primaryChoiceAnswer = answers.find((answer) => answer.type !== "text") || {};
+  const optionIds = primaryChoiceAnswer.optionIds || [];
+  const selectedLabels = primaryChoiceAnswer.optionLabels || [];
+  const allowMultiple = questions[0]?.type === "multiple";
   if (survey.requiresToken !== false && !responseToken) {
     throw new HttpsError("failed-precondition", "Dieser Umfragelink ist persoenlich. Bitte den Link aus der Einladung oeffnen.");
   }
@@ -2112,6 +3983,8 @@ exports.submitLiveSurveyResponse = onCall({ region, invoker: "public" }, async (
     optionIds,
     optionLabel: selectedLabels.join(", "),
     optionLabels: selectedLabels,
+    answers,
+    schemaVersion: 2,
     allowMultiple,
     userAgent: stripTags(request.rawRequest?.headers?.["user-agent"] || ""),
     ipHash: ipAddress ? hashToken(ipAddress).slice(0, 32) : "",
@@ -2153,12 +4026,128 @@ exports.submitLiveSurveyResponse = onCall({ region, invoker: "public" }, async (
       responseCount: FieldValue.increment(1),
       updatedAt: FieldValue.serverTimestamp()
     };
-    optionIds.forEach((optionId) => {
-      surveyUpdate[`optionCounts.${optionId}`] = FieldValue.increment(1);
+    answers.filter((answer) => answer.type !== "text").forEach((answer) => {
+      answer.optionIds.forEach((optionId) => {
+        surveyUpdate[`questionCounts.${answer.questionId}.${optionId}`] = FieldValue.increment(1);
+        if (answer.questionId === questions[0]?.id) surveyUpdate[`optionCounts.${optionId}`] = FieldValue.increment(1);
+      });
     });
     transaction.set(db.collection("liveSurveys").doc(surveyId), surveyUpdate, { merge: true });
   });
-  return { ok: true, optionLabel: selectedLabels.join(", ") };
+  return { ok: true, optionLabel: selectedLabels.join(", "), answerCount: answers.length };
+});
+
+exports.adminCheckInEventGroup = onCall({ region }, async (request) => {
+  const profile = await requireEditor(request);
+  const eventId = clean(request.data?.eventId);
+  const groupType = clean(request.data?.groupType).toLowerCase();
+  const sendWelcomeMail = request.data?.sendWelcomeMail !== false;
+  const personIds = [...new Set((Array.isArray(request.data?.personIds) ? request.data.personIds : []).map(clean).filter(Boolean))].slice(0, 100);
+  if (!eventId) throw new HttpsError("invalid-argument", "Event fehlt.");
+  if (!["speakers", "board"].includes(groupType)) throw new HttpsError("invalid-argument", "Gruppe ist ungueltig.");
+  if (!personIds.length) throw new HttpsError("invalid-argument", "Bitte mindestens eine Person auswaehlen.");
+  const eventSnapshot = await db.collection("events").doc(eventId).get();
+  if (!eventSnapshot.exists) throw new HttpsError("not-found", "Event wurde nicht gefunden.");
+  const eventRecord = { id: eventSnapshot.id, ...eventSnapshot.data() };
+  const collectionName = groupType === "speakers" ? "speakers" : "boardMembers";
+  const topicIds = new Set(Array.isArray(eventRecord.topicIds) ? eventRecord.topicIds : []);
+  const eventSpeakerIds = new Set(Array.isArray(eventRecord.speakerIds) ? eventRecord.speakerIds : []);
+  const selectedDocs = await Promise.all(personIds.map((personId) => db.collection(collectionName).doc(personId).get()));
+  const people = selectedDocs.filter((snapshot) => snapshot.exists).map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }));
+  const eligiblePeople = people.filter((person) => {
+    if (groupType === "board") return true;
+    return eventSpeakerIds.has(person.id)
+      || (Array.isArray(person.eventIds) && person.eventIds.includes(eventId))
+      || (Array.isArray(person.topicIds) && person.topicIds.some((topicId) => topicIds.has(topicId)))
+      || topicIds.has(person.topicId);
+  });
+  if (!eligiblePeople.length) throw new HttpsError("failed-precondition", "Keine ausgewaehlte Person ist dieser Veranstaltung zugeordnet.");
+  const now = FieldValue.serverTimestamp();
+  const checkedIn = [];
+  const skipped = [];
+  for (const person of eligiblePeople) {
+    const email = clean(person.email || person.mail || person.contactEmail).toLowerCase();
+    const displayName = clean(person.name || [person.firstName, person.lastName].filter(Boolean).join(" "));
+    if (!email || !email.includes("@")) {
+      skipped.push({ id: person.id, name: displayName || person.id, reason: "E-Mail fehlt" });
+      continue;
+    }
+    const nameParts = displayName.split(/\s+/).filter(Boolean);
+    const firstName = clean(person.firstName || nameParts.slice(0, -1).join(" ") || nameParts[0]);
+    const lastName = clean(person.lastName || (nameParts.length > 1 ? nameParts.at(-1) : ""));
+    const existingSnapshot = await db.collection("registrations")
+      .where("eventId", "==", eventId)
+      .where("email", "==", email)
+      .limit(10)
+      .get();
+    const existingDocument = existingSnapshot.docs.find((document) => !["cancelled", "canceled", "deleted", "archived"].includes(clean(document.data()?.status).toLowerCase()));
+    const registrationRef = existingDocument?.ref || db.collection("registrations").doc(`registration-${randomBytes(16).toString("hex")}`);
+    const existing = existingDocument?.data() || {};
+    const shouldQueueWelcomeMail = sendWelcomeMail && !existing.checkinAgendaMailQueuedAt;
+    const registration = {
+      id: registrationRef.id,
+      eventId,
+      eventTitle: eventRecord.title || "",
+      eventDate: eventRecord.date || "",
+      eventAccessType: eventRecord.accessType || "",
+      firstName,
+      lastName,
+      email,
+      phone: clean(person.phone || person.mobile),
+      company: clean(person.company || person.organization),
+      position: clean(person.position || person.role),
+      participantCount: 1,
+      emailConfirmed: true,
+      status: "checked_in",
+      checkedInEventId: eventId,
+      checkedInAt: existing.checkedInAt || now,
+      registrationSource: `${groupType}_group_checkin`,
+      registrationAudienceType: groupType === "speakers" ? "speaker" : "board",
+      sourcePersonId: person.id,
+      sourceGroup: groupType,
+      privacyAccepted: existing.privacyAccepted === true,
+      mailStatus: "not_required",
+      ...(shouldQueueWelcomeMail ? { checkinAgendaMailQueuedAt: now } : {}),
+      createdBy: existing.createdBy || profile.email || request.auth.uid,
+      createdAt: existing.createdAt || now,
+      updatedAt: now
+    };
+    await registrationRef.set({ ...existing, ...registration }, { merge: true });
+    await db.collection("registrationLocks").doc(registrationLockId(eventId, email)).set({
+      id: registrationLockId(eventId, email),
+      eventId,
+      email,
+      registrationId: registrationRef.id,
+      status: "checked_in",
+      updatedAt: now,
+      createdAt: existing.createdAt || now
+    }, { merge: true });
+    if (shouldQueueWelcomeMail) {
+      await queueMail({
+        type: "checkin_agenda",
+        template: "checkin_agenda",
+        to: email,
+        subject: `Willkommen: ${eventRecord.title || "PROdigitalTV Event"}`,
+        registrationId: registrationRef.id,
+        eventId,
+        dedupeKey: `checkin_agenda:${registrationRef.id}:${eventId}`,
+        source: `${groupType}_group_checkin`
+      });
+    }
+    await db.collection("checkinScreenEvents").doc(eventId).set({
+      eventId,
+      registrationId: registrationRef.id,
+      firstName,
+      lastName,
+      company: registration.company,
+      participantCount: 1,
+      displayName: displayName || [firstName, lastName].filter(Boolean).join(" "),
+      checkedInAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+    checkedIn.push({ id: person.id, registrationId: registrationRef.id, name: displayName || [firstName, lastName].filter(Boolean).join(" "), email, welcomeMailQueued: shouldQueueWelcomeMail });
+  }
+  return { ok: true, eventId, groupType, sendWelcomeMail, checkedIn, skipped, checkedInCount: checkedIn.length, skippedCount: skipped.length, welcomeMailQueuedCount: checkedIn.filter((person) => person.welcomeMailQueued).length };
 });
 
 exports.registerNotificationToken = onCall({ region }, async (request) => {
@@ -2265,6 +4254,145 @@ exports.unsubscribeEventNotifications = onCall({ region, invoker: "public" }, as
   return { unsubscribed: true, updated };
 });
 
+function eventEndTimeMillis(eventRecord = {}) {
+  const date = clean(eventRecord.date || eventRecord.eventDate).slice(0, 10);
+  if (!date) return 0;
+  const time = clean(eventRecord.endTime) || "23:59:59";
+  const value = Date.parse(`${date}T${time.length === 5 ? `${time}:00` : time}`);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function automaticRetrospectiveBody(eventRecord = {}) {
+  const summary = clean(
+    eventRecord.longDescription
+    || eventRecord.bodyText
+    || eventRecord.articleText
+    || eventRecord.archiveText
+    || eventRecord.postEventSummary
+    || eventRecord.postEventummary
+    || eventRecord.description
+  );
+  const facts = [
+    eventRecord.date ? `Die Veranstaltung fand am ${eventRecord.date} statt.` : "",
+    [eventRecord.locationName, eventRecord.city].filter(Boolean).length
+      ? `Veranstaltungsort war ${[eventRecord.locationName, eventRecord.city].filter(Boolean).join(", ")}.`
+      : "",
+    eventRecord.subtitle ? `Im Mittelpunkt stand: ${eventRecord.subtitle}` : ""
+  ].filter(Boolean).join(" ");
+  return [summary, facts, "Der Rückblick dokumentiert die wichtigsten Impulse und Inhalte der Veranstaltung."]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+exports.publishEndedEventRetrospectives = onSchedule({ region, schedule: "every 15 minutes", timeZone: "Europe/Berlin" }, async () => {
+  const [eventSnapshot, articleSnapshot] = await Promise.all([
+    db.collection("events").get(),
+    db.collection("editorialContent").get()
+  ]);
+  const articles = articleSnapshot.docs.map((document) => ({ id: document.id, ref: document.ref, ...document.data() }));
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const batch = db.batch();
+  let writes = 0;
+
+  for (const eventDocument of eventSnapshot.docs) {
+    const eventRecord = { id: eventDocument.id, ...eventDocument.data() };
+    const state = clean(eventRecord.status).toLowerCase();
+    if (eventRecord.retrospectiveAutoDisabled === true || ["deleted", "cancelled", "canceled"].includes(state)) continue;
+    const endMs = eventEndTimeMillis(eventRecord);
+    if (!endMs || endMs > now.getTime()) continue;
+
+    const expectedId = clean(eventRecord.retrospectiveArticleId) || `retrospective-${eventRecord.id}`;
+    const existing = articles.find((article) =>
+      article.id === expectedId
+      || article.id === eventRecord.retrospectiveArticleId
+      || article.linkedEventId === eventRecord.id
+      || article.galleryEventId === eventRecord.id
+    );
+
+    if (existing) {
+      const status = clean(existing.status).toLowerCase();
+      if (existing.automaticEventAssignment === true && ["", "draft"].includes(status)) {
+        batch.set(existing.ref, {
+          category: "Rückblicke",
+          isRetrospective: true,
+          status: "published",
+          visible: true,
+          visibility: "public",
+          publishDate: existing.publishDate || eventRecord.date || nowIso.slice(0, 10),
+          validFrom: existing.validFrom || eventRecord.date || nowIso.slice(0, 10),
+          publishedAt: existing.publishedAt || nowIso,
+          autoPublishedAfterEvent: true,
+          updatedAt: nowIso
+        }, { merge: true });
+        writes += 1;
+      }
+      if (eventRecord.retrospectiveArticleId !== existing.id) {
+        batch.set(eventDocument.ref, { retrospectiveArticleId: existing.id, updatedAt: nowIso }, { merge: true });
+        writes += 1;
+      }
+      continue;
+    }
+
+    const articleId = expectedId;
+    const title = clean(eventRecord.retrospectiveTitle) || `Rückblick: ${clean(eventRecord.title) || "PROdigitalTV Event"}`;
+    const introText = clean(eventRecord.postEventSummary || eventRecord.postEventummary || eventRecord.description || eventRecord.subtitle)
+      || "Redaktioneller Rückblick auf ein PROdigitalTV-Event.";
+    const bodyText = automaticRetrospectiveBody(eventRecord);
+    const imageUrl = clean(eventRecord.imageUrl || eventRecord.thumbnail_url || eventRecord.thumbnailUrl || eventRecord.assetUrl);
+    const mediaAssetId = clean(eventRecord.thumbnail_media_asset_id || eventRecord.mediaAssetId);
+    batch.set(db.collection("editorialContent").doc(articleId), {
+      id: articleId,
+      page: "press",
+      section: "pressRelease",
+      key: `press.${articleId}`,
+      category: "Rückblicke",
+      title,
+      headline: title,
+      subtitle: clean(eventRecord.subtitle),
+      introText,
+      longDescription: bodyText,
+      bodyText,
+      articleText: bodyText,
+      archiveText: bodyText,
+      body: bodyText,
+      status: "published",
+      visible: true,
+      visibility: "public",
+      publishDate: eventRecord.date || nowIso.slice(0, 10),
+      validFrom: eventRecord.date || nowIso.slice(0, 10),
+      linkedEventId: eventRecord.id,
+      galleryEventId: eventRecord.id,
+      galleryId: clean(eventRecord.galleryId),
+      sponsorId: clean(eventRecord.hostId),
+      imageUrl,
+      thumbnail_url: imageUrl,
+      thumbnailUrl: imageUrl,
+      assetUrl: imageUrl,
+      thumbnail_media_asset_id: mediaAssetId,
+      mediaAssetId,
+      thumbnail_alt: clean(eventRecord.thumbnail_alt || eventRecord.thumbnailAlt) || `Eventbild ${clean(eventRecord.title)}`,
+      videoAttachments: [],
+      isRetrospective: true,
+      showGallery: true,
+      automaticEventAssignment: true,
+      autoPublishedAfterEvent: true,
+      publishedAt: nowIso,
+      createdAt: nowIso,
+      updatedAt: nowIso
+    }, { merge: true });
+    batch.set(eventDocument.ref, {
+      retrospectiveArticleId: articleId,
+      retrospectiveTitle: title,
+      updatedAt: nowIso
+    }, { merge: true });
+    writes += 2;
+  }
+
+  if (writes) await batch.commit();
+  console.log(`Automatische Rückblicke: ${writes} Schreibvorgänge.`);
+});
+
 exports.processEventNotifications = onSchedule({ region, schedule: "every 15 minutes" }, async () => {
   const now = Timestamp.now();
   const due = await db.collection("eventNotifications")
@@ -2315,7 +4443,10 @@ exports.processEventNotifications = onSchedule({ region, schedule: "every 15 min
         registeredText: eventRecord.reminderMail || mailTemplates.registrationReminder || defaultGlobalEventRegistrationMailText("reminder"),
         includeMembers: false,
         includeContacts: true,
+        includeRegistered: true,
+        includeSpeakers: true,
         registrationStatus: "registered",
+        allowRegistrationCancellation: true,
         sendMode: "auto_before_event",
         offsetMinutes: minutes,
         status: "processing",
@@ -2464,6 +4595,14 @@ exports.sendQueuedMail = onDocumentCreated({ document: "mailQueue/{mailId}", reg
         updatedAt: FieldValue.serverTimestamp()
       }, { merge: true });
     }
+    if (mail.template === "speaker_approval_completed" && mail.speakerApprovalId) {
+      await db.collection("speakerApprovals").doc(mail.speakerApprovalId).set({
+        completionMailStatus: rejected.length && !accepted.length ? "failed" : "sent",
+        completionMailSentAt: FieldValue.serverTimestamp(),
+        completionMailDeliveryStatus: rejected.length ? "partly_rejected" : "accepted",
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
   } catch (error) {
     await event.data.ref.update({
       status: "failed",
@@ -2485,9 +4624,76 @@ exports.sendQueuedMail = onDocumentCreated({ document: "mailQueue/{mailId}", reg
         updatedAt: FieldValue.serverTimestamp()
       }, { merge: true });
     }
+    if (mail.template === "speaker_approval_completed" && mail.speakerApprovalId) {
+      await db.collection("speakerApprovals").doc(mail.speakerApprovalId).set({
+        completionMailStatus: "failed",
+        completionMailError: error.message || "Mailversand fehlgeschlagen.",
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
   }
 });
 
+exports.sendQueuedSms = onDocumentCreated({ document: "smsQueue/{smsId}", region, secrets: smsSecrets }, async (event) => {
+  const sms = event.data.data();
+  if (sms.status !== "queued") return;
+  try {
+    const result = await sendQueuedSms(sms);
+    const costFields = Number.isFinite(result.netEur) ? {
+      actualCostNetEur: result.netEur,
+      actualCostPoints: result.points,
+      actualMessageParts: result.parts,
+      costCurrency: result.currency
+    } : {};
+    await event.data.ref.update({
+      status: "sent",
+      sentAt: FieldValue.serverTimestamp(),
+      providerMessageId: result.messageId || "",
+      providerResponse: result.response || "",
+      ...costFields,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    if (sms.notificationId && Number.isFinite(result.netEur)) {
+      await db.collection("eventNotifications").doc(sms.notificationId).set({
+        actualSmsCostNetEur: FieldValue.increment(result.netEur),
+        actualSmsCostPoints: FieldValue.increment(result.points),
+        actualSmsMessageParts: FieldValue.increment(result.parts),
+        actualSmsSentCount: FieldValue.increment(1),
+        costCurrency: result.currency,
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+  } catch (error) {
+    await event.data.ref.update({
+      status: "failed",
+      error: error.message || "SMS-Versand fehlgeschlagen.",
+      failedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    if (sms.notificationId) {
+      await db.collection("eventNotifications").doc(sms.notificationId).set({
+        actualSmsFailedCount: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+  }
+});
+
+exports.trackEventMailClick = onRequest({ region, invoker: "public" }, async (req, res) => {
+  const mailId = clean(req.query.m || req.query.mailId || "");
+  let destination = PUBLIC_APP_BASE_URL;
+  if (mailId && /^[A-Za-z0-9_-]{8,80}$/.test(mailId)) {
+    const ref = db.collection("mailQueue").doc(mailId);
+    const snapshot = await ref.get().catch(() => null);
+    const mail = snapshot?.exists ? snapshot.data() : {};
+    const storedLink = clean(mail?.link || "");
+    if (/^https:\/\//i.test(storedLink)) destination = storedLink;
+    else if (mail?.eventId) destination = eventUrl(mail.eventId);
+    await ref.set({ eventLinkClicked: true, eventLinkClickCount: FieldValue.increment(1), lastEventLinkClickedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true }).catch((error) => console.error("trackEventMailClick failed", mailId, error));
+  }
+  res.set("Cache-Control", "no-store");
+  res.redirect(302, destination);
+});
 exports.trackMailOpen = onRequest({ region, invoker: "public" }, async (req, res) => {
   res.set("Content-Type", "image/gif");
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
@@ -2580,6 +4786,8 @@ exports.confirmRegistrationByToken = onCall({ region, invoker: "public" }, async
     eventTitle: registration.eventTitle || "",
     firstName: registration.firstName || "",
     lastName: registration.lastName || "",
+    companion: registration.companion || null,
+    participantCount: registration.participantCount || (registration.hasCompanion ? 2 : 1),
     ticketEnabled,
     ticketToken,
     pushEnrollmentToken,
@@ -2610,6 +4818,8 @@ exports.linkTicketDeviceByToken = onCall({ region, invoker: "public" }, async (r
     eventTitle: registration.eventTitle || "",
     firstName: registration.firstName || "",
     lastName: registration.lastName || "",
+    companion: registration.companion || null,
+    participantCount: registration.participantCount || (registration.hasCompanion ? 2 : 1),
     ticketToken: token
   };
 });
@@ -2627,31 +4837,58 @@ exports.checkInRegistrationByDevice = onCall({ region, invoker: "public" }, asyn
   }
   const eventSnapshot = await db.collection("events").doc(eventId).get().catch(() => null);
   const eventRecord = eventSnapshot?.exists ? { id: eventSnapshot.id, ...eventSnapshot.data() } : {};
-  const alreadyCheckedIn = registration.status === "checked_in" && registration.checkedInEventId === eventId;
-  await document.ref.update({
-    status: "checked_in",
-    checkedInEventId: eventId,
-    checkedInAt: alreadyCheckedIn ? registration.checkedInAt || FieldValue.serverTimestamp() : FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp()
-  });
-  await db.collection("checkinScreenEvents").doc(eventId).set({
-    eventId,
-    registrationId: document.id,
-    firstName: registration.firstName || "",
-    lastName: registration.lastName || "",
-    company: registration.company || "",
-    checkedInAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp()
-  }, { merge: true });
   const checkinWelcomeMailEnabled = eventRecord.checkinWelcomeMailEnabled === true || (eventRecord.checkinWelcomeMailEnabled == null && eventRecord.checkinAgendaMailEnabled === true);
-  if (!alreadyCheckedIn && checkinWelcomeMailEnabled && registration.email) {
+  const checkinResult = await db.runTransaction(async (transaction) => {
+    const freshSnapshot = await transaction.get(document.ref);
+    const fresh = freshSnapshot.data() || {};
+    const alreadyCheckedIn = fresh.status === "checked_in" && fresh.checkedInEventId === eventId;
+    const companion = fresh.companion || null;
+    const primaryName = [fresh.firstName, fresh.lastName].filter(Boolean).join(" ");
+    const companionName = companion ? [companion.firstName, companion.lastName].filter(Boolean).join(" ") : "";
+    const shouldQueueWelcomeMail = !alreadyCheckedIn && checkinWelcomeMailEnabled && Boolean(fresh.email) && !fresh.checkinAgendaMailQueuedAt;
+    transaction.set(document.ref, {
+      status: "checked_in",
+      checkedInEventId: eventId,
+      checkedInAt: alreadyCheckedIn ? fresh.checkedInAt || FieldValue.serverTimestamp() : FieldValue.serverTimestamp(),
+      participantCount: companion ? 2 : 1,
+      ...(companion ? { companionCheckedInAt: alreadyCheckedIn ? fresh.companionCheckedInAt || fresh.checkedInAt || FieldValue.serverTimestamp() : FieldValue.serverTimestamp() } : {}),
+      ...(shouldQueueWelcomeMail ? { checkinAgendaMailQueuedAt: FieldValue.serverTimestamp() } : {}),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+    transaction.set(db.collection("checkinScreenEvents").doc(eventId), {
+      eventId,
+      registrationId: document.id,
+      firstName: fresh.firstName || "",
+      lastName: fresh.lastName || "",
+      company: fresh.company || "",
+      companion,
+      participantCount: companion ? 2 : 1,
+      displayName: [primaryName, companionName].filter(Boolean).join(" und "),
+      checkedInAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+    return {
+      alreadyCheckedIn,
+      shouldQueueWelcomeMail,
+      email: fresh.email || "",
+      firstName: fresh.firstName || "",
+      lastName: fresh.lastName || "",
+      company: fresh.company || "",
+      companion,
+      participantCount: companion ? 2 : 1,
+      displayName: [primaryName, companionName].filter(Boolean).join(" und "),
+      eventTitle: fresh.eventTitle || ""
+    };
+  });
+  if (checkinResult.shouldQueueWelcomeMail) {
     await queueMail({
       type: "checkin_agenda",
       template: "checkin_agenda",
-      to: registration.email,
-      subject: `Willkommen: ${eventRecord.title || registration.eventTitle || "PROdigitalTV Event"}`,
+      to: checkinResult.email,
+      subject: `Willkommen: ${eventRecord.title || checkinResult.eventTitle || "PROdigitalTV Event"}`,
       registrationId: document.id,
       eventId,
+      dedupeKey: `checkin_agenda:${document.id}:${eventId}`,
       source: "checkin"
     }).catch((error) => {
       console.warn("Check-in agenda mail could not be queued", document.id, error);
@@ -2659,13 +4896,16 @@ exports.checkInRegistrationByDevice = onCall({ region, invoker: "public" }, asyn
   }
   return {
     checkedIn: true,
-    alreadyCheckedIn,
+    alreadyCheckedIn: checkinResult.alreadyCheckedIn,
     registrationId: document.id,
     eventId,
-    eventTitle: registration.eventTitle || "",
-    firstName: registration.firstName || "",
-    lastName: registration.lastName || "",
-    company: registration.company || ""
+    eventTitle: checkinResult.eventTitle || registration.eventTitle || "",
+    firstName: checkinResult.firstName || registration.firstName || "",
+    lastName: checkinResult.lastName || registration.lastName || "",
+    company: checkinResult.company || registration.company || "",
+    companion: checkinResult.companion || registration.companion || null,
+    participantCount: checkinResult.participantCount || registration.participantCount || 1,
+    displayName: checkinResult.displayName || ""
   };
 });
 
@@ -2688,6 +4928,8 @@ exports.validateRegistrationTicket = onCall({ region, invoker: "public" }, async
     firstName: registration.firstName || "",
     lastName: registration.lastName || "",
     company: registration.company || "",
+    companion: registration.companion || null,
+    participantCount: registration.participantCount || (registration.hasCompanion ? 2 : 1),
     status,
     checkedInEventId: registration.checkedInEventId || ""
   };
@@ -2711,14 +4953,19 @@ exports.getEventCheckinScreenStatus = onCall({ region }, async (request) => {
     registrationId: recent ? data.registrationId || "" : "",
     firstName: recent ? data.firstName || "" : "",
     lastName: recent ? data.lastName || "" : "",
-    company: recent ? data.company || "" : ""
+    company: recent ? data.company || "" : "",
+    companion: recent ? data.companion || null : null,
+    participantCount: recent ? data.participantCount || 1 : 0,
+    displayName: recent ? data.displayName || "" : ""
   };
 });
 
 exports.cancelRegistrationByToken = onCall({ region, invoker: "public" }, async (request) => {
   const token = request.data?.token;
   if (!token) throw new HttpsError("invalid-argument", "Storno-Token fehlt.");
-  const result = await db.collection("registrations").where("cancelTokenHash", "==", hashToken(token)).limit(1).get();
+  const tokenHash = hashToken(token);
+  let result = await db.collection("registrations").where("cancelTokenHash", "==", tokenHash).limit(1).get();
+  if (result.empty) result = await db.collection("registrations").where("cancelTokenHashes", "array-contains", tokenHash).limit(1).get();
   if (result.empty) throw new HttpsError("not-found", "Storno-Link wurde nicht gefunden.");
   const document = result.docs[0];
   const registration = document.data();
@@ -2729,6 +4976,7 @@ exports.cancelRegistrationByToken = onCall({ region, invoker: "public" }, async 
     status: "cancelled",
     cancelledAt: FieldValue.serverTimestamp(),
     cancelTokenHash: FieldValue.delete(),
+    cancelTokenHashes: FieldValue.delete(),
     updatedAt: FieldValue.serverTimestamp()
   });
   if (registration.eventId && registration.email) {

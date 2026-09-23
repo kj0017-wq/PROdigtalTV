@@ -67,6 +67,23 @@ https://deine-domain.de/mail-api/send
 
 ## API Beispiele
 
+## SMS-Versand aus dem CMS
+
+Der CMS-Versand kann SMS als zusätzlichen Kanal auswählen. Die Firebase Function legt dafür Dokumente in `smsQueue` an und ruft SMSAPI über `POST https://api.smsapi.com/sms.do` mit Bearer-Token und URL-encoded Parametern auf. SMSAPI erwartet dabei unter anderem `from`, `to`, `message` und `format=json`.
+
+```json
+from=PROdigitalTV&to=%2B491701234567&message=Ihre+Nachricht&format=json
+```
+
+Benötigte Firebase Secrets:
+
+```bash
+firebase functions:secrets:set SMS_API_TOKEN
+firebase functions:secrets:set SMS_SENDER
+```
+
+`SMS_API_URL` ist optional und kann für Tests überschrieben werden; standardmäßig wird SMSAPI unter `https://api.smsapi.com/sms.do` verwendet. `SMS_SENDER` muss bei SMSAPI als Absendername bzw. Absendernummer freigeschaltet sein. Ohne diese Secrets bleibt der SMS-Kanal sicher fehlgeschlagen und Mail/Push werden davon nicht beeinflusst.
+
 Alle Admin-Aufrufe brauchen:
 
 ```text

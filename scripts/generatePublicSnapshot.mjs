@@ -9,7 +9,7 @@ function cacheKey(collectionName, predicates = []) {
 }
 
 function publicSessionCacheKey(key = "") {
-  return `pdtv-public-list-v5:${key}`;
+  return `pdtv-public-list-v7:${key}`;
 }
 
 function normalizeFirestoreValue(value) {
@@ -45,7 +45,7 @@ const fieldAllowList = {
     "city", "locationName", "eventType", "accessType", "access_type", "status", "state", "visibility",
     "sichtbarkeit", "visible", "lifecyclePhase", "lifecycle_phase", "phase", "registrationEnabled",
     "registrationStatus", "registration_state", "registrationState", "allowPublicRegistration",
-    "allowMemberRegistration", "showPublicTeaser", "publicTeaser", "description", "shortDescription",
+    "allowMemberRegistration", "showPublicTeaser", "publicTeaser", "description", "descriptionMode", "shortDescription",
     "teaserText", "subtitle", "introText", "longDescription", "bodyText", "articleText", "archiveText",
     "postEventSummary", "postEventummary", "hostId", "sponsorIds", "topicIds", "speakerIds", "imageUrl",
     "thumbnail_url", "thumbnailUrl", "assetUrl", "mediaAssetId", "media_asset_id", "thumbnailMediaAssetId",
@@ -369,6 +369,3 @@ if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
       process.exitCode = 1;
     });
 }
-
-
-

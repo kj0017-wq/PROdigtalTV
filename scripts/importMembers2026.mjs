@@ -58,7 +58,7 @@ const logoById = {
   "idee-medien": "/assets/official/members/idee-medien.jpg",
   "itsmaxsuhr": "/assets/official/members/itsmaxsuhr.png",
   "js-consult": "/assets/official/members/js-consult.jpg",
-  "no-limits-media": "/assets/official/members/no-limits-media.png",
+  "no-limits-media": "/assets/official/members/no-limits-media.webp",
   "ors": "/assets/official/members/ors.jpg",
   "red-bull-media-house": "/assets/official/members/red-bull-media-house.jpg",
   "stingray-digital-international": "/assets/official/members/stingray-music.jpg"

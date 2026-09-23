@@ -1,4 +1,4 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=470";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=479";
 import { list, getOne, upsert } from "../firebase/dataService.js?v=488";
 import { authDebugState, currentUser, canUseCms } from "../firebase/authService.js?v=471";
 import { aiSourceCatalog } from "../data/aiSourceCatalog.js";

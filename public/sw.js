@@ -1,4 +1,4 @@
-const CACHE = "pdt-platform-v961";
+const CACHE = "pdt-platform-v1083";
 const IMAGE_CACHE = "pdt-platform-images-v960";
 const APP_SHELL = [
   "/",
@@ -6,6 +6,15 @@ const APP_SHELL = [
   "/website.html",
   "/assets/js/pwa.js",
   "/assets/js/push-display.js",
+  "/src/main.js",
+  "/src/pages/publicPages.js",
+  "/src/components/cards.js",
+  "/src/firebase/dataService.js",
+  "/src/styles/main.css",
+  "/src/utils/calendar.js",
+  "/src/utils/format.js",
+  "/src/utils/imageUrls.js",
+  "/public-snapshot.json",
   "/assets/official/brand/prodigitaltv-logo-claim.png",
   "/images/icon-192.png"
 ];
@@ -98,6 +107,22 @@ function networkFirstWithCache(request, cacheName) {
     .catch(() => caches.match(request));
 }
 
+function staleWhileRevalidate(request, cacheName, options = {}) {
+  const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
+  return caches.match(request, matchOptions).then((cached) => {
+    const fresh = fetch(request, { cache: "no-store" })
+      .then((response) => {
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(cacheName).then((cache) => cache.put(request, copy)).catch(() => undefined);
+        }
+        return response;
+      })
+      .catch(() => cached);
+    return cached || fresh;
+  });
+}
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
@@ -115,13 +140,8 @@ self.addEventListener("fetch", (event) => {
   const isNavigation = event.request.mode === "navigate" || ["", "/", "/index.html", "/website.html", "/cms.html"].includes(url.pathname);
   if (isNavigation) {
     event.respondWith(
-      fetch(event.request, { cache: "no-store" })
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(event.request, copy)).catch(() => undefined);
-          return response;
-        })
-        .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/index.html")))
+      networkFirstWithCache(event.request, CACHE)
+        .then((response) => response || caches.match("/index.html", { ignoreSearch: true }))
     );
     return;
   }
@@ -142,5 +162,3 @@ self.addEventListener("fetch", (event) => {
       .catch(() => caches.match(event.request))
   );
 });
-
-

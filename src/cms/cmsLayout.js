@@ -1,6 +1,8 @@
 import { currentUser, isAdmin } from "../firebase/authService.js?v=471";
 import { logo } from "../components/layout.js";
 
+const adminOnlyRoutes = new Set(["cms/member-strategy-responses", "cms/setup"]);
+
 const sections = [
   ["cms", "Dashboard"],
   {
@@ -10,7 +12,8 @@ const sections = [
       ["cms/events", "Events"],
       ["cms/live", "Veranstaltungs-Cockpit"],
       ["cms/registrations", "Anmeldungen"],
-      ["cms/followup", "Event Rückblick"],
+      ["cms/speakers", "Referenten"],
+      ["cms/event-feedback", "Gästebefragung"],
       ["cms/sponsors", "Sponsoren / Gastgeber"]
     ]
   },
@@ -20,7 +23,7 @@ const sections = [
     children: [
       ["cms/members", "Mitglieder"],
       ["cms/member-area", "Mitgliederbereich"],
-      ["cms/editorial/member-area", "Mitgliederbeitraege"],
+      ["cms/member-strategy-responses", "Strategie-Auswertung"],
       ["cms/membership-applications", "Mitgliedsantraege"],
       ["cms/board", "Vorstand"]
     ]
@@ -32,6 +35,7 @@ const sections = [
       ["cms/editorial/press", "Presse"],
       ["cms/topics", "Themen"],
       ["cms/editorial/news", "News"],
+      ["cms/editorial/retrospectives", "Rückblicke"],
       ["cms/editorial/interna", "Interna"]
     ]
   },
@@ -66,7 +70,7 @@ const sections = [
     route: "cms/mail",
     title: "Kommunikation",
     children: [
-      ["cms/event-notifications", "Push Benachrichtigung"],
+      ["cms/event-notifications", "Event Versand"],
       ["cms/people", "Mailingadressen"],
       ["cms/mail", "Mailing Queue"],
       ["cms/mail-admin", "Mailingverwaltung"]
@@ -98,13 +102,13 @@ export function cmsShell(active, content) {
     };
     if (Array.isArray(item)) {
       const [route, title] = item;
-      if (route === "cms/setup" && !isAdmin(user)) return "";
+      if (adminOnlyRoutes.has(route) && !isAdmin(user)) return "";
       if (String(route).startsWith("/")) {
         return `<a href="${route}" target="_blank" rel="noopener">${title}</a>`;
       }
       return `<a href="#/${route}" class="${active === route ? "active" : ""}">${title}</a>`;
     }
-    const visibleChildren = item.children.filter(([route]) => route !== "cms/setup" || isAdmin(user));
+    const visibleChildren = item.children.filter(([route]) => !adminOnlyRoutes.has(route) || isAdmin(user));
     const childActive = visibleChildren.some(([route]) => active === route);
     return `<details class="cms-side-group" ${active === item.route || childActive ? "open" : ""}>
       <summary class="${active === item.route || childActive ? "active" : ""}"><span>${item.title}</span></summary>
@@ -120,4 +124,3 @@ export function cmsShell(active, content) {
 export function cmsTitle(eyebrow, title, actions = "") {
   return `<div class="cms-title"><div><p class="eyebrow">${eyebrow}</p><h1>${title}</h1></div><div class="actions">${actions}</div></div>`;
 }
-

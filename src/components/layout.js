@@ -67,8 +67,9 @@ export function bottomNav(active) {
   </nav>`;
 }
 
-export function footer() {
-  return `<footer class="footer"><div class="container footer__grid">
+export function footer(options = {}) {
+  const extraContent = options.extraContent ? `<div class="container footer__extra">${options.extraContent}</div>` : "";
+  return `<footer class="footer">${extraContent}<div class="container footer__grid">
     <div>${logo()}<p style="margin-top:17px;max-width:360px">Das Branchennetzwerk der digitalen Medienwirtschaft. Austausch, Orientierung und relevante Verbindungen.</p></div>
     <div><h3>Verein</h3><div class="footer__links"><a href="#/join">Mitglied werden</a><a href="#/downloads">Downloads</a><a href="#/login">Log-In</a></div></div>
     <div><h3>Kontakt</h3><div class="footer__links"><a href="mailto:post@prodigitaltv.de">post@prodigitaltv.de</a><a href="tel:+494044506617">+49 40 44506617</a></div></div>
@@ -79,7 +80,7 @@ export function footer() {
 export function publicShell(active, content, options = {}) {
   const prompts = options.prompts === false ? "" : pwaInstallPrompts();
   const mobileNav = options.bottomNav === false ? "" : bottomNav(active);
-  return `<div class="pdtv-mobile-shell pdtv-route-${active || "default"}">${header(active)}<main class="page pdtv-mobile-main">${content}</main>${footer()}${prompts}${mobileNav}</div>`;
+  return `<div class="pdtv-mobile-shell pdtv-route-${active || "default"}">${header(active)}<main class="page pdtv-mobile-main">${content}</main>${footer({ extraContent: options.footerContent || "" })}${prompts}${mobileNav}</div>`;
 }
 
 function pwaInstallPrompts() {
