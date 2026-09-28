@@ -5,6 +5,12 @@ import { logo } from "./components/layout.js";
 import { escapeHtml } from "./utils/format.js";
 import { isMobileTicketDevice } from "./components/ticketTransfer.js?v=1";
 
+const legacyHost = ["prodigitaltv.web.app", "prodigitaltv-da47b.web.app", "prodigtaltv.web.app", "prodigitaltv.firebaseapp.com", "prodigitaltv-da47b.firebaseapp.com"].includes(location.hostname.toLowerCase());
+if (legacyHost) {
+  const target = new URL(location.href);
+  target.hostname = "prodigitaltv.de";
+  location.replace(target.href);
+} else {
 const root = document.querySelector("#app");
 const token = new URLSearchParams(window.location.search).get("token");
 const eventsUrl = `/?v=${Date.now()}#/events`;
@@ -26,3 +32,6 @@ try {
 } catch (error) {
   root.innerHTML = `<main class="login-wrap"><section class="container"><div class="form-card login-card">${logo()}<p class="eyebrow">Bestaetigung</p><h1 style="margin-bottom:15px">Link ungueltig oder abgelaufen.</h1><div class="alert alert--warning">${escapeHtml(error.message)}</div><a href="${eventsUrl}" class="button button--secondary" style="margin-top:24px">Zu den Events</a></div></section></main>`;
 }
+}
+
+

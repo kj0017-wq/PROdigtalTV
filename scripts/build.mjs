@@ -31,7 +31,7 @@ try {
   const bootCachePrefixes = [
     "pdtv-public-list-v7:events:",
     "pdtv-public-list-v7:editorialContent:",
-    "pdtv-public-list-v7:topics:",
+    "pdtv-public-list-v8:topics:",
     "pdtv-public-list-v7:speakers:",
     "pdtv-public-list-v7:sponsors:"
   ];
@@ -57,3 +57,5 @@ try {
   console.warn("Public snapshot skipped:", error?.message || error);
 }
 console.log("PROdigitalTV build ready in dist/");
+
+

@@ -9,7 +9,7 @@ function cacheKey(collectionName, predicates = []) {
 }
 
 function publicSessionCacheKey(key = "") {
-  return `pdtv-public-list-v7:${key}`;
+  return `pdtv-public-list-${key.startsWith("topics:") || key.startsWith("editorialContent:") ? "v8" : "v7"}:${key}`;
 }
 
 function normalizeFirestoreValue(value) {
@@ -42,18 +42,19 @@ function matches(record = {}, predicates = []) {
 const fieldAllowList = {
   events: new Set([
     "id", "title", "titel", "name", "headline", "eventTitle", "date", "displayDate", "startTime", "endTime",
-    "city", "locationName", "eventType", "accessType", "access_type", "status", "state", "visibility",
+    "city", "locationName", "address", "postalCode", "zipCode", "eventType", "accessType", "access_type", "status", "state", "visibility",
     "sichtbarkeit", "visible", "lifecyclePhase", "lifecycle_phase", "phase", "registrationEnabled",
     "registrationStatus", "registration_state", "registrationState", "allowPublicRegistration",
     "allowMemberRegistration", "showPublicTeaser", "publicTeaser", "description", "descriptionMode", "shortDescription",
     "teaserText", "subtitle", "introText", "longDescription", "bodyText", "articleText", "archiveText",
+    "scheduleText", "agendaText", "preStatus",
     "postEventSummary", "postEventummary", "hostId", "sponsorIds", "topicIds", "speakerIds", "imageUrl",
     "thumbnail_url", "thumbnailUrl", "assetUrl", "mediaAssetId", "media_asset_id", "thumbnailMediaAssetId",
     "thumbnail_media_asset_id", "updatedAt", "updated_at", "validFrom"
   ]),
   topics: new Set([
     "id", "title", "headline", "shortDescription", "teaserText", "subtitle", "description",
-    "longDescription", "bodyText", "articleText", "status", "visibility", "sichtbarkeit", "eventId", "eventIds", "speakerId", "speakerIds",
+    "longDescription", "bodyText", "articleText", "status", "visibility", "sichtbarkeit", "eventId", "eventIds", "speakerId", "speakerIds", "speakerRoles", "speakerRoleById",
     "sortOrder", "date", "publishDate", "validFrom", "updatedAt", "updated_at", "imageUrl",
     "thumbnail_url", "thumbnailUrl", "cardImageUrl", "assetUrl", "companyLogoUrl", "logoUrl",
     "company_logo_url", "mediaAssetId", "media_asset_id", "thumbnailMediaAssetId",
@@ -72,7 +73,9 @@ const fieldAllowList = {
     "teaserText", "longDescription", "bodyText", "articleText", "category", "section", "page", "status", "visibility", "sichtbarkeit",
     "publishDate", "validFrom", "date", "updatedAt", "updated_at", "imageUrl", "thumbnail_url",
     "thumbnailUrl", "assetUrl", "mediaAssetId", "media_asset_id", "thumbnailMediaAssetId",
-    "thumbnail_media_asset_id", "linkedEventId", "galleryEventId", "galleryId", "sponsorId"
+    "thumbnail_media_asset_id", "linkedEventId", "galleryEventId", "galleryId", "sponsorId",
+    "audio", "audioProvider", "audioUrl", "audioAccessibleUrl", "audioNaturalUrl",
+    "audioStatus", "audioAccessibleStatus", "audioNaturalStatus", "timingUrl"
   ]),
   sponsors: new Set([
     "id", "name", "title", "status", "visibility", "logoUrl", "imageUrl", "assetUrl",
@@ -118,6 +121,8 @@ function trimLongString(value, maxLength = 420) {
 }
 
 const longTextFields = new Set([
+  "scheduleText",
+  "agendaText",
   "description",
   "introText",
   "shortBio",
@@ -137,6 +142,15 @@ const longTextFields = new Set([
 ]);
 
 function compactValue(key = "", value) {
+  if (key === "audio" && value && typeof value === "object") {
+    return {
+      provider: value.provider || "",
+      status: value.status || "",
+      audioUrl: value.audioUrl || "",
+      timingUrl: value.timingUrl || ""
+    };
+  }
+  if (["audioUrl", "audioAccessibleUrl", "audioNaturalUrl", "timingUrl"].includes(key)) return value;
   if (key === "images" && Array.isArray(value)) {
     return value.slice(0, 12).map((image = {}) => ({
       url: image.url || image.imageUrl || image.assetUrl || image.thumbnailUrl || "",
@@ -369,3 +383,7 @@ if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
       process.exitCode = 1;
     });
 }
+
+
+
+

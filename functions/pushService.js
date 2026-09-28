@@ -1,4 +1,4 @@
-const { createHash } = require("node:crypto");
+const { createHash, randomBytes } = require("node:crypto");
 const hash = (value) => createHash("sha256").update(String(value || "")).digest("hex");
 const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
 const invalidTokenCodes = new Set(["messaging/registration-token-not-registered", "messaging/invalid-registration-token"]);
@@ -69,23 +69,48 @@ function createPushService({ db, messaging, FieldValue, HttpsError }) {
     } catch (error) {
       return { ...summary, failed: 1, errors: [{ code: String(error.code || "token-read-failed") }] };
     }
+    let trackingRegistration = null;
+    if (notification.id && notification.eventId) {
+      const registrations = await db.collection("registrations")
+        .where("eventId", "==", String(notification.eventId))
+        .where("email", "==", normalizeEmail(email))
+        .limit(10).get().catch(() => ({ docs: [] }));
+      trackingRegistration = registrations.docs.find((registration) => registration.data().pushTrackingConsent === true
+        && ["confirmed", "checked_in"].includes(registration.data().status)) || null;
+    }
     for (const doc of docs) {
       const record = doc.data();
       if (!record.token || record.status !== "active" || record.verified !== true) continue;
       summary.attempted++;
+      let interactionId = "";
+      if (trackingRegistration) {
+        const candidateId = `push-${randomBytes(16).toString("hex")}`;
+        try {
+          await db.collection("pushInteractions").doc(candidateId).set({
+            notificationId: String(notification.id), eventId: String(notification.eventId),
+            registrationId: trackingRegistration.id, deviceId: doc.id, link: String(notification.link || ""),
+            status: "sending", createdAt: FieldValue.serverTimestamp()
+          });
+          interactionId = candidateId;
+        } catch (error) {
+          summary.errors.push({ deviceId: doc.id, code: "interaction-log-failed" });
+        }
+      }
       try {
         await messaging.send({
           token: record.token,
           data: { title: String(notification.title || "PROdigitalTV"), body: String(notification.body || "").slice(0, 500),
-            eventId: String(notification.eventId || ""), notificationId: String(notification.id || ""), link: String(notification.link || "/") },
+            eventId: String(notification.eventId || ""), notificationId: String(notification.id || ""), link: String(notification.link || "/"), interactionId },
           webpush: { headers: { TTL: "86400", Urgency: "high" } }
         });
         summary.sent++;
+        if (interactionId) await db.collection("pushInteractions").doc(interactionId).set({ status: "sent", sentAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
         await doc.ref.set({ lastSuccessAt: FieldValue.serverTimestamp(), lastErrorCode: "", updatedAt: FieldValue.serverTimestamp() }, { merge: true })
           .catch(() => { summary.errors.push({ deviceId: doc.id, code: "success-log-failed" }); });
       } catch (error) {
         const code = String(error.code || "push-send-failed");
         summary.failed++;
+        if (interactionId) await db.collection("pushInteractions").doc(interactionId).set({ status: "failed", errorCode: code }, { merge: true }).catch(() => {});
         summary.errors.push({ deviceId: doc.id, code });
         await doc.ref.set({ lastErrorCode: code, lastErrorAt: FieldValue.serverTimestamp(),
           ...(invalidTokenCodes.has(code) ? { status: "invalid" } : {}) }, { merge: true }).catch(() => {});

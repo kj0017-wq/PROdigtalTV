@@ -1,7 +1,7 @@
 import { currentUser, isAdmin } from "../firebase/authService.js?v=471";
 import { logo } from "../components/layout.js";
 
-const adminOnlyRoutes = new Set(["cms/member-strategy-responses", "cms/setup"]);
+const adminOnlyRoutes = new Set(["cms/member-strategy-responses", "cms/setup", "cms/mail-bounces"]);
 
 const sections = [
   ["cms", "Dashboard"],
@@ -73,6 +73,7 @@ const sections = [
       ["cms/event-notifications", "Event Versand"],
       ["cms/people", "Mailingadressen"],
       ["cms/mail", "Mailing Queue"],
+      ["cms/mail-bounces", "Rückläufer"],
       ["cms/mail-admin", "Mailingverwaltung"]
     ]
   },
@@ -124,3 +125,6 @@ export function cmsShell(active, content) {
 export function cmsTitle(eyebrow, title, actions = "") {
   return `<div class="cms-title"><div><p class="eyebrow">${eyebrow}</p><h1>${title}</h1></div><div class="actions">${actions}</div></div>`;
 }
+
+
+

@@ -1,10 +1,13 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=479";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=480";
 import { list, getOne } from "../firebase/dataService.js?v=504";
 import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=471";
 import { accessLabels, lifecycleLabels, normalizeLifecyclePhase } from "../data/platformConstants.js";
 import { escapeHtml, formatDate, formatDateTime, formatShortDate, richTextHtml } from "../utils/format.js?v=4";
 import { normalizeLinkedIn } from "../utils/linkedin.js";
 import { hiddenTalkTitles, isVisibleEventTalk, removeHiddenTalkMentions } from "../utils/eventTalkVisibility.js";
+import { eventMailFunnel, mailPeriod, mailPersonMatches, mailQueueRecipient, mailTime } from "../utils/mailAnalytics.js";
+import { buildBounceOverview } from "../utils/bounceOverview.js";
+import { registrationParticipants } from "../utils/registrationParticipants.js";
 
 function localCmsAccessBypass() {
   return false;
@@ -31,7 +34,7 @@ function denied(adminOnly = false) {
 
 function status(value) {
   const style = ["failed", "expired", "inactive", "cancelled", "archived"].includes(value) ?"status--error" : ["draft", "pending_email_confirmation", "queued", "in_review", "uploaded"].includes(value) ?"status--draft" : "";
-  const label = { active: "Aktiv", inactive: "Inaktiv", offen: "Offen", geschlossen: "Geschlossen", cancelled: "Gekündigt", internal: "Intern", published: "Veröffentlicht", draft: "Entwurf", archived: "Archiviert", approved: "Freigegeben", new: "Neu", queued: "Wartet", sent: "Gesendet", failed: "Fehler", in_review: "In Prüfung" }[value] || value;
+  const label = { active: "Aktiv", inactive: "Inaktiv", offen: "Offen", geschlossen: "Geschlossen", cancelled: "Gekündigt", internal: "Intern", published: "Veröffentlicht", draft: "Entwurf", archived: "Archiviert", approved: "Freigegeben", new: "Neu", queued: "Wartet", sent: "Gesendet", failed: "Fehler", delayed: "Verzögert", in_review: "In Prüfung" }[value] || value;
   return `<span class="status ${style}">${escapeHtml(label)}</span>`;
 }
 
@@ -1028,17 +1031,19 @@ function usageEventTime(event = {}) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function usageStatsPanel(usageEvents = [], mails = []) {
+function usageStatsPanel(usageEvents = [], mails = [], dailyViews = []) {
   const gaPropertyId = "550849714";
   const gaLink = `https://analytics.google.com/analytics/web/#/p${gaPropertyId}`;
   const now = Date.now();
-  const today = new Date().toISOString().slice(0, 10);
+  const berlinDay = (date) => date.toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+  const today = berlinDay(new Date());
   const pageViews = usageEvents.filter((event) => (event.type || "page_view") === "page_view");
-  const todayViews = pageViews.filter((event) => event.day === today).length;
-  const weekViews = pageViews.filter((event) => usageEventTime(event) >= now - 7 * 86400000).length;
-  const monthViews = pageViews.filter((event) => usageEventTime(event) >= now - 30 * 86400000).length;
+  const lastWeekDay = berlinDay(new Date(now - 6 * 86400000));
+  const lastMonthDay = berlinDay(new Date(now - 29 * 86400000));
+  const todayViews = dailyViews.filter((item) => item.day === today).reduce((sum, item) => sum + Number(item.count || 0), 0);
+  const weekViews = dailyViews.filter((item) => item.day >= lastWeekDay).reduce((sum, item) => sum + Number(item.count || 0), 0);
+  const monthViews = dailyViews.filter((item) => item.day >= lastMonthDay).reduce((sum, item) => sum + Number(item.count || 0), 0);
   const weekSessions = new Set(pageViews.filter((event) => usageEventTime(event) >= now - 7 * 86400000).map((event) => event.sessionHash).filter(Boolean)).size;
-  const monthSessions = new Set(pageViews.filter((event) => usageEventTime(event) >= now - 30 * 86400000).map((event) => event.sessionHash).filter(Boolean)).size;
   const mobileViews = pageViews.filter((event) => event.viewport === "mobile").length;
   const desktopViews = pageViews.filter((event) => event.viewport === "desktop").length;
   const sentMails = mails.filter((mail) => mail.status === "sent");
@@ -1046,20 +1051,24 @@ function usageStatsPanel(usageEvents = [], mails = []) {
   const failedMails = mails.filter((mail) => mail.status === "failed");
   const mailOpenRate = sentMails.length ? Math.round((openedMails.length / sentMails.length) * 100) : 0;
   const routeCounts = new Map();
-  pageViews
-    .filter((event) => usageEventTime(event) >= now - 7 * 86400000)
-    .forEach((event) => {
-      const label = event.route || event.path || "home";
-      routeCounts.set(label, (routeCounts.get(label) || 0) + 1);
+  dailyViews
+    .filter((item) => item.day >= lastWeekDay)
+    .forEach((item) => {
+      const label = item.path || "home";
+      routeCounts.set(label, (routeCounts.get(label) || 0) + Number(item.count || 0));
     });
   const topRoutes = [...routeCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+  const hostCounts = new Map();
+  dailyViews.filter((item) => item.day >= lastMonthDay).forEach((item) => {
+    hostCounts.set(item.host || "Unbekannt", (hostCounts.get(item.host || "Unbekannt") || 0) + Number(item.count || 0));
+  });
   const last7Days = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(now - (6 - index) * 86400000);
-    const day = date.toISOString().slice(0, 10);
+    const day = berlinDay(date);
     return {
       day,
       label: date.toLocaleDateString("de-DE", { weekday: "short" }),
-      count: pageViews.filter((event) => (event.day || new Date(usageEventTime(event)).toISOString().slice(0, 10)) === day).length
+      count: dailyViews.filter((item) => item.day === day).reduce((sum, item) => sum + Number(item.count || 0), 0)
     };
   });
   const maxDayViews = Math.max(1, ...last7Days.map((item) => item.count));
@@ -1069,14 +1078,14 @@ function usageStatsPanel(usageEvents = [], mails = []) {
   const desktopPercent = Math.round((desktopViews / deviceTotal) * 100);
   return `<section class="panel cms-usage-panel">
     <div class="actions" style="justify-content:space-between;align-items:flex-start;gap:16px">
-      <div><p class="eyebrow">Analytics</p><h2>Nutzung der Website</h2><p class="muted">Kombinierte Uebersicht aus eigener WebApp-Messung und Google Analytics. Die eigene Messung zaehlt Seitenaufrufe und anonyme Sitzungen ohne Namen oder E-Mail-Adressen.</p></div>
+      <div><p class="eyebrow">Analytics</p><h2>Nutzung der Website</h2><p class="muted">Seitenaufrufe werden ohne Besucherkennung als Tageswerte je Seite und Website-Adresse gezählt. Sitzungen, Gerätewerte und Google Analytics werden nur mit Einwilligung erfasst.</p></div>
       <a class="button button--primary button--small" href="${gaLink}" target="_blank" rel="noopener">Google Analytics oeffnen</a>
     </div>
     <div class="cms-analytics-overview">
       <article class="cms-analytics-source cms-analytics-source--internal">
         <span>Eigene Messung</span>
-        <strong>Firestore usageEvents</strong>
-        <p>Direkt aus der WebApp: Seitenaufrufe, Top-Seiten, mobile/desktop und anonymisierte Sitzungen.</p>
+        <strong>Aggregierte Seitenaufrufe</strong>
+        <p>Tageswerte aus der WebApp, ohne IP-Adresse, Cookie oder Sitzungskennung im Zähler.</p>
       </article>
       <article class="cms-analytics-source cms-analytics-source--ga">
         <span>Google Analytics 4</span>
@@ -1086,12 +1095,14 @@ function usageStatsPanel(usageEvents = [], mails = []) {
     </div>
     <div class="setup-steps" style="margin-top:18px">
       <div class="setup-step"><span>Seitenaufrufe heute</span><strong>${todayViews}</strong></div>
-      <div class="setup-step"><span>Seitenaufrufe 7 Tage</span><strong>${weekViews}</strong><small>${weekSessions} anonyme Sitzungen</small></div>
-      <div class="setup-step"><span>Seitenaufrufe 30 Tage</span><strong>${monthViews}</strong><small>${monthSessions} anonyme Sitzungen</small></div>
-      <div class="setup-step"><span>Mobil-Anteil</span><strong>${pageViews.length ? Math.round((mobileViews / pageViews.length) * 100) : 0}%</strong><small>nach Seitenaufrufen</small></div>
+      <div class="setup-step"><span>Seitenaufrufe 7 Tage</span><strong>${weekViews}</strong><small>alle erfassten Aufrufe</small></div>
+      <div class="setup-step"><span>Seitenaufrufe 30 Tage</span><strong>${monthViews}</strong><small>alle erfassten Aufrufe</small></div>
+      <div class="setup-step"><span>Sitzungen 7 Tage</span><strong>${weekSessions}</strong><small>nur mit Einwilligung</small></div>
+      <div class="setup-step"><span>Mobil-Anteil</span><strong>${pageViews.length ? Math.round((mobileViews / pageViews.length) * 100) : 0}%</strong><small>nur mit Einwilligung</small></div>
       <div class="setup-step"><span>Mail-Oeffnungsquote</span><strong>${mailOpenRate}%</strong><small>${openedMails.length}/${sentMails.length} geoeffnet</small></div>
       <div class="setup-step"><span>Nicht zugestellt</span><strong>${failedMails.length}</strong></div>
     </div>
+    <p class="muted">Website-Adressen (30 Tage): ${[...hostCounts.entries()].map(([host, count]) => `${escapeHtml(host)}: ${count}`).join(" · ") || "Noch keine aggregierten Aufrufe."}</p>
     <div class="cms-usage-grid">
       <article class="cms-usage-card">
         <h3>Seitenaufrufe 7 Tage</h3>
@@ -1108,7 +1119,7 @@ function usageStatsPanel(usageEvents = [], mails = []) {
       </article>
     </div>
     <div class="alert cms-analytics-note">
-      <strong>Hinweis:</strong> Die Zahlen hier sind schnelle CMS-Indikatoren. Verbindliche Nutzer-, Sitzungs- und Quellenanalysen bitte in Google Analytics Property ${gaPropertyId} auswerten.
+      <strong>Hinweis:</strong> Der neue Seitenzähler beginnt erst mit seiner Freischaltung. Mehrfaches Öffnen zählt mehrfach; eindeutige Personen werden damit nicht ermittelt. Nutzer- und Quellenanalysen stehen in Google Analytics Property ${gaPropertyId} nur mit Einwilligung zur Verfügung.
     </div>
   </section>`;
 }
@@ -1167,27 +1178,35 @@ export async function privacyConsentsPage() {
 
 export async function dashboardPage() {
   if (!hasCmsAccess()) return denied();
-  const [rawEvents, registrations, media, mails, downloads, usageEvents] = await Promise.all([
+  let dailyViewsLoadError = "";
+  const [rawEvents, registrations, media, mails, downloads, usageEvents, dailyViews, mailingPeople] = await Promise.all([
     list("events"),
     list("registrations"),
     list("eventMedia"),
     list("mailQueue"),
     list("downloads"),
-    list("usageEvents").catch(() => [])
+    list("usageEvents").catch(() => []),
+    list("usageDaily").catch((error) => { dailyViewsLoadError = error?.message || String(error); return []; }),
+    Promise.all([list("contacts"), list("members"), list("users")])
+      .then(([contacts, members, users]) => mergePeopleContactsAndMembers(contacts, members, users))
+      .catch(() => null)
   ]);
   const events = rawEvents.map(normalizeCmsEventRecord).filter(hasLiveCmsEventIdentity);
   const upcoming = events.filter((event) => !isPastCmsEvent(event));
   const pending = registrations.filter((item) => item.status === "pending_email_confirmation").length;
   const postEvents = events.filter((event) => isPastCmsEvent(event));
   const openPost = postEvents.length + media.filter((item) => item.status === "in_review").length;
+  const historicalMailFailures = mails.filter((mail) => mail.status === "failed").length;
+  const currentMailIssues = mailingPeople ? currentMailIssueEmails(mailingPeople, peopleMailDeliveryByEmail(mails)).size : null;
   return protect(cmsShell("cms", `${cmsTitle("CMS Dashboard", "Uebersicht", `<a href="#/cms/live" class="button button--secondary button--small">Veranstaltungs-Cockpit</a><a href="#/cms/events/new" class="button button--primary button--small">Neues Event</a>`)}
     <div class="stat-grid">
       <div class="stat"><span>Kommende Events</span><strong>${upcoming.length}</strong></div>
       <div class="stat"><span>Anmeldungen</span><strong>${registrations.length}</strong></div>
       <div class="stat"><span>Unbestaetigt</span><strong>${pending}</strong></div>
       <div class="stat"><span>Rückblicke</span><strong>${openPost}</strong></div>
-      <div class="stat"><span>Mailfehler</span><strong>${mails.filter((mail) => mail.status === "failed").length}</strong></div>
+      <div class="stat"><span>Mailfehler (Adressen)</span><strong>${currentMailIssues ?? "–"}</strong><small>${currentMailIssues === null ? "Adressliste nicht verfuegbar" : "Letzter Versandstatus fehlerhaft"} · <a href="#/cms/people?mail=error">Adressen ansehen</a></small></div>
     </div>
+    <p class="muted">Versandhistorie: ${historicalMailFailures} fehlgeschlagene Queue-Eintraege insgesamt. <a class="link" href="#/cms/mail">Mail-Queue ansehen</a></p>
     ${chatGptHints(events, media, downloads)}
     <div class="cms-columns">
       <section class="panel"><h2>Naechste Events</h2><div class="table-wrap"><table class="table"><thead><tr><th>Event</th><th>Termin</th><th>Phase</th></tr></thead><tbody>${upcoming.map((event) => `<tr><td><a class="link" href="#/cms/event/${event.id}">${escapeHtml(event.title)}</a></td><td>${formatDate(event.date)}</td><td>${status(lifecycleLabels[event.lifecyclePhase])}</td></tr>`).join("")}</tbody></table></div></section>
@@ -1196,7 +1215,8 @@ export async function dashboardPage() {
         <div class="actions" style="margin-top:20px"><a class="button button--secondary button--small" href="#/cms/editorial">Redaktion bearbeiten</a><a class="button button--secondary button--small" href="#/cms/members">Mitglied anlegen</a></div>
       </section>
     </div>
-    ${usageStatsPanel(usageEvents, mails)}`));
+    ${dailyViewsLoadError ? `<div class="alert alert--warning">Der neue Seitenzähler ist noch nicht freigeschaltet. Die Aufrufzahlen erscheinen nach dem Deploy von Cloud Function und Firestore-Regel. ${escapeHtml(dailyViewsLoadError)}</div>` : ""}
+    ${usageStatsPanel(usageEvents, mails, dailyViews)}`));
 }
 
 function todayString() {
@@ -1264,8 +1284,8 @@ function cmsEventIsInactive(event = {}) {
 }
 
 function eventTable(events, { showThumb = false, mediaAssets = [], registrations = [], returnTo = "#/cms/events" } = {}) {
-  const registrationCount = (eventId) => registrations.filter((item) => item.eventId === eventId && item.status !== "cancelled").length;
-  return `<section class="panel"><div class="table-wrap"><table class="table ${showThumb ?"table--event-followup" : ""}"><thead><tr>${showThumb ?"<th>Bild</th>" : ""}<th>Event</th><th>Datum</th><th>Ablauf</th><th>Zugang</th><th>Anmeldungen</th><th>Neue Kontakte</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${events.map((event) => `<tr>${showThumb ?`<td><div class="topic-thumb topic-thumb--table editorial-thumb--table event-thumb--table">${eventThumb(event, mediaAssets, returnTo)}</div></td>` : ""}<td><a class="link" href="#/cms/event/${event.id}">${escapeHtml(event.title)}</a></td><td>${formatDate(event.date)}</td><td>${event.expiresAt ?formatDateTime(event.expiresAt) : "-"}</td><td>${accessLabels[event.accessType]}</td><td><strong>${registrationCount(event.id)}</strong></td><td><strong>${Number(event.newMailingContactsCount || 0)}</strong></td><td>${status(cmsEventIsInactive(event) ?"inaktiv" : cmsEventRegistrationIsOpen(event) ?"offen" : "geschlossen")}</td><td>${eventActionButtons(event)}</td></tr>`).join("")}</tbody></table></div></section>`;
+  const registrationCount = (eventId) => registrations.filter((item) => item.eventId === eventId && !["cancelled", "canceled", "deleted"].includes(String(item.status || "").toLowerCase())).reduce((count, item) => count + registrationPartySize(item), 0);
+  return `<section class="panel"><div class="table-wrap"><table class="table ${showThumb ?"table--event-followup" : ""}"><thead><tr>${showThumb ?"<th>Bild</th>" : ""}<th>Event</th><th>Datum</th><th>Ablauf</th><th>Zugang</th><th>Personen</th><th>Neue Kontakte</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${events.map((event) => `<tr>${showThumb ?`<td><div class="topic-thumb topic-thumb--table editorial-thumb--table event-thumb--table">${eventThumb(event, mediaAssets, returnTo)}</div></td>` : ""}<td><a class="link" href="#/cms/event/${event.id}">${escapeHtml(event.title)}</a></td><td>${formatDate(event.date)}</td><td>${event.expiresAt ?formatDateTime(event.expiresAt) : "-"}</td><td>${accessLabels[event.accessType]}</td><td><strong>${registrationCount(event.id)}</strong></td><td><strong>${Number(event.newMailingContactsCount || 0)}</strong></td><td>${status(cmsEventIsInactive(event) ?"inaktiv" : cmsEventRegistrationIsOpen(event) ?"offen" : "geschlossen")}</td><td>${eventActionButtons(event)}</td></tr>`).join("")}</tbody></table></div></section>`;
 }
 
 function settingValue(settings, id, fallback = []) {
@@ -1291,7 +1311,10 @@ export async function eventFollowUpPage() {
   const events = allEvents
     .map(normalizeCmsEventRecord)
     .filter(hasLiveCmsEventIdentity)
-    .filter((event) => isPastCmsEvent(event))
+    // Rückblicke dürfen redaktionell bereits vor dem Veranstaltungstermin
+    // vorbereitet werden. Die Veröffentlichung bleibt davon unberührt und
+    // wird weiterhin über die jeweiligen Sichtbarkeits-/Lifecycle-Regeln gesteuert.
+    .filter((event) => !["deleted", "draft"].includes(String(event.status || "").toLowerCase()))
     .sort((a, b) => (b.date || "0000-00-00").localeCompare(a.date || "0000-00-00"));
   return protect(cmsShell("cms/editorial/retrospectives", `${cmsTitle("Redaktion", "Rückblicke")}
   ${eventFollowUpTable(events, mediaAssets, allEditorial)}`));
@@ -1460,6 +1483,16 @@ function eventFeedbackQuestionEditor(question = {}, index = 0) {
   </article>`;
 }
 
+function eventFeedbackPreviewMarkup(event = {}, questions = []) {
+  return `<div class="event-feedback-preview__device">
+    <div class="event-feedback-preview__hero"><p class="eyebrow">Feedback</p><h3>Ihre Rückmeldung</h3><p>Ihre Einschätzung hilft PROdigitalTV, Veranstaltungen und Netzwerkangebote gezielt weiterzuentwickeln.</p></div>
+    <div class="event-feedback-preview__event"><span>Veranstaltung</span><strong>${escapeHtml(event.title || "PROdigitalTV Event")}</strong></div>
+    <div class="event-feedback-preview__questions">${questions.map((question, index) => `<fieldset class="event-feedback-question"><legend><span>${index + 1}</span>${escapeHtml(question.title || "Feedbackfrage")}</legend><div class="event-feedback-options">${(question.options || []).map((option) => `<label class="event-feedback-option"><input type="${question.type === "multiple" ? "checkbox" : "radio"}" disabled><span>${escapeHtml(option)}</span></label>`).join("")}</div><div class="field"><label>${escapeHtml(question.commentPrompt || "Kommentar")}</label><textarea rows="2" placeholder="Optional" disabled></textarea></div></fieldset>`).join("")}</div>
+    <fieldset class="event-feedback-question event-feedback-question--compact"><legend><span>+</span>Dürfen wir Sie zu PROdigitalTV-Veranstaltungen und Informationen zum Netzwerk kontaktieren?</legend><div class="event-feedback-options event-feedback-options--inline"><label class="event-feedback-option"><input type="radio" disabled><span>Ja</span></label><label class="event-feedback-option"><input type="radio" disabled><span>Nein</span></label></div></fieldset>
+    <button class="button button--primary" type="button" disabled>Feedback absenden</button>
+  </div>`;
+}
+
 function eventFeedbackEditorContent(event = {}, eventFeedback = []) {
   const questions = eventFeedbackQuestionsForEditor(event);
   return `<h2>Gästebefragung</h2>
@@ -1470,6 +1503,7 @@ function eventFeedbackEditorContent(event = {}, eventFeedback = []) {
       <div class="actions"><button class="button button--primary" type="submit">Gästebefragung speichern</button><a class="button button--secondary" href="#/cms/event-feedback?eventId=${encodeURIComponent(event.id)}">Auswertung öffnen</a><button type="button" class="button button--secondary" data-send-event-feedback="${escapeHtml(event.id)}">Gästebefragung senden</button></div>
       <div id="event-save-result"></div><div id="event-feedback-admin-result"></div>
     </form>
+    <section id="event-feedback-preview" class="panel event-feedback-preview" data-event-feedback-preview data-event-title="${escapeHtml(event.title || "PROdigitalTV Event")}" aria-label="Vorschau der Gästebefragung"><div class="section-head"><div><p class="eyebrow">Vorschau</p><h2>So sehen Gäste die Befragung</h2></div><span class="status">Live-Vorschau</span></div><div data-event-feedback-preview-content>${eventFeedbackPreviewMarkup(event, questions)}</div></section>
     ${eventFeedback.length ? `<div class="event-feedback-list">${eventFeedback.slice(0, 5).map((item) => eventFeedbackCard(item, new Map([[event.id, event]]))).join("")}</div>` : `<div class="alert">Noch keine Rückmeldungen für dieses Event.</div>`}`;
 }
 function shortText(value = "", length = 112) {
@@ -2029,7 +2063,7 @@ function eventTopicSpeakerActions(event, topic, topicSpeakers) {
       <button type="button" class="button button--secondary button--small" data-remove-event-topic-speaker="${speaker.id}" data-event-id="${event.id}" data-topic-id="${topic.id}">Loeschen</button>
     </div>
   </div>`).join("")}
-    ${topicSpeakers.length < 2 ? `<div class="actions"><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}">Co-Referent hinzufuegen</a></div>` : `<p class="muted">Hauptreferent und Co-Referent sind zugeordnet.</p>`}
+    <div class="actions"><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}">+ zusätzlichen Referenten zuordnen</a></div>
   </div>`;
 }
 
@@ -2345,12 +2379,19 @@ function eventTopicsEditor(event, topics, speakers, allEvents, galleries = [], d
 }
 
 function registrationPartySize(registration = {}) {
-  return Math.max(1, Number(registration.participantCount) || (registration.hasCompanion || registration.companion ? 2 : 1));
+  const count = Number(registration.participantCount);
+  return Math.max(1, Number.isFinite(count) ? Math.floor(count) : 1, registration.hasCompanion || registration.companion ? 2 : 1);
 }
 
-function registrationCompanionName(registration = {}) {
-  const companion = registration.companion || {};
-  return [companion.firstName, companion.lastName].filter(Boolean).join(" ").trim();
+function eventRegistrationParticipantRow(participant = {}, eventId = "") {
+  const companion = participant.participantRole === "Begleitperson";
+  const name = [participant.firstName, participant.lastName].filter(Boolean).join(" ") || participant.email || "Teilnehmer";
+  const selection = companion ? "" : `<input type="checkbox" data-registration-select value="${escapeHtml(participant.bookingId)}" aria-label="Anmeldung von ${escapeHtml(name)} auswaehlen">`;
+  const phoneStatus = companion ? "Mobilnummer nicht separat bestätigt" : participant.phoneVerificationStatus === "verified" ? "Mobilnummer bestätigt" : participant.phoneFormatStatus === "valid" ? "Mobilformat geprüft · nicht bestätigt" : "Mobilnummer nicht bestätigt";
+  const actions = companion
+    ? `<a class="link" href="#/cms/people?email=${encodeURIComponent(participant.email || "")}">Mailingadresse</a>`
+    : `<button class="icon-button icon-button--danger" type="button" data-delete-registration="${escapeHtml(participant.bookingId)}" data-event-id="${escapeHtml(eventId)}" title="Buchung loeschen" aria-label="Buchung loeschen">${iconImage("trash")}</button>`;
+  return `<tr data-registration-row="${escapeHtml(participant.bookingId)}"><td>${selection}</td><td><strong>${escapeHtml(name)}</strong><small style="display:block">${companion ? `Begleitperson von ${escapeHtml(participant.bookingEmail || "-")}` : "Hauptperson"}</small></td><td>${escapeHtml(participant.company || "-")}</td><td>${escapeHtml(participant.email || "-")}<small style="display:block">Mobil: ${escapeHtml(participant.phone || "-")}</small></td><td>${status(participant.status)}<small style="display:block">${phoneStatus}</small>${!companion && participant.pushClickedAt ? '<small style="display:block">Push angetippt</small>' : ""}${!companion && participant.pushLinkVisitedAt ? '<small style="display:block">Linkseite erreicht</small>' : ""}</td><td><div class="table-actions table-actions--icons">${actions}</div></td></tr>`;
 }
 
 function eventCheckinSpeakers(event = {}, speakers = []) {
@@ -2698,6 +2739,11 @@ function eventScheduleEditor(event = {}, topics = [], speakers = []) {
   const scheduleText = scheduleItemsToText(scheduleItems);
   const assignedTopicData = eventAssignedTopics(event, topics).filter(eventScheduleTopicIsActive).map((topic) => eventScheduleTopicData(event, topic, speakers));
   const rowMarkup = scheduleItems.map((item) => eventScheduleEditorRow(item)).join("");
+  const moderatorOptions = speakers
+    .filter((speaker) => !["archived", "deleted", "inactive"].includes(String(speaker.status || "").toLowerCase()))
+    .map((speaker) => speaker.name || [speaker.firstName, speaker.lastName].filter(Boolean).join(" "))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "de"));
   return `<section class="panel event-schedule-editor" style="background:var(--pdt-bg)" data-event-schedule-editor data-event-schedule-topics="${escapeHtml(JSON.stringify(assignedTopicData))}">
     <div class="field-label-row">
       <div><p class="eyebrow">Ablaufplan</p><h3>Uhrzeitliche Planung</h3></div>
@@ -2706,8 +2752,9 @@ function eventScheduleEditor(event = {}, topics = [], speakers = []) {
     <div class="event-schedule-editor__meta">
       <div><span>Veranstaltung</span><strong>${escapeHtml(event.title || "Veranstaltung ohne Titel")}</strong></div>
       <div><span>Datum</span><strong>${escapeHtml(event.date || "Datum offen")}</strong></div>
-      <div><span>Moderation</span><strong>im Ablauf editierbar</strong></div>
+      <div><span>Moderation</span><strong>${escapeHtml(event.moderatorName || "Noch offen")}</strong></div>
     </div>
+    <div class="field event-schedule-editor__moderator"><label for="event-moderator-name">Moderator der Veranstaltung</label><input id="event-moderator-name" name="moderatorName" list="event-moderator-options" value="${escapeHtml(event.moderatorName || "")}" placeholder="Name eingeben oder Referenten auswählen" autocomplete="off"><datalist id="event-moderator-options">${moderatorOptions.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("")}</datalist></div>
     <div class="event-schedule-view-tabs" role="tablist" aria-label="Ablaufplan Ansicht">
       <button type="button" class="is-active" data-event-schedule-view="editor" aria-selected="true">Editor</button>
       <button type="button" data-event-schedule-view="list" aria-selected="false">Listenansicht</button>
@@ -2918,9 +2965,9 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     const registrationMailText = event.mailText || defaultEventRegistrationMailText(event, "confirmation", globalMailTemplates);
     const waitlistMailText = event.waitlistMail || defaultEventRegistrationMailText(event, "waitlist", globalMailTemplates);
     const reminderMailText = event.reminderMail || defaultEventRegistrationMailText(event, "reminder", globalMailTemplates);
-    const adminAddRegistrationPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)" open><summary><strong>Person manuell hinzufuegen</strong><span>Admin-Anmeldung</span></summary><form id="admin-registration-form" data-event-id="${event.id}" class="form-grid form-grid--compact"><div class="form-grid--two"><div class="field"><label>Vorname *</label><input name="firstName" autocomplete="given-name" required></div><div class="field"><label>Nachname *</label><input name="lastName" autocomplete="family-name" required></div></div><div class="form-grid--two"><div class="field"><label>Unternehmen</label><input name="company" autocomplete="organization"></div><div class="field"><label>Position / Funktion</label><input name="position" autocomplete="organization-title"></div></div><div class="form-grid--two"><div class="field"><label>E-Mail *</label><input name="email" type="email" autocomplete="email" required></div><div class="field"><label>Telefon</label><input name="phone" autocomplete="tel"></div></div><label class="checkbox checkbox--required"><input type="checkbox" name="privacyAccepted" required> Einwilligung / Datenschutz liegt vor *</label><div class="actions"><button class="button button--primary button--small" type="submit">Person hinzufuegen</button><div id="admin-registration-result"></div></div></form></details>`;
+    const adminAddRegistrationPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)" open><summary><strong>Person manuell hinzufuegen</strong><span>Admin-Anmeldung</span></summary><form id="admin-registration-form" data-event-id="${event.id}" class="form-grid form-grid--compact"><div class="form-grid--two"><div class="field"><label>Vorname *</label><input name="firstName" autocomplete="given-name" required></div><div class="field"><label>Nachname *</label><input name="lastName" autocomplete="family-name" required></div></div><div class="form-grid--two"><div class="field"><label>Unternehmen</label><input name="company" autocomplete="organization"></div><div class="field"><label>Position / Funktion</label><input name="position" autocomplete="organization-title"></div></div><div class="form-grid--two"><div class="field"><label>E-Mail *</label><input name="email" type="email" autocomplete="email" required></div><div class="field"><label>Mobilnummer mit Landesvorwahl *</label><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+49 170 1234567" required></div></div><label class="checkbox checkbox--required"><input type="checkbox" name="privacyAccepted" required> Einwilligung / Datenschutz liegt vor *</label><div class="actions"><button class="button button--primary button--small" type="submit">Person hinzufuegen</button><div id="admin-registration-result"></div></div></form></details>`;
     const registrationsToolbar = `<div class="actions people-list-head" style="justify-content:space-between;margin-bottom:10px"><h2>Anmeldungen (${assignedPeopleCount} Personen in ${assigned.length} Buchungen)</h2><div class="actions"><button class="button button--secondary button--small" data-export-event="${event.id}">Anmeldungen als CSV herunterladen</button><button class="button button--danger button--small" data-delete-selected-registrations data-event-id="${event.id}" disabled>Ausgewaehlte loeschen</button></div></div>`;
-    const registrationsTable = `<div id="registration-bulk-result"></div><div class="table-wrap"><table class="table"><thead><tr><th><input type="checkbox" data-registration-select-all aria-label="Alle Anmeldungen auswaehlen"></th><th>Teilnehmer</th><th>Unternehmen</th><th>E-Mail</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((registration) => { const companion = registration.companion || {}; const companionName = registrationCompanionName(registration); return `<tr data-registration-row="${registration.id}"><td><input type="checkbox" data-registration-select value="${registration.id}" aria-label="Anmeldung von ${escapeHtml([registration.firstName, registration.lastName].filter(Boolean).join(" ") || registration.email || "Teilnehmer")} auswaehlen"></td><td>${escapeHtml([registration.firstName, registration.lastName].filter(Boolean).join(" ") || "-")}${companionName ? `<small style="display:block;margin-top:5px"><strong>Begleitperson:</strong> ${escapeHtml(companionName)}</small>` : ""}</td><td>${escapeHtml(registration.company || "-")}</td><td>${escapeHtml(registration.email || "-")}${companion.email ? `<small style="display:block;margin-top:5px">${escapeHtml(companion.email)}${companion.phone ? ` · ${escapeHtml(companion.phone)}` : ""}</small>` : ""}</td><td>${status(registration.status)}${registrationPartySize(registration) > 1 ? `<small style="display:block;margin-top:5px">2 Personen</small>` : ""}</td><td><div class="table-actions table-actions--icons"><button class="icon-button icon-button--danger" type="button" data-delete-registration="${registration.id}" data-event-id="${event.id}" title="Loeschen" aria-label="Loeschen">${iconImage("trash")}</button></div></td></tr>`; }).join("")}</tbody></table></div>`;
+    const registrationsTable = `<div id="registration-bulk-result"></div><div class="table-wrap"><table class="table"><thead><tr><th><input type="checkbox" data-registration-select-all aria-label="Alle Anmeldungen auswaehlen"></th><th>Teilnehmer</th><th>Unternehmen</th><th>E-Mail</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${registrationParticipants(assigned).map((participant) => eventRegistrationParticipantRow(participant, event.id)).join("")}</tbody></table></div>`;
     const checkinPanel = cmsEventHandyTicketEnabled(event)
       ? `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Einlass / Event-QR</strong><span>QR-Code anzeigen</span></summary><p>Diese Seite zeigt den geschuetzten QR-Code, den Teilnehmer vor Ort mit dem Handy scannen.</p><div class="actions"><button class="button button--primary button--small" type="button" data-open-event-checkin-screen="new" data-event-id="${event.id}">Event-QR oeffnen</button><button class="button button--secondary button--small" type="button" data-open-event-checkin-screen="same" data-event-id="${event.id}">Event-QR im Browser oeffnen</button></div><div id="event-checkin-access-result"></div></details>`
       : `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Einlass / Event-QR</strong><span>deaktiviert</span></summary><p>Fuer dieses Event ist das Handy-Ticket ausgeschaltet. Die Anmeldung wird per E-Mail bestaetigt, aber es wird kein Einlass-QR benoetigt.</p></details>`;
@@ -3055,7 +3102,10 @@ Ihr PROdigitalTV-Team`, hiddenTalkTitles(event, topics));
       <div class="table-wrap"><table class="table"><thead><tr><th>Datei</th><th>Typ</th><th>Sichtbarkeit</th><th>Freigabe</th><th>Aktionen</th></tr></thead><tbody>${assigned.map((item) => `<tr><td>${escapeHtml(item.title)}</td><td>${item.mediaType}</td><td>${item.visibility}</td><td>${status(item.status)}</td><td><div class="table-actions"><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="approved">Aktiv</button><button class="link-button" data-record-status="eventMedia" data-record-id="${item.id}" data-status="archived">Inaktiv</button><button class="link-button link-button--danger" data-delete-record="eventMedia" data-record-id="${item.id}">Loeschen</button></div></td></tr>`).join("")}</tbody></table></div>`;
   }
   const activeSection = isPastCmsEvent(event) ?"cms/editorial/retrospectives" : "cms/events";
-  return protect(cmsShell(activeSection, `${cmsTitle("Event bearbeiten", escapeHtml(event.title || "Neues Event"), `<a class="button button--secondary button--small" href="#/event/${event.id}?preview=1">Vorschau</a>`)}<section class="panel">${eventTabs(event.id, tab)}${content}</section>`));
+  const eventPreviewAction = tab === "feedback"
+    ? `<button class="button button--secondary button--small" type="button" data-scroll-to-event-feedback-preview>Vorschau</button>`
+    : `<a class="button button--secondary button--small" href="#/event/${event.id}?preview=1">Vorschau</a>`;
+  return protect(cmsShell(activeSection, `${cmsTitle("Event bearbeiten", escapeHtml(event.title || "Neues Event"), eventPreviewAction)}<section class="panel">${eventTabs(event.id, tab)}${content}</section>`));
 }
 
 function cmsRegistrationEventCandidates(events = [], registrations = []) {
@@ -3126,6 +3176,9 @@ export async function eventNotificationsPage() {
     .filter((event) => !["archived", "deleted", "inactive", "draft"].includes(String(event.status || "").toLowerCase()) && !isPastCmsEvent(event))
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
   const firstEvent = activeEvents[0] || {};
+  const speakerSourceEvents = events
+    .filter((event) => !["deleted", "draft"].includes(String(event.status || "").toLowerCase()) && ((event.speakerIds || []).length || (event.topicIds || []).length))
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   const publicBaseUrl = "https://prodigitaltv-da47b.web.app";
   const eventLink = firstEvent.id ? `${publicBaseUrl}/event/${firstEvent.id}?v=943` : "";
   const eventNotificationText = (event = {}, key = "invitationText") => {
@@ -3142,6 +3195,8 @@ export async function eventNotificationsPage() {
   const notificationEventPayload = (event = {}) => escapeHtml(JSON.stringify({
     id: event.id || "",
     title: event.title || "",
+    date: event.date || "",
+    startTime: event.startTime || "",
     link: event.id ?`${publicBaseUrl}/event/${event.id}?v=943` : "",
     texts: {
       saveTheDateText: eventNotificationText(event, "saveTheDateText"),
@@ -3180,7 +3235,9 @@ export async function eventNotificationsPage() {
           <p class="muted">Der Text wird unten in die Vorschau uebernommen und kann vor dem Versand noch angepasst werden.</p>
         </div>
         <div class="form-grid--two event-notification-recipient-grid">
-          <div class="field"><label>Empfaenger</label><select name="recipientGroup" data-notification-recipient-group><option value="members_contacts">Mitglieder und Kontakte</option><option value="members">Nur Mitglieder</option><option value="contacts">Nur Kontakte</option><option value="test_group">Testgruppe</option><option value="test_person">Testpersonen</option></select>
+          <div class="field"><label>Empfaenger</label><select name="recipientGroup" data-notification-recipient-group><option value="members_contacts">Mitglieder und Kontakte</option><option value="members">Nur Mitglieder</option><option value="contacts">Nur Kontakte</option><option value="other_event_speakers">Referenten eines anderen Events</option><option value="test_group">Testgruppe</option><option value="test_person">Testpersonen</option></select>
+            <output class="notification-recipient-count" data-notification-mail-count role="status" aria-live="polite">E-Mail-Anzahl wird ermittelt ...</output>
+            <div class="field" data-notification-speaker-source-field hidden><label>Quell-Event der Referenten</label><select name="extraSpeakerEventId" data-notification-speaker-source disabled><option value="">Veranstaltung auswaehlen</option>${speakerSourceEvents.map((event) => `<option value="${escapeHtml(event.id)}">${escapeHtml(`${event.date ? `${formatDate(event.date)} · ` : ""}${event.title || event.id}`)}</option>`).join("")}</select><p class="muted">Nur Referenten und Co-Referenten dieses Events. Einladungstext und Link beziehen sich auf die oben gewaehlte Veranstaltung.</p></div>
             <div class="notification-test-inline" data-notification-test-field hidden>
               <label>Testpersonen</label>
               <textarea name="testRecipients" rows="3" placeholder="E-Mail-Adressen, getrennt durch Komma oder neue Zeile"></textarea>
@@ -3188,7 +3245,7 @@ export async function eventNotificationsPage() {
               <p class="muted">Im Testmodus wird nur an diese Personen gesendet. Push wird automatisch über die registrierte E-Mail-Adresse erkannt.</p>
             </div>
           </div>
-          <div class="field"><label>Anmeldestatus</label><select name="registrationStatus"><option value="all">Alle</option><option value="unregistered">Noch nicht angemeldet</option><option value="registered">Bereits angemeldet</option></select></div>
+          <div class="field" data-notification-registration-status-field><label>Anmeldestatus</label><select name="registrationStatus"><option value="all">Alle</option><option value="unregistered">Noch nicht angemeldet</option><option value="registered">Bereits angemeldet</option></select></div>
         </div>
         <input type="hidden" name="includeMembers" value="true" data-notification-include-members>
         <input type="hidden" name="includeContacts" value="true" data-notification-include-contacts>
@@ -5195,7 +5252,60 @@ export async function qualityPage() {
     </section>`));
 }
 
-export async function moduleListPage(module, section = "all") {
+export async function bounceOverviewPage(query = new URLSearchParams()) {
+  if (!hasCmsAccess(true)) return denied(true);
+  let loadError = "";
+  const [reports, mails, events, contacts, members, users] = await Promise.all([
+    list("bounceReports").catch((error) => { loadError = error?.message || String(error); return []; }),
+    list("mailQueue"), list("events"),
+    list("contacts").catch(() => []), list("members").catch(() => []), list("users").catch(() => [])
+  ]);
+  const period = mailPeriod(query);
+  const overview = period.valid
+    ? buildBounceOverview(reports, mails, { start: period.start, end: period.end })
+    : { matchedCount: 0, unmatchedCount: 0, matched: [], unmatched: [], rows: [] };
+  const assignment = ["matched", "unmatched"].includes(query.get("assignment")) ? query.get("assignment") : "all";
+  const rows = assignment === "matched" ? overview.matched : assignment === "unmatched" ? overview.unmatched : overview.rows;
+  const eventById = new Map(events.map((event) => [event.id, event]));
+  const nameByEmail = new Map(mergePeopleContactsAndMembers(contacts, members, users)
+    .map((entry) => [String(entry.email || "").trim().toLowerCase(), peopleContactName(entry)])
+    .filter(([email]) => email));
+  const pageSize = 50;
+  const requestedPage = Math.max(1, Number.parseInt(query.get("page") || "1", 10) || 1);
+  const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const page = Math.min(requestedPage, pages);
+  const visible = rows.slice((page - 1) * pageSize, page * pageSize);
+  const pageUrl = (number) => `#/cms/mail-bounces?${new URLSearchParams({ from: period.from, to: period.to, assignment, page: String(number) })}`;
+  return protect(cmsShell("cms/mail-bounces", `${cmsTitle("Kommunikation", "Rückläufer", '<a href="#/cms/mail" class="button button--secondary button--small">Mail-Queue</a>')}
+    <section class="panel panel--mail-report">
+      <form id="bounce-report-filter" class="mail-queue-filters mail-queue-filters--bounces">
+        <div class="field"><label for="bounce-from">Von</label><input id="bounce-from" name="from" type="date" value="${escapeHtml(period.from)}" required></div>
+        <div class="field"><label for="bounce-to">Bis</label><input id="bounce-to" name="to" type="date" value="${escapeHtml(period.to)}" required></div>
+        <div class="field"><label for="bounce-assignment">Zuordnung</label><select id="bounce-assignment" name="assignment"><option value="all" ${assignment === "all" ? "selected" : ""}>Alle</option><option value="matched" ${assignment === "matched" ? "selected" : ""}>Zugeordnet</option><option value="unmatched" ${assignment === "unmatched" ? "selected" : ""}>Ungeklärt</option></select></div>
+        <button class="button button--secondary button--small" type="submit">Auswerten</button>
+      </form>
+      ${!period.valid ? '<div class="alert alert--error">Das Enddatum muss am oder nach dem Startdatum liegen.</div>' : ""}
+      ${loadError ? `<div class="alert alert--error">Rückläufer-Berichte konnten nicht geladen werden. Die Übersicht ist daher unvollständig: ${escapeHtml(loadError)}</div>` : ""}
+      <div class="mail-funnel mail-funnel--bounces" aria-label="Rückläufer-Status">
+        <div><span>Eindeutig zugeordnet</span><strong>${overview.matchedCount}</strong><small>Mit Mail-Queue-Eintrag verknüpft</small></div>
+        <div><span>Noch zuzuordnen</span><strong>${loadError ? "-" : overview.unmatchedCount}</strong><small>Ohne sichere Mail-Zuordnung</small></div>
+      </div>
+      <p class="muted mail-report-note">Erfasst werden Rückläufer aus dem Bounce-Postfach. Ältere Nachrichten im separaten Outlook-Ordner sind erst nach einem Import enthalten. Ohne sichere Mail-Kennung wird keine Adresse automatisch zugeordnet.</p>
+      <div class="table-wrap"><table class="table table--bounce-reports">
+        <thead><tr><th>Eingegangen</th><th>Empfänger</th><th>Zuordnung</th><th>Event / Mail</th><th>Fehler</th><th>Prüfen</th></tr></thead>
+        <tbody>${visible.length ? visible.map((row) => `<tr>
+          <td>${escapeHtml(mailQueueDate(new Date(row.time)))}</td>
+          <td><strong>${escapeHtml(row.recipient || "Unbekannt")}</strong>${nameByEmail.get(String(row.recipient || "").trim().toLowerCase()) ? `<small>${escapeHtml(nameByEmail.get(String(row.recipient || "").trim().toLowerCase()))}</small>` : ""}</td>
+          <td>${row.mailQueueId ? '<span class="status">Mail zugeordnet</span>' : '<span class="status status--draft">Ungeklärt</span>'}${row.mailQueueId ? `<small>Mail-ID: ${escapeHtml(row.mailQueueId)}</small><a class="link" href="#/cms/mail?${new URLSearchParams({ from: period.from, to: period.to, ...(row.eventId ? { eventId: row.eventId } : {}), person: row.recipient })}">Mail-Queue öffnen</a>` : '<small>Keine sichere Mail-Kennung</small>'}</td>
+          <td>${row.eventId ? `<a class="link" href="#/cms/event/${encodeURIComponent(row.eventId)}">${escapeHtml(eventById.get(row.eventId)?.title || row.eventId)}</a>` : "-"}${row.subject ? `<small>${escapeHtml(shortText(row.subject, 90))}</small>` : ""}</td>
+          <td><strong>${escapeHtml(row.statusCode || "-")}</strong><small>${escapeHtml(row.diagnostic || "Keine Diagnose vorhanden")}</small></td>
+          <td>${row.recipient ? `<a class="link" href="#/cms/people?email=${encodeURIComponent(row.recipient)}">Adresse prüfen</a>` : "-"}</td>
+        </tr>`).join("") : `<tr><td colspan="6">${loadError ? "Rückläufer-Berichte derzeit nicht verfügbar." : "Keine Rückläufer für diesen Zeitraum und Filter."}</td></tr>`}</tbody>
+      </table></div>
+      <nav class="mail-queue-pages" aria-label="Rückläufer-Seiten"><span>${rows.length ? (page - 1) * pageSize + 1 : 0}-${Math.min(page * pageSize, rows.length)} von ${rows.length}</span>${page > 1 ? `<a class="button button--secondary button--small" href="${pageUrl(page - 1)}">Zurück</a>` : ""}${page < pages ? `<a class="button button--secondary button--small" href="${pageUrl(page + 1)}">Weiter</a>` : ""}</nav>
+    </section>`));
+}
+export async function moduleListPage(module, section = "all", query = new URLSearchParams()) {
   if (!hasCmsAccess()) return denied();
   if (module === "users" && !hasCmsAccess(true)) return denied(true);
   const config = {
@@ -5398,39 +5508,76 @@ export async function moduleListPage(module, section = "all") {
     return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, `<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>`)}<section class="panel"><div class="table-wrap"><table class="${tableClass}"><thead><tr><th>${imageLabel}</th><th>${itemLabel}</th><th>Datum / Gueltigkeit</th><th>Beschreibung / Zuordnung</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${records.length ?records.map((item) => `<tr><td><div class="topic-thumb topic-thumb--table editorial-thumb--table">${editorialThumb(item, { collection: module, section, field: imageField, altField: "altText", mediaAssets: linkedMediaAssets })}</div></td><td><a class="link editorial-title-link" href="#/cms/edit?module=${module}&id=${item.id}&section=${section}" title="${escapeHtml(item[titleField] || "-")}">${escapeHtml(shortText(item[titleField] || "-", 60))}</a></td><td>${escapeHtml(item.publishDate || item.date || "-")}<br><small>${escapeHtml(item.validFrom || "-")} bis ${escapeHtml(item.validTo || "unendlich")}</small></td><td>${escapeHtml(item[subField] || "-")}</td><td>${status(item.status || item.visibility || "active")}</td><td>${cmsListActionButtons(item, section, module, activeStatus, inactiveStatus)}</td></tr>`).join("") : `<tr><td colspan="6">${emptyText}</td></tr>`}</tbody></table></div></section>`));
   }
   if (module === "mailQueue") {
+    const [events, registrations, notifications] = await Promise.all([
+      list("events"), list("registrations"), list("eventNotifications").catch(() => [])
+    ]);
+    const period = mailPeriod(query);
+    const eventById = new Map(events.map((event) => [event.id, event]));
+    const registrationById = new Map(registrations.map((registration) => [registration.id, registration]));
+    const requestedEventId = query.get("eventId") || "";
+    const selectedEventId = events.some((event) => event.id === requestedEventId) ? requestedEventId : "";
+    const person = String(query.get("person") || "").trim().slice(0, 120);
+    const [contacts, members, users] = person && period.valid ? await Promise.all([
+      list("contacts").catch(() => []), list("members").catch(() => []), list("users").catch(() => [])
+    ]) : [[], [], []];
+    const nameByEmail = new Map(mergePeopleContactsAndMembers(contacts, members, users)
+      .map((entry) => [String(entry.email || "").trim().toLowerCase(), peopleContactName(entry)])
+      .filter(([email]) => email));
+    const filtered = period.valid ? records.filter((item) => {
+      const time = mailTime(item.sentAt || item.queuedAt || item.createdAt);
+      if (time < period.start || time > period.end || (selectedEventId && item.eventId !== selectedEventId)) return false;
+      const registration = registrationById.get(item.registrationId);
+      const names = [nameByEmail.get(String(item.to || "").trim().toLowerCase()), registration && [registration.firstName, registration.lastName].filter(Boolean).join(" ")];
+      return mailPersonMatches(item, person, names);
+    }).sort((a, b) => mailTime(b.sentAt || b.queuedAt || b.createdAt) - mailTime(a.sentAt || a.queuedAt || a.createdAt)) : [];
     const counters = {
-      queued: records.filter((item) => item.status === "queued").length,
-      sent: records.filter((item) => item.status === "sent").length,
-      failed: records.filter((item) => item.status === "failed").length,
-      opened: records.filter((item) => item.opened === true || Number(item.openCount || 0) > 0).length
+      queued: filtered.filter((item) => item.status === "queued").length,
+      sent: filtered.filter((item) => item.status === "sent").length,
+      failed: filtered.filter((item) => item.status === "failed" || item.deliveryStatus === "bounced").length,
+      delayed: filtered.filter((item) => item.deliveryStatus === "delayed").length
     };
-    const openRate = counters.sent ? Math.round((counters.opened / counters.sent) * 100) : 0;
+    const funnel = selectedEventId ? eventMailFunnel(filtered, registrations, notifications, selectedEventId, period.end) : null;
+    const percent = (count, total) => total ? `${Math.round(count / total * 100)}%` : "0%";
+    const pageSize = 50;
+    const requestedPage = Math.max(1, Number.parseInt(query.get("page") || "1", 10) || 1);
+    const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    const page = Math.min(requestedPage, pages);
+    const pageRecords = filtered.slice((page - 1) * pageSize, page * pageSize);
+    const pageUrl = (number) => `#/cms/mail?${new URLSearchParams({ from: period.from, to: period.to, ...(selectedEventId ? { eventId: selectedEventId } : {}), ...(person ? { person } : {}), page: String(number) })}`;
+    const eventOptions = events.filter((event) => records.some((mail) => mail.eventId === event.id))
+      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
+      .map((event) => `<option value="${escapeHtml(event.id)}" ${event.id === selectedEventId ? "selected" : ""}>${escapeHtml(event.title || event.id)}</option>`).join("");
     return protect(cmsShell(active, `${cmsTitle("Mail", title)}
-      <section class="panel">
-        <div class="setup-steps" style="margin-bottom:20px">
-          <div class="setup-step"><span>Wartet</span><strong>${counters.queued}</strong></div>
-          <div class="setup-step"><span>Gesendet</span><strong>${counters.sent}</strong></div>
-          <div class="setup-step"><span>Geoeffnet</span><strong>${counters.opened}</strong></div>
-          <div class="setup-step"><span>Oeffnungsquote</span><strong>${openRate}%</strong></div>
-          <div class="setup-step"><span>Fehler</span><strong>${counters.failed}</strong></div>
-        </div>
+      <section class="panel panel--mail-report">
+        <form id="mail-queue-filter" class="mail-queue-filters">
+          <div class="field"><label for="mail-report-event">Event</label><select id="mail-report-event" name="eventId"><option value="">Alle Events und Mails</option>${eventOptions}</select></div>
+          <div class="field"><label for="mail-report-person">Person</label><input id="mail-report-person" name="person" type="search" value="${escapeHtml(person)}" placeholder="Name oder E-Mail" autocomplete="off"></div>
+          <div class="field"><label for="mail-report-from">Von</label><input id="mail-report-from" name="from" type="date" value="${escapeHtml(period.from)}" required></div>
+          <div class="field"><label for="mail-report-to">Bis</label><input id="mail-report-to" name="to" type="date" value="${escapeHtml(period.to)}" required></div>
+          <button class="button button--secondary button--small" type="submit">Auswerten</button>
+        </form>
+        ${!period.valid ? '<div class="alert alert--error">Das Enddatum muss am oder nach dem Startdatum liegen.</div>' : ""}
+        <div class="mail-queue-summary"><strong>${filtered.length} Mails ${person ? `für „${escapeHtml(person)}“` : "im Zeitraum"}</strong><span>${counters.sent} gesendet · ${counters.queued} wartend · ${counters.delayed} verzögert · ${counters.failed} Fehler/Ruecklaeufer</span></div>
+        ${funnel ? `<div class="mail-funnel" aria-label="Einladungs-Auswertung">
+          <div><span>Empfaenger</span><strong>${funnel.sent}</strong><small>Eindeutig versendet</small></div>
+          <div><span>Geoeffnet</span><strong>${funnel.opened}</strong><small>${percent(funnel.opened, funnel.sent)} der Empfaenger</small></div>
+          <div><span>Link geklickt</span><strong>${funnel.clicked}</strong><small>${percent(funnel.clicked, funnel.sent)} der Empfaenger</small></div>
+          <div><span>Gebucht</span><strong>${funnel.booked}</strong><small>${funnel.bookedAfterClick} nach messbarem Klick</small></div>
+        </div><p class="muted mail-report-note">Einladungen an noch nicht angemeldete Empfaenger; Testsendungen und Umfragen ausgeschlossen. Buchungen zaehlen ab Versand bis zum Ende des gewaehlten Zeitraums. Oeffnungen koennen durch Mail-Clients blockiert oder vorab geladen werden; eine Buchung ist nicht zwingend einem Klick zuzuordnen.</p>` : '<p class="muted mail-report-note">Event auswaehlen, um Oeffnungen, Klicks und spaetere Buchungen der eingeladenen Empfaenger zu sehen.</p>'}
         <div class="table-wrap"><table class="table table--mail-queue">
-          <thead><tr><th>Status</th><th>Typ</th><th>Empfaenger</th><th>Betreff</th><th>Bezug</th><th>Tracking</th><th>Zeit</th><th>Fehler</th></tr></thead>
-          <tbody>${records.length ?records.map((item) => `<tr>
-            <td>${status(item.status || "queued")}</td>
-            <td>${escapeHtml(item.type || item.template || "-")}</td>
-            <td>${escapeHtml(item.to || item.replyTo || "-")}</td>
-            <td>${escapeHtml(shortText(item.subject || "-", 70))}</td>
-            <td>${escapeHtml(mailReference(item))}</td>
-            <td><small>${Number(item.openCount || 0) ?`Geoeffnet: ${escapeHtml(String(item.openCount || 0))}x` : "Noch keine Oeffnung"}</small><br><small>Letzte Oeffnung: ${escapeHtml(mailQueueDate(item.lastOpenedAt))}</small><br><small>Zustellung: ${escapeHtml(item.deliveryStatus || (item.status === "failed" ? "fehlgeschlagen" : "-"))}</small></td>
-            <td><small>Queue: ${escapeHtml(mailQueueDate(item.queuedAt || item.createdAt))}</small><br><small>Gesendet: ${escapeHtml(mailQueueDate(item.sentAt))}</small><br><small>Fehler: ${escapeHtml(mailQueueDate(item.failedAt))}</small></td>
-            <td>${item.error ?`<span class="alert alert--error" style="display:block;margin:0">${escapeHtml(shortText(item.error, 130))}</span>` : item.providerRejected?.length ?`<span class="alert alert--error" style="display:block;margin:0">Abgelehnt: ${escapeHtml(item.providerRejected.join(", "))}</span>` : "-"}</td>
-          </tr>`).join("") : `<tr><td colspan="8">${emptyText}</td></tr>`}</tbody>
+          <thead><tr><th>Status</th><th>Empfaenger / Betreff</th><th>Bezug</th><th>Reaktion</th><th>Versand</th><th>Details</th></tr></thead>
+          <tbody>${pageRecords.length ? pageRecords.map((item) => { const recipient = mailQueueRecipient(item); const recipientName = item.personName || nameByEmail.get(recipient.trim().toLowerCase()); return `<tr>
+            <td>${status(item.deliveryStatus === "bounced" ? "failed" : item.deliveryStatus === "delayed" ? "delayed" : item.status || "queued")}</td>
+            <td><strong>${escapeHtml(recipient || "-")}</strong>${recipientName ? `<small>${escapeHtml(recipientName)}</small>` : ""}<small>${escapeHtml(shortText(item.subject || "-", 72))}</small></td>
+            <td>${escapeHtml(item.eventId ? eventById.get(item.eventId)?.title || item.eventId : mailReference(item))}<small>${escapeHtml(item.type || item.template || "-")}</small></td>
+            <td>${Number(item.openCount || 0) ? "Geoeffnet" : "-"}${item.eventLinkClicked ? " · Link geklickt" : ""}</td>
+            <td>${escapeHtml(mailQueueDate(item.sentAt || item.queuedAt || item.createdAt))}</td>
+            <td><details><summary>Anzeigen</summary><small>Queue: ${escapeHtml(mailQueueDate(item.queuedAt || item.createdAt))}<br>Letzte Oeffnung: ${escapeHtml(mailQueueDate(item.lastOpenedAt))}<br>Letzter Klick: ${escapeHtml(mailQueueDate(item.lastEventLinkClickedAt))}<br>Zustellung: ${escapeHtml(item.deliveryStatus || item.status || "-")}${item.mailingSuppressedAt ? `<br>Für weitere Mailings gesperrt: ${escapeHtml(mailQueueDate(item.mailingSuppressedAt))}` : ""}<br>${escapeHtml(shortText(item.bounceReason || item.delayReason || item.error || (item.providerRejected || []).join(", ") || "", 240))}</small></details></td>
+          </tr>`; }).join("") : `<tr><td colspan="6">${person ? `Keine Mails für „${escapeHtml(person)}“ im gewählten Zeitraum.` : "Keine Mails fuer diesen Zeitraum und dieses Event."}</td></tr>`}</tbody>
         </table></div>
-        <p class="muted" style="margin-top:14px">Neue Mitgliedsantraege und Event-Anmeldungen erzeugen automatisch Eintraege in dieser Queue. Der Firebase-Function-Trigger versendet queued Mails per SMTP, schreibt Status und direkte Zustellfehler. Oeffnungen werden per Bildabruf gemessen und koennen durch Mail-Clients blockiert oder vorab geladen werden.</p>
+        <nav class="mail-queue-pages" aria-label="Mail-Queue-Seiten"><span>${filtered.length ? (page - 1) * pageSize + 1 : 0}-${Math.min(page * pageSize, filtered.length)} von ${filtered.length}</span>${page > 1 ? `<a class="button button--secondary button--small" href="${pageUrl(page - 1)}">Zurueck</a>` : ""}${page < pages ? `<a class="button button--secondary button--small" href="${pageUrl(page + 1)}">Weiter</a>` : ""}</nav>
       </section>`));
-  }
-  return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, editable ?`<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>` : "")}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>${itemLabel}</th><th>Datum / Gueltigkeit</th><th>Beschreibung / Zuordnung</th><th>Status</th>${editable || manageable ?"<th>Aktionen</th>" : ""}</tr></thead><tbody>${records.length ?records.map((item) => `<tr><td>${escapeHtml(item[config[2]] || "-")}</td><td>${escapeHtml(item.publishDate || item.date || "-")}<br><small>${escapeHtml(item.validFrom || "-")} bis ${escapeHtml(item.validTo || "unendlich")}</small></td><td>${escapeHtml(item[config[3]] || "-")}</td><td>${status(item.status || item.visibility || "active")}</td>${editable || manageable ?`<td>${cmsListActionButtons(item, section, module, activeStatus, inactiveStatus, { editable, manageable })}</td>` : ""}</tr>`).join("") : `<tr><td colspan="${editable || manageable ?5 : 4}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
+  }  return protect(cmsShell(active, `${cmsTitle("Contentmanagement", title, editable ?`<a href="#/cms/edit?module=${module}&id=new${createParams}" class="button button--primary button--small">${itemLabel} anlegen</a>` : "")}<section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>${itemLabel}</th><th>Datum / Gueltigkeit</th><th>Beschreibung / Zuordnung</th><th>Status</th>${editable || manageable ?"<th>Aktionen</th>" : ""}</tr></thead><tbody>${records.length ?records.map((item) => `<tr><td>${escapeHtml(item[config[2]] || "-")}</td><td>${escapeHtml(item.publishDate || item.date || "-")}<br><small>${escapeHtml(item.validFrom || "-")} bis ${escapeHtml(item.validTo || "unendlich")}</small></td><td>${escapeHtml(item[config[3]] || "-")}</td><td>${status(item.status || item.visibility || "active")}</td>${editable || manageable ?`<td>${cmsListActionButtons(item, section, module, activeStatus, inactiveStatus, { editable, manageable })}</td>` : ""}</tr>`).join("") : `<tr><td colspan="${editable || manageable ?5 : 4}">${emptyText}</td></tr>`}</tbody></table></div></section>`));
 }
 
 function topicSpeakerEditor(topic, speaker) {
@@ -5826,6 +5973,9 @@ Ausgangstext:
         </div>`
       : `<div class="editor-gallery-preview editor-gallery-preview--empty" data-editor-gallery-preview><p class="muted">Keine Galerie ausgewaehlt. Nach dem Speichern erscheint hier der Playbutton für die verknuepfte Galerie.</p></div>`;
     const thumbState = `${editorialSummaryThumb(item)}${item.imageUrl ?`<small class="editorial-tool-state editorial-tool-state--ready">Thumb vorhanden</small>` : `<small class="editorial-tool-state">Kein Thumb</small>`}`;
+    const newsThumbnailUrl = item.thumbnail_url || item.thumbnailUrl || "";
+    const hasSeparateNewsThumbnail = sectionKey === "news" && newsThumbnailUrl
+      && newsThumbnailUrl.split("?")[0] !== String(item.imageUrl || "").split("?")[0];
     const audioState = item.audioUrl ?`<small class="editorial-tool-state editorial-tool-state--ready">Audio vorhanden</small>` : `<small class="editorial-tool-state">Kein Audio</small>`;
     const galleryState = selectedGallery ?`<small class="editorial-tool-state editorial-tool-state--ready">${escapeHtml(selectedGallery.title || "Galerie")} · ${(selectedGallery.images || []).length} Bilder</small>` : `<small class="editorial-tool-state">Keine Galerie</small>`;
     const selectedDocumentId = item.downloadId || item.download_id || item.documentId || item.document_id || "";
@@ -5884,7 +6034,7 @@ Ausgangstext:
             ${linkedInEditor(item, { articleUrl: item.linkedin?.articleUrl || publicArticleHref, imageUrl: item.imageUrl || "" })}
             <details class="editorial-tool-details">
               <summary><span>Medien</span><strong>Bild / Thumb</strong>${thumbState}</summary>
-              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>Bild / Thumb</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultize: "1200x675", aiCollage: false })}${linkedMediaActions({ collection: module, id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=${module}&id=${item.id}&section=${editorSection}`, assetId: item.thumbnail_media_asset_id || item.mediaAssetId || recordMediaAsset(item, editMediaAssets, module, "imageUrl")?.id || "" })}</div>${sectionKey === "news" ?`<div class="field"><label>Thumbnail-Prompt</label><textarea name="thumbnail_prompt">${escapeHtml(item.thumbnail_prompt || item.thumbnailPrompt || "")}</textarea></div><div class="field"><label>Thumbnail-Alt-Text</label><input name="thumbnail_alt" value="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || "")}"></div>` : ""}</div>
+              <div class="editor-tool-section editor-tool-section--thumb"><div class="field"><label>${sectionKey === "news" ? "Artikelbild" : "Bild / Thumb"}</label>${imageDropzone({ inputName: "assetFile", removeName: "removeAssetFile", imageUrl: item.imageUrl || "", label: "Bild", defaultSize: "1200x675", aiCollage: false })}${linkedMediaActions({ collection: module, id: item.id, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=${module}&id=${item.id}&section=${editorSection}`, assetId: item.mediaAssetId || recordMediaAsset(item, editMediaAssets, module, "imageUrl")?.id || "" })}</div>${sectionKey === "news" ?`<div class="field"><label>Karten-Vorschaubild (optional)</label>${hasSeparateNewsThumbnail ?`<div class="asset-preview"><img src="${escapeHtml(newsThumbnailUrl)}" alt=""></div><label class="checkbox"><input type="checkbox" name="removeNewsThumbnail" value="1"> Eigenes Vorschaubild entfernen</label>` : ""}${linkedMediaActions({ collection: module, id: item.id, field: "thumbnail_url", altField: "thumbnail_alt", returnTo: `#/cms/edit?module=${module}&id=${item.id}&section=${editorSection}` })}</div><div class="field"><label>Thumbnail-Prompt</label><textarea name="thumbnail_prompt">${escapeHtml(item.thumbnail_prompt || item.thumbnailPrompt || "")}</textarea></div><div class="field"><label>Thumbnail-Alt-Text</label><input name="thumbnail_alt" value="${escapeHtml(item.thumbnail_alt || item.thumbnailAlt || "")}"></div>` : ""}</div>
             </details>
             <details class="editorial-tool-details" data-editor-tool-panel="audio">
               <summary><span>Audio</span><strong>Vorlesen</strong>${audioState}</summary>
@@ -6467,15 +6617,63 @@ function peopleContactPushState(item = {}) {
 }
 
 function peopleMailingDisabled(item = {}) {
-  return Boolean(item.mailingDisabled || item.notificationOptOut || item.reminderConsent === false || item.disabled || item.inactive);
+  return Boolean(item.mailingDisabled || item.notificationOptOut || item.reminderConsent === false || item.disabled || item.inactive)
+    || ["inactive", "archived", "deleted", "cancelled", "disabled"].includes(String(item.status || "").toLowerCase());
 }
 
-function peopleContactRow(item = {}, membersByEmail = new Map(), highlightEmail = "") {
+function peopleMailDeliveryTime(value) {
+  if (typeof value?.toMillis === "function") return value.toMillis();
+  if (typeof value?.seconds === "number") return value.seconds * 1000;
+  return new Date(value || 0).getTime() || 0;
+}
+
+export function peopleMailDeliveryByEmail(mails = []) {
+  const latest = new Map();
+  mails.forEach((mail) => {
+    if (!["sent", "failed"].includes(mail.status)) return;
+    const recipients = [mail.to, ...(Array.isArray(mail.providerAccepted) ? mail.providerAccepted : []), ...(Array.isArray(mail.providerRejected) ? mail.providerRejected : [])]
+      .flatMap((value) => Array.isArray(value) ? value : String(value || "").split(/[,;]/))
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter((value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value));
+    const time = peopleMailDeliveryTime(mail.deliveryStatus === "bounced"
+      ? mail.bouncedAt || mail.updatedAt || mail.sentAt || mail.queuedAt || mail.createdAt
+      : mail.status === "failed"
+        ? mail.failedAt || mail.updatedAt || mail.sentAt || mail.queuedAt || mail.createdAt
+        : mail.sentAt || mail.updatedAt || mail.queuedAt || mail.createdAt);
+    recipients.forEach((email) => {
+      if (time >= (latest.get(email)?.time || 0)) latest.set(email, { mail, time });
+    });
+  });
+  return latest;
+}
+function peopleMailIssue(mail = null, email = "") {
+  return Boolean(mail && (mail.status === "failed" || mail.deliveryStatus === "bounced"
+    || (mail.deliveryStatus === "delayed" && mail.mailingSuppressedAt)
+    || mail.providerRejected?.some((value) => String(value || "").trim().toLowerCase() === email)));
+}
+
+export function currentMailIssueEmails(people = [], mailDelivery = new Map()) {
+  const emails = new Set();
+  people.forEach((person) => {
+    const email = String(person.email || person.contactEmail || person.primaryEmail || "").trim().toLowerCase();
+    if (email && peopleMailIssue(mailDelivery.get(email)?.mail, email)) emails.add(email);
+  });
+  return emails;
+}
+
+function peopleContactRow(item = {}, membersByEmail = new Map(), highlightEmail = "", mailDelivery = new Map()) {
   const email = String(item.email || item.contactEmail || item.primaryEmail || "").trim();
   const member = membersByEmail.get(email.toLowerCase()) || null;
   const type = peopleContactType(item);
   const push = peopleContactPushState(item);
   const disabled = peopleMailingDisabled(item);
+  const delivery = mailDelivery.get(email.toLowerCase())?.mail;
+  const rejected = delivery?.providerRejected?.some((value) => String(value || "").trim().toLowerCase() === email.toLowerCase());
+  const bounced = delivery?.deliveryStatus === "bounced";
+  const delayedSuppressed = delivery?.deliveryStatus === "delayed" && Boolean(delivery.mailingSuppressedAt);
+  const failed = peopleMailIssue(delivery, email.toLowerCase());
+  const deliveryNote = bounced ? "Rückläufer nach SMTP-Annahme" : delayedSuppressed ? "Zustellung über 24 Stunden verzögert; weitere Mailings gesperrt" : rejected ? "SMTP hat diese Adresse abgelehnt" : "Mailversand fehlgeschlagen; Adresse nicht zwingend ungueltig";
+  const deliveryDetail = String(delivery?.bounceReason || delivery?.delayReason || delivery?.error || delivery?.providerResponse || "").slice(0, 240);
   const isMemberOnly = item.__peopleSource === "member";
   const isUserOnly = item.__peopleSource === "user";
   const name = peopleContactName(item);
@@ -6485,17 +6683,17 @@ function peopleContactRow(item = {}, membersByEmail = new Map(), highlightEmail 
   const sourceCollection = isUserOnly ?"users" : isMemberOnly ?"members" : "contacts";
   const sourceId = isUserOnly ?item.__userId || "" : isMemberOnly ?item.__memberId || "" : item.id || "";
   const sourceMemberId = item.__memberId || item.memberId || "";
-  const editAttrs = `data-people-edit-open data-contact-id="${sourceCollection === "contacts" ?escapeHtml(item.id || "") : ""}" data-source-collection="${sourceCollection}" data-source-id="${escapeHtml(sourceId)}" data-source-member-id="${escapeHtml(sourceMemberId)}" data-source-email="${escapeHtml(email.toLowerCase())}" data-first-name="${escapeHtml(item.firstName || "")}" data-last-name="${escapeHtml(item.lastName || "")}" data-company="${escapeHtml(company)}" data-position="${escapeHtml(position)}" data-email="${escapeHtml(email)}" data-mobile="${escapeHtml(item.mobile || item.phone || "")}" data-type="${escapeHtml(type)}" data-newsletter-allowed="${item.newsletterAllowed || item.newsletterConsent ? "yes" : "no"}" data-consent-source="${escapeHtml(item.newsletterConsentSource || item.consentSource || item.source || "")}" data-consent-at="${escapeHtml(contactConsentInputDateTime(item.newsletterConsentAt || item.consentAt || item.optInAt || ""))}" data-consent-note="${escapeHtml(item.newsletterConsentNote || item.consentNote || "")}"`;
+  const editAttrs = `data-people-edit-open data-contact-id="${sourceCollection === "contacts" ?escapeHtml(item.id || "") : ""}" data-source-collection="${sourceCollection}" data-source-id="${escapeHtml(sourceId)}" data-source-member-id="${escapeHtml(sourceMemberId)}" data-source-email="${escapeHtml(email.toLowerCase())}" data-first-name="${escapeHtml(item.firstName || "")}" data-last-name="${escapeHtml(item.lastName || "")}" data-company="${escapeHtml(company)}" data-position="${escapeHtml(position)}" data-email="${escapeHtml(email)}" data-mobile="${escapeHtml(item.mobile || item.phone || "")}" data-type="${escapeHtml(type)}" data-newsletter-allowed="${item.newsletterAllowed || item.newsletterConsent ? "yes" : "no"}" data-event-invitation-allowed="${item.reminderConsent !== false && !disabled ? "yes" : "no"}" data-consent-source="${escapeHtml(item.newsletterConsentSource || item.consentSource || item.source || "")}" data-consent-at="${escapeHtml(contactConsentInputDateTime(item.newsletterConsentAt || item.consentAt || item.optInAt || ""))}" data-consent-note="${escapeHtml(item.newsletterConsentNote || item.consentNote || "")}"`;
   const nameAction = `<button class="people-name-action" type="button" ${editAttrs}>${escapeHtml(name)}</button>`;
   const editAction = `<button class="button button--secondary button--small" type="button" ${editAttrs}>Bearbeiten</button>`;
   const deleteAction = `<button class="icon-button icon-button--danger" type="button" data-people-delete-source="${sourceCollection}" data-people-delete-id="${escapeHtml(sourceId)}" data-people-delete-member-id="${escapeHtml(sourceMemberId)}" data-people-delete-email="${escapeHtml(email.toLowerCase())}" data-people-name="${escapeHtml(name)}" title="Mailing-Adresse löschen" aria-label="Mailing-Adresse von ${escapeHtml(name)} löschen">${iconImage("trash")}</button>`;
-  return `<tr data-people-row data-email="${escapeHtml(email.toLowerCase())}" data-contact-id="${sourceCollection === "contacts" ?escapeHtml(item.id || "") : ""}" data-source-collection="${sourceCollection}" data-source-id="${escapeHtml(sourceId)}" data-name="${escapeHtml(search)}" data-type="${escapeHtml(type)}" data-push="unknown" ${email && email.toLowerCase() === highlightEmail ?"class=\"is-highlighted\"" : ""}>
+  return `<tr data-people-row data-email="${escapeHtml(email.toLowerCase())}" data-contact-id="${sourceCollection === "contacts" ?escapeHtml(item.id || "") : ""}" data-source-collection="${sourceCollection}" data-source-id="${escapeHtml(sourceId)}" data-name="${escapeHtml(search)}" data-type="${escapeHtml(type)}" data-active="${disabled ? "no" : "yes"}" data-push="unknown" data-mail-error="${failed ? "yes" : "no"}" ${email && email.toLowerCase() === highlightEmail ?"class=\"is-highlighted\"" : ""}>
     <td><strong>${nameAction}</strong>${company ?`<small>${escapeHtml(company)}</small>` : ""}</td>
     <td>${escapeHtml(email || "-")}</td>
     <td>${escapeHtml(position || "-")}</td>
     <td>${status(type === "member" ?"member" : "contact")}</td>
     <td data-people-push-status>Wird geprueft ...</td>
-    <td>${status(disabled ?"inactive" : "active")}<small>${disabled ?"Mailabo aus" : "Mailabo aktiv"}</small></td>
+    <td>${status(disabled ?"inactive" : "active")}<small>${disabled ?"Mailabo aus" : "Mailabo aktiv"}</small>${failed ?`<small title="${escapeHtml([deliveryNote, deliveryDetail].filter(Boolean).join(": "))}">${status("failed")} ${escapeHtml(bounced ? "Unzustellbar" : delayedSuppressed ? "Wegen Zustellverzug gesperrt" : rejected ? "SMTP abgelehnt" : "Versandfehler")}</small>` : ""}</td>
     <td><div class="table-actions table-actions--icons">
       ${editAction}
       ${sourceCollection === "contacts" ?`<button class="button button--secondary button--small" type="button" data-people-toggle-active="${escapeHtml(item.id || "")}" data-people-disabled="${disabled ? "yes" : "no"}">${disabled ?"Mailabo aktivieren" : "Mailabo pausieren"}</button>` : ""}
@@ -6606,17 +6804,20 @@ export async function peoplePage(query = new URLSearchParams()) {
   let contacts = [];
   let members = [];
   let users = [];
+  let mails = [];
   let testGroup = null;
+  let mailLoadError = "";
   let loadError = "";
   try {
-    [contacts, members, users, testGroup] = await Promise.all([
+    [contacts, members, users, testGroup, mails] = await Promise.all([
       list("contacts").catch((error) => {
         loadError = error?.message || String(error);
         return [];
       }),
       list("members").catch(() => []),
       list("users").catch(() => []),
-      getOne("settings", "notificationTestGroup").catch(() => null)
+      getOne("settings", "notificationTestGroup").catch(() => null),
+      list("mailQueue").catch((error) => { mailLoadError = error?.message || String(error); return []; })
     ]);
   } catch (error) {
     loadError = error?.message || String(error);
@@ -6626,11 +6827,13 @@ export async function peoplePage(query = new URLSearchParams()) {
     .filter(([email]) => email));
   const highlightEmail = String(query?.get?.("email") || "").trim().toLowerCase();
   const mailingPeople = mergePeopleContactsAndMembers(contacts, members, users);
+  const mailDelivery = peopleMailDeliveryByEmail(mails);
   const sortedPeople = mailingPeople.slice().sort((a, b) => peopleContactName(a).localeCompare(peopleContactName(b), "de"));
-  const activeCount = sortedPeople.filter((item) => !(item.mailingDisabled || item.disabled || item.inactive)).length;
+  const activeCount = sortedPeople.filter((item) => !peopleMailingDisabled(item)).length;
   const memberCount = sortedPeople.filter((item) => peopleContactType(item) === "member").length;
   const pushCount = sortedPeople.filter((item) => peopleContactPushState(item) === "yes").length;
-  const rows = sortedPeople.map((item) => peopleContactRow(item, membersByEmail, highlightEmail)).join("");
+  const rows = sortedPeople.map((item) => peopleContactRow(item, membersByEmail, highlightEmail, mailDelivery)).join("");
+  const mailIssueCount = currentMailIssueEmails(sortedPeople, mailDelivery).size;
   const selectedTestEmails = new Set((testGroup ? testGroup.emails || [] : members
     .filter((member) => peopleMemberIsActive(member) && !peopleMailingDisabled(member))
     .filter((member) => typeof member.notificationTestGroup === "boolean" ? member.notificationTestGroup : member.isNotificationTestGroup || member.testGroup || member.notificationTester)
@@ -6659,11 +6862,13 @@ export async function peoplePage(query = new URLSearchParams()) {
   })();
   return protect(cmsShell("cms/people", `${cmsTitle("Kommunikation", "Mailingadressen")}
     ${loadError ?`<section class="panel"><div class="alert alert--error">Mailingadressen konnten nicht geladen werden: ${escapeHtml(loadError)}</div></section>` : ""}
+    ${mailLoadError ?`<section class="panel"><div class="alert alert--warning">Mail-Status konnte nicht geladen werden: ${escapeHtml(mailLoadError)}</div></section>` : ""}
     <section class="panel panel--people-compact">
       <div class="setup-steps setup-steps--compact">
         <div class="setup-step"><span>Adressen</span><strong>${sortedPeople.length}</strong></div>
         <div class="setup-step"><span>Aktiv</span><strong>${activeCount}</strong></div>
         <div class="setup-step"><span>Mitglieder</span><strong>${memberCount}</strong></div>
+        <div class="setup-step"><span>Mailfehler</span><strong>${mailIssueCount}</strong></div>
         <div class="setup-step"><span>Push registriert</span><strong data-people-push-count>...</strong></div>
       </div>
     </section>
@@ -6714,11 +6919,14 @@ export async function peoplePage(query = new URLSearchParams()) {
         <h2>Adressbestand</h2>
         <label class="button button--secondary button--small">CSV importieren<input type="file" data-people-import-file accept=".csv,text/csv" hidden></label>
       </div>
+      <p class="muted">Mailfehler zeigen direkte SMTP-Ablehnungen, Versandprobleme oder zugeordnete Ruecklaeufer. Die Annahme durch SMTP ist keine Zustellbestaetigung.</p>
       <p class="muted">Push wird von der jeweiligen Person im Mitgliederbereich unter <a class="link" href="/#/portal?tab=profile" target="_blank" rel="noopener">Mein Profil</a> aktiviert. Die Spalte zeigt, ob fuer diese Mailadresse bereits ein Browser registriert ist.</p>
       <div class="form-grid--three people-filter-grid" style="margin-bottom:10px">
         <div class="field"><label>Suche</label><input data-people-search placeholder="Name, Firma, E-Mail"></div>
         <div class="field"><label>Typ</label><select data-people-type-filter><option value="all">Alle</option><option value="contact">Kontakte</option><option value="member">Mitglieder</option></select></div>
+        <div class="field"><label>Status</label><select data-people-active-filter><option value="all">Alle</option><option value="yes">Aktiv</option><option value="no">Inaktiv</option></select></div>
         <div class="field"><label>Push</label><select data-people-push-filter><option value="all">Alle</option><option value="yes">Push vorhanden</option><option value="no">Ohne Push</option></select></div>
+        <div class="field"><label>Mailstatus</label><select data-people-mail-filter><option value="all">Alle</option><option value="yes" ${query.get("mail") === "error" ? "selected" : ""}>Mailfehler</option><option value="no">Ohne Mailfehler</option></select></div>
       </div>
       <div class="table-wrap"><table class="table table--people"><thead><tr><th>Name</th><th>E-Mail</th><th>Funktion</th><th>Typ</th><th>Push</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>
         ${rows || `<tr data-people-empty><td colspan="7">Noch keine Mailingadressen vorhanden.</td></tr>`}

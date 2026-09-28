@@ -246,8 +246,9 @@ function buildPrompt(action, payload) {
     ? "Durchfuehrungsregel verbindlich: Die Veranstaltung findet virtuell beziehungsweise online statt. Das muss im sichtbaren Text ausdruecklich genannt werden. Schreibe nicht so, als gaebe es einen physischen Veranstaltungsort oder Einlass vor Ort. Wenn ein Zoom-Link oder Online-Meeting-Hinweis vorhanden ist, darf Zoom/Online-Meeting sachlich genannt werden."
     : "";
   const eventStatus = eventDateStatus(context);
-  const isUpcomingEvent = isEventTextRequest(action, payload) && eventStatus === "upcoming";
-  const isRetrospective = !isUpcomingEvent && (Boolean(context.isRetrospective) || RETROSPECTIVE_EVENT_ACTIONS.has(action));
+  const isRetrospectiveAction = RETROSPECTIVE_EVENT_ACTIONS.has(action);
+  const isUpcomingEvent = isEventTextRequest(action, payload) && eventStatus === "upcoming" && !isRetrospectiveAction;
+  const isRetrospective = Boolean(context.isRetrospective) || isRetrospectiveAction;
   const textLengthRule = targetWords > 0
     ? `Laengenregel verbindlich: Ziel sind etwa ${targetWords} Woerter. Der sichtbare Text muss im Korridor ${Math.max(40, Math.round(targetWords * 0.85))} bis ${Math.round(targetWords * 1.15)} Woerter liegen. Wenn du mehr Material hast, verdichte. Wenn du weniger Material hast, erfinde nichts, aber bleibe so nah wie moeglich am Ziel. Ignoriere aeltere Standardregeln zu 300 bis 400 Woertern.`
     : "Wenn ein Haupt- oder Beitragstext erzeugt wird, muss der neue Text mindestens 300 Woerter haben und soll idealerweise 300 bis 400 Woerter umfassen, sofern die gelieferten Informationen dafuer ausreichen.";
@@ -700,11 +701,10 @@ async function runAiAction(action, request) {
   const { profile, settings } = await requireAiAccess(request);
   try {
     const eventStatus = eventDateStatus(payload.context || {});
-    if (isEventTextRequest(action, payload) && eventStatus === "upcoming" && RETROSPECTIVE_EVENT_ACTIONS.has(action)) {
-      throw new HttpsError("failed-precondition", "Ein Rückblick kann erst nach dem Eventdatum erzeugt werden. Für dieses Event ist nur Ankündigungs- oder Einladungssprache zulässig.");
-    }
     let result = await callOpenAi(action, payload, settings);
-    let validation = validateUpcomingEventText(action, payload, result.text || "");
+    let validation = RETROSPECTIVE_EVENT_ACTIONS.has(action)
+      ? { violations: [], missingFacts: [] }
+      : validateUpcomingEventText(action, payload, result.text || "");
     if (validation.violations.length || validation.missingFacts.length) {
       const correctionPayload = {
         ...payload,
@@ -718,7 +718,9 @@ async function runAiAction(action, request) {
         }
       };
       result = await callOpenAi(action, correctionPayload, settings);
-      validation = validateUpcomingEventText(action, correctionPayload, result.text || "");
+      validation = RETROSPECTIVE_EVENT_ACTIONS.has(action)
+        ? { violations: [], missingFacts: [] }
+        : validateUpcomingEventText(action, correctionPayload, result.text || "");
       if (validation.violations.length || validation.missingFacts.length) {
         const details = [...validation.violations, ...validation.missingFacts].join(", ");
         throw new HttpsError("failed-precondition", `Der KI-Text erfüllt die Zukunfts- oder Programmlogik noch nicht (${details}). Bitte erneut erzeugen.`);

@@ -1,4 +1,4 @@
-const CACHE = "pdt-platform-v1083";
+const CACHE = "pdt-platform-v1097";
 const IMAGE_CACHE = "pdt-platform-images-v960";
 const APP_SHELL = [
   "/",
@@ -6,7 +6,9 @@ const APP_SHELL = [
   "/website.html",
   "/assets/js/pwa.js",
   "/assets/js/push-display.js",
+  "/assets/js/libphonenumber-mobile.js",
   "/src/main.js",
+  "/src/utils/mobilePhone.js",
   "/src/pages/publicPages.js",
   "/src/components/cards.js",
   "/src/firebase/dataService.js",
@@ -19,7 +21,7 @@ const APP_SHELL = [
   "/images/icon-192.png"
 ];
 
-importScripts("/assets/js/push-display.js?v=1");
+importScripts("/assets/js/push-display.js?v=2");
 
 // Register custom click handling before the Firebase SDK adds its handlers.
 self.addEventListener("notificationclick", (event) => {
@@ -27,6 +29,10 @@ self.addEventListener("notificationclick", (event) => {
   event.stopImmediatePropagation();
   event.notification.close();
   event.waitUntil((async () => {
+    const interactionId = String(event.notification.data.interactionId || "");
+    if (/^push-[a-f0-9]{32}$/.test(interactionId)) {
+      return self.clients.openWindow(`https://europe-west3-prodigitaltv-da47b.cloudfunctions.net/trackPushClick?i=${interactionId}`);
+    }
     const link = self.PROdigitalTVPush.safeLink(event.notification.data.link);
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const exact = windows.find((client) => client.url === link);

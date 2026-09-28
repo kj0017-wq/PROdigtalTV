@@ -13,7 +13,7 @@
       body: String(data.body || notification.body || ""),
       icon: "/images/icon-192.png", badge: "/images/icon-192.png",
       ...(data.notificationId ? { tag: `pdtv-${data.notificationId}`, renotify: false } : {}),
-      data: { pdtPush: true, link: safeLink(data.link || payload.fcmOptions?.link), notificationId: data.notificationId || "" }
+      data: { pdtPush: true, link: safeLink(data.link || payload.fcmOptions?.link), notificationId: data.notificationId || "", interactionId: data.interactionId || "" }
     });
   }
   scope.PROdigitalTVPush = { safeLink, show };

@@ -3,6 +3,7 @@ import { currentUser, canUseCms, isAdmin, login, logout, refreshAuthToken, waitF
 import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=535";
 import { escapeHtml, formatDate, richTextHtml } from "./utils/format.js?v=3";
 import { linkedInFromForm } from "./utils/linkedin.js";
+import { loadMobilePhoneValidator, normalizeMobilePhone } from "./utils/mobilePhone.js?v=1";
 import { hiddenTalkTitles, mentionedHiddenTalks, removeHiddenTalkMentions } from "./utils/eventTalkVisibility.js";
 import { publishLinkedInPost } from "./services/linkedin/index.js?v=1";
 import { normalizeLifecyclePhase } from "./data/platformConstants.js";
@@ -11,10 +12,17 @@ import { wirePushControls, refreshBrowserPush, disableBrowserNotifications, enab
 import { articleToImportBlock, parseImportedNewsArticles } from "./utils/newsImportParser.js?v=1";
 
 const root = document.querySelector("#app");
+const pushLandingUrl = new URL(window.location.href);
+const pushLandingId = pushLandingUrl.searchParams.get("pdtPushId") || "";
+if (/^push-[a-f0-9]{32}$/.test(pushLandingId)) {
+  fetch(`https://europe-west3-prodigitaltv-da47b.cloudfunctions.net/trackPushLanding?i=${pushLandingId}`, { mode: "no-cors", keepalive: true }).catch(() => {});
+  pushLandingUrl.searchParams.delete("pdtPushId");
+  history.replaceState(history.state, "", pushLandingUrl);
+}
 const initialWebappSplashStartedAt = root?.querySelector(".pdtv-webapp-splash") ? Date.now() : 0;
 const initialWebappSplashMinMs = 450;
 let initialWebappSplashPending = Boolean(initialWebappSplashStartedAt);
-const mobilePublicOrigin = "https://prodigitaltv-da47b.web.app";
+const mobilePublicOrigin = "https://prodigitaltv.de";
 const publicCheckinBaseUrl = `${mobilePublicOrigin}/checkin.html`;
 const mediaProxyFunctionUrl = "https://europe-west3-prodigitaltv-da47b.cloudfunctions.net/mediaAssetProxy";
 const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9-Vorschaubild fuer PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
@@ -26,6 +34,17 @@ const memberProfileWarmups = new Map();
 let mobileSurveyPeopleCache = { createdAt: 0, directory: null };
 let memberStrategyMessageHandler = null;
 const initialPushPreferenceKey = "pdtv-initial-push-preference-v1";
+
+function redirectFirebaseDefaultHostToPrimaryDomain() {
+  const host = String(window.location.hostname || "").toLowerCase();
+  if (!(host === "prodigitaltv.web.app" || host === "prodigitaltv-da47b.web.app" || host === "prodigtaltv.web.app" || host === "prodigitaltv-da47b.firebaseapp.com" || host === "prodigitaltv.firebaseapp.com")) return false;
+  const target = new URL(window.location.href);
+  target.protocol = "https:";
+  target.hostname = "prodigitaltv.de";
+  target.port = "";
+  window.location.replace(target.href);
+  return true;
+}
 
 function askInitialPushPreference() {
   const isPublicEntry = !/\/(?:cms|checkin)\.html$/i.test(location.pathname);
@@ -72,16 +91,16 @@ function askInitialPushPreference() {
 }
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=867");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=822");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=874");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=833");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=503");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=119");
-const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=23");
-const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=10");
+const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=24");
+const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=11");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=13");
 const firebaseClientService = () => lazy.firebaseClientService ||= import("./firebase/firebaseClient.js?v=1");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
-const csvService = () => lazy.csvService ||= import("./utils/csv.js?v=3");
+const csvService = () => lazy.csvService ||= import("./utils/csv.js?v=4");
 const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=330");
 
 function memberProfileCacheKey(user = {}) {
@@ -110,7 +129,7 @@ function warmMemberProfileCache(user = currentUser()) {
 const ttsService = () => lazy.ttsService ||= import("./ai/ttsService.js?v=2");
 const audioService = () => lazy.audioService ||= import("./ai/audioService.js");
 const aiSourceCatalogService = () => lazy.aiSourceCatalog ||= import("./data/aiSourceCatalog.js");
-const usageService = () => lazy.usageService ||= import("./firebase/usageService.js?v=2");
+const usageService = () => lazy.usageService ||= import("./firebase/usageService.js?v=3");
 
 const createRegistration = async (...args) => (await registrationService()).createRegistration(...args);
 const createAdminRegistration = async (...args) => (await registrationService()).createAdminRegistration(...args);
@@ -754,7 +773,7 @@ async function mobileLiveAdminPage() {
   let rememberedEventId = "";
   try { rememberedEventId = localStorage.getItem("pdtv-mobile-cms-event") || ""; } catch {}
   const firstEvent = eventRows.find((event) => event.id === rememberedEventId) || eventRows[0] || {};
-  const publicBaseUrl = "https://prodigitaltv-da47b.web.app";
+  const publicBaseUrl = "https://prodigitaltv.de";
   const eventOptions = eventRows.map((event) => {
     const registrationCount = registrations.filter((registration) => registration.eventId === event.id && !["cancelled", "expired", "deleted"].includes(String(registration.status || "").toLowerCase())).reduce((sum, registration) => sum + Math.max(1, Number(registration.participantCount) || (registration.hasCompanion || registration.companion ? 2 : 1)), 0);
     const speakerCount = mobileEventSpeakerCount(event, speakers, topics);
@@ -858,7 +877,7 @@ async function mobileLiveAdminPage() {
               <option value="members_contacts">Gesamte Mailingliste</option>
               <option value="test_group">Testgruppe</option>
               <option value="test_person">Test an einzelne Mailadresse</option>
-            </select></div>
+            </select><output class="notification-recipient-count" data-notification-mail-count role="status" aria-live="polite">E-Mail-Anzahl wird ermittelt ...</output></div>
             <div class="field"><label>Aktion</label><select name="liveActionMode" data-live-action-mode>
               <option value="message">Nachricht / Link</option>
               <option value="survey">Umfrage mit Antworten</option>
@@ -969,7 +988,7 @@ async function viewForRoute(current) {
     window.__pdtCmsStage = "import:cmsPages";
     const {
       dashboardPage, eventsAdminPage, eventFollowUpPage, eventEditPage, registrationsPage,
-      moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, aiAccessPage, mailAdminPage, audioAdminPage, memberAreaAdminPage, memberStrategyResponsesPage, qualityPage, privacyConsentsPage, eventNotificationsPage, eventFeedbackAdminPage, peoplePage
+      moduleListPage, contentEditPage, setupPage, chatGptPage, aiSettingsPage, aiAccessPage, mailAdminPage, audioAdminPage, memberAreaAdminPage, memberStrategyResponsesPage, qualityPage, privacyConsentsPage, eventNotificationsPage, eventFeedbackAdminPage, peoplePage, bounceOverviewPage
     } = await cmsPages();
     window.__pdtCmsStage = `cms:${current.id || "dashboard"}`;
     if (!current.id) return dashboardPage();
@@ -1009,7 +1028,8 @@ async function viewForRoute(current) {
       if (current.section === "retrospectives") await ensureEndedEventRetrospectives();
       return moduleListPage("editorialContent", current.section || "press");
     }
-    if (current.id === "mail") return moduleListPage("mailQueue");
+    if (current.id === "mail") return moduleListPage("mailQueue", "all", current.query);
+    if (current.id === "mail-bounces") return bounceOverviewPage(current.query);
     if (current.id === "event-notifications") return eventNotificationsPage();
     if (current.id === "event-feedback") return eventFeedbackAdminPage(current.query);
     if (current.id === "audio") return audioAdminPage();
@@ -1024,7 +1044,7 @@ async function viewForRoute(current) {
     homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
     newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage,
     downloadsPage, joinPage, loginPage, userInvitationPage, memberPortalPage, memberArticleDetailPage, legalPage, speakersPage, speakerDetailPage, speakerApprovalPage, eventFeedbackPage,
-    notFoundPage, webappQrPage, ticketLinkPage, eventCheckinPage, eventCheckinScreenPage, registrationCancelPage,
+    notFoundPage, webappQrPage, ticketLinkPage, ticketRecoveryPage, eventCheckinPage, eventCheckinScreenPage, registrationCancelPage,
     registrationConfirmPage, notificationUnsubscribePage
   } = await publicPages();
   if (current.path === "home") return homePage();
@@ -1034,6 +1054,7 @@ async function viewForRoute(current) {
   if (current.path === "registration" && current.id === "cancel") return registrationCancelPage(current.section);
   if (["register", "registration", "anmeldung", "anmelden"].includes(current.path)) return current.id ? registrationPage(current.id, current.query) : eventsPage();
   if (current.path === "ticket" && current.id === "link") return ticketLinkPage(current.section);
+  if (current.path === "ticket" && current.id === "recover") return ticketRecoveryPage(current.section);
   if (current.path === "notifications" && current.id === "unsubscribe") return notificationUnsubscribePage(current.section);
   if (current.path === "event-checkin") return eventCheckinPage(current.id, current.query);
   if (current.path === "event-checkin-screen") return eventCheckinScreenPage(current.id, current.query);
@@ -1692,7 +1713,7 @@ function inlineTtsTokenMarkup(text = "") {
 }
 
 function prepareInlineTtsHighlight(reader) {
-  const container = reader?.closest(".topic-article, .news-detail, .news-detail-clean, .internal-about-text");
+  const container = reader?.closest(".topic-article, .news-detail, .news-detail-clean, .news-flip__reader, .internal-about-text");
   const article = container?.querySelector(".editorial-text") || container;
   if (!article) return { restore: [], nodes: [] };
   const paragraphs = Array.from(article.querySelectorAll("p"))
@@ -4885,6 +4906,7 @@ async function optimizedMediaFile(file, { filename = "bild.webp", mediaType = "u
   canvas.width = size.width;
   canvas.height = size.height;
   const context = canvas.getContext("2d");
+  if (mediaType === "news") context.imageSmoothingQuality = "high";
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
   const mimeType = mediaOptimizedMime(file, mediaType);
   const output = await canvasToFile(canvas, filename, mimeType, quality);
@@ -4919,14 +4941,14 @@ async function createOptimizedMediaUploads(file, { filename = "", path = "", med
     mediaType,
     maxWidth: preset.width || 1600,
     maxHeight: preset.height || 900,
-    quality: mediaType === "logo" || mediaType === "event" ? .9 : .82
+    quality: ["logo", "event", "news"].includes(mediaType) ? .9 : .82
   });
   const thumb = await optimizedMediaFile(file, {
     filename: thumbFilename,
     mediaType,
-    maxWidth: 640,
-    maxHeight: 640,
-    quality: .76
+    maxWidth: mediaType === "news" ? 960 : 640,
+    maxHeight: mediaType === "news" ? 960 : 640,
+    quality: mediaType === "news" ? .88 : .76
   });
   return {
     original: { file, filename, path, width: web.originalWidth || 0, height: web.originalHeight || 0, codec: file.type },
@@ -8483,8 +8505,8 @@ function wirePdfOverlays() {
     button.addEventListener("click", () => openPdfOverlay(button.dataset.pdfUrl || "", button.dataset.pdfTitle || button.textContent?.trim() || "PDF"));
   });
 }
-function wireGalleryPlayers() {
-  document.querySelectorAll("[data-gallery-play]").forEach((button) => {
+function wireGalleryPlayers(scope = document) {
+  scope.querySelectorAll("[data-gallery-play]").forEach((button) => {
     if (button.dataset.galleryPlayerWired === "1") return;
     button.dataset.galleryPlayerWired = "1";
     button.addEventListener("click", () => {
@@ -8493,6 +8515,33 @@ function wireGalleryPlayers() {
     } catch (error) {
       console.error("Galerie konnte nicht geoeffnet werden", error);
     }
+    });
+  });
+}
+
+function wirePublicTtsControls(scope = document) {
+  scope.querySelectorAll("[data-tts-play]").forEach((button) => {
+    if (button.dataset.ttsWired === "1") return;
+    button.dataset.ttsWired = "1";
+    button.addEventListener("click", async () => {
+      try {
+        await startPublicTts(button);
+      } catch (error) {
+        alert(error.message || "Audio konnte nicht gestartet werden.");
+      }
+    });
+  });
+  scope.querySelectorAll("[data-tts-toggle]").forEach((button) => {
+    if (button.dataset.ttsToggleWired === "1") return;
+    button.dataset.ttsToggleWired = "1";
+    button.addEventListener("click", () => {
+      const reader = button.closest("[data-tts-reader]");
+      const actions = reader?.querySelector("[data-tts-actions]");
+      if (!actions) return;
+      const open = actions.hasAttribute("hidden");
+      actions.toggleAttribute("hidden", !open);
+      reader.classList.toggle("is-open", open);
+      button.setAttribute("aria-expanded", open ? "true" : "false");
     });
   });
 }
@@ -8750,6 +8799,317 @@ function wireTopicLoadMore() {
     update();
   });
   update();
+}
+
+let stopNewsFlipResize = () => {};
+function wireNewsFlip() {
+  stopNewsFlipResize();
+  stopNewsFlipResize = () => {};
+  document.body.classList.remove("news-flip-locked");
+  const switcher = document.querySelector("[data-news-mode-switch]");
+  const flip = document.querySelector("[data-news-flip]");
+  if (!switcher || !flip) return;
+  const scope = switcher.closest(".container");
+  const classic = scope?.querySelector("[data-news-classic]");
+  const cards = Array.from(flip.querySelectorAll("[data-news-flip-card]"));
+  const count = flip.querySelector("[data-news-flip-count]");
+  const controls = flip.querySelector(".news-flip__controls");
+  const reader = flip.querySelector("[data-news-flip-reader]");
+  const readerContent = reader?.querySelector("[data-news-flip-reader-content]");
+  const readerCloseButtons = Array.from(reader?.querySelectorAll("[data-news-flip-reader-close]") || []);
+  const articleTemplates = Array.from(flip.querySelectorAll("[data-news-flip-article]"));
+  if (!scope || !classic || !cards.length || !controls || !reader || !readerContent || !readerCloseButtons.length) return;
+  const shell = scope.closest(".pdtv-mobile-shell");
+  const header = shell?.querySelector(".pdtv-mobile-header");
+  const syncHeaderHeight = () => {
+    const height = header?.getBoundingClientRect().height || 0;
+    if (height) shell.style.setProperty("--pdt-fixed-header-height", `${Math.ceil(height)}px`);
+  };
+  syncHeaderHeight();
+  const headerObserver = typeof ResizeObserver === "function" && header
+    ? new ResizeObserver(syncHeaderHeight)
+    : null;
+  headerObserver?.observe(header);
+  let index = 0;
+  let turning = false;
+  let readerOpen = false;
+  let readerClosing = false;
+  let suppressCardClickUntil = 0;
+  const mobileView = window.matchMedia("(max-width: 760px)");
+  const warmImage = (targetIndex) => {
+    const image = cards[targetIndex]?.querySelector(".news-flip-card__image img");
+    if (!image) return Promise.resolve(true);
+    image.loading = "eager";
+    image.fetchPriority = "high";
+    if (typeof image.decode === "function") {
+      return image.decode().then(() => image.naturalWidth > 0, () => false);
+    }
+    if (image.complete) return Promise.resolve(image.naturalWidth > 0);
+    return new Promise((resolve) => {
+      image.addEventListener("load", () => resolve(true), { once: true });
+      image.addEventListener("error", () => resolve(false), { once: true });
+    });
+  };
+  const warmAdjacent = () => {
+    [index - 1, index + 1].filter((target) => target >= 0 && target < cards.length).forEach((target) => { void warmImage(target); });
+  };
+  const setMode = (mode) => {
+    scope.dataset.newsView = mode;
+    switcher.querySelectorAll("[data-news-mode]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.newsMode === mode));
+    });
+    const showFlip = mobileView.matches && mode === "flip";
+    if (!showFlip && readerOpen) {
+      if (reader.contains(activePublicTts?.reader)) closePublicTts();
+      reader.hidden = true;
+      reader.classList.remove("is-open");
+      readerContent.replaceChildren();
+      controls.inert = false;
+      readerOpen = false;
+      readerClosing = false;
+    }
+    if (showFlip) controls.appendChild(switcher);
+    else scope.querySelector(".news-mobile-toolbar")?.appendChild(switcher);
+    shell?.classList.toggle("is-news-flip", showFlip);
+    document.body.classList.toggle("news-flip-locked", showFlip);
+    classic.inert = showFlip;
+    flip.inert = !showFlip;
+    classic.setAttribute("aria-hidden", String(showFlip));
+    flip.setAttribute("aria-hidden", String(!showFlip));
+    if (showFlip) warmAdjacent();
+    try { localStorage.setItem("pdtv-news-mobile-view", mode); } catch {}
+  };
+  let savedMode = "classic";
+  try { savedMode = localStorage.getItem("pdtv-news-mobile-view") || "classic"; } catch {}
+  setMode(savedMode === "flip" ? "flip" : "classic");
+  const onMobileChange = () => setMode(scope.dataset.newsView);
+  mobileView.addEventListener("change", onMobileChange);
+  stopNewsFlipResize = () => {
+    mobileView.removeEventListener("change", onMobileChange);
+    headerObserver?.disconnect();
+  };
+  switcher.querySelectorAll("[data-news-mode]").forEach((button) => button.addEventListener("click", () => setMode(button.dataset.newsMode)));
+  const openReader = () => {
+    if (turning || readerOpen || !articleTemplates[index]) return;
+    readerContent.replaceChildren(articleTemplates[index].content.cloneNode(true));
+    wirePublicTtsControls(readerContent);
+    wireGalleryPlayers(readerContent);
+    reader.setAttribute("aria-label", cards[index].querySelector("h2")?.textContent || "Artikeltext");
+    reader.hidden = false;
+    reader.scrollTop = 0;
+    readerOpen = true;
+    controls.inert = true;
+    cards[index].tabIndex = -1;
+    reader.focus({ preventScroll: true });
+    window.requestAnimationFrame(() => {
+      if (readerOpen && !readerClosing) reader.classList.add("is-open");
+    });
+  };
+  const closeReader = () => {
+    if (!readerOpen || readerClosing) return;
+    readerClosing = true;
+    if (reader.contains(activePublicTts?.reader)) closePublicTts();
+    reader.classList.remove("is-open");
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      reader.removeEventListener("transitionend", onEnd);
+      reader.hidden = true;
+      readerContent.replaceChildren();
+      controls.inert = false;
+      readerOpen = false;
+      readerClosing = false;
+      cards[index].tabIndex = 0;
+      cards[index].focus({ preventScroll: true });
+    };
+    const onEnd = (event) => {
+      if (event.target === reader && event.propertyName === "transform") finish();
+    };
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) finish();
+    else {
+      reader.addEventListener("transitionend", onEnd);
+      window.setTimeout(finish, 500);
+    }
+  };
+  readerCloseButtons.forEach((button) => button.addEventListener("click", closeReader));
+  flip.addEventListener("click", (event) => {
+    if (Date.now() < suppressCardClickUntil) return;
+    if (event.target.closest("[data-news-flip-card]") === cards[index]) openReader();
+  });
+  const turn = async (direction) => {
+    const target = index + direction;
+    if (readerOpen || turning || target < 0 || target >= cards.length) return;
+    turning = true;
+    const current = cards[index];
+    const incoming = cards[target];
+    let loadTimeout;
+    const imageReady = await Promise.race([
+      warmImage(target),
+      new Promise((resolve) => { loadTimeout = window.setTimeout(() => resolve(false), 5000); })
+    ]);
+    window.clearTimeout(loadTimeout);
+    if (!flip.isConnected || !mobileView.matches || scope.dataset.newsView !== "flip") {
+      turning = false;
+      return;
+    }
+    const imageFailed = !imageReady && incoming.querySelector(".news-flip-card__image img")?.complete;
+    if (!imageReady && !imageFailed) {
+      turning = false;
+      return;
+    }
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches || imageFailed;
+    let fold = null;
+    incoming.classList.add("is-queued");
+    if (!reducedMotion) {
+      fold = document.createElement("div");
+      fold.className = `news-flip__fold${direction < 0 ? " is-reverse" : ""}`;
+      (direction < 0 ? ["bottom", "top"] : ["top", "bottom"]).forEach((side) => {
+        const half = document.createElement("div");
+        half.className = `news-flip__fold-half news-flip__fold-half--${side}`;
+        const front = document.createElement("div");
+        front.className = "news-flip__front";
+        const copy = current.cloneNode(true);
+        copy.classList.remove("is-active");
+        copy.removeAttribute("data-news-flip-card");
+        copy.setAttribute("aria-hidden", "true");
+        copy.tabIndex = -1;
+        copy.inert = true;
+        const currentImage = current.querySelector("img");
+        const copiedImage = copy.querySelector("img");
+        if (currentImage && copiedImage) {
+          copiedImage.src = currentImage.currentSrc || currentImage.src;
+          copiedImage.removeAttribute("srcset");
+          copiedImage.removeAttribute("sizes");
+          copiedImage.loading = "eager";
+        }
+        front.appendChild(copy);
+        half.appendChild(front);
+        if (side === (direction > 0 ? "bottom" : "top")) {
+          const back = document.createElement("div");
+          back.className = "news-flip__back";
+          const nextPage = incoming.cloneNode(true);
+          nextPage.classList.remove("is-active", "is-queued");
+          nextPage.removeAttribute("data-news-flip-card");
+          nextPage.setAttribute("aria-hidden", "true");
+          nextPage.tabIndex = -1;
+          nextPage.querySelectorAll("a").forEach((link) => { link.tabIndex = -1; });
+          const sourceImage = incoming.querySelector("img");
+          const backImage = nextPage.querySelector("img");
+          if (sourceImage && backImage) {
+            backImage.src = sourceImage.currentSrc || sourceImage.src;
+            backImage.removeAttribute("srcset");
+            backImage.removeAttribute("sizes");
+            backImage.loading = "eager";
+          }
+          back.appendChild(nextPage);
+          back.inert = true;
+          half.appendChild(back);
+        }
+        fold.appendChild(half);
+      });
+      flip.querySelector(".news-flip__stage").appendChild(fold);
+      await Promise.all(Array.from(fold.querySelectorAll("img")).map((image) =>
+        typeof image.decode === "function" ? image.decode().catch(() => {}) : Promise.resolve()
+      ));
+      await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+      if (fold.isConnected) {
+        current.classList.add("is-fold-source");
+        fold.classList.add("is-folding");
+      }
+    }
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      fold?.remove();
+      current.classList.remove("is-active", "is-fold-source");
+      current.setAttribute("aria-hidden", "true");
+      current.tabIndex = -1;
+      incoming.classList.remove("is-queued");
+      incoming.classList.add("is-active");
+      incoming.setAttribute("aria-hidden", "false");
+      incoming.tabIndex = 0;
+      index = target;
+      count.textContent = `${index + 1} / ${cards.length}`;
+      turning = false;
+      warmAdjacent();
+    };
+    if (reducedMotion) finish();
+    else {
+      const foldingHalf = fold.querySelector(direction > 0 ? ".news-flip__fold-half--bottom" : ".news-flip__fold-half--top");
+      foldingHalf.addEventListener("transitionend", (event) => {
+        if (event.target === foldingHalf && event.propertyName === "transform") finish();
+      });
+      window.setTimeout(finish, 850);
+    }
+  };
+  flip.addEventListener("keydown", (event) => {
+    if (readerOpen) {
+      if (event.key === "Escape") { event.preventDefault(); closeReader(); }
+      if (event.key === "Tab") {
+        const focusable = Array.from(reader.querySelectorAll("a[href], button:not([disabled])"));
+        const first = focusable[0] || readerCloseButtons[0];
+        const last = focusable[focusable.length - 1] || readerCloseButtons[readerCloseButtons.length - 1];
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === reader)) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+      return;
+    }
+    if (event.target === cards[index] && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      openReader();
+      return;
+    }
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      event.preventDefault();
+      turn(event.key === "ArrowDown" ? 1 : -1);
+    }
+  });
+  let touchX = null;
+  let touchY = null;
+  flip.addEventListener("touchstart", (event) => {
+    const onActiveSurface = readerOpen
+      ? reader.contains(event.target)
+      : event.target.closest("[data-news-flip-card]") === cards[index];
+    if (event.touches.length !== 1 || !onActiveSurface) {
+      touchX = null;
+      touchY = null;
+      return;
+    }
+    touchX = event.touches[0]?.clientX ?? null;
+    touchY = event.touches[0]?.clientY ?? null;
+  }, { passive: true });
+  flip.addEventListener("touchcancel", () => {
+    touchX = null;
+    touchY = null;
+  }, { passive: true });
+  flip.addEventListener("touchend", (event) => {
+    if (touchX === null || touchY === null) return;
+    const dx = (event.changedTouches[0]?.clientX ?? touchX) - touchX;
+    const dy = (event.changedTouches[0]?.clientY ?? touchY) - touchY;
+    touchX = null;
+    touchY = null;
+    if (readerOpen) {
+      if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.3) {
+        suppressCardClickUntil = Date.now() + 400;
+        closeReader();
+      }
+      return;
+    }
+    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.3) {
+      suppressCardClickUntil = Date.now() + 400;
+      openReader();
+    } else if (Math.abs(dy) > 55 && Math.abs(dy) > Math.abs(dx) * 1.3) {
+      suppressCardClickUntil = Date.now() + 400;
+      turn(dy < 0 ? 1 : -1);
+    }
+  }, { passive: true });
 }
 
 function renderEditorGalleryChoices(select) {
@@ -9062,10 +9422,6 @@ async function saveEventTopicSpeakerForm(form) {
   const fallbackName = String(form.elements.name?.value || existingSpeaker.name || "").trim();
   const speakerName = [firstName, lastName].filter(Boolean).join(" ").trim() || fallbackName;
   const assignedSpeakerIds = new Set(linkedTopic?.speakerIds || [linkedTopic?.speakerId].filter(Boolean));
-  if (!assignedSpeakerIds.has(speakerId) && assignedSpeakerIds.size >= 2) {
-    if (result) result.innerHTML = `<div class="alert alert--error">Diesem Vortrag sind bereits ein Hauptreferent und ein Co-Referent zugeordnet.</div>`;
-    return false;
-  }
   const topicIdsForSpeaker = new Set(existingSpeaker.topicIds || []);
   topicIdsForSpeaker.add(form.dataset.topicId);
   const eventIdsForSpeaker = new Set(existingSpeaker.eventIds || []);
@@ -9733,6 +10089,9 @@ async function attachMediaAssetToTarget(asset = {}, context = {}) {
   if (!url) throw new Error("Das Bild hat noch keine verwendbare URL.");
   const targetField = context.targetField || "imageUrl";
   const isThumbnailTarget = /thumbnail|thumb/i.test(targetField);
+  const currentThumbnailUrl = target.thumbnail_url || target.thumbnailUrl || "";
+  const preserveNewsThumbnail = context.targetCollection === "editorialContent" && targetField === "imageUrl"
+    && currentThumbnailUrl && currentThumbnailUrl.split("?")[0] !== String(target.imageUrl || "").split("?")[0];
   const update = {
     ...target,
     [targetField]: url,
@@ -9746,10 +10105,12 @@ async function attachMediaAssetToTarget(asset = {}, context = {}) {
     update.thumbnailUrl = url;
   } else {
     update.mediaAssetId = asset.id;
-    update.thumbnail_media_asset_id = asset.id;
-    update.thumbnailMediaAssetId = asset.id;
-    update.thumbnail_url = url;
-    update.thumbnailUrl = url;
+    if (!preserveNewsThumbnail) {
+      update.thumbnail_media_asset_id = asset.id;
+      update.thumbnailMediaAssetId = asset.id;
+      update.thumbnail_url = url;
+      update.thumbnailUrl = url;
+    }
     update.assetUrl = url;
   }
   if (context.targetCollection === "events" && !isThumbnailTarget) {
@@ -12532,6 +12893,61 @@ function wireMemberStrategyResponses() {
   window.addEventListener("message", memberStrategyMessageHandler);
 }
 function wireActions() {
+  const recoveryRequestForm = document.querySelector("#ticket-recovery-request-form");
+  const recoveryVerifyForm = document.querySelector("#ticket-recovery-verify-form");
+  const recoveryStatus = document.querySelector("#ticket-recovery-status");
+  const recoveryChangeEmail = document.querySelector("#ticket-recovery-change-email");
+  recoveryRequestForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const email = recoveryRequestForm.elements.email.value.trim();
+    const button = recoveryRequestForm.querySelector("button[type='submit']");
+    button.disabled = true;
+    recoveryStatus.textContent = "Code wird angefordert ...";
+    try {
+      await (await registrationService()).requestTicketRecoveryCode(recoveryRequestForm.dataset.eventId, email);
+      recoveryStatus.textContent = "Falls fuer diese Adresse ein bestaetigtes Ticket vorliegt, erhalten Sie gleich einen Code. Bitte sehen Sie auch im Spam-Ordner nach.";
+      recoveryRequestForm.hidden = true;
+      recoveryVerifyForm.hidden = false;
+      recoveryChangeEmail.hidden = false;
+      recoveryVerifyForm.scrollIntoView({ block: "center" });
+    } catch (error) {
+      recoveryStatus.textContent = error?.message || "Der Code konnte nicht angefordert werden.";
+    } finally {
+      button.disabled = false;
+    }
+  });
+  recoveryChangeEmail?.addEventListener("click", () => {
+    recoveryVerifyForm.hidden = true;
+    recoveryRequestForm.hidden = false;
+    recoveryChangeEmail.hidden = true;
+    recoveryStatus.textContent = "";
+    recoveryRequestForm.elements.email.focus();
+  });
+  recoveryVerifyForm?.elements.code.addEventListener("input", () => {
+    const input = recoveryVerifyForm.elements.code;
+    input.value = input.value.replace(/\D/g, "").slice(0, 6);
+    if (input.value.length === 6 && !recoveryVerifyForm.querySelector("button[type='submit']")?.disabled) {
+      input.blur();
+      recoveryVerifyForm.requestSubmit();
+    }
+  });
+  recoveryVerifyForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const eventId = recoveryVerifyForm.dataset.eventId;
+    const email = recoveryRequestForm.elements.email.value.trim();
+    const code = recoveryVerifyForm.elements.code.value.trim();
+    const button = recoveryVerifyForm.querySelector("button[type='submit']");
+    button.disabled = true;
+    recoveryStatus.textContent = "Ticket wird geprueft ...";
+    try {
+      await (await registrationService()).restoreTicketByCode(eventId, email, code);
+      recoveryStatus.textContent = "Ticket wiederhergestellt.";
+      location.hash = `#/event/${encodeURIComponent(eventId)}`;
+    } catch (error) {
+      recoveryStatus.textContent = error?.message || "Code ungueltig oder abgelaufen.";
+      button.disabled = false;
+    }
+  });
   wireMemberStrategyResponses();
   document.querySelectorAll(".member-logo-editor").forEach((editor) => {
     const previewBox = editor.querySelector("[data-member-logo-drag]");
@@ -12779,6 +13195,7 @@ function wireActions() {
   wireGalleryEditor();
   wireGalleryPlayers();
   wireTopicLoadMore();
+  wireNewsFlip();
   wirePdfOverlays();
   wireVideoAttachmentEditor();
   wireArticleVideos();
@@ -12933,30 +13350,7 @@ function wireActions() {
       if (submitButton) submitButton.disabled = false;
     }
   });
-  document.querySelectorAll("[data-tts-play]").forEach((button) => {
-    if (button.dataset.ttsWired === "1") return;
-    button.dataset.ttsWired = "1";
-    button.addEventListener("click", async () => {
-      try {
-        await startPublicTts(button);
-      } catch (error) {
-        alert(error.message || "Audio konnte nicht gestartet werden.");
-      }
-    });
-  });
-  document.querySelectorAll("[data-tts-toggle]").forEach((button) => {
-    if (button.dataset.ttsToggleWired === "1") return;
-    button.dataset.ttsToggleWired = "1";
-    button.addEventListener("click", () => {
-      const reader = button.closest("[data-tts-reader]");
-      const actions = reader?.querySelector("[data-tts-actions]");
-      if (!actions) return;
-      const open = actions.hasAttribute("hidden");
-      actions.toggleAttribute("hidden", !open);
-      reader.classList.toggle("is-open", open);
-      button.setAttribute("aria-expanded", open ? "true" : "false");
-    });
-  });
+  wirePublicTtsControls();
   document.querySelectorAll("[data-generate-article-speech]").forEach((button) => button.addEventListener("click", async () => {
     const scope = button.closest(".audio-list-cell, .audio-generation-panel");
     const result = scope?.querySelector("[data-speech-result]");
@@ -15781,6 +16175,30 @@ function wireActions() {
   });
 
   const registrationForm = document.querySelector("#registration-form");
+  if (registrationForm) {
+    const button = registrationForm.querySelector("button[type=submit]");
+    if (button) button.disabled = true;
+    loadMobilePhoneValidator().then(() => {
+      if (button) button.disabled = false;
+    }).catch((error) => {
+      const result = registrationForm.querySelector("#form-result");
+      if (result) result.textContent = error.message;
+    });
+    ["phone", "companionPhone"].forEach((name) => {
+      const field = registrationForm.elements[name];
+      field?.addEventListener("input", () => field.setCustomValidity(""));
+      field?.addEventListener("blur", () => {
+        if (!field.value.trim() || field.disabled) return;
+        try {
+          field.value = normalizeMobilePhone(field.value, name === "phone" ? "Mobilnummer" : "Mobilnummer der Begleitperson");
+          field.setCustomValidity("");
+        } catch (error) {
+          field.setCustomValidity(error.message);
+          field.reportValidity();
+        }
+      });
+    });
+  }
   const companionToggle = registrationForm?.querySelector("[data-registration-companion-toggle]");
   const companionFields = registrationForm?.querySelector("[data-registration-companion-fields]");
   const syncCompanionFields = () => {
@@ -15823,6 +16241,18 @@ function wireActions() {
         submitButton.textContent = "Anmeldung wird gesendet ...";
       }
       const values = formObject(registrationForm);
+      for (const [name, label] of [["phone", "Mobilnummer"], ...(values.hasCompanion ? [["companionPhone", "Mobilnummer der Begleitperson"]] : [])]) {
+        const field = registrationForm.elements[name];
+        try {
+          values[name] = normalizeMobilePhone(field.value, label);
+          field.value = values[name];
+          field.setCustomValidity("");
+        } catch (error) {
+          field.setCustomValidity(error.message);
+          field.reportValidity();
+          throw error;
+        }
+      }
       const enablePushCommunication = Boolean(values.enablePushCommunication);
       delete values.enablePushCommunication;
       if (enablePushCommunication) {
@@ -15897,6 +16327,9 @@ function wireActions() {
     const surveyLinkRequired = eventNotificationForm.querySelector("[data-live-survey-link-required]");
     const testField = eventNotificationForm.querySelector("[data-notification-test-field]");
     const recipientGroup = eventNotificationForm.querySelector("[data-notification-recipient-group]");
+    const speakerSourceField = eventNotificationForm.querySelector("[data-notification-speaker-source-field]");
+    const speakerSourceSelect = eventNotificationForm.querySelector("[data-notification-speaker-source]");
+    const registrationStatusField = eventNotificationForm.querySelector("[data-notification-registration-status-field]");
     const channelInputs = eventNotificationForm.querySelectorAll("[data-notification-channel]");
     const includeMembers = eventNotificationForm.querySelector("[data-notification-include-members]");
     const includeContacts = eventNotificationForm.querySelector("[data-notification-include-contacts]");
@@ -16052,7 +16485,17 @@ function wireActions() {
     };
     const syncNotificationMode = () => {
       const isMemberMessage = kindSelect?.value === "member_message";
+      if (isMemberMessage && recipientGroup?.value === "other_event_speakers") recipientGroup.value = "members_contacts";
       const isTestPerson = recipientGroup?.value === "test_person";
+      const isOtherEventSpeakers = !isMemberMessage && recipientGroup?.value === "other_event_speakers";
+      if (speakerSourceField) speakerSourceField.hidden = !isOtherEventSpeakers;
+      if (registrationStatusField) registrationStatusField.hidden = isOtherEventSpeakers;
+      if (speakerSourceSelect) {
+        speakerSourceSelect.disabled = !isOtherEventSpeakers;
+        speakerSourceSelect.required = isOtherEventSpeakers;
+        Array.from(speakerSourceSelect.options).forEach((option) => { option.disabled = Boolean(option.value && option.value === eventSelect?.value); });
+        if (speakerSourceSelect.value === eventSelect?.value) speakerSourceSelect.value = "";
+      }
       if (eventField) eventField.hidden = isMemberMessage;
       if (textSourceField) textSourceField.hidden = isMemberMessage;
       if (eventSelect) eventSelect.required = !isMemberMessage;
@@ -16098,10 +16541,14 @@ function wireActions() {
     };
     const syncSmsTextDefault = ({ force = false } = {}) => {
       if (!smsTextInput || (!force && smsTextInput.value.trim())) return;
-      const eventTitle = selectedNotificationEventPayload()?.title || eventSelect?.selectedOptions?.[0]?.dataset.eventTitle || "PROdigitalTV";
+      const selectedEvent = selectedNotificationEventPayload();
+      const eventTitle = selectedEvent?.title || eventSelect?.selectedOptions?.[0]?.dataset.eventTitle || "PROdigitalTV";
+      const date = selectedEvent?.date ? formatDate(selectedEvent.date) : "";
+      const time = selectedEvent?.startTime ? `${selectedEvent.startTime} Uhr` : "";
+      const schedule = [date, time].filter(Boolean).join(", ");
       smsTextInput.value = kindSelect?.value === "member_message"
         ? "Neue Informationen von PROdigitalTV."
-        : `Einladung: ${eventTitle}.`;
+        : `PROdigitalTV lädt Sie herzlich ein: ${eventTitle.replace(/[.!?]+$/, "")}.${schedule ? ` Termin: ${schedule}.` : ""} Freuen Sie sich auf Einblicke aus der Praxis und persönlichen Austausch. Wir freuen uns auf Sie!`;
     };
     const syncNotificationPreview = () => {
       if (!preview) return;
@@ -16129,6 +16576,7 @@ function wireActions() {
       applySurveySource({ initialize: true });
       setDefaultNotificationLink();
       syncNotificationEditorLink();
+      syncNotificationMode();
       syncNotificationPreview();
     });
     textSourceSelect?.addEventListener("change", () => {
@@ -16201,6 +16649,60 @@ function wireActions() {
     syncSmsTextDefault();
     if (linkInput && !linkInput.value) setDefaultNotificationLink();
     syncNotificationPreview();
+    const mailCountOutput = eventNotificationForm.querySelector("[data-notification-mail-count]");
+    let mailCountRevision = 0;
+    let mailCountTimer = 0;
+    const scheduleNotificationMailCount = () => {
+      if (!mailCountOutput) return;
+      const revision = ++mailCountRevision;
+      window.clearTimeout(mailCountTimer);
+      const kind = kindSelect?.value || eventNotificationForm.elements.notificationKind?.value || "event";
+      const eventId = eventSelect?.value || "";
+      const group = recipientGroup?.value || "members_contacts";
+      const sourceEventId = speakerSourceSelect?.value || "";
+      const testRecipients = testField?.querySelector("[name='testRecipients']")?.value || "";
+      const mailEnabled = !channelInputs.length || Array.from(channelInputs).some((input) => input.value === "mail" && input.checked);
+      const showCountState = (message, state = "loading") => {
+        mailCountOutput.textContent = message;
+        mailCountOutput.dataset.state = state;
+      };
+      if (!mailEnabled) return showCountState("0 E-Mails: E-Mail-Versand ist ausgeschaltet.", "ready");
+      if (kind === "event" && !eventId) return showCountState("Bitte zuerst eine Veranstaltung auswählen.");
+      if (group === "other_event_speakers" && (!sourceEventId || sourceEventId === eventId)) return showCountState("Bitte das Quell-Event der Referenten auswählen.");
+      if (group === "test_person" && !testRecipients.trim()) return showCountState("Bitte Test-Mailadressen eingeben.");
+      if (group === "test_group" && document.querySelector("#notification-test-group-form")?.dataset.dirty === "true") return showCountState("Bitte die Testgruppe zuerst speichern.");
+      showCountState("E-Mail-Anzahl wird ermittelt ...");
+      mailCountTimer = window.setTimeout(async () => {
+        try {
+          const response = await previewEventNotification({
+            notificationKind: kind,
+            eventId,
+            recipientGroup: group,
+            registrationStatus: eventNotificationForm.elements.registrationStatus?.value || "all",
+            extraSpeakerEventId: sourceEventId,
+            testRecipients,
+            channels: ["mail"]
+          });
+          if (revision !== mailCountRevision) return;
+          const count = Number(response.mailCount || 0);
+          showCountState(`Voraussichtlich ${new Intl.NumberFormat("de-DE").format(count)} E-Mail${count === 1 ? "" : "s"}.`, "ready");
+        } catch (error) {
+          if (revision !== mailCountRevision) return;
+          showCountState(`E-Mail-Anzahl nicht verfügbar: ${notificationErrorText(error)}`, "error");
+        }
+      }, 250);
+    };
+    eventNotificationForm.addEventListener("change", (event) => {
+      if (event.target.matches('[name="eventId"], [name="notificationKind"], [name="recipientGroup"], [name="registrationStatus"], [name="extraSpeakerEventId"], [data-notification-channel]')) scheduleNotificationMailCount();
+    });
+    testField?.querySelector("[name='testRecipients']")?.addEventListener("input", scheduleNotificationMailCount);
+    document.querySelector("#notification-test-group-form")?.addEventListener("input", () => queueMicrotask(() => {
+      if (recipientGroup?.value === "test_group") scheduleNotificationMailCount();
+    }));
+    document.querySelector("#notification-test-group-form")?.addEventListener("pdtv:test-group-updated", () => {
+      if (recipientGroup?.value === "test_group") scheduleNotificationMailCount();
+    });
+    scheduleNotificationMailCount();
     let confirmedPayload = null;
     let notificationPreviewRevision = 0;
     const invalidateNotificationPreview = () => {
@@ -16278,6 +16780,7 @@ function wireActions() {
           ? Array.from(channelInputs).filter((input) => input.checked).map((input) => input.value)
           : ["mail", "push"];
         if (payload.recipientGroup === "test_group" && document.querySelector("#notification-test-group-form")?.dataset.dirty === "true") throw new Error("Bitte die geaenderte Testgruppe zuerst speichern.");
+        if (payload.recipientGroup === "other_event_speakers" && (!payload.extraSpeakerEventId || payload.extraSpeakerEventId === payload.eventId)) throw new Error("Bitte ein anderes Quell-Event fuer die Referenten auswaehlen.");
         if (payload.liveActionMode === "survey") {
           syncLiveSurveyOptions();
           const surveySourceMode = liveSurveySource?.value || "";
@@ -16300,7 +16803,7 @@ function wireActions() {
         const revision = notificationPreviewRevision;
         const previewResponse = await previewEventNotification(payload);
         if (revision !== notificationPreviewRevision) return;
-        if (payload.recipientGroup === "test_group") payload.expectedTestRecipients = previewResponse.recipientEmails;
+        if (["test_group", "other_event_speakers"].includes(payload.recipientGroup)) payload.expectedTestRecipients = previewResponse.recipientEmails;
         if (payload.channels.includes("sms")) payload.smsCostEstimateId = previewResponse.smsCostEstimateId || "";
         confirmedPayload = payload;
         const selectedSourceLabel = textSourceSelect?.selectedOptions?.[0]?.textContent || "Manueller Text";
@@ -16314,9 +16817,12 @@ function wireActions() {
         const smsEstimate = previewResponse.smsCostEstimate;
         const smsCostFormatted = smsEstimate ? new Intl.NumberFormat("de-DE", { style: "currency", currency: smsEstimate.currency || "EUR" }).format(Number(smsEstimate.estimatedNetEur || 0)) : "";
         const smsCostHtml = smsEstimate ? `<p style="margin:10px 0 0"><strong>Voraussichtliche SMS-Kosten:</strong> ca. ${escapeHtml(smsCostFormatted)} netto für ${Number(smsEstimate.messagePartCount || 0)} SMS-Teil(e) an ${Number(smsEstimate.recipientCount || 0)} Empfänger. Der tatsächliche Anbieterbetrag wird nach dem Versand gespeichert.</p>` : "";
+        const sourceEventHtml = payload.recipientGroup === "other_event_speakers"
+          ? `<p style="margin:10px 0 0"><strong>Einladung für:</strong> ${escapeHtml(eventSelect?.selectedOptions?.[0]?.dataset.eventTitle || "Event")}<br><strong>Referenten aus:</strong> ${escapeHtml(speakerSourceSelect?.selectedOptions?.[0]?.textContent || "Quell-Event")}</p>`
+          : "";
         const sendLabel = smsEstimate ? `Senden · ca. ${smsCostFormatted}` : "Senden";
-        if (notificationResult) notificationResult.innerHTML = `<div class="alert alert--warning"><strong>${escapeHtml(channelSummary || "Keine Empfänger") } vorbereitet.</strong>${smsCostHtml}<p style="margin:10px 0 0"><strong>Textquelle:</strong> ${escapeHtml(selectedSourceLabel)}</p><p style="margin:8px 0 0">${escapeHtml(previewExcerpt)}</p><div class="actions" style="margin-top:12px"><button class="button button--primary button--small" type="button" data-confirm-notification-send>${escapeHtml(sendLabel)}</button><button class="button button--secondary button--small" type="button" data-cancel-notification-send>Abbrechen</button></div></div>`;
-        if (previewResponse.recipientEmails?.length) notificationResult?.querySelector(".alert")?.insertAdjacentHTML("afterbegin", `<p><strong>Testempfaenger:</strong> ${previewResponse.recipientEmails.map((email) => escapeHtml(email)).join(", ")}</p>`);
+        if (notificationResult) notificationResult.innerHTML = `<div class="alert alert--warning"><strong>${escapeHtml(channelSummary || "Keine Empfänger") } vorbereitet.</strong>${sourceEventHtml}${smsCostHtml}<p style="margin:10px 0 0"><strong>Textquelle:</strong> ${escapeHtml(selectedSourceLabel)}</p><p style="margin:8px 0 0">${escapeHtml(previewExcerpt)}</p><div class="actions" style="margin-top:12px"><button class="button button--primary button--small" type="button" data-confirm-notification-send>${escapeHtml(sendLabel)}</button><button class="button button--secondary button--small" type="button" data-cancel-notification-send>Abbrechen</button></div></div>`;
+        if (previewResponse.recipientEmails?.length) notificationResult?.querySelector(".alert")?.insertAdjacentHTML("afterbegin", `<p><strong>${payload.recipientGroup === "other_event_speakers" ? "Referenten" : "Testempfaenger"}:</strong> ${previewResponse.recipientEmails.map((email) => escapeHtml(email)).join(", ")}</p>`);
       } catch (error) {
         confirmedPayload = null;
         if (notificationResult) notificationResult.innerHTML = `<div class="alert alert--error">${escapeHtml(notificationErrorText(error))}</div>`;
@@ -16394,6 +16900,7 @@ function wireActions() {
       await saveNotificationTestGroup(emails);
       row?.remove();
       notificationTestGroupForm.dataset.dirty = "false";
+      notificationTestGroupForm.dispatchEvent(new Event("pdtv:test-group-updated"));
       updateNotificationTestGroupCount(emails.length);
       if (result) result.innerHTML = `<div class="alert alert--success">${escapeHtml(email)} wurde aus der Testgruppe geloescht.</div>`;
     } catch (error) {
@@ -16434,6 +16941,7 @@ function wireActions() {
       });
       if (additions) additions.value = "";
       notificationTestGroupForm.dataset.dirty = "false";
+      notificationTestGroupForm.dispatchEvent(new Event("pdtv:test-group-updated"));
       updateNotificationTestGroupCount(emails.length);
       if (result) result.innerHTML = `<div class="alert alert--success">${emails.length} Testadressen gespeichert.${emails.length ? "" : " Die leere Testgruppe kann nicht versendet werden."}</div>`;
     } catch (error) {
@@ -17119,6 +17627,21 @@ function wireActions() {
       commentPrompt: String(question.querySelector("[data-event-feedback-comment]")?.value || "").trim()
     })).filter((question) => question.id);
   }
+
+  function renderEventFeedbackPreview(form) {
+    const target = document.querySelector("[data-event-feedback-preview-content]");
+    if (!target) return;
+    const eventTitle = document.querySelector("[data-event-feedback-preview]")?.dataset.eventTitle || "PROdigitalTV Event";
+    const questions = collectEventFeedbackQuestions(form);
+    target.innerHTML = `<div class="event-feedback-preview__device">
+      <div class="event-feedback-preview__hero"><p class="eyebrow">Feedback</p><h3>Ihre Rückmeldung</h3><p>Ihre Einschätzung hilft PROdigitalTV, Veranstaltungen und Netzwerkangebote gezielt weiterzuentwickeln.</p></div>
+      <div class="event-feedback-preview__event"><span>Veranstaltung</span><strong>${escapeHtml(eventTitle)}</strong></div>
+      <div class="event-feedback-preview__questions">${questions.map((question, index) => `<fieldset class="event-feedback-question"><legend><span>${index + 1}</span>${escapeHtml(question.title || "Feedbackfrage")}</legend><div class="event-feedback-options">${(question.options || []).map((option) => `<label class="event-feedback-option"><input type="${question.type === "multiple" ? "checkbox" : "radio"}" disabled><span>${escapeHtml(option)}</span></label>`).join("")}</div><div class="field"><label>${escapeHtml(question.commentPrompt || "Kommentar")}</label><textarea rows="2" placeholder="Optional" disabled></textarea></div></fieldset>`).join("")}</div>
+      <fieldset class="event-feedback-question event-feedback-question--compact"><legend><span>+</span>Dürfen wir Sie zu PROdigitalTV-Veranstaltungen und Informationen zum Netzwerk kontaktieren?</legend><div class="event-feedback-options event-feedback-options--inline"><label class="event-feedback-option"><input type="radio" disabled><span>Ja</span></label><label class="event-feedback-option"><input type="radio" disabled><span>Nein</span></label></div></fieldset>
+      <button class="button button--primary" type="button" disabled>Feedback absenden</button>
+    </div>`;
+  }
+
   function wireEventSurveyEditor(form) {
     const drafts = form.querySelector("[data-event-survey-drafts]");
     const hidden = form.querySelector("[data-event-survey-drafts-json]");
@@ -17204,6 +17727,7 @@ function wireActions() {
         const scheduleText = eventScheduleRowsToText(scheduleItems);
         await upsert("events", {
           ...existing,
+          moderatorName: String(values.moderatorName || "").trim().slice(0, 160),
           scheduleItems,
           scheduleText,
           agendaText: scheduleText,
@@ -17368,6 +17892,17 @@ function wireActions() {
   document.querySelector("#event-edit-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     await saveEventEditForm(event.currentTarget);
+  });
+
+  const feedbackEditor = document.querySelector(".event-feedback-editor");
+  if (feedbackEditor) {
+    renderEventFeedbackPreview(feedbackEditor);
+    feedbackEditor.addEventListener("input", () => renderEventFeedbackPreview(feedbackEditor));
+    feedbackEditor.addEventListener("change", () => renderEventFeedbackPreview(feedbackEditor));
+  }
+
+  document.querySelector("[data-scroll-to-event-feedback-preview]")?.addEventListener("click", () => {
+    document.querySelector("#event-feedback-preview")?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
   document.querySelectorAll("[data-regenerate-event-schedule]").forEach((button) => button.addEventListener("click", () => {
@@ -18272,6 +18807,9 @@ function wireActions() {
         }
       }
       const image = imageFileFromDropzone(form, "assetFile", form.dataset.id);
+      const existingThumbnailUrl = existing.thumbnail_url || existing.thumbnailUrl || "";
+      const hasSeparateNewsThumbnail = form.dataset.module === "editorialContent" && existingThumbnailUrl
+        && existingThumbnailUrl.split("?")[0] !== String(existing.imageUrl || "").split("?")[0];
       if (removeAssetRequested) {
         values.imageUrl = "";
         values.thumbnail_url = "";
@@ -18326,11 +18864,13 @@ function wireActions() {
           values.assetType = image.type.startsWith("image/") ? "image" : "document";
           if (image.type.startsWith("image/")) {
             values.imageUrl = asset.url;
-            values.thumbnail_url = asset.url;
-            values.thumbnailUrl = asset.url;
             values.mediaAssetId = "";
-            values.thumbnail_media_asset_id = "";
-            values.thumbnailMediaAssetId = "";
+            if (!hasSeparateNewsThumbnail) {
+              values.thumbnail_url = asset.url;
+              values.thumbnailUrl = asset.url;
+              values.thumbnail_media_asset_id = "";
+              values.thumbnailMediaAssetId = "";
+            }
             values.documentUrl = "";
           } else {
             values.documentUrl = asset.url;
@@ -18347,6 +18887,13 @@ function wireActions() {
           values.thumbnail_variant_asset_ids = asset.variantAssetIds;
         }
       }
+      if (form.dataset.module === "editorialContent" && values.removeNewsThumbnail === "1") {
+        values.thumbnail_url = values.imageUrl || existing.imageUrl || "";
+        values.thumbnailUrl = values.thumbnail_url;
+        values.thumbnail_media_asset_id = values.mediaAssetId || existing.mediaAssetId || "";
+        values.thumbnailMediaAssetId = values.thumbnail_media_asset_id;
+      }
+      delete values.removeNewsThumbnail;
       delete values.assetFile;
       delete values.assetFileDataUrl;
       delete values.documentFile;
@@ -19639,6 +20186,23 @@ function wireActions() {
       button.textContent = originalLabel;
     }
   }));
+  document.querySelector("#bounce-report-filter")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!form.reportValidity()) return;
+    const data = new FormData(form);
+    const query = new URLSearchParams({ from: String(data.get("from") || ""), to: String(data.get("to") || ""), assignment: String(data.get("assignment") || "all") });
+    window.location.hash = `#/cms/mail-bounces?${query}`;
+  });  document.querySelector("#mail-queue-filter")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!form.reportValidity()) return;
+    const data = new FormData(form);
+    const query = new URLSearchParams({ from: String(data.get("from") || ""), to: String(data.get("to") || "") });
+    if (data.get("eventId")) query.set("eventId", String(data.get("eventId")));
+    if (String(data.get("person") || "").trim()) query.set("person", String(data.get("person")).trim());
+    window.location.hash = `#/cms/mail?${query}`;
+  });
   document.querySelector("[data-registration-event-filter]")?.addEventListener("change", (event) => {
     const eventId = event.currentTarget.value || "";
     window.location.hash = eventId
@@ -19655,6 +20219,9 @@ function wireActions() {
     if (result) result.innerHTML = `<span class="muted">Speichert ...</span>`;
     try {
       const values = formObject(form);
+      await loadMobilePhoneValidator();
+      values.phone = normalizeMobilePhone(values.phone);
+      form.elements.phone.value = values.phone;
       delete values.isMember;
       values.privacyAccepted = Boolean(values.privacyAccepted);
       await createAdminRegistration(form.dataset.eventId, values);
@@ -19971,6 +20538,69 @@ function peopleEditEscapeHtml(value = "") {
   }[char]));
 }
 
+async function offerOpenInvitationsForContact(contactId, email, { showEmpty = false } = {}) {
+  let invitations;
+  try {
+    ({ invitations } = await (await notificationService()).getOpenInvitationsForContact(contactId));
+  } catch (error) {
+    alert(`Laufende Einladungen konnten nicht geprüft werden: ${error.message || String(error)}`);
+    return;
+  }
+  if (!invitations?.length) {
+    if (showEmpty) alert("Für diese Adresse ist derzeit keine offene Event-Einladung verfügbar.");
+    return;
+  }
+  const layer = document.createElement("div");
+  layer.className = "ai-dialog-backdrop";
+  layer.innerHTML = `
+    <div class="ai-dialog people-invitation-dialog" role="dialog" aria-modal="true" aria-labelledby="people-invitation-title">
+      <p class="eyebrow">Event-Einladung</p>
+      <h2 id="people-invitation-title">Einladung jetzt verschicken?</h2>
+      <p>Für <strong>${peopleEditEscapeHtml(email)}</strong> sind laufende Einladungen verfügbar. Bitte wählen Sie die gewünschten Events aus.</p>
+      <div class="people-invitation-dialog__list">
+        ${invitations.map((invitation) => `<label class="people-invitation-dialog__item"><input type="checkbox" value="${peopleEditEscapeHtml(invitation.notificationId)}" ${invitations.length === 1 ? "checked" : ""}><span><strong>${peopleEditEscapeHtml(invitation.eventTitle || invitation.subject)}</strong><small>${peopleEditEscapeHtml(invitation.eventDate || "")}</small></span></label>`).join("")}
+      </div>
+      <p class="muted">Die Mail wird nach Bestätigung in die Versandwarteschlange gestellt.</p>
+      <p class="people-invitation-dialog__status" role="status" aria-live="polite"></p>
+      <div class="actions"><button class="button button--primary" type="button" data-invitation-send>Einladung senden</button><button class="button button--secondary" type="button" data-invitation-later>Später</button></div>
+    </div>`;
+  const sendButton = layer.querySelector("[data-invitation-send]");
+  const laterButton = layer.querySelector("[data-invitation-later]");
+  const status = layer.querySelector(".people-invitation-dialog__status");
+  const close = () => layer.remove();
+  laterButton.addEventListener("click", close);
+  layer.addEventListener("click", (event) => { if (event.target === layer && !sendButton.disabled) close(); });
+  sendButton.addEventListener("click", async () => {
+    const selected = [...layer.querySelectorAll("input[type='checkbox']:checked:not(:disabled)")].map((input) => input.value);
+    if (!selected.length) { status.textContent = "Bitte mindestens ein Event auswählen."; return; }
+    sendButton.disabled = true;
+    laterButton.disabled = true;
+    const sent = [];
+    const failed = [];
+    for (const notificationId of selected) {
+      try {
+        const result = await (await notificationService()).sendOpenInvitationToContact(contactId, notificationId);
+        sent.push({ notificationId, eventTitle: result.eventTitle });
+      } catch (error) {
+        failed.push(error.message || String(error));
+      }
+    }
+    if (failed.length) {
+      status.textContent = `${sent.length} Einladung(en) vorgemerkt. ${failed.length} nicht vorgemerkt: ${failed.join("; ")}`;
+      sendButton.disabled = false;
+      laterButton.disabled = false;
+      layer.querySelectorAll("input[type='checkbox']").forEach((input) => { if (sent.some((item) => item.notificationId === input.value)) { input.checked = false; input.disabled = true; } });
+      return;
+    }
+    status.textContent = `${sent.length} Einladung(en) in der Mail-Queue vorgemerkt.`;
+    sendButton.hidden = true;
+    laterButton.disabled = false;
+    laterButton.textContent = "Schließen";
+  });
+  document.body.appendChild(layer);
+  sendButton.focus();
+}
+
 async function savePeopleEditForm(form, { stayInPlace = false } = {}) {
   const existingContactId = form.dataset.contactId || "";
   const sourceCollection = form.dataset.sourceCollection || "contacts";
@@ -20000,6 +20630,8 @@ async function savePeopleEditForm(form, { stayInPlace = false } = {}) {
   }
   const firstName = String(form.firstName?.value || "").trim();
   const lastName = String(form.lastName?.value || "").trim();
+  const newsletterAllowed = Boolean(form.elements.namedItem("newsletterAllowed")?.checked);
+  const newsletterChanged = Boolean(existingContactId) && (form.dataset.newsletterAllowedBefore === "yes") !== newsletterAllowed;
   const payload = {
     id: contactId,
     firstName,
@@ -20011,12 +20643,12 @@ async function savePeopleEditForm(form, { stayInPlace = false } = {}) {
     mobile: String(form.mobile?.value || "").trim(),
     phone: String(form.mobile?.value || "").trim(),
     type: form.type?.value === "member" ? "member" : "contact",
-    newsletterAllowed: Boolean(form.newsletterAllowed?.checked),
-    newsletterConsent: Boolean(form.newsletterAllowed?.checked),
-    newsletterConsentAt: String(form.newsletterConsentAt?.value || "").trim() || (form.newsletterAllowed?.checked ?new Date().toISOString() : ""),
+    newsletterAllowed,
+    newsletterConsent: newsletterAllowed,
+    newsletterConsentAt: String(form.newsletterConsentAt?.value || "").trim() || (newsletterAllowed ?new Date().toISOString() : ""),
     newsletterConsentSource: String(form.newsletterConsentSource?.value || "").trim() || "cms",
     newsletterConsentNote: String(form.newsletterConsentNote?.value || "").trim(),
-    consentAt: String(form.newsletterConsentAt?.value || "").trim() || (form.newsletterAllowed?.checked ?new Date().toISOString() : ""),
+    consentAt: String(form.newsletterConsentAt?.value || "").trim() || (newsletterAllowed ?new Date().toISOString() : ""),
     consentSource: String(form.newsletterConsentSource?.value || "").trim() || "cms",
     consentNote: String(form.newsletterConsentNote?.value || "").trim(),
     source: "cms",
@@ -20024,12 +20656,11 @@ async function savePeopleEditForm(form, { stayInPlace = false } = {}) {
     mailingSourceId: sourceId,
     updatedAt: new Date().toISOString()
   };
-  if (sourceCollection === "contacts" && !existingContactId) {
-    const mailingEnabled = Boolean(form.newsletterAllowed?.checked);
-    payload.mailingDisabled = !mailingEnabled;
-    payload.notificationOptOut = !mailingEnabled;
-    payload.reminderConsent = mailingEnabled;
-    if (mailingEnabled) payload.notificationOptOutAt = "";
+  if (sourceCollection === "contacts" && (!existingContactId || newsletterChanged)) {
+    payload.mailingDisabled = !newsletterAllowed;
+    payload.notificationOptOut = !newsletterAllowed;
+    payload.reminderConsent = newsletterAllowed;
+    if (newsletterAllowed) payload.notificationOptOutAt = "";
   }
   const button = form.querySelector("button[type='submit']");
   if (button) button.disabled = true;
@@ -20044,6 +20675,9 @@ async function savePeopleEditForm(form, { stayInPlace = false } = {}) {
       window.location.hash = `#/cms/people?email=${encodeURIComponent(email)}`;
     }
     await render();
+    if (sourceCollection === "contacts" && newsletterAllowed && (!existingContactId || newsletterChanged)) {
+      await offerOpenInvitationsForContact(contactId, email);
+    }
     return true;
   } catch (error) {
     if (button) button.disabled = false;
@@ -20068,7 +20702,7 @@ function openPeopleEditLayer(button) {
         </div>
         <button class="button button--secondary button--small" type="button" data-people-edit-close>Schliessen</button>
       </div>
-      <form class="people-edit-form" data-people-edit-form data-contact-id="${peopleEditEscapeHtml(button.dataset.contactId || "")}" data-source-collection="${peopleEditEscapeHtml(button.dataset.sourceCollection || "contacts")}" data-source-id="${peopleEditEscapeHtml(button.dataset.sourceId || button.dataset.contactId || "")}" data-source-member-id="${peopleEditEscapeHtml(button.dataset.sourceMemberId || "")}" data-source-email="${peopleEditEscapeHtml(button.dataset.sourceEmail || button.dataset.email || "")}">
+      <form class="people-edit-form" data-people-edit-form data-contact-id="${peopleEditEscapeHtml(button.dataset.contactId || "")}" data-source-collection="${peopleEditEscapeHtml(button.dataset.sourceCollection || "contacts")}" data-source-id="${peopleEditEscapeHtml(button.dataset.sourceId || button.dataset.contactId || "")}" data-source-member-id="${peopleEditEscapeHtml(button.dataset.sourceMemberId || "")}" data-source-email="${peopleEditEscapeHtml(button.dataset.sourceEmail || button.dataset.email || "")}" data-newsletter-allowed-before="${peopleEditEscapeHtml(button.dataset.newsletterAllowed || "no")}">
         <div class="form-grid form-grid--two">
           <div class="field"><label>Vorname</label><input name="firstName" value="${peopleEditEscapeHtml(button.dataset.firstName || "")}"></div>
           <div class="field"><label>Nachname</label><input name="lastName" value="${peopleEditEscapeHtml(button.dataset.lastName || "")}"></div>
@@ -20078,12 +20712,14 @@ function openPeopleEditLayer(button) {
           <div class="field"><label>Mobilnummer</label><input name="mobile" value="${peopleEditEscapeHtml(button.dataset.mobile || "")}"></div>
           <div class="field"><label>Typ</label><select name="type"><option value="contact" ${type === "contact" ? "selected" : ""}>Kontakt</option><option value="member" ${type === "member" ? "selected" : ""}>Mitglied</option></select></div>
           <label class="checkbox people-edit-form__check"><input type="checkbox" name="newsletterAllowed" ${newsletterChecked}> <span>Newsletter erlaubt</span></label>
+          <p class="muted people-edit-form__wide">Event-Einladungen: ${button.dataset.eventInvitationAllowed === "yes" ? "freigegeben" : "nicht freigegeben"}</p>
           <div class="field"><label>Einwilligungsquelle</label><select name="newsletterConsentSource">${consentSourceOptions(consentSource)}</select></div>
           <div class="field"><label>Einwilligung am</label><input name="newsletterConsentAt" type="datetime-local" value="${peopleEditEscapeHtml(button.dataset.consentAt || "")}"></div>
           <div class="field people-edit-form__wide"><label>Einwilligungsnotiz</label><textarea name="newsletterConsentNote" rows="4">${peopleEditEscapeHtml(button.dataset.consentNote || "")}</textarea></div>
         </div>
         <div class="actions people-edit-form__actions">
           <button class="button button--primary" type="submit">Mailing-Adresse speichern</button>
+          ${button.dataset.sourceCollection === "contacts" ? `<button class="button button--secondary" type="button" data-people-check-invitations>Event-Einladung prüfen</button>` : ""}
           <button class="button button--secondary" type="button" data-people-edit-close>Abbrechen</button>
         </div>
       </form>
@@ -20099,6 +20735,22 @@ function openPeopleEditLayer(button) {
     const saved = await savePeopleEditForm(event.currentTarget, { stayInPlace: true });
     if (saved) closeLayer();
   });
+  layer.querySelector("[data-people-check-invitations]")?.addEventListener("click", async (event) => {
+    const currentPermission = Boolean(layer.querySelector("[name='newsletterAllowed']")?.checked);
+    if (currentPermission !== (button.dataset.newsletterAllowed === "yes")) {
+      alert("Bitte die geänderte Mailing-Freigabe zuerst speichern.");
+      return;
+    }
+    const checkButton = event.currentTarget;
+    checkButton.disabled = true;
+    checkButton.textContent = "Einladungen werden geprüft ...";
+    try {
+      await offerOpenInvitationsForContact(button.dataset.contactId, button.dataset.email, { showEmpty: true });
+    } finally {
+      checkButton.disabled = false;
+      checkButton.textContent = "Event-Einladung prüfen";
+    }
+  });
   document.body.appendChild(layer);
   layer.querySelector("input[name='firstName']")?.focus();
 }
@@ -20106,20 +20758,26 @@ function openPeopleEditLayer(button) {
 function bindPeopleManagementControls() {
   const peopleSearch = document.querySelector("[data-people-search]");
   const peopleTypeFilter = document.querySelector("[data-people-type-filter]");
+  const peopleActiveFilter = document.querySelector("[data-people-active-filter]");
   const peoplePushFilter = document.querySelector("[data-people-push-filter]");
-  if (peopleSearch || peopleTypeFilter || peoplePushFilter) {
+  const peopleMailFilter = document.querySelector("[data-people-mail-filter]");
+  if (peopleSearch || peopleTypeFilter || peopleActiveFilter || peoplePushFilter || peopleMailFilter) {
     const applyPeopleFilters = () => {
       const term = String(peopleSearch?.value || "").trim().toLowerCase();
       const type = peopleTypeFilter?.value || "all";
+      const active = peopleActiveFilter?.value || "all";
       const push = peoplePushFilter?.value || "all";
+      const mail = peopleMailFilter?.value || "all";
       const rows = Array.from(document.querySelectorAll("[data-people-row]"));
       let visibleCount = 0;
       rows.forEach((row) => {
         const name = String(row.dataset.name || "").toLowerCase();
         const searchMatch = !term || name.includes(term);
         const typeMatch = type === "all" || row.dataset.type === type;
+        const activeMatch = active === "all" || row.dataset.active === active;
         const pushMatch = push === "all" || row.dataset.push === push;
-        const match = searchMatch && typeMatch && pushMatch;
+        const mailMatch = mail === "all" || row.dataset.mailError === mail;
+        const match = searchMatch && typeMatch && activeMatch && pushMatch && mailMatch;
         row.hidden = !match;
         if (match) visibleCount += 1;
       });
@@ -20129,7 +20787,9 @@ function bindPeopleManagementControls() {
     };
     peopleSearch?.addEventListener("input", applyPeopleFilters);
     peopleTypeFilter?.addEventListener("change", applyPeopleFilters);
+    peopleActiveFilter?.addEventListener("change", applyPeopleFilters);
     peoplePushFilter?.addEventListener("change", applyPeopleFilters);
+    peopleMailFilter?.addEventListener("change", applyPeopleFilters);
     applyPeopleFilters();
     const pushRows = Array.from(document.querySelectorAll("[data-people-row]"));
     const pushCounter = document.querySelector("[data-people-push-count]");
@@ -20260,18 +20920,20 @@ async function refreshInstalledAppShellIfNeeded() {
   return false;
 }
 
-resetInstalledAppCachesIfRequested().then((didReset) => {
-  if (didReset) return;
-  refreshInstalledAppShellIfNeeded().then(async (didRefresh) => {
-    if (didRefresh) return;
-    await askInitialPushPreference();
-    onRouteChange(render);
-    render();
-    if (!["localhost", "127.0.0.1"].includes(location.hostname)) {
-      waitForAuthReady().finally(render);
-    }
+if (!redirectFirebaseDefaultHostToPrimaryDomain()) {
+  resetInstalledAppCachesIfRequested().then((didReset) => {
+    if (didReset) return;
+    refreshInstalledAppShellIfNeeded().then(async (didRefresh) => {
+      if (didRefresh) return;
+      await askInitialPushPreference();
+      onRouteChange(render);
+      render();
+      if (!["localhost", "127.0.0.1"].includes(location.hostname)) {
+        waitForAuthReady().finally(render);
+      }
+    });
   });
-});
+}
 
 
 

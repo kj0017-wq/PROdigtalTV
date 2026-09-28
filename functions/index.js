@@ -1,4 +1,4 @@
-const { createHash, randomBytes } = require("node:crypto");
+const { createHash, randomBytes, randomInt } = require("node:crypto");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { getStorage } = require("firebase-admin/storage");
@@ -10,7 +10,11 @@ const { defineSecret } = require("firebase-functions/params");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const nodemailer = require("nodemailer");
 const QRCode = require("qrcode");
+const { parsePhoneNumberFromString } = require("libphonenumber-js/mobile");
 const { createPushService } = require("./pushService");
+const { pollBounceMailbox } = require("./bounceService");
+const { suppressDueMailingBounces } = require("./mailingSuppression");
+const { confirmationReminderIsDue, confirmationReminderCanSend } = require("./registrationConfirmationReminder");
 
 initializeApp();
 const db = getFirestore();
@@ -24,6 +28,7 @@ const SMTP_PASS = defineSecret("SMTP_PASS");
 const MAIL_FROM = defineSecret("MAIL_FROM");
 const MAIL_TO = defineSecret("MAIL_TO");
 const smtpSecrets = [SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM, MAIL_TO];
+const BOUNCE_IMAP_PASSWORD = defineSecret("BOUNCE_IMAP_PASSWORD");
 const LINKEDIN_ACCESS_TOKEN = defineSecret("LINKEDIN_ACCESS_TOKEN");
 const LINKEDIN_AUTHOR_URN = defineSecret("LINKEDIN_AUTHOR_URN");
 const LINKEDIN_VERSION = defineSecret("LINKEDIN_VERSION");
@@ -33,8 +38,8 @@ const SMS_API_TOKEN = defineSecret("SMS_API_TOKEN");
 const SMS_SENDER = defineSecret("SMS_SENDER");
 const smsSecrets = [SMS_API_URL, SMS_API_TOKEN, SMS_SENDER];
 const PUBLIC_APP_BASE_URL = "https://prodigitaltv-da47b.web.app";
-const PUBLIC_CHECKIN_HTML_URL = "https://prodigitaltv-da47b.firebaseapp.com/checkin.html";
-const PUBLIC_CONFIRMATION_BASE_URL = `${PUBLIC_APP_BASE_URL}/confirm.html`;
+const PUBLIC_CHECKIN_HTML_URL = "https://prodigitaltv.de/checkin.html";
+const PUBLIC_CONFIRMATION_BASE_URL = "https://prodigitaltv.de/confirm.html";
 const transparentPixel = Buffer.from("R0lGODlhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==", "base64");
 
 const openaiFunctions = require("./openaiFunctions");
@@ -70,12 +75,23 @@ function cleanSmsBody(value = "") {
     .trim();
 }
 
+function normalizedMobileNumber(value = "", requireCountryPrefix = false) {
+  const raw = clean(value);
+  const candidate = requireCountryPrefix ? raw : raw.startsWith("00") ? `+${raw.slice(2)}` : /^49\d/.test(raw) ? `+${raw}` : raw;
+  if (!/^\+[\d\s().-]+$/.test(candidate)) return "";
+  const parsed = parsePhoneNumberFromString(candidate, { extract: false });
+  return parsed?.isPossible() && parsed.isValid() && ["MOBILE", "FIXED_LINE_OR_MOBILE"].includes(parsed.getType()) ? parsed.number : "";
+}
+
 function phoneNumber(value = "") {
-  const raw = clean(value).replace(/[()\s.-]/g, "");
-  if (!raw) return "";
-  const normalized = raw.startsWith("00") ? `+${raw.slice(2)}` : raw.startsWith("49") ? `+${raw}` : raw;
-  const isGermanMobile = /^\+491[567]\d{7,12}$/.test(normalized) && !/^\+4916[4689]/.test(normalized);
-  return isGermanMobile ? normalized : "";
+  return normalizedMobileNumber(value);
+}
+
+function requiredRegistrationMobileNumber(value = "", label = "Mobilnummer") {
+  if (!clean(value)) throw new HttpsError("invalid-argument", `Bitte ${label} angeben.`);
+  const normalized = normalizedMobileNumber(value, true);
+  if (!normalized) throw new HttpsError("invalid-argument", `${label}: Bitte Landesvorwahl und Ziffern prüfen (z. B. +49 170 1234567).`);
+  return normalized;
 }
 
 function normalizedMemberPhones(member = {}) {
@@ -220,6 +236,7 @@ function registrationInput(data = {}) {
     newsletterConsent: Boolean(input.newsletterConsent),
     notifyForThisEvent: Boolean(input.notifyForThisEvent),
     notifyFutureEvents: Boolean(input.notifyFutureEvents),
+    pushTrackingConsent: Boolean(input.pushTrackingConsent),
     hasCompanion,
     companion,
     participantCount: hasCompanion ? 2 : 1
@@ -417,13 +434,24 @@ function notificationExtraSpeakerEventIds(input = {}, eventId = "") {
   return [...new Set(values.map(clean).filter(Boolean).filter((id) => id !== primaryEventId))].slice(0, 10);
 }
 
+async function validateOtherEventSpeakerSource(recipientGroup, eventId, sourceEventIds, notificationKind) {
+  if (recipientGroup !== "other_event_speakers") return;
+  if (notificationKind !== "event" || sourceEventIds.length !== 1) {
+    throw new HttpsError("invalid-argument", "Bitte genau ein anderes Quell-Event fuer die Referenten auswaehlen.");
+  }
+  const source = await db.collection("events").doc(sourceEventIds[0]).get();
+  if (!source.exists || ["deleted", "draft"].includes(clean(source.data().status).toLowerCase())) {
+    throw new HttpsError("not-found", "Das Quell-Event der Referenten ist nicht verfuegbar.");
+  }
+}
+
 async function eventNotificationTargets(eventId = "", options = {}) {
   const hasEvent = Boolean(clean(eventId));
   const recipientGroup = clean(options.recipientGroup || "");
   // Test recipients never pass through the member/contact recipient expansion.
   if (recipientGroup === "test_group") return notificationTestGroupTargets();
   const includeRegistered = ["event_registered", "event_registered_speakers"].includes(recipientGroup) || options.includeRegistered === true;
-  const includeSpeakers = ["event_speakers", "event_registered_speakers"].includes(recipientGroup) || options.includeSpeakers === true;
+  const includeSpeakers = ["event_speakers", "event_registered_speakers", "other_event_speakers"].includes(recipientGroup) || options.includeSpeakers === true;
   const includeMembers = ["members", "members_contacts", "test_group"].includes(recipientGroup) || options.includeMembers === true;
   const includeContacts = ["contacts", "members_contacts"].includes(recipientGroup) || options.includeContacts === true;
   const [membersSnapshot, usersSnapshot, contactsSnapshot, registrationsSnapshot, speakersSnapshot, topicsSnapshot] = await Promise.all([
@@ -530,8 +558,10 @@ async function eventNotificationTargets(eventId = "", options = {}) {
     });
   }
   if (includeSpeakers && hasEvent) {
-    const speakerEventIds = [...new Set([eventId, ...notificationExtraSpeakerEventIds(options, eventId)].map(clean).filter(Boolean))];
-    const speakerEventIdSet = new Set(speakerEventIds);
+    const sourceOnly = recipientGroup === "other_event_speakers";
+    const speakerEventIds = sourceOnly
+      ? notificationExtraSpeakerEventIds(options, eventId)
+      : [...new Set([eventId, ...notificationExtraSpeakerEventIds(options, eventId)].map(clean).filter(Boolean))];
     const eventSpeakerIds = new Set();
     const eventTopicIds = new Set();
     const eventSnapshots = await Promise.all(speakerEventIds.map((id) => db.collection("events").doc(id).get().catch(() => null)));
@@ -540,7 +570,7 @@ async function eventNotificationTargets(eventId = "", options = {}) {
     eventSnapshots.forEach((eventSnapshot, index) => {
       const record = eventSnapshot?.exists ? { id: eventSnapshot.id, ...eventSnapshot.data() } : { id: speakerEventIds[index] };
       const recordYear = clean(record.date || "").slice(0, 4);
-      if (record.id !== eventId && primarySpeakerEventYear && recordYear !== primarySpeakerEventYear) return;
+      if (!sourceOnly && record.id !== eventId && primarySpeakerEventYear && recordYear !== primarySpeakerEventYear) return;
       allowedSpeakerEventIds.add(record.id);
       [record.speakerId, ...(record.speakerIds || [])].filter(Boolean).forEach((id) => eventSpeakerIds.add(id));
       [record.topicId, ...(record.topicIds || [])].filter(Boolean).forEach((id) => eventTopicIds.add(id));
@@ -857,7 +887,7 @@ function contactWritePayload(person = {}, source = "manual", now = FieldValue.se
   return payload;
 }
 
-async function upsertMailingContact(person = {}, { source = "manual", eventId = "", eventIds = [], registrationId = "", speakerId = "", topicIds = [], reminderConsent = false } = {}, now = FieldValue.serverTimestamp()) {
+async function upsertMailingContact(person = {}, { source = "manual", eventId = "", eventIds = [], registrationId = "", speakerId = "", topicIds = [], reminderConsent = false, mailingDisabled = false } = {}, now = FieldValue.serverTimestamp()) {
   const payload = contactWritePayload(person, source, now);
   if (!payload?.email) return { created: false, email: "", contactId: "" };
   const ref = db.collection("contacts").doc(contactId(payload.email));
@@ -868,6 +898,7 @@ async function upsertMailingContact(person = {}, { source = "manual", eventId = 
     ...payload,
     source: existing.exists ? existing.data()?.source || source : source,
     reminderConsent: Boolean(reminderConsent || existing.data()?.reminderConsent || (created && source === "speaker")),
+    ...(created && mailingDisabled ? { mailingDisabled: true } : {}),
     lastEventId: eventId || existing.data()?.lastEventId || "",
     lastRegistrationId: registrationId || existing.data()?.lastRegistrationId || "",
     lastSpeakerId: speakerId || existing.data()?.lastSpeakerId || "",
@@ -913,6 +944,21 @@ async function upsertContactFromRegistration(registration = {}, eventRecord = {}
     eventId: eventRecord.id || registration.eventId || "",
     registrationId: registration.id || "",
     reminderConsent: Boolean(registration.notifyForThisEvent || registration.notifyFutureEvents)
+  }, now);
+}
+
+async function upsertCompanionContact(registration = {}, eventRecord = {}, now = FieldValue.serverTimestamp()) {
+  const companion = registration.companion || {};
+  const email = clean(companion.email).toLowerCase();
+  if (!email || email === clean(registration.email).toLowerCase()) return { created: false };
+  const existingPerson = await findPersonByEmail(email);
+  if (existingPerson.matched) return { created: false, email, source: existingPerson.source || "existing_person" };
+  return upsertMailingContact({ ...companion, email }, {
+    source: "event_companion",
+    eventId: eventRecord.id || registration.eventId || "",
+    registrationId: registration.id || "",
+    reminderConsent: false,
+    mailingDisabled: true
   }, now);
 }
 
@@ -1278,6 +1324,39 @@ function renderMail(mail, context = {}) {
     };
   }
 
+  if (mail.template === "registration_confirmation_reminder") {
+    const name = clean([registration.firstName, registration.lastName].filter(Boolean).join(" "));
+    const title = clean(registration.eventTitle || eventRecord.title || "der PROdigitalTV-Veranstaltung");
+    const greeting = name ? `Guten Tag ${name},` : "Guten Tag,";
+    const text = [
+      greeting,
+      "",
+      `vielen Dank für Ihre Anmeldung zu „${title}“. Wir freuen uns, dass Sie dabei sein möchten.`,
+      "",
+      "Für die verbindliche Teilnahme fehlt nur noch Ihre E-Mail-Bestätigung. Mit einem Klick ist alles erledigt:",
+      mail.confirmationUrl || "",
+      "",
+      "Wir haben Ihren Bestätigungslink erneuert. Bitte verwenden Sie diesen neuen Link; er ist 48 Stunden gültig.",
+      "Falls Sie Ihre Anmeldung inzwischen bestätigt haben, können Sie diese Nachricht einfach ignorieren.",
+      "",
+      "Wir freuen uns auf Sie!",
+      "Ihr PROdigitalTV-Team"
+    ].filter((line) => line !== null && line !== undefined).join("\n");
+    return {
+      subject: mail.subject || `Ihre Anmeldung zu ${title} – bitte kurz bestätigen`,
+      text,
+      html: mailHtmlShell("Ihre Anmeldung bestätigen", [
+        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${escapeAttribute(greeting)}</p>`,
+        `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Vielen Dank für Ihre Anmeldung zu <strong>${escapeAttribute(title)}</strong>. Wir freuen uns, dass Sie dabei sein möchten.</p>`,
+        '<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Für die verbindliche Teilnahme fehlt nur noch Ihre E-Mail-Bestätigung. Mit einem Klick ist alles erledigt:</p>',
+        mailButton("Anmeldung bestätigen", mail.confirmationUrl),
+        `<p style="font-size:14px;line-height:1.5;color:#5f6b7c">Wir haben Ihren Bestätigungslink erneuert. Bitte verwenden Sie diesen neuen Link; er ist 48 Stunden gültig.</p>`,
+        `<p style="font-size:14px;line-height:1.5;color:#5f6b7c">Falls der Button nicht funktioniert: <a href="${escapeAttribute(mail.confirmationUrl || "")}" style="color:#0b3a66">Bestätigungslink öffnen</a></p>`,
+        '<p style="font-size:14px;line-height:1.5;color:#5f6b7c">Falls Sie Ihre Anmeldung inzwischen bestätigt haben, können Sie diese Nachricht einfach ignorieren.</p>'
+      ].join(""))
+    };
+  }
+
   if (mail.template === "registration_confirmation") {
     const baseTemplate = eventRecord.mailText || mailTemplates.registrationConfirmation || defaultGlobalEventRegistrationMailText("confirmation");
     const bodyText = renderTemplateText(baseTemplate, {
@@ -1632,6 +1711,9 @@ async function sendQueuedMail(mail) {
   return transporter.sendMail({
     from,
     to,
+    envelope: { from: "bounce@prodigitaltv.de", to },
+    messageId: `<pdtv-mail-${mail.id}@prodigitaltv.de>`,
+    headers: { "X-PDTV-Mail-ID": mail.id },
     replyTo: replyTo ? mailAddress(replyTo) : undefined,
     subject: stripTags(rendered.subject),
     text: rendered.text,
@@ -3278,10 +3360,11 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
   }
   if (!input.privacyAccepted) throw new HttpsError("failed-precondition", "Bitte stimmen Sie den Datenschutzbestimmungen zu.");
   if (!input.email || !input.email.includes("@")) throw new HttpsError("invalid-argument", "Bitte geben Sie eine gueltige E-Mail-Adresse an.");
+  input.phone = requiredRegistrationMobileNumber(input.phone);
   if (input.hasCompanion) {
     if (!input.companion?.firstName || !input.companion?.lastName) throw new HttpsError("invalid-argument", "Bitte geben Sie Vor- und Nachname der Begleitperson an.");
     if (!input.companion?.email || !input.companion.email.includes("@")) throw new HttpsError("invalid-argument", "Bitte geben Sie eine gueltige E-Mail-Adresse der Begleitperson an.");
-    if (!input.companion?.phone) throw new HttpsError("invalid-argument", "Bitte geben Sie die Telefonnummer der Begleitperson an.");
+    input.companion.phone = requiredRegistrationMobileNumber(input.companion.phone, "Mobilnummer der Begleitperson");
     if (input.companion.email === input.email) throw new HttpsError("invalid-argument", "Bitte verwenden Sie fuer die Begleitperson eine eigene E-Mail-Adresse.");
   }
   const existingRegistration = await db.collection("registrations")
@@ -3312,6 +3395,11 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
     eventDate: eventRecord.date || "",
     eventAccessType: eventRecord.accessType || "",
     ...input,
+    phoneFormatStatus: "valid",
+    phoneFormatCheckedAt: now,
+    phoneVerificationStatus: "unverified",
+    pushTrackingConsentAt: input.pushTrackingConsent ? now : null,
+    pushTrackingConsentText: input.pushTrackingConsent ? "Freiwillige Erfassung von Push-Antippen und Aufruf der verlinkten Seite; keine Bestaetigung der Mobilnummer." : "",
     isMember: isMemberByEmail,
     existingPersonMatched: Boolean(personMatch.matched),
     personMatchSource: personMatch.source || "new",
@@ -3408,6 +3496,8 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
   }
   const contactSync = await upsertContactFromRegistration(registration, eventRecord, now);
   if (contactSync.created) await countNewMailingContactForEvent(eventRecord.id, "event_registration", contactSync, now);
+  const companionContact = await upsertCompanionContact(registration, eventRecord, now);
+  if (companionContact.created) await countNewMailingContactForEvent(eventRecord.id, "event_companion", companionContact, now);
   if (!checkinMode) {
   await queueMail({
     type: "registration_confirmation",
@@ -3446,6 +3536,7 @@ exports.adminCreateEventRegistration = onCall({ region }, async (request) => {
   const eventRecord = { id: eventSnapshot.id, ...eventSnapshot.data() };
   const input = registrationInput({ input: request.data?.input || {} });
   if (!input.email || !input.email.includes("@")) throw new HttpsError("invalid-argument", "Bitte geben Sie eine gueltige E-Mail-Adresse an.");
+  input.phone = requiredRegistrationMobileNumber(input.phone);
   const existingRegistration = await db.collection("registrations")
     .where("eventId", "==", eventRecord.id)
     .where("email", "==", input.email)
@@ -3472,6 +3563,11 @@ exports.adminCreateEventRegistration = onCall({ region }, async (request) => {
     eventDate: eventRecord.date || "",
     eventAccessType: eventRecord.accessType || "",
     ...input,
+    phoneFormatStatus: "valid",
+    phoneFormatCheckedAt: now,
+    phoneVerificationStatus: "unverified",
+    pushTrackingConsentAt: input.pushTrackingConsent ? now : null,
+    pushTrackingConsentText: input.pushTrackingConsent ? "Freiwillige Erfassung von Push-Antippen und Aufruf der verlinkten Seite; keine Bestaetigung der Mobilnummer." : "",
     isMember: isMemberByEmail,
     existingPersonMatched: Boolean(personMatch.matched),
     personMatchSource: personMatch.source || "new",
@@ -3518,6 +3614,8 @@ exports.adminCreateEventRegistration = onCall({ region }, async (request) => {
   });
   const contactSync = await upsertContactFromRegistration(registration, eventRecord, now);
   if (contactSync.created) await countNewMailingContactForEvent(eventRecord.id, "cms_admin_registration", contactSync, now);
+  const companionContact = await upsertCompanionContact(registration, eventRecord, now);
+  if (companionContact.created) await countNewMailingContactForEvent(eventRecord.id, "event_companion", companionContact, now);
   await queueMail({
     type: "registration_confirmation",
     to: registration.email,
@@ -3623,11 +3721,19 @@ exports.createEventNotification = onCall({ region }, async (request) => {
     .filter((email, index, all) => all.indexOf(email) === index);
   const testOnly = clean(input.recipientGroup) !== "test_group" && (clean(input.recipientGroup) === "test_person" || input.testOnly === true || input.testOnly === "true");
   if (testOnly && !testRecipients.length) throw new HttpsError("invalid-argument", "Bitte mindestens eine Testperson eintragen.");
-  const recipientGroup = ["members", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "test_group", "test_person"].includes(clean(input.recipientGroup))
+  const recipientGroup = ["members", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "other_event_speakers", "test_group", "test_person"].includes(clean(input.recipientGroup))
     ? clean(input.recipientGroup)
     : "members_contacts";
   const includeEventSpeakers = notificationKind === "event" && !["test_group", "test_person"].includes(recipientGroup);
   const extraSpeakerEventIds = includeEventSpeakers ? notificationExtraSpeakerEventIds(input, eventId) : [];
+  await validateOtherEventSpeakerSource(recipientGroup, eventId, extraSpeakerEventIds, notificationKind);
+  if (recipientGroup === "other_event_speakers") {
+    const targets = await eventNotificationTargets(eventId, { recipientGroup, extraSpeakerEventIds });
+    const recipientEmails = targets.map((target) => target.email).filter(Boolean).sort();
+    if (!recipientEmails.length) throw new HttpsError("failed-precondition", "Im Quell-Event gibt es keine erreichbaren Referenten.");
+    const expected = Array.isArray(input.expectedTestRecipients) ? [...new Set(input.expectedTestRecipients.map((email) => mailAddress(email)).filter(Boolean))].sort() : [];
+    if (JSON.stringify(expected) !== JSON.stringify(recipientEmails)) throw new HttpsError("failed-precondition", "Die Referentenliste hat sich geaendert. Bitte Empfaenger erneut vorbereiten.");
+  }
   const offsetMinutes = Number(input.offsetMinutes || 0);
   if (recipientGroup === "test_group") {
     const targets = await notificationTestGroupTargets();
@@ -3769,6 +3875,147 @@ exports.createEventNotification = onCall({ region }, async (request) => {
   return { id: notificationRef.id, surveyId: liveSurvey?.id || "", scheduled: true };
 });
 
+exports.countAnonymousPageView = onRequest({ region, invoker: "public" }, async (req, res) => {
+  const origin = clean(req.get("origin"));
+  let host = "";
+  try { host = new URL(origin).hostname.toLowerCase(); } catch {}
+  if (!["prodigitaltv.de", "www.prodigitaltv.de", "prodigitaltv-da47b.web.app"].includes(host)) {
+    res.status(403).end();
+    return;
+  }
+  res.set("Access-Control-Allow-Origin", origin);
+  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
+  res.set("Vary", "Origin");
+  if (req.method === "OPTIONS") { res.status(204).end(); return; }
+  if (req.method !== "POST") { res.status(405).end(); return; }
+  const path = clean(req.rawBody?.toString("utf8") || req.body).toLowerCase();
+  if (!/^[a-z][a-z0-9_-]{0,30}$/.test(path) || ["cms", "login"].includes(path)) {
+    res.status(400).end();
+    return;
+  }
+  const day = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Berlin" });
+  try {
+    await db.collection("usageDaily").doc(`${day}_${host}_${path}`).set({
+      day, host, path,
+      count: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+    res.status(204).end();
+  } catch (error) {
+    console.error("countAnonymousPageView failed", error);
+    res.status(500).end();
+  }
+});
+
+async function openInvitationCampaignsForContact(contactId) {
+  const contactSnapshot = await db.collection("contacts").doc(contactId).get();
+  if (!contactSnapshot.exists) throw new HttpsError("not-found", "Mailing-Adresse wurde nicht gefunden.");
+  const contact = { id: contactSnapshot.id, ...contactSnapshot.data() };
+  const email = mailAddress(contact.email).toLowerCase();
+  if (!email || contact.mailingDisabled === true || contact.notificationOptOut === true || contact.reminderConsent === false || ["archived", "deleted", "inactive"].includes(clean(contact.status).toLowerCase())) {
+    return { contact, campaigns: [] };
+  }
+  const [notificationsSnapshot, eventsSnapshot, mailSnapshot] = await Promise.all([
+    db.collection("eventNotifications").where("recipientGroup", "in", ["contacts", "members_contacts"]).get(),
+    db.collection("events").get(),
+    db.collection("mailQueue").where("to", "==", email).get()
+  ]);
+  const events = new Map(eventsSnapshot.docs.map((snapshot) => [snapshot.id, { id: snapshot.id, ...snapshot.data() }]));
+  const previouslyQueued = new Set(mailSnapshot.docs.map((snapshot) => clean(snapshot.data().notificationId)).filter(Boolean));
+  const previouslyInvitedEvents = new Set(mailSnapshot.docs
+    .filter((snapshot) => snapshot.data().template === "event_notification" && /^einladung\b/i.test(clean(snapshot.data().title)))
+    .map((snapshot) => clean(snapshot.data().eventId)).filter(Boolean));
+  const candidates = notificationsSnapshot.docs.map((snapshot) => ({ id: snapshot.id, ...snapshot.data() }))
+    .filter((notification) => notification.notificationKind === "event"
+      && notification.testOnly !== true
+      && notification.status === "queued"
+      && Number(notification.queuedMailCount || 0) > 0
+      && (!Array.isArray(notification.channels) || notification.channels.includes("mail"))
+      && notification.liveActionMode !== "survey" && !notification.surveyId
+      && (clean(notification.invitationText) || /^einladung\b/i.test(clean(notification.title)))
+      && notification.linkEnabled !== false
+      && !previouslyQueued.has(notification.id) && !previouslyInvitedEvents.has(notification.eventId))
+    .map((notification) => ({ notification, event: events.get(notification.eventId) }))
+    .filter(({ event }) => event && eventRegistrationIsOpen(event) && eventDateTimeMillis(event) > Date.now())
+    .sort((a, b) => eventDateTimeMillis(a.event) - eventDateTimeMillis(b.event));
+  const latestByEvent = new Map();
+  candidates.forEach(({ notification, event }) => {
+    const current = latestByEvent.get(event.id);
+    if (!current || (notification.processedAt?.toMillis?.() || 0) > (current.notification.processedAt?.toMillis?.() || 0)) {
+      latestByEvent.set(event.id, { notification, event });
+    }
+  });
+  const campaigns = [];
+  for (const candidate of latestByEvent.values()) {
+    const registrations = await db.collection("registrations").where("eventId", "==", candidate.event.id).get();
+    if (registrations.docs.some((snapshot) => registrationIsActive(snapshot.data()) && mailAddress(snapshot.data().email).toLowerCase() === email)) continue;
+    campaigns.push(candidate);
+  }
+  return { contact, campaigns };
+}
+
+exports.getOpenInvitationsForContact = onCall({ region }, async (request) => {
+  await requireEditor(request);
+  const contactId = clean(request.data?.contactId);
+  if (!contactId) throw new HttpsError("invalid-argument", "Mailing-Adresse fehlt.");
+  const { campaigns } = await openInvitationCampaignsForContact(contactId);
+  return { invitations: campaigns.map(({ notification, event }) => ({
+    notificationId: notification.id,
+    eventTitle: clean(event.title),
+    eventDate: clean(event.date),
+    subject: clean(notification.title)
+  })) };
+});
+
+exports.sendOpenInvitationToContact = onCall({ region }, async (request) => {
+  const profile = await requireEditor(request);
+  const contactId = clean(request.data?.contactId);
+  const notificationId = clean(request.data?.notificationId);
+  if (!contactId || !notificationId) throw new HttpsError("invalid-argument", "Mailing-Adresse oder Einladung fehlt.");
+  const { contact, campaigns } = await openInvitationCampaignsForContact(contactId);
+  const selected = campaigns.find(({ notification }) => notification.id === notificationId);
+  if (!selected) throw new HttpsError("failed-precondition", "Diese Einladung ist nicht mehr offen oder wurde bereits vorgemerkt.");
+  const { notification, event } = selected;
+  await assertNoHiddenTalkMentions(event, notification);
+  const link = notification.linkEnabled === false ? "" : clean(notification.link || eventUrl(event.id));
+  const registration = { firstName: contact.firstName || "", lastName: contact.lastName || "", company: contact.company || "", email: contact.email, eventTitle: event.title || "" };
+  const variables = { eventLink: link, link };
+  const mailRef = db.collection("mailQueue").doc(`contact-invitation-${hashToken(`${notificationId}:${mailAddress(contact.email).toLowerCase()}`).slice(0, 40)}`);
+  try {
+    await db.runTransaction(async (transaction) => {
+      const existing = await transaction.get(mailRef);
+      if (existing.exists) throw new HttpsError("already-exists", "Die Einladung wurde bereits fuer diese Mailadresse vorgemerkt.");
+      transaction.create(mailRef, {
+        type: "event_notification",
+        template: "event_notification",
+        to: mailAddress(contact.email).toLowerCase(),
+        eventId: event.id,
+        notificationId,
+        title: renderTemplateText(notification.title, { registration, eventRecord: event, variables }) || notification.title,
+        shortText: renderTemplateText(notification.invitationText || notification.shortText, { registration, eventRecord: event, variables }),
+        link,
+        linkEnabled: notification.linkEnabled !== false,
+        audienceType: "unregistered",
+        personName: clean(`${contact.firstName || ""} ${contact.lastName || ""}`) || contact.company || "",
+        firstName: contact.firstName || "",
+        lastName: contact.lastName || "",
+        company: contact.company || "",
+        contactId,
+        addedToCampaignBy: profile.email || request.auth.uid,
+        status: "queued",
+        queuedAt: FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      });
+    });
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError("internal", "Einladung konnte nicht vorgemerkt werden.");
+  }
+  return { queued: true, eventTitle: clean(event.title) };
+});
+
 exports.previewEventNotification = onCall({ region, secrets: smsSecrets, timeoutSeconds: 120 }, async (request) => {
   const profile = await requireEditor(request);
   const input = request.data?.input || {};
@@ -3789,12 +4036,13 @@ exports.previewEventNotification = onCall({ region, secrets: smsSecrets, timeout
     .filter((email, index, all) => all.indexOf(email) === index);
   const testOnly = clean(input.recipientGroup) !== "test_group" && (clean(input.recipientGroup) === "test_person" || input.testOnly === true || input.testOnly === "true");
   if (testOnly && !testRecipients.length) throw new HttpsError("invalid-argument", "Bitte mindestens eine Testperson eintragen.");
-  const recipientGroup = ["members", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "test_group", "test_person"].includes(clean(input.recipientGroup))
+  const recipientGroup = ["members", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "other_event_speakers", "test_group", "test_person"].includes(clean(input.recipientGroup))
     ? clean(input.recipientGroup)
     : "members_contacts";
   const registrationStatus = ["all", "registered", "unregistered"].includes(clean(input.registrationStatus)) ? clean(input.registrationStatus) : "all";
   const includeEventSpeakers = notificationKind === "event" && !["test_group", "test_person"].includes(recipientGroup);
   const extraSpeakerEventIds = includeEventSpeakers ? notificationExtraSpeakerEventIds(input, eventId) : [];
+  await validateOtherEventSpeakerSource(recipientGroup, eventId, extraSpeakerEventIds, notificationKind);
   const testRecipientMobiles = clean(input.testRecipientMobiles).split(/[\s,;]+/).map(phoneNumber).filter(Boolean);
   const targets = recipientGroup === "test_group"
     ? await notificationTestGroupTargets()
@@ -3813,6 +4061,7 @@ exports.previewEventNotification = onCall({ region, secrets: smsSecrets, timeout
     ? [...new Set(input.channels.map(clean).filter((channel) => ["mail", "push", "sms"].includes(channel)))]
     : ["mail", "push"];
   if (!channels.length) throw new HttpsError("invalid-argument", "Bitte mindestens einen Versandkanal auswaehlen.");
+  if (recipientGroup === "other_event_speakers" && !targets.some((target) => target.email)) throw new HttpsError("failed-precondition", "Im Quell-Event gibt es keine erreichbaren Referenten.");
   const smsTargets = channels.includes("sms") ? targets.filter((target) => target.phone) : [];
   let smsCostEstimate = null;
   let smsCostEstimateId = "";
@@ -3878,7 +4127,7 @@ exports.previewEventNotification = onCall({ region, secrets: smsSecrets, timeout
     pushCount: channels.includes("push") ? targets.filter((target) => target.email).length : 0,
     smsCostEstimate,
     smsCostEstimateId,
-    recipientEmails: recipientGroup === "test_group" || testOnly ? targets.map((target) => target.email) : [],
+    recipientEmails: recipientGroup === "test_group" || recipientGroup === "other_event_speakers" || testOnly ? targets.map((target) => target.email).filter(Boolean) : [],
     testOnly,
     recipientGroup
   };
@@ -4472,6 +4721,8 @@ exports.onRegistrationCreated = onDocumentCreated({ document: "registrations/{re
   const now = FieldValue.serverTimestamp();
   const contactSync = await upsertContactFromRegistration({ id: event.params.registrationId, ...registration }, { id: registration.eventId, ...eventRecord }, now);
   if (contactSync.created) await countNewMailingContactForEvent(registration.eventId, "event_registration_trigger", contactSync, now);
+  const companionContact = await upsertCompanionContact({ id: event.params.registrationId, ...registration }, { id: registration.eventId, ...eventRecord }, now);
+  if (companionContact.created) await countNewMailingContactForEvent(registration.eventId, "event_companion", companionContact, now);
   const token = randomBytes(32).toString("hex");
   const tokenHash = hashToken(token);
   const expiresAt = Timestamp.fromMillis(Date.now() + 48 * 60 * 60 * 1000);
@@ -4563,14 +4814,38 @@ exports.onMembershipApplicationCreated = onDocumentCreated({ document: "membersh
   });
 });
 
+exports.pollBounceMailbox = onSchedule({ region, schedule: "every 15 minutes", timeoutSeconds: 120, maxInstances: 1, secrets: [BOUNCE_IMAP_PASSWORD] }, async () => {
+  try {
+    const counts = await pollBounceMailbox({ db, FieldValue, password: BOUNCE_IMAP_PASSWORD.value() });
+    console.log("Bounce-Abruf:", counts);
+  } finally {
+    console.log("Mailing-Sperren:", await suppressDueMailingBounces({ db, FieldValue }));
+  }
+});
+
 exports.sendQueuedMail = onDocumentCreated({ document: "mailQueue/{mailId}", region, secrets: smtpSecrets }, async (event) => {
   const mail = event.data.data();
   if (mail.status !== "queued") return;
+  let resolvedTo = "";
   try {
+    if (mail.template === "registration_confirmation_reminder") {
+      const registrationSnapshot = await db.collection("registrations").doc(mail.registrationId).get();
+      const registration = registrationSnapshot.data() || {};
+      let token = "";
+      try { token = new URL(mail.confirmationUrl).searchParams.get("token") || ""; } catch { token = ""; }
+      if (!registrationSnapshot.exists || !confirmationReminderCanSend(registration, token ? hashToken(token) : "")) {
+        await event.data.ref.update({ status: "skipped", skipReason: "Anmeldung bereits bestätigt oder Link erneuert", updatedAt: FieldValue.serverTimestamp() });
+        return;
+      }
+    }
+    resolvedTo = mailAddress(mail.to || MAIL_TO.value());
     const result = await sendQueuedMail({ id: event.params.mailId, ...mail });
     const accepted = Array.isArray(result.accepted) ? result.accepted.map(clean).filter(Boolean) : [];
     const rejected = Array.isArray(result.rejected) ? result.rejected.map(clean).filter(Boolean) : [];
+    const actualTo = Array.isArray(result.envelope?.to) ? result.envelope.to.map(mailAddress).filter(Boolean).join(", ") : resolvedTo;
     await event.data.ref.update({
+      to: mail.to || actualTo,
+      ...(mail.template === "ticket_recovery" ? { text: FieldValue.delete() } : {}),
       status: rejected.length && !accepted.length ? "failed" : "sent",
       sentAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
@@ -4580,7 +4855,7 @@ exports.sendQueuedMail = onDocumentCreated({ document: "mailQueue/{mailId}", reg
       providerResponse: clean(result.response || "").slice(0, 500),
       deliveryStatus: rejected.length ? "partly_rejected" : "accepted"
     });
-    const updateTarget = mail.registrationId
+    const updateTarget = mail.template === "ticket_recovery" ? null : mail.registrationId
       ? db.collection("registrations").doc(mail.registrationId)
       : mail.membershipApplicationId
         ? db.collection("membershipApplications").doc(mail.membershipApplicationId)
@@ -4605,6 +4880,7 @@ exports.sendQueuedMail = onDocumentCreated({ document: "mailQueue/{mailId}", reg
     }
   } catch (error) {
     await event.data.ref.update({
+      to: mail.to || resolvedTo,
       status: "failed",
       error: error.message || "Mailversand fehlgeschlagen.",
       failedAt: FieldValue.serverTimestamp(),
@@ -4679,6 +4955,53 @@ exports.sendQueuedSms = onDocumentCreated({ document: "smsQueue/{smsId}", region
   }
 });
 
+async function markPushRegistration(interaction, field) {
+  if (!interaction?.registrationId || !interaction.eventId) return;
+  const ref = db.collection("registrations").doc(interaction.registrationId);
+  const snapshot = await ref.get();
+  const registration = snapshot.data();
+  if (!registration || registration.eventId !== interaction.eventId || registration.pushTrackingConsent !== true
+    || !["confirmed", "checked_in"].includes(registration.status)) return;
+  await ref.set({ [field]: FieldValue.serverTimestamp(), lastPushNotificationId: interaction.notificationId || "" }, { merge: true });
+}
+
+exports.trackPushClick = onRequest({ region, invoker: "public" }, async (req, res) => {
+  const id = clean(req.query.i);
+  let destination = PUBLIC_APP_BASE_URL;
+  if (/^push-[a-f0-9]{32}$/.test(id)) {
+    const ref = db.collection("pushInteractions").doc(id);
+    const snapshot = await ref.get().catch(() => null);
+    const interaction = snapshot?.exists ? snapshot.data() : null;
+    if (interaction && ["sending", "sent"].includes(interaction.status)) {
+      if (!interaction.clickedAt) await ref.set({ clickedAt: FieldValue.serverTimestamp() }, { merge: true }).catch((error) => console.error("Push click log failed", id, error));
+      await markPushRegistration(interaction, "pushClickedAt").catch((error) => console.error("Push click registration update failed", id, error));
+      try {
+        const url = new URL(interaction.link || PUBLIC_APP_BASE_URL, PUBLIC_APP_BASE_URL);
+        if (url.protocol === "https:") {
+          if (interaction.link && ["prodigitaltv-da47b.web.app", "prodigitaltv.web.app", "prodigtaltv.web.app"].includes(url.hostname)) url.searchParams.set("pdtPushId", id);
+          destination = url.href;
+        }
+      } catch {}
+    }
+  }
+  res.set("Cache-Control", "no-store");
+  res.redirect(302, destination);
+});
+
+exports.trackPushLanding = onRequest({ region, invoker: "public" }, async (req, res) => {
+  const id = clean(req.query.i);
+  if (/^push-[a-f0-9]{32}$/.test(id)) {
+    const ref = db.collection("pushInteractions").doc(id);
+    const snapshot = await ref.get().catch(() => null);
+    const interaction = snapshot?.exists ? snapshot.data() : null;
+    if (interaction?.clickedAt && !interaction.landedAt) {
+      await ref.set({ landedAt: FieldValue.serverTimestamp() }, { merge: true });
+      await markPushRegistration(interaction, "pushLinkVisitedAt").catch((error) => console.error("Push landing registration update failed", id, error));
+    }
+  }
+  res.set("Cache-Control", "no-store");
+  res.status(204).end();
+});
 exports.trackEventMailClick = onRequest({ region, invoker: "public" }, async (req, res) => {
   const mailId = clean(req.query.m || req.query.mailId || "");
   let destination = PUBLIC_APP_BASE_URL;
@@ -4689,7 +5012,11 @@ exports.trackEventMailClick = onRequest({ region, invoker: "public" }, async (re
     const storedLink = clean(mail?.link || "");
     if (/^https:\/\//i.test(storedLink)) destination = storedLink;
     else if (mail?.eventId) destination = eventUrl(mail.eventId);
-    await ref.set({ eventLinkClicked: true, eventLinkClickCount: FieldValue.increment(1), lastEventLinkClickedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true }).catch((error) => console.error("trackEventMailClick failed", mailId, error));
+    if (snapshot?.exists) {
+      const clickUpdate = { eventLinkClicked: true, eventLinkClickCount: FieldValue.increment(1), lastEventLinkClickedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() };
+      if (!mail.eventLinkClicked) clickUpdate.firstEventLinkClickedAt = FieldValue.serverTimestamp();
+      await ref.set(clickUpdate, { merge: true }).catch((error) => console.error("trackEventMailClick failed", mailId, error));
+    }
   }
   res.set("Cache-Control", "no-store");
   res.redirect(302, destination);
@@ -4821,6 +5148,108 @@ exports.linkTicketDeviceByToken = onCall({ region, invoker: "public" }, async (r
     companion: registration.companion || null,
     participantCount: registration.participantCount || (registration.hasCompanion ? 2 : 1),
     ticketToken: token
+  };
+});
+
+exports.requestEventTicketRecoveryCode = onCall({ region, invoker: "public" }, async (request) => {
+  const eventId = clean(request.data?.eventId).slice(0, 160);
+  const email = mailAddress(request.data?.email).toLowerCase();
+  if (!eventId || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new HttpsError("invalid-argument", "Bitte Event und gueltige E-Mail-Adresse angeben.");
+  }
+  const matches = await db.collection("registrations").where("email", "==", email).limit(100).get();
+  const document = matches.docs.find((entry) => {
+    const registration = entry.data();
+    return registration.eventId === eventId
+      && ["confirmed", "checked_in"].includes(clean(registration.status))
+      && Boolean(registration.ticketTokenHash)
+      && eventUsesHandyTicket({}, registration);
+  });
+  // The response does not reveal whether this address has a ticket.
+  if (!document) return { requested: true };
+  const code = String(randomInt(0, 1000000)).padStart(6, "0");
+  const salt = randomBytes(16).toString("hex");
+  const mailRef = db.collection("mailQueue").doc();
+  await db.runTransaction(async (transaction) => {
+    const fresh = await transaction.get(document.ref);
+    const registration = fresh.data() || {};
+    const lastRequestedAt = registration.ticketRecoveryRequestedAt?.toMillis?.() || 0;
+    if (Date.now() - lastRequestedAt < 10 * 60 * 1000) return;
+    if (registration.eventId !== eventId || registration.email !== email
+      || !["confirmed", "checked_in"].includes(clean(registration.status))
+      || !registration.ticketTokenHash) return;
+    transaction.update(document.ref, {
+      ticketRecoveryCodeHash: hashToken(`${salt}:${code}`),
+      ticketRecoverySalt: salt,
+      ticketRecoveryExpiresAt: Timestamp.fromMillis(Date.now() + 15 * 60 * 1000),
+      ticketRecoveryRequestedAt: FieldValue.serverTimestamp(),
+      ticketRecoveryAttempts: 0,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    transaction.set(mailRef, {
+      type: "ticket_recovery", to: email,
+      subject: `Ihr Handy-Ticket: ${clean(registration.eventTitle) || "PROdigitalTV Event"}`,
+      text: `Guten Tag,\n\nIhr Code fuer das Handy-Ticket zu ${clean(registration.eventTitle) || "Ihrem PROdigitalTV Event"} lautet: ${code}\n\nGeben Sie ihn in der WebApp ein. Er ist 15 Minuten gueltig. Falls Sie keinen Code angefordert haben, koennen Sie diese Nachricht ignorieren.\n\nViele Gruesse\nPROdigitalTV`,
+      template: "ticket_recovery", eventId, registrationId: document.id,
+      status: "queued", queuedAt: FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+    });
+  });
+  return { requested: true };
+});
+
+exports.restoreEventTicketByCode = onCall({ region, invoker: "public" }, async (request) => {
+  const eventId = clean(request.data?.eventId).slice(0, 160);
+  const email = mailAddress(request.data?.email).toLowerCase();
+  const code = clean(request.data?.code);
+  if (!eventId || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^\d{6}$/.test(code)) {
+    throw new HttpsError("invalid-argument", "Bitte E-Mail-Adresse und sechsstelligen Code eingeben.");
+  }
+  const matches = await db.collection("registrations").where("email", "==", email).limit(100).get();
+  const document = matches.docs.find((entry) => {
+    const registration = entry.data();
+    return registration.eventId === eventId
+      && ["confirmed", "checked_in"].includes(clean(registration.status))
+      && Boolean(registration.ticketTokenHash);
+  });
+  if (!document) throw new HttpsError("permission-denied", "Code ungueltig oder abgelaufen.");
+  const ticketToken = randomBytes(32).toString("hex");
+  const registration = await db.runTransaction(async (transaction) => {
+    const fresh = await transaction.get(document.ref);
+    const data = fresh.data() || {};
+    const attempts = Number(data.ticketRecoveryAttempts || 0);
+    const expiresAt = data.ticketRecoveryExpiresAt?.toMillis?.() || 0;
+    if (data.eventId !== eventId || data.email !== email
+      || !["confirmed", "checked_in"].includes(clean(data.status))
+      || !data.ticketTokenHash || !data.ticketRecoveryCodeHash || !data.ticketRecoverySalt
+      || expiresAt < Date.now() || attempts >= 5) {
+      throw new HttpsError("permission-denied", "Code ungueltig oder abgelaufen.");
+    }
+    if (hashToken(`${data.ticketRecoverySalt}:${code}`) !== data.ticketRecoveryCodeHash) {
+      transaction.update(document.ref, { ticketRecoveryAttempts: attempts + 1, updatedAt: FieldValue.serverTimestamp() });
+      return null;
+    }
+    transaction.update(document.ref, {
+      ticketTokenHash: hashToken(ticketToken),
+      ticketIssuedAt: FieldValue.serverTimestamp(),
+      ticketDeviceLinked: true,
+      deviceLinkedAt: FieldValue.serverTimestamp(),
+      ticketRecoveryCodeHash: FieldValue.delete(),
+      ticketRecoverySalt: FieldValue.delete(),
+      ticketRecoveryExpiresAt: FieldValue.delete(),
+      ticketRecoveryRequestedAt: FieldValue.delete(),
+      ticketRecoveryAttempts: FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    return data;
+  });
+  if (!registration) throw new HttpsError("permission-denied", "Code ungueltig oder abgelaufen.");
+  return {
+    restored: true, registrationId: document.id, eventId,
+    eventTitle: registration.eventTitle || "", firstName: registration.firstName || "",
+    lastName: registration.lastName || "", companion: registration.companion || null,
+    participantCount: registration.participantCount || (registration.hasCompanion ? 2 : 1),
+    ticketToken
   };
 });
 
@@ -5025,6 +5454,48 @@ exports.notifyAdminAboutRegistration = onCall({ region }, async (request) => {
   const registration = (await db.collection("registrations").doc(request.data.registrationId).get()).data();
   await queueMail({ type: "admin_notification", to: adminRegistrationMailTo(), subject: `Anmeldung: ${registration.eventTitle}`, template: "admin_notification", registrationId: request.data.registrationId, eventId: registration.eventId });
   return { queued: true };
+});
+
+exports.remindUnconfirmedRegistrations = onSchedule({ region, schedule: "every 15 minutes", timeZone: "Europe/Berlin", timeoutSeconds: 120, maxInstances: 1 }, async () => {
+  const now = Date.now();
+  const pending = await db.collection("registrations").where("status", "==", "pending_email_confirmation").get();
+  const eventCache = new Map();
+  let queued = 0;
+  for (const document of pending.docs) {
+    if (queued >= 100) break;
+    const registration = document.data() || {};
+    if (!confirmationReminderIsDue(registration, now) || !registration.eventId) continue;
+    if (!eventCache.has(registration.eventId)) {
+      const eventSnapshot = await db.collection("events").doc(registration.eventId).get();
+      eventCache.set(registration.eventId, eventSnapshot.exists ? { id: eventSnapshot.id, ...eventSnapshot.data() } : null);
+    }
+    const eventRecord = eventCache.get(registration.eventId);
+    if (!eventRecord || ["inactive", "draft", "hidden", "archived", "deleted", "cancelled"].includes(clean(eventRecord.status).toLowerCase()) || eventDateTimeMillis(eventRecord) <= now) continue;
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = Timestamp.fromMillis(Date.now() + 48 * 60 * 60 * 1000);
+    const mailRef = db.collection("mailQueue").doc(`registration-confirmation-reminder-${document.id}`);
+    const didQueue = await db.runTransaction(async (transaction) => {
+      const currentSnapshot = await transaction.get(document.ref);
+      const existingMail = await transaction.get(mailRef);
+      const current = currentSnapshot.data() || {};
+      if (!currentSnapshot.exists || existingMail.exists || !confirmationReminderIsDue(current, Date.now())) return false;
+      const timestamp = FieldValue.serverTimestamp();
+      transaction.update(document.ref, {
+        confirmationTokenHash: hashToken(token), confirmationExpiresAt: expiresAt,
+        confirmationReminderQueuedAt: timestamp, updatedAt: timestamp
+      });
+      transaction.create(mailRef, {
+        type: "registration_confirmation_reminder", template: "registration_confirmation_reminder",
+        to: current.email, subject: `Ihre Anmeldung zu ${current.eventTitle || eventRecord.title || "PROdigitalTV"} – bitte kurz bestätigen`,
+        registrationId: document.id, eventId: current.eventId,
+        confirmationUrl: registrationConfirmationUrl(token), tokenExpiresAt: expiresAt,
+        status: "queued", queuedAt: timestamp, createdAt: timestamp, updatedAt: timestamp
+      });
+      return true;
+    });
+    if (didQueue) queued += 1;
+  }
+  console.log("Bestaetigungserinnerungen vorbereitet:", queued);
 });
 
 exports.cleanupExpiredConfirmations = onSchedule({ schedule: "every day 03:00", region, timeZone: "Europe/Berlin" }, async () => {
@@ -5785,3 +6256,7 @@ exports.Morgenbriefing_Taeglich = onSchedule({ schedule: "every monday 06:15", r
  * "queued", deliver through Postmark/Brevo/SendGrid and then write "sent" or
  * "failed". Credentials belong in Firebase Secret Manager, never in source.
  */
+
+
+
+

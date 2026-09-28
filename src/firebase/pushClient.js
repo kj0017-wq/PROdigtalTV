@@ -60,7 +60,7 @@ async function runtime() {
     if (!(await lib.isSupported())) throw new Error("Browser-Push wird hier nicht unterstuetzt.");
     const registration = await activeWorker();
     const messaging = lib.getMessaging(firebase.app);
-    await import("/assets/js/push-display.js?v=1");
+    await import("/assets/js/push-display.js?v=2");
     if (!unsubscribeMessage) unsubscribeMessage = lib.onMessage(messaging, (payload) => {
       if (Notification.permission === "granted" && storedDevice()?.status === "active") {
         window.PROdigitalTVPush.show(registration, payload).catch(() => updateControls("Benachrichtigung konnte nicht angezeigt werden."));
@@ -224,3 +224,6 @@ export async function refreshBrowserPush() {
 
 window.addEventListener("online", () => { lastRefresh = 0; refreshBrowserPush(); });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refreshBrowserPush(); });
+
+
+

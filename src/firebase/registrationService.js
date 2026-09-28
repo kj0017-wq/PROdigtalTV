@@ -69,7 +69,11 @@ export function storeTicket(result = {}) {
     participantCount: result.participantCount || (result.companion ? 2 : 1),
     storedAt: new Date().toISOString()
   };
-  localStorage.setItem(ticketStorageKey(result.eventId), JSON.stringify(ticket));
+  try {
+    localStorage.setItem(ticketStorageKey(result.eventId), JSON.stringify(ticket));
+  } catch {
+    // A private or full browser store must not prevent the ticket from being shown.
+  }
   writeTicketCookie(result.eventId, ticket);
   return ticket;
 }
@@ -207,6 +211,22 @@ export async function linkTicketDevice(token) {
   if (!firebase) throw new Error("Firebase ist nicht erreichbar. Das Ticket wurde nicht verknuepft.");
   const callable = firebase.functionsLib.httpsCallable(firebase.functions, "linkTicketDeviceByToken");
   const result = (await callable({ token })).data;
+  storeTicket(result);
+  return result;
+}
+
+export async function requestTicketRecoveryCode(eventId, email) {
+  const firebase = await getFirebaseServices();
+  if (!firebase) throw new Error("Firebase ist nicht erreichbar. Bitte spaeter erneut versuchen.");
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "requestEventTicketRecoveryCode");
+  return (await callable({ eventId, email })).data;
+}
+
+export async function restoreTicketByCode(eventId, email, code) {
+  const firebase = await getFirebaseServices();
+  if (!firebase) throw new Error("Firebase ist nicht erreichbar. Bitte spaeter erneut versuchen.");
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "restoreEventTicketByCode");
+  const result = (await callable({ eventId, email, code })).data;
   storeTicket(result);
   return result;
 }

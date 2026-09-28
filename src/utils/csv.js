@@ -1,7 +1,9 @@
 import { formatDateTime, slugify } from "./format.js";
+import { registrationParticipants } from "./registrationParticipants.js";
 
 const columns = [
   ["eventId", "Event-ID"], ["eventTitle", "Event-Titel"], ["eventDate", "Event-Datum"],
+  ["participantRole", "Teilnehmerart"], ["bookingEmail", "Buchung durch"],
   ["firstName", "Vorname"], ["lastName", "Nachname"], ["company", "Unternehmen"],
   ["position", "Position"], ["email", "E-Mail"], ["phone", "Telefon"], ["isMember", "Mitglied ja/nein"],
   ["invitationCode", "Einladungscode"], ["message", "Nachricht"], ["privacyAccepted", "Datenschutz akzeptiert"],
@@ -24,7 +26,7 @@ function csvCell(value, { forceText = false } = {}) {
 }
 
 export function registrationsCsv(event, registrations) {
-  const rows = registrations.map((registration) => columns.map(([key]) => csvCell(printable(key, registration[key]), { forceText: key === "phone" })).join(";"));
+  const rows = registrationParticipants(registrations).map((registration) => columns.map(([key]) => csvCell(printable(key, registration[key]), { forceText: key === "phone" })).join(";"));
   return `\uFEFF${columns.map(([, label]) => csvCell(label)).join(";")}\r\n${rows.join("\r\n")}`;
 }
 

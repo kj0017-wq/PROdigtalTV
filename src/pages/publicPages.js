@@ -7,7 +7,7 @@ import { accessLabels, lifecycleLabels, normalizeLifecyclePhase } from "../data/
 import { escapeHtml, formatDate, initials, linkedText, richTextHtml, richTextPlainText } from "../utils/format.js?v=3";
 import { calendarFileName, generateGoogleCalendarUrl, generateGoogleDecisionReminderUrl, generateICS, generateICSDataUrl, generateOutlookCalendarUrl, generateOutlookDecisionReminderUrl } from "../utils/calendar.js?v=1";
 import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=2";
-import { checkInWithStoredTicket, confirmRegistration, getEventCheckinAccess, getPublicEventCheckinQr, linkTicketDevice, listMyEventRegistrations, readStoredTicket, validateStoredTicket } from "../firebase/registrationService.js?v=20";
+import { checkInWithStoredTicket, confirmRegistration, getEventCheckinAccess, getPublicEventCheckinQr, linkTicketDevice, listMyEventRegistrations, readStoredTicket, validateStoredTicket } from "../firebase/registrationService.js?v=24";
 import { getFirebaseServices } from "../firebase/firebaseClient.js?v=1";
 import { hiddenTalkTitles, isVisibleEventTalk, removeHiddenTalkMentions } from "../utils/eventTalkVisibility.js";
 
@@ -180,16 +180,39 @@ function mediaAssetPreferredImageUrl(asset = {}) {
   return versionedAssetUrl(url, asset);
 }
 
-function mediaAssetImageSrcset(asset = {}) {
+function imageWidthFromVariantUrl(url = "") {
+  let path = String(url || "").split("?")[0];
+  try { path = decodeURIComponent(path); } catch {}
+  const dimensions = [...path.matchAll(/(?:^|[_-])(\d{3,4})x\d{3,4}(?=[_.-]|$)/gi)];
+  return Number(dimensions.at(-1)?.[1] || 0);
+}
+
+function mediaAssetImageSrcset(asset = {}, minWidth = 780) {
+  const thumb = asset.file_path_thumb_url || asset.filePathThumbUrl || asset.thumbUrl || asset.thumb_url || "";
+  const web = asset.file_path_web_url || asset.filePathWebUrl || asset.webUrl || "";
+  const original = asset.file_path_original_url || asset.filePathOriginalUrl || asset.originalUrl || asset.downloadUrl || asset.downloadURL || asset.url || "";
+  const originalWidth = Number(asset.file_path_original_width || asset.original_width || asset.originalWidth || asset.image_width || asset.imageWidth || imageWidthFromVariantUrl(original));
   const candidates = [
-    [asset.file_path_thumb_url || asset.filePathThumbUrl || asset.thumbUrl || asset.thumb_url, asset.file_path_thumb_width || asset.thumb_width || asset.thumbWidth || 480],
-    [asset.file_path_web_url || asset.filePathWebUrl || asset.webUrl, asset.file_path_web_width || asset.web_width || asset.webWidth || 1200],
-    [asset.file_path_original_url || asset.filePathOriginalUrl || asset.originalUrl || asset.downloadUrl || asset.downloadURL || asset.url, asset.file_path_original_width || asset.original_width || asset.originalWidth || asset.image_width || asset.imageWidth || 1800]
+    [thumb, Number(asset.thumb_image_width || asset.file_path_thumb_width || asset.thumb_width || asset.thumbWidth || imageWidthFromVariantUrl(thumb) || (thumb === original ? originalWidth : 0))],
+    [web, Number(asset.web_image_width || asset.file_path_web_width || asset.web_width || asset.webWidth || imageWidthFromVariantUrl(web) || (web === original ? originalWidth : 0))],
+    [original, originalWidth]
   ];
-  const seen = new Set();
-  return candidates
-    .map(([url, width]) => [versionedAssetUrl(url || "", asset), Number(width || 0)])
-    .filter(([url, width]) => url && width > 0 && !seen.has(url) && seen.add(url))
+  const widths = new Map();
+  candidates.forEach(([url, width]) => {
+    if (!url || !Number.isFinite(width) || width <= 0) return;
+    const versioned = versionedAssetUrl(url, asset);
+    widths.set(versioned, Math.max(widths.get(versioned) || 0, width));
+  });
+  const preferred = mediaAssetPreferredImageUrl(asset);
+  if (!widths.has(preferred)) return "";
+  const seenWidths = new Set();
+  const sorted = [...widths].sort((a, b) => a[1] - b[1]).filter(([, width]) => {
+    if (seenWidths.has(width)) return false;
+    seenWidths.add(width);
+    return true;
+  });
+  const suitable = sorted.filter(([, width]) => width >= minWidth);
+  return (suitable.length ? suitable : sorted.slice(-1))
     .map(([url, width]) => `${escapeHtml(url)} ${Math.round(width)}w`)
     .join(", ");
 }
@@ -564,21 +587,19 @@ function publicEditorialMediaAsset(item = {}, mediaAssets = []) {
     })[0];
 }
 
-function publicEditorialCardImage(item = {}, mediaAssets = []) {
+export function publicEditorialCardImage(item = {}, mediaAssets = [], minWidth = 780) {
   const asset = publicEditorialMediaAsset(item, mediaAssets);
-  const url = stableImageUrl(
-    mediaAssetPreferredImageUrl(asset || {})
-      || item.imageDisplayUrl
-      || item.articleImageUrl
-      || item.imageUrl
-      || item.assetUrl
-      || item.asset_url
-      || item.thumbnail_url
-      || item.thumbnailUrl
-      || "",
-    "news"
-  );
-  return { url, srcset: asset ? mediaAssetImageSrcset(asset) : "" };
+  const preferred = mediaAssetPreferredImageUrl(asset || {});
+  const articleImage = item.imageDisplayUrl || item.articleImageUrl || item.imageUrl || item.assetUrl || item.asset_url || "";
+  const thumbnail = item.thumbnail_url || item.thumbnailUrl || "";
+  const direct = thumbnail && thumbnail.split("?")[0] !== String(item.imageUrl || "").split("?")[0]
+    ? thumbnail
+    : articleImage || thumbnail;
+  const assetWidth = Number(asset?.image_width || asset?.imageWidth || imageWidthFromVariantUrl(preferred));
+  const assetContainsDirect = asset && mediaAssetUrls(asset).some((url) => String(url).split("?")[0] === String(direct).split("?")[0]);
+  const useDirect = Boolean(direct && preferred && direct !== preferred && (!assetContainsDirect || (assetWidth > 0 && assetWidth < minWidth)));
+  const url = stableImageUrl(useDirect ? direct : preferred || direct, "news");
+  return { url, srcset: asset && !useDirect ? mediaAssetImageSrcset(asset, minWidth) : "" };
 }
 function publicMemberLogoAsset(member = {}, mediaAssets = []) {
   return mediaAssets
@@ -802,6 +823,12 @@ function eventLocationDisplay(event = {}) {
   return [event.locationName, event.city].filter(Boolean).join(", ") || "Ort wird bekanntgegeben";
 }
 
+function eventAddressMarkup(event = {}) {
+  if (event.isVirtualEvent || (!event.address && !event.postalCode && !event.zipCode)) return "";
+  const cityLine = [event.postalCode || event.zipCode, event.city].filter(Boolean).join(" ");
+  return [event.address, cityLine].filter(Boolean).map((line) => escapeHtml(line)).join("<br>");
+}
+
 function eventCalendarSaveEnabled(event = {}) {
   return event.calendarSaveEnabled !== false && event.calendar_vormerkung !== false;
 }
@@ -832,7 +859,7 @@ function eventLocationDetailMarkup(event = {}) {
   if (event.isVirtualEvent) {
     return `<h2>${escapeHtml(eventOnlineLabel(event) || "Online")}</h2><p>Virtuelle Teilnahme per Zoom Meeting.${event.zoomLink ? "<br>Den Zugangslink erhalten angemeldete Teilnehmer separat." : ""}</p>`;
   }
-  return `<h2>${escapeHtml(event.locationName || "Ort wird bekanntgegeben")}</h2><p>${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p>`;
+  return `<h2>${escapeHtml(event.locationName || "Ort wird bekanntgegeben")}</h2>${eventAddressMarkup(event) || event.phone ? `<p>${eventAddressMarkup(event)}${event.phone ? `<br>Telefon: ${escapeHtml(event.phone)}` : ""}</p>` : ""}`;
 }
 
 function archiveEventImageUrl(event = {}, mediaAssets = []) {
@@ -901,6 +928,16 @@ function eventTalkSpeakers(topic = {}, event = {}, speakers = []) {
   });
 }
 
+function eventTalkSpeakerLabel(topic = {}, speaker = {}, index = 0) {
+  const explicit = [topic.speakerRoles, topic.speakerRoleById]
+    .filter((roles) => roles && !Array.isArray(roles))
+    .map((roles) => String(roles[speaker.id] || "").trim())
+    .find(Boolean);
+  if (explicit) return explicit;
+  const primaryId = topic.speakerId || topic.speakerIds?.[0];
+  return (primaryId ? speaker.id === primaryId : index === 0) ? "Referent" : "Co-Referent";
+}
+
 function eventInvitationProgramText(topics = [], speakers = [], event = {}, currentText = "") {
   if (isPastEvent(event)) return "";
   const assignedTopics = (event.topicIds || []).map((topicId) => topics.find((topic) => topic.id === topicId)).filter((topic) => topic && isVisibleEventTalk(topic));
@@ -954,21 +991,20 @@ function eventTalksMarkup(topics = [], speakers = [], event = {}) {
   if (isPastEvent(event)) return "";
   const assignedTopics = (event.topicIds || []).map((topicId) => topics.find((topic) => topic.id === topicId)).filter((topic) => topic && isVisibleEventTalk(topic));
   if (!assignedTopics.length) return "";
-  return `<section class="event-talks"><div class="section-head"><div><p class="eyebrow">Themen & Referenten</p><h2>Agenda des Medienfrühstücks</h2></div></div>
+  return `<section class="event-talks"><div class="section-head"><div><p class="eyebrow">Themen & Referenten</p><h2>Vorträge der Veranstaltung</h2></div></div>
     <div class="event-talk-list">${assignedTopics.map((topic) => {
     const topicSpeakers = eventTalkSpeakers(topic, event, speakers);
     const short = eventTopicTeaser(topic);
     const text = topic.longDescription && topic.longDescription !== short ? cleanPublicArticleText(topic.longDescription) : "";
     return `<article class="event-talk-card">
       <div class="event-talk-card__body">
-        <div class="event-talk-speakers">${topicSpeakers.length ? topicSpeakers.map((speaker) => `<a class="event-talk-speaker" href="${speakerProfileHref(speaker)}">
+        <div class="event-talk-speakers">${topicSpeakers.length ? topicSpeakers.map((speaker, index) => `<a class="event-talk-speaker" href="${speakerProfileHref(speaker)}">
           <div class="event-talk-speaker__portrait">${speakerPortrait(speaker)}</div>
-          <div class="event-talk-speaker__identity"><strong>${escapeHtml(speakerName(speaker))}</strong><small>${escapeHtml([speaker.position, speaker.company].filter(Boolean).join(" - "))}</small></div>
+          <div class="event-talk-speaker__identity"><span class="event-talk-speaker__role">${escapeHtml(eventTalkSpeakerLabel(topic, speaker, index))}</span><strong>${escapeHtml(speakerName(speaker))}</strong><small>${escapeHtml([speaker.position, speaker.company].filter(Boolean).join(" - "))}</small></div>
           ${speakerCompanyLogoUrl(speaker, topic) ? `<span class="event-talk-speaker__logo"><img src="${escapeHtml(speakerCompanyLogoUrl(speaker, topic))}" alt="Logo ${escapeHtml(speaker.company || "Unternehmen")}" loading="lazy" decoding="async" ${liveImageAttrs("sponsor")}></span>` : ""}
         </a>`).join("") : `<span class="event-talk-speaker event-talk-speaker--empty">Referent wird ergaenzt.</span>`}</div>
         <h3>${escapeHtml(topic.title || "Thema")}</h3>
-        ${short ? `<p class="event-talk-card__short">${escapeHtml(short)}</p>` : ""}
-        ${text ? `<details class="event-talk-more"><summary>Mehr …</summary><div class="event-talk-more__body"><p>${escapeHtml(text)}</p></div></details>` : ""}
+        ${text ? `<details class="event-talk-more"><summary><span class="event-talk-more__teaser">${escapeHtml(short)}</span><span class="event-talk-more__full">${escapeHtml(text)}</span><span class="event-talk-more__action" aria-hidden="true"></span></summary></details>` : short ? `<p class="event-talk-card__short">${escapeHtml(short)}</p>` : ""}
       </div>
     </article>`;
   }).join("")}</div>
@@ -981,7 +1017,7 @@ function eventScheduleItems(event = {}) {
   return text.split(/\n+/).map((line) => {
     const clean = line.trim();
     if (!clean) return null;
-    const parts = clean.split("|").map((part) => part.trim()).filter(Boolean);
+    const parts = clean.split("|").map((part) => part.trim());
     if (parts.length >= 3) return { time: parts[0], title: parts[1], text: parts.slice(2).join(" | "), neutral: /pause|lunch|fruehstueck|frühstück|networking|begr[uü]ßung|begr[uü]ssung/i.test(clean) };
     if (parts.length === 2) return { time: parts[0], title: parts[1], text: "", neutral: /pause|lunch|fruehstueck|frühstück|networking|begr[uü]ßung|begr[uü]ssung/i.test(clean) };
     const match = clean.match(/^(\d{1,2}:\d{2})\s+(.+)$/);
@@ -992,16 +1028,19 @@ function eventScheduleItems(event = {}) {
 
 function eventScheduleMarkup(event = {}) {
   const items = eventScheduleItems(event);
-  if (!items.length) return "";
+  const moderatorName = String(event.moderatorName || "").trim();
+  if (!items.length && !moderatorName) return "";
   return `<section class="event-schedule" aria-labelledby="event-schedule-title">
     <p class="eyebrow">Ablaufplan</p>
     <h2 id="event-schedule-title">Ablauf der Veranstaltung</h2>
+    ${moderatorName ? `<p class="event-schedule__moderator">Durch das Programm führt Sie <strong>${escapeHtml(moderatorName)}</strong>.</p>` : ""}
+    ${items.length ? `
     <div class="event-schedule__list">
       ${items.map((item) => `<div class="event-schedule__item${item.neutral ? " event-schedule__item--neutral" : ""}">
         <div class="event-schedule__time">${escapeHtml(item.time)}</div>
         <div class="event-schedule__body"><strong>${escapeHtml(item.title)}</strong>${item.text ? `<p>${escapeHtml(item.text)}</p>` : ""}</div>
       </div>`).join("")}
-    </div>
+    </div>` : ""}
   </section>`;
 }
 
@@ -1669,7 +1708,7 @@ function ttsReader({ rubric = "Audio", title = "", label = title || "Vorlesen", 
     <template data-tts-source>${escapeHtml(readerText)}</template>
     <div class="tts-reader__actions" data-tts-actions>
       <button type="button" class="button button--primary button--small tts-reader__play" data-tts-play data-tts-mode="natural" data-audio-url="${escapeHtml(naturalUrl)}" aria-pressed="false" aria-label="Audio abspielen oder pausieren" ${naturalUrl ? "" : "disabled"}><span class="tts-control-icon tts-control-icon--play" aria-hidden="true"></span></button>
-      <button type="button" class="button button--secondary button--small tts-reader__large-text" data-tts-play data-tts-mode="accessible" data-audio-url="${escapeHtml(accessibleUrl)}" data-timing-url="${escapeHtml(serviceTimingUrl)}" aria-pressed="false" aria-label="Gro&szlig;en Text &ouml;ffnen" ${accessibleUrl ? "" : "disabled"}><span class="tts-control-icon tts-control-icon--search" aria-hidden="true"></span></button>
+      <button type="button" class="button button--secondary button--small tts-reader__large-text" data-tts-play data-tts-mode="accessible" data-audio-url="${escapeHtml(accessibleUrl)}" data-timing-url="${escapeHtml(serviceTimingUrl)}" aria-pressed="false" aria-label="Text synchron mitlesen" title="Text synchron mitlesen" ${accessibleUrl ? "" : "disabled"}><span class="tts-control-icon tts-control-icon--search" aria-hidden="true"></span><b class="tts-reader__text-label">Mitlesen</b></button>
     </div>
   </div>`;
 }
@@ -2385,7 +2424,7 @@ function homeHeroMarkup({ next, nextImageUrl, retrospective, series }) {
 }
 
 function pageContentCacheKey(name = "", variant = "public") {
-  return `pdtv-page-content-v44:${name}:${variant}`;
+  return `pdtv-page-content-${name === "news" ? "v48" : ["topics", "home"].includes(name) ? "v45" : "v44"}:${name}:${variant}`;
 }
 
 function readPageContentCache(name = "", variant = "public", maxAgeMs = 600000) {
@@ -2409,7 +2448,7 @@ function eventDetailCacheVariant(eventId = "") {
 }
 
 function eventDetailCacheName(eventId = "") {
-  return `event-detail:${eventId}`;
+  return `event-detail-v2:${eventId}`;
 }
 function readEmbeddedEventDetail(eventId = "") {
   try {
@@ -2768,29 +2807,40 @@ export async function eventsPage() {
   return publicShell("events", eventsContent);
 }
 
+function eventDetailUpdatedAt(record = {}) {
+  const value = record.updatedAt || record.updated_at;
+  return typeof value?.toMillis === "function" ? value.toMillis() : Date.parse(String(value || "")) || 0;
+}
+
+function mergeEventDetailRecords(loaded = [], embedded = []) {
+  const records = new Map(embedded.filter((record) => record?.id).map((record) => [record.id, record]));
+  loaded.forEach((record) => {
+    if (!record?.id) return;
+    const current = records.get(record.id);
+    if (!current || eventDetailUpdatedAt(record) >= eventDetailUpdatedAt(current)) records.set(record.id, record);
+  });
+  return Array.from(records.values());
+}
+
 async function getPublicRouteEvent(id, includeMemberEvents = false) {
   const embeddedEvent = readEmbeddedEventDetail(id)?.event || null;
-  const directEvent = getOne("events", id).then((event) => {
-    if (event) return event;
-    throw new Error(`Event ${id} nicht gefunden`);
-  });
-  const listedEvent = listPublicEvents(includeMemberEvents).then((events) => {
-    const event = events.find((item) => item.id === id);
-    if (event) return event;
-    throw new Error(`Event ${id} nicht in oeffentlicher Liste`);
-  });
-  try {
-    return await Promise.any([directEvent, listedEvent]);
-  } catch {
-    return embeddedEvent;
-  }
+  const directEvent = await fastFallback(getOne("events", id).catch(() => null), null, 4000);
+  if (directEvent) return directEvent;
+  const events = await listPublicEvents(includeMemberEvents).catch(() => []);
+  const listedEvent = events.find((event) => event.id === id);
+  if (!listedEvent) return embeddedEvent;
+  if (!embeddedEvent) return listedEvent;
+  return eventDetailUpdatedAt(embeddedEvent) > eventDetailUpdatedAt(listedEvent)
+    ? { ...listedEvent, ...embeddedEvent }
+    : listedEvent;
 }
 
 export async function eventDetailPage(id, query = new URLSearchParams()) {
   const previewMode = query?.get?.("preview") === "1" && isAdmin();
   const ticketToken = String(query?.get?.("ticket") || "").trim();
   const leanEventDetail = mobileLeanStart();
-  const canUseCachedDetail = id && !previewMode && !ticketToken;
+  const locallyStoredTicket = id ? readStoredTicket(id) : null;
+  const canUseCachedDetail = id && !previewMode && !ticketToken && !locallyStoredTicket?.ticketToken;
   const embeddedDetail = canUseCachedDetail ? readEmbeddedEventDetail(id) : null;
   const cachedDetail = canUseCachedDetail ? readPageContentCache(eventDetailCacheName(id), eventDetailCacheVariant(id), 30000) : "";
   if (cachedDetail) return publicShell("events", cachedDetail);
@@ -2812,15 +2862,17 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
   if (!event && embeddedDetail?.event) event = embeddedDetail.event;
   if (!event) return notFoundPage();
   if (!previewMode && !isPastEvent(event) && !upcomingEventIsVisible(event)) return notFoundPage();
-  const [speakers, sponsors, topics, galleries, mediaAssets] = await Promise.all([
+  const [loadedSpeakers, sponsors, loadedTopics, galleries, mediaAssets] = await Promise.all([
     fastFallback(listPublicContent("speakers").catch(() => []), embeddedDetail?.speakers || [], leanEventDetail ? 1200 : 22000),
     fastFallback(listPublicContent("sponsors").catch(() => []), embeddedDetail?.sponsors || [], leanEventDetail ? 900 : 22000),
     fastFallback(listPublicContent("topics").catch(() => []), embeddedDetail?.topics || [], leanEventDetail ? 1200 : 22000),
     fastFallback(listPublicContent("galleries").catch(() => []), embeddedDetail?.galleries || [], leanEventDetail ? 700 : 22000),
     fastFallback(listPublicEventMediaAssets([event]).catch(() => []), embeddedDetail?.mediaAssets || [], leanEventDetail ? 900 : 22000)
   ]);
+  const speakers = mergeEventDetailRecords(loadedSpeakers, embeddedDetail?.speakers || []);
+  const topics = mergeEventDetailRecords(loadedTopics, embeddedDetail?.topics || []);
   const registrationOpen = eventRegistrationIsOpen(event);
-  const storedTicket = ticketActivation || await validateStoredTicket(event.id).catch(() => readStoredTicket(event.id));
+  const storedTicket = ticketActivation || await validateStoredTicket(event.id).catch(() => locallyStoredTicket || readStoredTicket(event.id));
   const restricted = event.accessType === "members_only" && !isMember() && !registrationOpen && !storedTicket;
   if (restricted && !event.showPublicTeaser) return publicShell("events", subhero("Geschuetzter Bereich", "Nur für Mitglieder", "Bitte melden Sie sich an, um dieses Event zu sehen."));
   const eventFormatKey = normalizeTopicType(`${event.id || ""} ${event.title || event.titel || ""} ${event.eventType || ""} ${event.series || ""}`);
@@ -2840,7 +2892,7 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
       <p>${escapeHtml(registrationPartyLabel(storedTicket))}</p>
       <span>Dieses Handy ist fuer ${storedTicket.participantCount > 1 || storedTicket.companion ? "beide Personen" : "den Einlass"} vorbereitet.</span>
     </div>
-  </section>` : "";
+  </section>` : !isPastEvent(event) ? `<p class="event-ticket-recovery-link"><a href="#/ticket/recover/${encodeURIComponent(event.id)}">Handy-Ticket wiederherstellen</a></p>` : "";
   const eventImageUrl = eventDetailImageUrl(event, mediaAssets, [coHostLogo]);
   const rawIntroText = eventIntroText(event);
   const longText = eventLongText(event);
@@ -2872,6 +2924,7 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
         ${previewNotice}
         <figure class="event-detail-image"><img src="${escapeHtml(stableImageUrl(eventImageUrl, "event"))}" alt="Eventbild ${escapeHtml(event.title)}" loading="eager" decoding="async" fetchpriority="high" ${liveImageAttrs("event")}>${eventImageRights}</figure>
         ${ticketStatusCard}
+        ${!restricted && eventAddressMarkup(event) ? `<div class="event-quick-address"><span>Veranstaltungsadresse</span><strong>${escapeHtml(event.locationName || "")}</strong><div>${eventAddressMarkup(event)}</div></div>` : ""}
         ${restricted ? `<div class="alert alert--warning">Details und Anmeldung dieses Mitglieder-Events stehen nach dem Login zur Verfuegung.</div>` : ""}
         <h2>Zum Event</h2>${eventPageText ? `<div class="lead editorial-text event-detail-text">${articleParagraphs(eventPageText)}</div>` : ""}
         ${restricted ? "" : registrationCta}
@@ -2879,7 +2932,7 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
         ${retrospectiveText ? `<h2>Rückblick</h2><div class="editorial-text">${articleParagraphs(retrospectiveText)}</div>` : ""}
         ${eventTalksMarkup(topics, speakers, event)}
         ${event.lunchNote ? `<div class="alert">${escapeHtml(event.lunchNote)}</div>` : ""}
-        ${restricted ? "" : `<section class="venue-stage venue-stage--event-detail"><div class="venue-stage__identity"><p class="eyebrow">${event.isVirtualEvent ? "Online-Teilnahme" : "Veranstaltungsort"}</p>${!event.isVirtualEvent && coHost && coHostLogo ? `<img class="venue-stage__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : ""}${event.isVirtualEvent ? eventLocationDetailMarkup(event) : `<h2>${escapeHtml(coHost?.name || event.locationName || "Ort wird bekanntgegeben")}</h2><p>${escapeHtml(event.locationName || "")}${event.locationName ? "<br>" : ""}${escapeHtml(event.address || "")}${event.address ? "<br>" : ""}${escapeHtml(event.city)}</p>`}</div>${suppressCoHost ? "" : `<div class="venue-stage__description"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : `<p>${escapeHtml(coHost.name)} begleitet dieses PROdigitalTV Event als Co-Gastgeber.</p>`}` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div>`}</section>`}
+        ${restricted ? "" : `<section class="venue-stage venue-stage--event-detail"><div class="venue-stage__identity"><p class="eyebrow">${event.isVirtualEvent ? "Online-Teilnahme" : "Veranstaltungsort"}</p>${!event.isVirtualEvent && coHost && coHostLogo ? `<img class="venue-stage__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : ""}${event.isVirtualEvent ? eventLocationDetailMarkup(event) : `<h2>${escapeHtml(coHost?.name || event.locationName || "Ort wird bekanntgegeben")}</h2>${eventAddressMarkup(event) ? `<p>${eventAddressMarkup(event)}</p>` : ""}`}</div>${suppressCoHost ? "" : `<div class="venue-stage__description"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : `<p>${escapeHtml(coHost.name)} begleitet dieses PROdigitalTV Event als Co-Gastgeber.</p>`}` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div>`}</section>`}
         ${assignedGalleryImages.length ? galleryPlayCta(assignedGallery, assignedGalleryImages) : ""}
       </article>
       <aside class="detail-aside">
@@ -2891,7 +2944,7 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
         <span class="tag ${event.accessType !== "public" ? "tag--red" : ""}">${accessLabels[event.accessType]}</span>
         <div class="fact"><label>Datum</label><strong>${formatDate(event.date)}</strong></div>
         ${event.startTime ? `<div class="fact"><label>Zeit</label><strong>${event.startTime}${event.endTime ? ` - ${event.endTime}` : ""} Uhr</strong></div>` : ""}
-        <div class="fact"><label>Ort</label><strong>${escapeHtml(eventLocationDisplay(event))}</strong></div>
+        <div class="fact"><label>Ort</label><strong>${escapeHtml(eventLocationDisplay(event))}</strong>${eventAddressMarkup(event) ? `<small class="event-fact-address">${eventAddressMarkup(event)}</small>` : ""}</div>
         <div class="fact"><label>Status</label><strong>${escapeHtml(eventRegistrationStatusLabel(event))}</strong></div>
       </aside>
     </div></section>`;
@@ -2938,7 +2991,7 @@ export async function registrationPage(id, query = new URLSearchParams()) {
       <div class="registration-summary">
         <div><span>Event</span><strong>${escapeHtml(event.title || "")}</strong></div>
         <div><span>Termin</span><strong>${escapeHtml(formatDate(event.date))}${event.startTime ?` - ${escapeHtml(event.startTime)} Uhr` : ""}</strong></div>
-        <div><span>Ort</span><strong>${escapeHtml(eventLocationDisplay(event))}</strong></div>
+        <div><span>Ort</span><strong>${escapeHtml(eventLocationDisplay(event))}</strong>${eventAddressMarkup(event) ? `<small class="registration-summary__address">${eventAddressMarkup(event)}</small>` : ""}</div>
       </div>
       <div class="alert">${checkinMode
         ? "Sie melden sich direkt am Einlass an. Nach dem Speichern sind Sie angemeldet und eingecheckt."
@@ -2948,14 +3001,14 @@ export async function registrationPage(id, query = new URLSearchParams()) {
       <fieldset class="registration-section"><legend>Person und Kontakt</legend>
       <div class="form-grid--two"><div class="field"><label for="firstName">Vorname *</label><input id="firstName" name="firstName" autocomplete="given-name" required></div><div class="field"><label for="lastName">Nachname *</label><input id="lastName" name="lastName" autocomplete="family-name" required></div></div>
       <div class="form-grid--two"><div class="field"><label for="company">Unternehmen</label><input id="company" name="company" autocomplete="organization"></div><div class="field"><label for="position">Position / Funktion</label><input id="position" name="position" autocomplete="organization-title"></div></div>
-      <div class="form-grid--two"><div class="field"><label for="email">E-Mail *</label><input id="email" name="email" type="email" autocomplete="email" required></div><div class="field"><label for="phone">Telefon / Mobilnummer</label><input id="phone" name="phone" autocomplete="tel"></div></div>
+      <div class="form-grid--two"><div class="field"><label for="email">E-Mail *</label><input id="email" name="email" type="email" autocomplete="email" required></div><div class="field"><label for="phone">Mobilnummer mit Landesvorwahl *</label><input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+49 170 1234567" required><small>Bitte mit + und Landesvorwahl eingeben.</small></div></div>
       ${event.invitationCodeRequired ? `<div class="field"><label for="invitationCode">Einladungscode *</label><input id="invitationCode" name="invitationCode" autocomplete="one-time-code" required></div>` : ""}
       </fieldset>
       <fieldset class="registration-section registration-section--compact"><legend>Begleitperson</legend>
         <label class="checkbox"><input type="checkbox" name="hasCompanion" data-registration-companion-toggle> Ich komme mit einer Begleitperson</label>
         <div data-registration-companion-fields hidden>
           <div class="form-grid--two"><div class="field"><label for="companionFirstName">Vorname der Begleitperson *</label><input id="companionFirstName" name="companionFirstName" autocomplete="off" disabled></div><div class="field"><label for="companionLastName">Nachname der Begleitperson *</label><input id="companionLastName" name="companionLastName" autocomplete="off" disabled></div></div>
-          <div class="form-grid--two"><div class="field"><label for="companionEmail">E-Mail der Begleitperson *</label><input id="companionEmail" name="companionEmail" type="email" autocomplete="off" disabled></div><div class="field"><label for="companionPhone">Telefon der Begleitperson *</label><input id="companionPhone" name="companionPhone" type="tel" autocomplete="off" disabled></div></div>
+          <div class="form-grid--two"><div class="field"><label for="companionEmail">E-Mail der Begleitperson *</label><input id="companionEmail" name="companionEmail" type="email" autocomplete="off" disabled></div><div class="field"><label for="companionPhone">Mobilnummer der Begleitperson mit Landesvorwahl *</label><input id="companionPhone" name="companionPhone" type="tel" inputmode="tel" autocomplete="off" placeholder="+49 170 1234567" disabled></div></div>
           <p class="muted">Beide Personen werden mit demselben Handy-Ticket am Einlass eingecheckt.</p>
         </div>
       </fieldset>
@@ -3039,6 +3092,9 @@ export async function newsPage(query = new URLSearchParams()) {
   if (cachedNews) return publicShell("news", cachedNews);
   const [editorialContent, mediaAssets] = await Promise.all([listPublicContent("editorialContent"), listPublicMediaAssets().catch(() => [])]);
   const cmsNews = publicNewsItems(editorialContent);
+  const galleries = cmsNews.some((item) => [item.galleryId, item.gallery_id, item.galleryIa, item.linkedGalleryId, item.linkeaGalleryIa, item.gallery].some(Boolean))
+    ? await listPublicContent("galleries").catch(() => [])
+    : [];
   const news = cmsNews.sort(newestContentFirst);
   const categoryHref = (category) => `#/news?category=${encodeURIComponent(category || "News")}`;
   const newsCategories = (item = {}) => {
@@ -3062,28 +3118,66 @@ export async function newsPage(query = new URLSearchParams()) {
     : news;
   const featuredNews = filteredNews.slice(0, 6);
   const listedNews = filteredNews.slice(6);
+  const newsAudioOptions = (item) => ({
+    audio: item.audio || {},
+    audioProvider: item.audioProvider || "",
+    audioUrl: item.audioUrl || "",
+    audioAccessibleUrl: item.audioAccessibleUrl || "",
+    audioNaturalUrl: item.audioNaturalUrl || "",
+    timingUrl: item.timingUrl || "",
+    audioStatus: item.audioStatus || "",
+    audioAccessibleStatus: item.audioAccessibleStatus || "",
+    audioNaturalStatus: item.audioNaturalStatus || ""
+  });
+  const hasPlayableNewsAudio = (item) => Boolean(ttsReader(newsAudioOptions(item)));
   const newsCard = (item) => {
     const cardImage = publicEditorialCardImage(item, mediaAssets);
     const thumb = cardImage.url;
     const teaser = item.shortText || item.teaserText || item.introText || item.bodyText || "";
     const category = newsCategories(item)[0] || "News";
     const detailHref = `#/news/${escapeHtml(item.id)}`;
-    return `<article class="quick-card news-card"><a class="news-card__thumb-link" href="${detailHref}"><figure class="news-card__thumb"><img src="${escapeHtml(thumb)}"${cardImage.srcset ? ` srcset="${cardImage.srcset}" sizes="(max-width: 760px) 92vw, 390px"` : ""} alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${liveImageAttrs("news")}></figure></a><div class="news-card__body"><p class="eyebrow news-category-list">${categoryLinks(item)}</p><h3><a href="${detailHref}">${escapeHtml(item.title || "")}</a></h3>${item.subtitle ? `<p class="news-card__subtitle">${escapeHtml(item.subtitle)}</p>` : ""}<p class="news-card__teaser">${escapeHtml(teaser).slice(0, 320)}</p></div></article>`;
+    return `<article class="quick-card news-card"><a class="news-card__thumb-link" href="${detailHref}"><figure class="news-card__thumb"><img src="${escapeHtml(thumb)}"${cardImage.srcset ? ` srcset="${cardImage.srcset}" sizes="(max-width: 760px) 92vw, 390px"` : ""} alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${liveImageAttrs("news")}></figure></a><div class="news-card__body"><p class="eyebrow news-category-list">${categoryLinks(item)}${hasPlayableNewsAudio(item) ? " · Audio" : ""}</p><h3><a href="${detailHref}">${escapeHtml(item.title || "")}</a></h3>${item.subtitle ? `<p class="news-card__subtitle">${escapeHtml(item.subtitle)}</p>` : ""}<p class="news-card__teaser">${escapeHtml(teaser).slice(0, 320)}</p></div></article>`;
   };
   const newsListItem = (item) => {
     const date = item.publishDate || item.validFrom || item.updatedAt || item.createdAt || "";
     const teaser = item.shortText || item.teaserText || item.introText || item.subtitle || item.bodyText || "";
     const category = newsCategories(item)[0] || "News";
-    const cardImage = publicEditorialCardImage(item, mediaAssets);
+    const cardImage = publicEditorialCardImage(item, mediaAssets, 360);
     const thumb = cardImage.url;
     return `<article class="news-list-item">
       <a class="news-list-item__thumb" href="#/news/${escapeHtml(item.id)}" aria-label="${escapeHtml(item.title || "News")}"><img src="${escapeHtml(thumb)}"${cardImage.srcset ? ` srcset="${cardImage.srcset}" sizes="(max-width: 760px) 92vw, 180px"` : ""} alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="lazy" decoding="async" ${liveImageAttrs("news")}></a>
       <div class="news-list-item__body">
-        <span class="news-list-item__meta">${categoryLinks(item)}${date ? ` / ${escapeHtml(formatDate(date))}` : ""}</span>
+        <span class="news-list-item__meta">${categoryLinks(item)}${date ? ` / ${escapeHtml(formatDate(date))}` : ""}${hasPlayableNewsAudio(item) ? " / Audio" : ""}</span>
         <strong><a href="#/news/${escapeHtml(item.id)}">${escapeHtml(item.title || "")}</a></strong>
         ${teaser ? `<span>${escapeHtml(teaser).slice(0, 170)}</span>` : ""}
       </div>
     </article>`;
+  };
+  const newsFlipCard = (item, index) => {
+    const cardImage = publicEditorialCardImage(item, mediaAssets);
+    const date = item.publishDate || item.validFrom || item.updatedAt || item.createdAt || "";
+    const teaserSource = item.shortText || item.teaserText || item.introText || item.bodyText || item.longDescription || item.articleText || item.mainText || item.text || "";
+    const teaserBody = cleanNewsDetailText(teaserSource, item.title || "", item.subtitle || "", item.slug || item.key || item.id || "");
+    const teaser = teaserText([item.subtitle, teaserBody].filter(Boolean).join(" "), 240);
+    return `<article class="news-flip-card${index === 0 ? " is-active" : ""}" data-news-flip-card role="button" tabindex="${index === 0 ? "0" : "-1"}" aria-label="${escapeHtml(item.title || "News")} lesen" aria-hidden="${index === 0 ? "false" : "true"}">
+      <div class="news-flip-card__image"><img src="${escapeHtml(cardImage.url)}"${cardImage.srcset ? ` srcset="${cardImage.srcset}" sizes="92vw"` : ""} alt="${escapeHtml(item.thumbnail_alt || item.title || "News")}" loading="${index === 0 ? "eager" : "lazy"}" decoding="async" ${liveImageAttrs("news")}><span class="news-flip-card__category">${escapeHtml(newsCategories(item)[0] || "News")}${hasPlayableNewsAudio(item) ? " · Audio" : ""}</span></div>
+      <div class="news-flip-card__content"><h2>${escapeHtml(item.title || "")}</h2>
+      ${teaser ? `<p class="news-flip-card__teaser">${escapeHtml(teaser)}</p>` : ""}
+      <span class="news-flip-card__meta">PROdigitalTV${date ? ` · ${escapeHtml(formatDate(date))}` : ""}</span></div>
+    </article>`;
+  };
+  const newsFlipArticle = (item) => {
+    const date = item.publishDate || item.validFrom || item.updatedAt || item.createdAt || "";
+    const title = cleanNewsDetailTitle(item);
+    const text = item.longDescription || item.articleText || item.bodyText || item.mainText || item.text || item.fullText || item.longText || item.shortText || item.teaserText || "";
+    const body = cleanNewsDetailText(text, title, item.subtitle || "", item.slug || item.key || item.id || "");
+    const gallery = articleGallery(item, galleries);
+    const galleryImages = visibleGalleryImages(gallery || {}).slice(0, 12);
+    return `<template data-news-flip-article><p class="news-flip__reader-meta">${escapeHtml(newsCategories(item)[0] || "News")}${date ? ` · ${escapeHtml(formatDate(date))}` : ""}</p>
+      <h2>${escapeHtml(title)}</h2>${item.subtitle ? `<p class="news-flip__reader-subtitle">${escapeHtml(item.subtitle)}</p>` : ""}
+      ${ttsReader({ rubric: newsCategories(item)[0] || "News", title, label: "Vorlesen", text: [item.subtitle, body].filter(Boolean).join("\n\n"), inlineOffsetText: item.subtitle || "", ...newsAudioOptions(item) })}
+      <div class="editorial-text">${articleParagraphs(body)}</div>
+      ${galleryPlayCta(gallery, galleryImages)}</template>`;
   };
   const newsContent = `${subhero("News", "Aktuelles von PROdigitalTV.", "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.")}
     <section class="section"><div class="container">${news.length ? `
@@ -3092,8 +3186,10 @@ export async function newsPage(query = new URLSearchParams()) {
         ${allCategories.map((category) => `<a class="news-category-pill ${selectedCategory === category ? "is-active" : ""}" href="${escapeHtml(categoryHref(category))}">${escapeHtml(category)}</a>`).join("")}
       </div>
       ${selectedCategory ? `<div class="news-filter-state"><span>Rubrik: <strong>${escapeHtml(selectedCategory)}</strong></span><a class="button button--secondary button--small" href="#/news">Alle News</a></div>` : ""}
-      <div class="card-grid card-grid--three editorial-list editorial-list--news">${featuredNews.map(newsCard).join("")}</div>
-      ${listedNews.length ? `<div class="news-list-view"><div class="section-head"><div><p class="eyebrow">Weitere News</p><h2>${selectedCategory ? `Weitere Meldungen in ${escapeHtml(selectedCategory)}` : "Alle weiteren Meldungen"}</h2></div></div>${listedNews.map(newsListItem).join("")}</div>` : ""}
+      ${filteredNews.length ? `<div class="news-mobile-toolbar"><h1>News</h1><div class="news-mobile-mode" data-news-mode-switch role="group" aria-label="News-Ansicht"><button type="button" data-news-mode="classic" aria-pressed="true">Klassisch</button><button type="button" data-news-mode="flip" aria-pressed="false">Flip</button></div></div>` : ""}
+      <div data-news-classic><div class="card-grid card-grid--three editorial-list editorial-list--news">${featuredNews.map(newsCard).join("")}</div>
+      ${listedNews.length ? `<div class="news-list-view"><div class="section-head"><div><p class="eyebrow">Weitere News</p><h2>${selectedCategory ? `Weitere Meldungen in ${escapeHtml(selectedCategory)}` : "Alle weiteren Meldungen"}</h2></div></div>${listedNews.map(newsListItem).join("")}</div>` : ""}</div>
+      ${filteredNews.length ? `<div class="news-flip" data-news-flip tabindex="0" aria-label="News mit Wischgeste oder Pfeiltasten durchblaettern"><div class="news-flip__stage">${filteredNews.map(newsFlipCard).join("")}</div><div class="news-flip__controls"><span class="news-flip__label">News</span><span data-news-flip-count role="status" aria-live="polite">1 / ${filteredNews.length}</span></div><div class="news-flip__reader" data-news-flip-reader role="dialog" aria-modal="true" aria-label="Artikeltext" tabindex="-1" hidden><div class="news-flip__reader-toolbar"><button class="news-flip__reader-top-back" type="button" data-news-flip-reader-close aria-label="Zurück zur News" title="Zurück zur News">←</button><span>News</span></div><div class="news-flip__reader-inner"><div data-news-flip-reader-content></div><button class="news-flip__reader-back" type="button" data-news-flip-reader-close aria-label="Zurück zur News" title="Zurück zur News">→</button></div></div>${filteredNews.map(newsFlipArticle).join("")}</div>` : ""}
       ${!filteredNews.length ? `<div class="alert">Zu dieser Rubrik sind aktuell keine News veröffentlicht.</div>` : ""}
     ` : `<div class="alert">Aktuell sind keine News veröffentlicht.</div>`}</div></section>`;
   writePageContentCache("news", newsVariant, newsContent);
@@ -3389,6 +3485,33 @@ export async function ticketLinkPage(token = "") {
   }
 }
 
+export async function ticketRecoveryPage(eventId = "") {
+  if (!eventId) return notFoundPage();
+  const event = eventId ? await getPublicRouteEvent(eventId, true).catch(() => null) : null;
+  const existing = readStoredTicket(eventId);
+  if (existing?.ticketToken) return publicShell("events", `${subhero("Handy-Ticket", "Ticket bereits vorhanden", event?.title || "")}
+    <section class="section"><div class="container ticket-recovery-container"><a class="button button--primary" href="#/event/${encodeURIComponent(eventId)}">Zum Ticket</a></div></section>`);
+  return publicShell("events", `${subhero("Handy-Ticket", "Ticket wiederherstellen", event?.title || "")}
+    <section class="section"><div class="container ticket-recovery-container">
+      <div class="form-card login-card ticket-recovery-card">
+        <p>Geben Sie die E-Mail-Adresse Ihrer bestaetigten Anmeldung ein. Wir senden Ihnen einen sechsstelligen Code.</p>
+        <form id="ticket-recovery-request-form" data-event-id="${escapeHtml(eventId)}">
+          <label for="ticket-recovery-email">E-Mail-Adresse</label>
+          <input id="ticket-recovery-email" name="email" type="email" autocomplete="email" inputmode="email" required>
+          <button class="button button--primary" type="submit">Code anfordern</button>
+        </form>
+        <form id="ticket-recovery-verify-form" data-event-id="${escapeHtml(eventId)}" hidden>
+          <label for="ticket-recovery-code">Code aus der E-Mail</label>
+          <input id="ticket-recovery-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+          <button class="button button--primary" type="submit">Ticket anzeigen</button>
+        </form>
+        <p id="ticket-recovery-status" role="status" aria-live="polite"></p>
+        <button id="ticket-recovery-change-email" class="button button--secondary" type="button" hidden>E-Mail-Adresse ändern</button>
+        <a href="#/event/${encodeURIComponent(eventId)}">Zur Veranstaltung</a>
+      </div>
+    </div></section>`);
+}
+
 export async function eventCheckinPage(eventId = "", query = new URLSearchParams()) {
   const registeredNow = query.get("registered") === "1";
   const accessToken = query.get("access") || "";
@@ -3401,7 +3524,7 @@ export async function eventCheckinPage(eventId = "", query = new URLSearchParams
       : `#/register/${escapeHtml(eventId)}`;
     const closedUrl = event ? `#/event/${escapeHtml(eventId)}` : "#/events";
     return publicShell("events", `${subhero("Check-in", "Noch keine Anmeldung gefunden.", registrationOpen ? "Melden Sie sich jetzt direkt fuer dieses Event an." : "Fuer dieses Event ist derzeit keine Anmeldung moeglich.")}
-      <section class="section"><div class="container" style="max-width:760px"><div class="form-card login-card checkin-registration-card"><div class="alert alert--warning">Auf diesem Geraet ist noch keine Anmeldung fuer dieses Event gespeichert.</div>${registrationOpen ? `<p class="checkin-registration-lead">Die Anmeldung dauert nur wenige Augenblicke. Anschliessend wird Ihr Ticket auf diesem Geraet gespeichert.</p><a class="button button--primary checkin-registration-cta" href="${registrationUrl}">Jetzt zur Anmeldung</a>` : `<a class="button button--secondary" href="${closedUrl}">Zum Event</a>`}</div></div></section>`);
+      <section class="section"><div class="container" style="max-width:760px"><div class="form-card login-card checkin-registration-card"><div class="alert alert--warning">Auf diesem Geraet ist noch keine Anmeldung fuer dieses Event gespeichert.</div><p><a href="#/ticket/recover/${encodeURIComponent(eventId)}">Bereits angemeldet? Handy-Ticket wiederherstellen</a></p>${registrationOpen ? `<p class="checkin-registration-lead">Die Anmeldung dauert nur wenige Augenblicke. Anschliessend wird Ihr Ticket auf diesem Geraet gespeichert.</p><a class="button button--primary checkin-registration-cta" href="${registrationUrl}">Jetzt zur Anmeldung</a>` : `<a class="button button--secondary" href="${closedUrl}">Zum Event</a>`}</div></div></section>`);
   }
   if (ticket.eventId && ticket.eventId !== eventId) {
     return publicShell("events", `${subhero("Check-in", "Falsches Ticket.", "Das gespeicherte Ticket gehoert zu einer anderen Veranstaltung.")}
@@ -3439,7 +3562,7 @@ export async function eventCheckinScreenPage(eventId = "", query = new URLSearch
     qrDataUrl = access?.qrDataUrl || "";
   }
   const accessQuery = accessToken ? `?access=${encodeURIComponent(accessToken)}` : "";
-  const url = `https://prodigitaltv-da47b.firebaseapp.com/checkin.html?v=${Date.now()}#/event-checkin/${encodeURIComponent(event.id)}${accessQuery}`;
+  const url = `https://prodigitaltv.de/checkin.html?v=${Date.now()}#/event-checkin/${encodeURIComponent(event.id)}${accessQuery}`;
   return publicShell("events", `${subhero("Event-QR", event.title || "Event", "Diesen QR-Code am Empfang anzeigen oder ausdrucken.")}
     <section class="section"><div class="container webapp-qr-page event-checkin-screen" data-checkin-screen-event="${escapeHtml(event.id)}" data-checkin-screen-title="${escapeHtml(event.title || "PROdigitalTV Veranstaltung")}" data-checkin-screen-url="${escapeHtml(url)}">
       <article class="webapp-qr-card">

@@ -45,3 +45,4 @@ export function linkedInFromForm(form, existing = {}, defaults = {}) {
     linkedinPostId: current.linkedinPostId
   };
 }
+

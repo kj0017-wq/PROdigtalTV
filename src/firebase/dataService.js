@@ -116,7 +116,7 @@ function publicCacheKey(collectionName, predicates) {
 }
 
 function publicSessionCacheKey(key = "") {
-  return `pdtv-public-list-v7:${key}`;
+  return `pdtv-public-list-${key.startsWith("topics:") || key.startsWith("editorialContent:") ? "v8" : "v7"}:${key}`;
 }
 
 function readEmbeddedPublicCache(key = "") {
@@ -566,3 +566,5 @@ export async function remove(collectionName, id) {
   }
   throw new Error("Firebase ist nicht erreichbar. Es wurde nichts lokal geloescht.");
 }
+
+

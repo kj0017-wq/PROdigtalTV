@@ -18,6 +18,20 @@ export async function previewEventNotification(input = {}) {
   return (await callable({ input })).data;
 }
 
+export async function getOpenInvitationsForContact(contactId = "") {
+  const firebase = await getFirebaseServices();
+  if (!firebase) throw new Error("Firebase ist nicht erreichbar.");
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "getOpenInvitationsForContact");
+  return (await callable({ contactId })).data;
+}
+
+export async function sendOpenInvitationToContact(contactId = "", notificationId = "") {
+  const firebase = await getFirebaseServices();
+  if (!firebase) throw new Error("Firebase ist nicht erreichbar.");
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "sendOpenInvitationToContact");
+  return (await callable({ contactId, notificationId })).data;
+}
+
 export async function saveNotificationTestGroup(emails = []) {
   const firebase = await getFirebaseServices();
   if (!firebase) throw new Error("Firebase ist nicht erreichbar. Testgruppe wurde nicht gespeichert.");
