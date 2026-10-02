@@ -16,10 +16,11 @@ function load(source, names) {
     vm.runInContext(prefix + source.slice(start, end + 2), context);
   }
 }
-load(backend, ["normalizedMemberEmails", "memberCanMatchRegistration", "memberIsNotificationTestGroup", "memberIsMailingEligible", "notificationTestGroupTargets", "eventNotificationTargets"]);
+load(backend, ["mailingExcludedEmails", "mailingEmailIsExcluded", "notificationRegisteredEmails", "notificationPersonNames", "assertNotificationRecipientNames", "normalizedMemberPhones", "normalizedMemberEmails", "memberCanMatchRegistration", "memberIsNotificationTestGroup", "memberIsMailingEligible", "notificationTestGroupTargets", "eventNotificationTargets"]);
+context.phoneNumber = (value = "") => String(value || "").trim();
 load(cms, ["userIsActive", "peopleContactType", "peopleMailingDisabled", "peopleMemberEmails", "peopleMemberIsActive", "peopleMemberContactRows", "peopleUserContactRows", "mergePeopleContactsAndMembers"]);
 const members = [
-  { id: "one", email: "one@example.com", notificationTestGroup: true },
+  { id: "one", email: "one@example.com", firstName: "Jürgen", lastName: "Sewczyk", notificationTestGroup: true },
   { id: "two", email: "two@example.com", notificationTestGroup: true },
   { id: "three", email: "three@example.com", notificationTestGroup: true },
   { id: "other", email: "other@example.com" },
@@ -28,6 +29,7 @@ const members = [
 ];
 const users = [
   { id: "linked", email: "linked@example.com", memberId: "other", role: "admin" },
+  { id: "nameless", email: "one@example.com", memberId: "one", role: "member" },
   { id: "unlinked", email: "unlinked@example.com", role: "member" },
   { id: "old", email: "old@example.com", memberId: "cancelled", role: "member" }
 ];
@@ -51,6 +53,17 @@ saved = { emails: ["invalid"] };
 await assert.rejects(group, /gueltige Adresse/);
 saved = {};
 await assert.rejects(group, /ungueltig/);
+saved = { emails: ["one@example.com"] };
+const namedGroup = await group();
+assert.equal(namedGroup[0].firstName, "Jürgen", "Test recipients must preserve names");
+const namedTargets = await context.eventNotificationTargets("", { recipientGroup: "members" });
+const named = namedTargets.find((target) => target.email === "one@example.com");
+assert.equal(named.firstName, "Jürgen", "An empty login name must not erase member names");
+assert.equal(named.lastName, "Sewczyk");
+assert.equal(context.notificationPersonNames({ displayName: "Herr Jürgen Sewczyk" }).lastName, "Sewczyk");
+assert.equal(context.notificationPersonNames({ name: "JS Consult" }, "member").displayName, "", "Company names are not personal names");
+assert.throws(() => context.assertNotificationRecipientNames({ shortText: "Sehr geehrte/r {{firstName}} {{lastName}}," }, [{ email: "unknown@example.com" }]), /Namensdaten/);
+assert.doesNotThrow(() => context.assertNotificationRecipientNames({ shortText: "Guten Tag {{firstName}} {{lastName}}," }, [named]));
 const targets = emails(await context.eventNotificationTargets("", { recipientGroup: "members" }));
 assert.ok(targets.includes("linked@example.com"));
 assert.ok(!targets.includes("cancelled@example.com"));
@@ -81,4 +94,22 @@ assert.deepEqual(emails(await group()), ["added@example.com", "one@example.com"]
 assert.equal(saved.updatedBy, "editor@example.com");
 await save([]);
 await assert.rejects(group, /gueltige Adresse/, "Clearing the saved selection must not restore legacy test members");
+const aliasMembers = [{ id: "house", email: "dirk@company.example", firstName: "Dirk", lastName: "Martens", eventContacts: [{ firstName: "Dirk", lastName: "Martens", email: "dirk.alt@company.example" }, { firstName: "Anna", lastName: "Other", email: "anna@company.example" }] }];
+const aliasUsers = [{ id: "dirk", email: "dirk@association.example", memberId: "house" }];
+const aliasRegistrations = [{ email: "dirk@association.example", firstName: "Dirk", lastName: "Martens", status: "checked_in" }];
+const registeredAliases = context.notificationRegisteredEmails(aliasRegistrations, aliasMembers, aliasUsers);
+assert.ok(registeredAliases.has("dirk@company.example"), "Member address must be recognised through linked login");
+assert.ok(registeredAliases.has("dirk.alt@company.example"), "Same person's event contact address must be recognised");
+assert.ok(!registeredAliases.has("anna@company.example"), "Other people at the company must remain eligible");
+const unrelatedAliases = context.notificationRegisteredEmails([{ email: "unrelated@example.com", firstName: "Dirk", lastName: "Martens" }], aliasMembers, aliasUsers);
+assert.ok(!unrelatedAliases.has("dirk@company.example"), "Names alone must not connect unrelated records");
+context.mailAddress = (value = "") => String(value || "").trim();
+context.compactNameParts = (person) => [person.firstName, person.lastName].filter(Boolean).join(" ") || person.name || "";
+context.notificationExtraSpeakerEventIds = () => [];
+const aliasData = { members: aliasMembers, users: aliasUsers, contacts: [{ id: "dirk-contact", email: "dirk@company.example", firstName: "Dirk", lastName: "Martens" }, { id: "anna-contact", email: "anna@company.example", firstName: "Anna", lastName: "Other" }], registrations: aliasRegistrations, speakers: [{ id: "dirk-speaker", email: "dirk@company.example", firstName: "Dirk", lastName: "Martens" }], topics: [] };
+context.db = { collection(name) { const query = { where() { return query; }, async get() { return { docs: (aliasData[name] || []).map((record, index) => ({ id: record.id || String(index), data: () => record })) }; }, doc(id) { return { async get() { return { id, exists: true, data: () => ({ date: "2026-10-23", speakerIds: ["dirk-speaker"] }) }; } }; } }; return query; } };
+const invitationTargets = await context.eventNotificationTargets("heuking", { recipientGroup: "contacts", includeSpeakers: true, registrationStatus: "unregistered" });
+assert.deepEqual(emails(invitationTargets), ["anna@company.example"], "Checked-in aliases and speakers must be excluded, without excluding coworkers or adding members");
+const participantTargets = await context.eventNotificationTargets("heuking", { recipientGroup: "contacts", registrationStatus: "registered" });
+assert.deepEqual(emails(participantTargets), ["dirk@company.example"], "Participant information must still reach registered aliases");
 console.log("Mailing recipient regression checks passed; no network calls or messages.");

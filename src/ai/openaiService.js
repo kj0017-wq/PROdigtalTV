@@ -1,5 +1,5 @@
 import { getFirebaseServices, localPreviewMode } from "../firebase/firebaseClient.js";
-import { currentUser, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=471";
+import { currentUser, refreshAuthToken, waitForAuthReady } from "../firebase/authService.js?v=477";
 import { upsert } from "../firebase/dataService.js?v=488";
 import { aiSourceCatalog } from "../data/aiSourceCatalog.js";
 
@@ -16,6 +16,7 @@ const ACTION_FUNCTIONS = {
   generateTopicDescription: "generateTopicDescription",
   generateEventTopicDescription: "generateEventTopicDescription",
   generateSpeakerTalkText: "generateSpeakerTalkText",
+  generateModerationCardText: "generateModerationCardText",
   generateSponsorText: "generateSponsorText",
   generateRegistrationMailText: "generateRegistrationMailText",
   generateEventSummary: "generateEventSummary",
@@ -25,6 +26,7 @@ const ACTION_FUNCTIONS = {
   generateDownloadDescription: "generateDownloadDescription",
   rewritePressRetrospective: "rewritePressRetrospective",
   analyzeEventPipelineQuality: "analyzeEventPipelineQuality"
+  ,generateLinkedInPost: "generateLinkedInPost"
 };
 
 const DEFAULT_AI_EDITORIAL_THUMBNAIL_PROMPT = "Fotorealistisches redaktionelles 16:9-Vorschaubild für PROdigitalTV: serioeser moderner Business-Look, TV-, Streaming- und digitale Medienbranche, klare Komposition, natuerliches Licht, keine echten Logos, keine realen Personen, keine Comic-Optik, keine irrefuehrenden Bildinhalte.";
@@ -57,6 +59,26 @@ const LOCAL_TOPIC_POOL = [
 
 function localSuggestion(action, payload) {
   const text = payload.originalText || payload.context?.description || "";
+  if (action === "generateModerationCardText") {
+    const cards = Array.isArray(payload.context?.cards) ? payload.context.cards : [];
+    return {
+      action,
+      suggestedText: "",
+      structured: {
+        cards: cards.map(card => ({
+          id: card.id,
+          bio: card.bio || ([card.speakerName, [card.position, card.company].filter(Boolean).join(" · ")].filter(Boolean).join(": ")),
+          description: card.description || (card.title ? `Im Mittelpunkt steht „${card.title}“.` : ""),
+          notes: card.notes || "Kurz vorstellen · Zum Thema überleiten"
+        }))
+      },
+      status: "suggested"
+    };
+  }
+  if (action === "generateLinkedInPost") {
+    const context = payload.context || {};
+    return { action, suggestedText: [context.title, context.shortText || context.bodyText].filter(Boolean).join("\n\n"), structured: { hashtags: ["#Medien", "#DigitalTV"], text: [context.title, context.shortText || context.bodyText].filter(Boolean).join("\n\n") }, status: "suggested" };
+  }
   if (action === "generateSeoMeta") {
     return {
       action,

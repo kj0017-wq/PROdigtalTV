@@ -1,4 +1,4 @@
-import { currentUser, isAdmin } from "../firebase/authService.js?v=472";
+import { currentUser, isAdmin } from "../firebase/authService.js?v=477";
 
 const nav = [
   ["home", "Start"], ["events", "Events"], ["topics", "Themen"], ["news", "News"], ["about", "Ueber uns"],
@@ -67,8 +67,9 @@ export function bottomNav(active) {
   </nav>`;
 }
 
-export function footer() {
-  return `<footer class="footer"><div class="container footer__grid">
+export function footer(options = {}) {
+  const extraContent = options.extraContent ? `<div class="container footer__extra">${options.extraContent}</div>` : "";
+  return `<footer class="footer">${extraContent}<div class="container footer__grid">
     <div>${logo()}<p style="margin-top:17px;max-width:360px">Das Branchennetzwerk der digitalen Medienwirtschaft. Austausch, Orientierung und relevante Verbindungen.</p></div>
     <div><h3>Verein</h3><div class="footer__links"><a href="#/join">Mitglied werden</a><a href="#/downloads">Downloads</a><a href="#/login">Log-In</a></div></div>
     <div><h3>Kontakt</h3><div class="footer__links"><a href="mailto:post@prodigitaltv.de">post@prodigitaltv.de</a><a href="tel:+494044506617">+49 40 44506617</a></div></div>
@@ -79,7 +80,7 @@ export function footer() {
 export function publicShell(active, content, options = {}) {
   const prompts = options.prompts === false ? "" : pwaInstallPrompts();
   const mobileNav = options.bottomNav === false ? "" : bottomNav(active);
-  return `<div class="pdtv-mobile-shell pdtv-route-${active || "default"}">${header(active)}<main class="page pdtv-mobile-main">${content}</main>${footer()}${prompts}${mobileNav}</div>`;
+  return `<div class="pdtv-mobile-shell pdtv-route-${active || "default"}">${header(active)}<main class="page pdtv-mobile-main">${content}</main>${footer({ extraContent: options.footerContent || "" })}${prompts}${mobileNav}</div>`;
 }
 
 function pwaInstallPrompts() {
@@ -113,11 +114,14 @@ function pwaPrivacyPrompt() {
 function pwaInstallPrompt() {
   return `<aside class="pwa-install-prompt" data-pwa-install hidden aria-label="WebApp zum Homescreen hinzufuegen">
       <div class="pwa-install-prompt__text">
-        <strong data-pwa-install-title>WebApp speichern</strong>
+        <strong data-pwa-install-title>PROdigitalTV als Web-App nutzen</strong>
+        <details class="home-screen-choice"><summary>Bereits installiert</summary><p>Öffnen Sie PROdigitalTV über das Symbol auf Ihrem Home-Bildschirm. Eine erneute Installation ist nicht nötig.</p></details>
+        <details class="home-screen-choice"><summary>Noch nicht installiert</summary>
         <span data-pwa-ios hidden>Auf dem iPhone: Safari-Menue "Teilen" oeffnen, nach unten scrollen und "Zum Home-Bildschirm" waehlen.</span>
         <span data-pwa-android hidden>Dieser Browser kann die WebApp direkt installieren. Danach startet PROdigitalTV wie eine App vom Homescreen.</span>
         <span data-pwa-fallback hidden>Dieser Browser bietet keinen direkten Installieren-Button an. Oeffnen Sie das Browser-Menue und waehlen Sie "App installieren", "Zum Startbildschirm" oder "Zum Home-Bildschirm".</span>
         <small data-pwa-status hidden></small>
+        </details>
       </div>
     <div class="pwa-install-prompt__actions">
       <button class="button button--primary button--small" type="button" data-pwa-install-button hidden>Installieren</button>

@@ -50,6 +50,15 @@
           ]
         },
         {
+          "source": "/checkin.html",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-store"
+            }
+          ]
+        },
+        {
           "source": "/sw.js",
           "headers": [
             {
@@ -146,6 +155,15 @@
           ]
         },
         {
+          "source": "/checkin.html",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-store"
+            }
+          ]
+        },
+        {
           "source": "/sw.js",
           "headers": [
             {
@@ -234,6 +252,15 @@
         },
         {
           "source": "/cms.html",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-store"
+            }
+          ]
+        },
+        {
+          "source": "/checkin.html",
           "headers": [
             {
               "key": "Cache-Control",

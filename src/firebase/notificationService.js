@@ -2,7 +2,7 @@ import { firebaseConfig } from "./firebaseConfig.js";
 import { getFirebaseServices } from "./firebaseClient.js";
 import { getOne } from "./dataService.js?v=511";
 
-export { enableBrowserNotifications } from "./pushClient.js?v=1";
+export { enableBrowserNotifications } from "./pushClient.js?v=10";
 
 export async function createEventNotification(input = {}) {
   const firebase = await getFirebaseServices();
@@ -16,6 +16,20 @@ export async function previewEventNotification(input = {}) {
   if (!firebase) throw new Error("Firebase ist nicht erreichbar. Versand kann nicht vorbereitet werden.");
   const callable = firebase.functionsLib.httpsCallable(firebase.functions, "previewEventNotification");
   return (await callable({ input })).data;
+}
+
+export async function getOpenInvitationsForContact(contactId = "") {
+  const firebase = await getFirebaseServices();
+  if (!firebase) throw new Error("Firebase ist nicht erreichbar.");
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "getOpenInvitationsForContact");
+  return (await callable({ contactId })).data;
+}
+
+export async function sendOpenInvitationToContact(contactId = "", notificationId = "") {
+  const firebase = await getFirebaseServices();
+  if (!firebase) throw new Error("Firebase ist nicht erreichbar.");
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "sendOpenInvitationToContact");
+  return (await callable({ contactId, notificationId })).data;
 }
 
 export async function saveNotificationTestGroup(emails = []) {

@@ -18,22 +18,24 @@ const ACTIONS = {
   extendText: { label: "Text verlaengern", mode: "text", instruction: "Erweitere den Text sachlich mit den vorhandenen Informationen." },
   generateSeoMeta: { label: "SEO-Daten erzeugen", mode: "json", instruction: "Erzeuge SEO-Daten als JSON mit seoTitle, seoDescription, keywords und summary." },
   generateEventDescription: { label: "Eventbeschreibung erzeugen", mode: "text", instruction: "Erzeuge eine Eventbeschreibung aus den vorhandenen Eventdaten." },
-  generateEventInvitation: { label: "Einladungstext erzeugen", mode: "text", instruction: "Erzeuge je nach mailingType einen professionellen Mailvorschlag fuer Save the date, Einladung oder Einladungsupdate. Nutze vorhandene Eventdaten, Platzhalter und den bisherigen Feldinhalt. Keine erfundenen Fakten." },
+  generateEventInvitation: { label: "Einladungstext erzeugen", mode: "text", instruction: "Erzeuge je nach mailingType einen professionellen Mailvorschlag fuer Save the date, Einladung oder Einladungsupdate. Nutze vorhandene Eventdaten, Platzhalter und den bisherigen Feldinhalt. Bei einer Einladung muessen alle im Eventkontext gelieferten Vortraege, Referenten und Firmen vollstaendig und mit korrekter Zuordnung genannt werden. Keine erfundenen Fakten." },
   generateEventAgenda: { label: "Agenda strukturieren", mode: "text", instruction: "Strukturiere eine Agenda aus Stichpunkten. Markiere fehlende Angaben." },
   generateEventFaq: { label: "FAQ erzeugen", mode: "text", instruction: "Erzeuge eine kurze FAQ zum Event." },
   generateTopicDescription: { label: "Themenbeschreibung erzeugen", mode: "text", instruction: "Erzeuge eine globale Themenbeschreibung." },
   generateEventTopicDescription: { label: "Event-Thema beschreiben", mode: "text", instruction: "Erklaere das Thema im Kontext dieses Events." },
   generateSpeakerTalkText: { label: "Referententext erzeugen", mode: "text", instruction: "Erzeuge Vortragstitel, Kurzbeschreibung oder Moderationstext nur mit vorhandenen Namen, Rollen und Unternehmen." },
+  generateModerationCardText: { label: "Moderationskarten-Texte erzeugen", mode: "json", instruction: "Erzeuge aus den gelieferten öffentlichen Vortragstiteln und Themenbeschreibungen kurze, sachliche deutsche Moderationstexte. Korrigiere in allen erzeugten Texten und Hinweisen ausdrücklich Rechtschreibung, Tippfehler, Grammatik, Groß- und Kleinschreibung sowie Zeichensetzung nach den deutschen Rechtschreibregeln. Bewahre die inhaltliche Aussage und die Schreibweise von Eigennamen und Fachbegriffen; ergänze keine unbelegten Fakten. Antworte als JSON mit cards in unveränderter Reihenfolge. Jede Karte enthält ihre id sowie description und notes. Description enthält höchstens 2 kurze, vollständige Sätze und konzentriert sich ausschließlich auf die wesentliche Aussage. Notes enthalten höchstens drei sehr knappe, vollständig formulierte Stichpunkte als einen String. Texte immer bis zum Satzende ausformulieren und niemals mit drei Punkten oder einem Auslassungszeichen beenden. Keine Namen, Funktionen, Unternehmen oder andere nicht gelieferte Fakten ergänzen. Begrüßung und Verabschiedung werden aus der Perspektive der Gastgeberin direkt sprechbar formuliert. Die Gastgeberin niemals vorstellen, keine Vita über sie schreiben und nicht in der dritten Person über sie sprechen." },
   generateSponsorText: { label: "Sponsor-/Gastgebertext erzeugen", mode: "text", instruction: "Erzeuge einen neutralen B2B-orientierten Sponsor- oder Gastgebertext ohne werbliche Uebertreibung." },
   generateRegistrationMailText: { label: "Mailtext erzeugen", mode: "text", instruction: "Erzeuge einen Mailtext mit Platzhaltern wie {{firstName}}, {{eventTitle}}, {{eventDate}}, {{confirmationLink}}. Keine echten Teilnehmerdaten verwenden." },
-  generateEventSummary: { label: "Nachbericht erzeugen", mode: "text", instruction: "Erzeuge einen Nachbericht aus belegten Stichpunkten und melde fehlende Informationen." },
-  generateArchiveText: { label: "Archivtext erzeugen", mode: "text", instruction: "Formuliere einen Rueckblicktext fuer Archiv oder Eventnachlauf." },
-  generateEventRetrospective: { label: "Rueckblick aus Redaktionstext erzeugen", mode: "text", instruction: "Erzeuge aus Pressemitteilung, Einladung, Agenda oder vorhandenen Stichpunkten einen zusammenhaengenden Rueckblick als Fliesstext. Nutze den im Feld retrospectivePrompt uebergebenen Redaktionsprompt als vorrangige Arbeitsanweisung. Formuliere konsequent in der Vergangenheit, bevorzugt mit Praeteritum oder Perfekt. Beginne nach Moeglichkeit konkret: 'Am [Datum] fand das [Event] bei [Gastgeber] im [Ort/Location] statt. Im Mittelpunkt standen [Themen].' Keine Einladung, keine Anmeldung, keine Zukunftsform, keine Bulletpoints und keine nicht belegten Fakten erfinden." },
+  generateEventSummary: { label: "Nachbericht erzeugen", mode: "text", instruction: "Erzeuge einen konkreten, fundierten Rueckblick-Kurztext aus den belegten Eventdaten, der Agenda, den Themen, Referenten und vorhandenen Rueckblicktexten. Nenne bei einem Vortrag neben dem Referenten auch jeden belegten Co-Referenten oder Co-Moderator. Verdichte die wichtigsten Inhalte und Erkenntnisse fuer die digitale Medienwirtschaft. Beschreibe nicht den Archivstatus, verwende keine allgemeinen Netzwerkfloskeln und erfinde keine Fakten." },
+  generateArchiveText: { label: "Archivtext erzeugen", mode: "text", instruction: "Formuliere einen Rueckblicktext fuer Archiv oder Eventnachlauf. Nenne bei jedem beschriebenen Vortrag auch die im Kontext belegten Co-Referenten und Co-Moderatoren." },
+  generateEventRetrospective: { label: "Rueckblick aus Redaktionstext erzeugen", mode: "text", instruction: "Erzeuge aus Pressemitteilung, Einladung, Agenda oder vorhandenen Stichpunkten einen zusammenhaengenden Rueckblick als Fliesstext. Nutze den im Feld retrospectivePrompt uebergebenen Redaktionsprompt als vorrangige Arbeitsanweisung. Formuliere konsequent in der Vergangenheit, bevorzugt mit Praeteritum oder Perfekt. Beginne nach Moeglichkeit konkret: 'Am [Datum] fand das [Event] bei [Gastgeber] im [Ort/Location] statt. Im Mittelpunkt standen [Themen].' Nenne zu jedem Vortrag alle im Kontext belegten Referenten, Co-Referenten und Co-Moderatoren mit ihrer Rolle. Keine Einladung, keine Anmeldung, keine Zukunftsform, keine Bulletpoints und keine nicht belegten Fakten erfinden." },
   rewritePressRetrospective: { label: "Rueckblick aus Pressemitteilung", mode: "text", instruction: "" },
   generateGalleryIntro: { label: "Galerie-Einleitung erzeugen", mode: "text", instruction: "Erzeuge eine kurze Einleitung fuer eine Event-Fotogalerie." },
   generateImageAltText: { label: "Bildinhalt beschreiben", mode: "json", instruction: "Beschreibe den Bildinhalt und die visuelle Wirkung. Fuer Bilder darf die KI visuelle Motive, Stimmung, Stil und plausible Bildaussage redaktionell einordnen. Nutze die Bilddatei, sofern imageUrl uebergeben wurde. Antworte als JSON mit description, alt_text, thumbnail_alt, thumbnail_description und optional images[0].beschreibung." },
   generateDownloadDescription: { label: "Downloadbeschreibung erzeugen", mode: "text", instruction: "Erzeuge eine sachliche Beschreibung fuer einen Download." },
   analyzeEventPipelineQuality: { label: "Pipeline-KI-Pruefung", mode: "json", instruction: "Pruefe die Event-Pipeline als JSON mit blockers, warnings, recommendations, optionalNotes und summary. KI-Hinweise duerfen Statuswechsel nicht blockieren." }
+  ,generateLinkedInPost: { label: "LinkedIn-Post erzeugen", mode: "json", instruction: "Erzeuge einen eigenständigen LinkedIn-Post für PROdigitalTV als JSON mit text und hashtags. Schreibe professionell, modern, informativ und leicht persönlicher für die digitale Medienwirtschaft. Nicht den Kurztext kopieren, keine Fakten erfinden, 3 bis 6 relevante Hashtags mit #." }
 };
 
 function normalizeRole(role = "") {
@@ -107,6 +109,74 @@ async function requireAiAccess(request) {
   return { profile, settings };
 }
 
+const RETROSPECTIVE_EVENT_ACTIONS = new Set(["generateEventRetrospective", "generateEventSummary", "generateArchiveText", "rewritePressRetrospective"]);
+const EVENT_TEXT_ACTIONS = new Set(["improveText", "shortenText", "extendText", "generateEventDescription", "generateEventInvitation", "generateRegistrationMailText", "generateEventSummary", "generateArchiveText", "generateEventRetrospective", "rewritePressRetrospective"]);
+const COMPLETE_PROGRAM_FIELDS = new Set(["description", "longDescription", "bodyText", "invitationText", "invitationUpdateText", "archiveText"]);
+const FUTURE_EVENT_FORBIDDEN_PATTERNS = [
+  ["Rückblick", /\br(?:ü|ue)ckblick\b/i],
+  ["fand statt", /\bfand(?:en)?\s+statt\b/i],
+  ["bot", /\bbot(?:en)?\b/i],
+  ["erläuterte", /\berl(?:ä|ae)uterte[n]?\b/i],
+  ["präsentierte", /\bpr(?:ä|ae)sentierte[n]?\b/i],
+  ["stellte vor", /\bstellte[n]?\b[^.!?\n]{0,80}\bvor\b/i],
+  ["beleuchtete", /\bbeleuchtete[n]?\b/i],
+  ["diskutierten", /\bdiskutierte[n]?\b/i],
+  ["förderte", /\bf(?:ö|oe)rderte[n]?\b/i]
+];
+
+function berlinTodayKey() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Berlin",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date()).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function eventDateStatus(context = {}) {
+  const event = context.event || context.currentEvent || context;
+  const rawDate = String(event.date || event.eventDate || event.startDate || "").slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) return rawDate < berlinTodayKey() ? "past" : "upcoming";
+  const explicit = String(context.eventStatus || event.eventStatus || "").toLowerCase();
+  return ["past", "upcoming"].includes(explicit) ? explicit : "unknown";
+}
+
+function isEventTextRequest(action, payload = {}) {
+  const context = payload.context || {};
+  const event = context.event || context.currentEvent || context;
+  return EVENT_TEXT_ACTIONS.has(action)
+    && (payload.module === "event-admin" || payload.entityType === "event")
+    && Boolean(event.date || event.eventDate || context.eventStatus || event.eventStatus);
+}
+
+function normalizedFact(value = "") {
+  return String(value || "")
+    .normalize("NFKC")
+    .toLocaleLowerCase("de")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function validateUpcomingEventText(action, payload = {}, text = "") {
+  if (!isEventTextRequest(action, payload) || eventDateStatus(payload.context || {}) !== "upcoming") return { violations: [], missingFacts: [] };
+  const violations = FUTURE_EVENT_FORBIDDEN_PATTERNS.filter(([, pattern]) => pattern.test(String(text || ""))).map(([label]) => label);
+  const fieldName = String(payload.fieldName || "");
+  const context = payload.context || {};
+  const requireCompleteProgram = COMPLETE_PROGRAM_FIELDS.has(fieldName) && Array.isArray(context.talks) && context.talks.length;
+  const talkFacts = requireCompleteProgram
+    ? context.talks.flatMap((talk) => [talk.title, ...(talk.speakers || []).flatMap((speaker) => [speaker.name, speaker.company])]).filter(Boolean)
+    : [];
+  const invitationFacts = fieldName === "invitationText"
+    ? [...(context.speakers || []).flatMap((speaker) => [speaker.name, speaker.company]), ...(context.companies || [])].filter(Boolean)
+    : [];
+  const expectedFacts = [...talkFacts, ...invitationFacts];
+  const haystack = normalizedFact(text);
+  const missingFacts = Array.from(new Set(expectedFacts.filter((fact) => !haystack.includes(normalizedFact(fact)))));
+  return { violations, missingFacts };
+}
+
 function currentEventPromptFacts(context = {}) {
   const event = context.event || context.currentEvent || context;
   const accessType = String(event.accessType || event.access_type || "").trim();
@@ -128,6 +198,8 @@ function currentEventPromptFacts(context = {}) {
     event.locationName || event.city ?`Ort/Location: ${[event.locationName, event.city].filter(Boolean).join(", ")}` : "",
     event.zoomLink ? "Online-Link vorhanden: ja" : "",
     event.accessType ?`Zugangsart: ${event.accessType}` : "",
+    event.organizer || event.primaryHostName ?`Veranstalter: ${event.organizer || event.primaryHostName}` : "",
+    `Eventstatus: ${eventDateStatus(context)}`,
     targetGroup,
     mode
   ].filter(Boolean);
@@ -140,11 +212,24 @@ function buildPrompt(action, payload) {
   if (action === "rewritePressRetrospective") {
     const manualPrompt = String(payload.prompt || payload.context?.retrospectivePrompt || "").trim();
     const originalText = compactText(payload.originalText || "", 12000);
+    const talks = Array.isArray(payload.context?.talks) ? payload.context.talks : [];
     return [
       manualPrompt,
+      talks.length ? "Verbindliche Programmlogik: Nenne zu jedem beschriebenen Vortrag alle gelieferten Referenten, Co-Referenten und Co-Moderatoren mit ihrer Rolle. Erfinde keine Personen oder Rollen." : "",
+      talks.length ? `Vortraege und Rollen:\n${JSON.stringify(talks)}` : "",
       "",
       originalText ? `Pressemitteilung:\n${originalText}` : "Pressemitteilung:\n"
     ].filter(Boolean).join("\n\n");
+  }
+  if (action === "generateLinkedInPost") {
+    const context = payload.context || {};
+    return [
+      actionConfig.instruction,
+      "Struktur: Hook, wichtigste Aussage, Einordnung für Medienunternehmen und Hinweis auf den vollständigen Beitrag.",
+      "Der Artikel-Link darf am Ende als eigener Absatz erscheinen.",
+      "Antworte ausschließlich als valides JSON: {\"text\": \"...\", \"hashtags\": [\"#...\"]}.",
+      `Artikelgrundlage: ${JSON.stringify({ title: context.title || "", subtitle: context.subtitle || "", shortText: context.shortText || "", bodyText: context.bodyText || "", source: context.source || "", category: context.category || "", articleUrl: context.articleUrl || "" })}`
+    ].join("\n\n");
   }
   const fieldName = payload.fieldName || "";
   const context = payload.context || {};
@@ -161,7 +246,10 @@ function buildPrompt(action, payload) {
   const virtualEventRule = isVirtualEvent
     ? "Durchfuehrungsregel verbindlich: Die Veranstaltung findet virtuell beziehungsweise online statt. Das muss im sichtbaren Text ausdruecklich genannt werden. Schreibe nicht so, als gaebe es einen physischen Veranstaltungsort oder Einlass vor Ort. Wenn ein Zoom-Link oder Online-Meeting-Hinweis vorhanden ist, darf Zoom/Online-Meeting sachlich genannt werden."
     : "";
-  const isRetrospective = Boolean(context.isRetrospective) || action === "generateEventRetrospective";
+  const eventStatus = eventDateStatus(context);
+  const isRetrospectiveAction = RETROSPECTIVE_EVENT_ACTIONS.has(action);
+  const isUpcomingEvent = isEventTextRequest(action, payload) && eventStatus === "upcoming" && !isRetrospectiveAction;
+  const isRetrospective = Boolean(context.isRetrospective) || isRetrospectiveAction;
   const textLengthRule = targetWords > 0
     ? `Laengenregel verbindlich: Ziel sind etwa ${targetWords} Woerter. Der sichtbare Text muss im Korridor ${Math.max(40, Math.round(targetWords * 0.85))} bis ${Math.round(targetWords * 1.15)} Woerter liegen. Wenn du mehr Material hast, verdichte. Wenn du weniger Material hast, erfinde nichts, aber bleibe so nah wie moeglich am Ziel. Ignoriere aeltere Standardregeln zu 300 bis 400 Woertern.`
     : "Wenn ein Haupt- oder Beitragstext erzeugt wird, muss der neue Text mindestens 300 Woerter haben und soll idealerweise 300 bis 400 Woerter umfassen, sofern die gelieferten Informationen dafuer ausreichen.";
@@ -174,20 +262,34 @@ function buildPrompt(action, payload) {
       : "Feldregel: Erzeuge nur eine einzelne Subline, maximal 150 Zeichen, keine Ueberschrift, keinen Fliesstext.",
     shortDescription: "Feldregel: Erzeuge nur einen kurzen Teasertext, maximal 180 Zeichen, keine Artikelstruktur.",
     introText: "Feldregel: Erzeuge nur einen kurzen Intro-/Teasertext, maximal 220 Zeichen, keine Artikelstruktur.",
+    postEventSummary: "Feldregel verbindlich: Schreibe 70 bis 110 Woerter in zwei bis vier vollstaendigen Saetzen als fundierten Kurzrueckblick. Beginne mit dem konkreten Event und seinem inhaltlichen Schwerpunkt. Nenne die wichtigsten belegten Themen, Vortraege, Referenten oder Unternehmen nur, soweit sie im Kontext enthalten sind, und verdichte den fachlichen Erkenntniswert. Verboten sind Hinweise auf fehlende Metadaten wie ohne Titelangabe, Aussagen ueber Erfassung oder Ablage im Archiv sowie austauschbare Saetze ueber Dialog, Austausch, Vernetzung oder die digitale Medienwirtschaft ohne konkreten Inhaltsbezug.",
     saveTheDateText: "Feldregel: Schreibe einen kurzen Save-the-date-Mailtext. Der Text kuendigt Termin und Anlass an, ohne umfangreiche Agenda und ohne verbindliche Details zu erfinden. Verwende passende Platzhalter wie {{firstName}}, {{eventTitle}}, {{eventDate}} und {{eventLocation}}.",
-    invitationText: "Feldregel verbindlich: Schreibe einen ausfuehrlichen, direkt versendbaren Einladungstext. Aufbau: persoenliche Anrede mit {{firstName}} {{lastName}}, Eventname frueh nennen, Datum, Uhrzeit und Ort frueh nennen, Veranstaltungstyp erklaeren. Bei Medienfruehstueck: kompaktes persoenliches Vormittags-/Tagesformat mit Fruehstueck, fachlichen Impulsen, Dialog und Networking beschreiben. Falls im vorhandenen Ausgangstext bereits konkrete Vortraege oder Referenten stehen, diese sachlich integrieren, zum Beispiel Unter anderem erwartet Sie ein Vortrag von ... zum Thema .... Keine Vortraege oder Referenten erfinden. Anmeldung klar formulieren: Zur Anmeldung klicken Sie bitte auf den folgenden Link: {{confirmationLink}}. Abschluss warm formulieren: Wir wuerden uns sehr freuen, Sie ... persoenlich begruessen zu duerfen. Keine Keyword-Zeile, keine Meta-Hinweise.",
+    invitationText: "Feldregel verbindlich: Schreibe einen ausfuehrlichen, direkt versendbaren Einladungstext. Aufbau: persoenliche Anrede mit {{firstName}} {{lastName}}, Eventname frueh nennen, Datum, Uhrzeit und Ort frueh nennen, Veranstaltungstyp erklaeren. Bei Medienfrühstück: kompaktes persoenliches Vormittags-/Tagesformat mit Fruehstueck, fachlichen Impulsen, Dialog und Networking beschreiben. Nenne aus dem Eventkontext ausnahmslos jeden Vortrag mit seinem vollstaendigen Titel, jeden zugeordneten Referenten und jede angegebene Firma. Stelle Referent, Firma und Vortrag eindeutig und sachlich zueinander in Beziehung. Auch bei vielen Programmpunkten darf kein Eintrag zusammengefasst, durch Formulierungen wie unter anderem ersetzt oder ausgelassen werden; Vollstaendigkeit hat Vorrang vor Kuerze. Referenten ohne zugeordneten Vortrag und Firmen ohne vollstaendige Zuordnung separat, aber sachlich nennen. Keine Vortraege, Referenten, Firmen oder Zuordnungen erfinden. Anmeldung klar formulieren: Zur Anmeldung klicken Sie bitte auf den folgenden Link: {{confirmationLink}}. Abschluss warm formulieren: Wir wuerden uns sehr freuen, Sie ... persoenlich begruessen zu duerfen. Keine Keyword-Zeile, keine Meta-Hinweise.",
     invitationUpdateText: "Feldregel: Schreibe ein Einladungsupdate. Nenne knapp, dass es neue oder aktualisierte Informationen zur Veranstaltung gibt. Keine neue Einladung vortaeuschen, wenn es nur ein Update ist. Verwende passende Platzhalter.",
     bodyText: isRetrospective
-      ? "Feldregel: Formuliere als nachtraeglichen Rueckblick auf ein vergangenes Event im Fliesstext. Verwende Praeteritum oder Perfekt. Ersetze Einladungs-, Anmelde-, Ankuendigungs- und Zukunftsformulierungen durch Vergangenheit. Keine Bulletpoints."
+      ? "Feldregel: Formuliere als nachtraeglichen Rueckblick auf ein vergangenes Event im Fliesstext. Verwende Praeteritum oder Perfekt. Ersetze Einladungs-, Anmelde-, Ankuendigungs- und Zukunftsformulierungen durch Vergangenheit. Nenne bei jedem beschriebenen Vortrag alle in context.talks zugeordneten Referenten, Co-Referenten und Co-Moderatoren mit ihrer Rolle. Keine Bulletpoints."
       : "",
     seoTitle: "Feldregel: Maximal 70 Zeichen.",
     seoDescription: "Feldregel: Maximal 160 Zeichen."
   };
+  const invitationProgramRule = fieldName === "invitationText"
+    ? "Vollstaendigkeitspruefung vor Ausgabe: Gleiche den fertigen Einladungstext intern gegen context.talks, context.speakers und context.companies ab. Jeder dort gelieferte Vortragstitel, Referentenname und Firmenname muss im sichtbaren Text vorkommen. Korrigiere fehlende Eintraege vor der Antwort. Verwende keine Sammelabkuerzung wie 'unter anderem'."
+    : "";
+  const completeProgramRule = isUpcomingEvent && COMPLETE_PROGRAM_FIELDS.has(fieldName) && Array.isArray(context.talks) && context.talks.length
+    ? "Programmregel verbindlich: Nenne ausnahmslos alle in context.talks gelieferten Vortragstitel, die jeweils zugeordneten Referenten und deren Firmen. Verbinde die Programmpunkte zu einem natürlichen, zusammenhängenden journalistischen Fließtext. Variiere Satzanfänge und Verben. Verwende weder Aufzählungscharakter noch für jeden Vortrag dieselbe Schablone wie 'Im Programm erwartet Sie ...'. Datum, Uhrzeit, Ort und Veranstalter müssen korrekt aus dem Eventkontext übernommen werden."
+    : "";
+  const upcomingEventRule = isUpcomingEvent
+    ? "Zeitlogik verbindlich: Das Event liegt in der Zukunft. Schreibe ausschließlich als Ankündigung oder Einladung in Präsens beziehungsweise Zukunft. Rückblicksprache und Formulierungen, die eine bereits erfolgte Veranstaltung behaupten, sind verboten. Verboten sind insbesondere 'Rückblick', 'fand statt', 'bot', 'erläuterte', 'präsentierte', 'stellte vor', 'beleuchtete', 'diskutierten' und 'förderte'. Zulässige Formen sind zum Beispiel 'findet statt', 'wird sprechen', 'stellt vor', 'zeigt', 'ordnet ein', 'diskutiert' und 'lädt ein'."
+    : "";
+  const correctionRule = context.futureRewriteRequired
+    ? `Sicherheitskorrektur verbindlich: Der vorige Entwurf hat die Zukunfts- oder Vollständigkeitsprüfung nicht bestanden. Schreibe ihn vollständig neu. Beanstandete Punkte: ${(context.futureRewriteViolations || []).join(", ")}. Fehlende Programmdaten: ${(context.futureMissingFacts || []).join(", ")}.`
+    : "";
   const safePayload = {
     module: payload.module || "cms",
     entityType: payload.entityType || "event",
     entityId: payload.entityId || "",
     fieldName,
+    eventStatus,
     originalText: compactText(payload.originalText || "", isRetrospective ? 9000 : 12000),
     context,
     placeholders: payload.placeholders || ["{{firstName}}", "{{lastName}}", "{{eventTitle}}", "{{eventDate}}", "{{eventLocation}}", "{{confirmationLink}}"]
@@ -195,12 +297,16 @@ function buildPrompt(action, payload) {
   return [
     actionConfig.instruction,
     fieldRules[fieldName] || "",
+    invitationProgramRule,
+    completeProgramRule,
+    upcomingEventRule,
+    correctionRule,
     isRetrospective ? "Kontextregel Rueckblick: Alle Texte muessen als nachtraegliche Berichterstattung ueber ein bereits vergangenes Event klingen. Verboten sind Formulierungen wie 'wir laden ein', 'melden Sie sich an', 'findet statt', 'wird stattfinden', 'wird sich beschaeftigen', 'wir freuen uns' oder andere Einladungs- und Zukunftslogik. Verwende stattdessen 'fand statt', 'stand im Mittelpunkt', 'diskutierten', 'beleuchtete', 'bot'." : "",
     currentEventFacts,
     targetGroupRule,
     virtualEventRule,
     "Arbeite nur mit den uebergebenen Informationen.",
-    "Der sichtbare Text muss die Sache selbst erklaeren: Was ist passiert, worum geht es, warum ist es relevant, welche Einordnung ergibt sich fuer die Medienbranche.",
+    isUpcomingEvent ? "Der sichtbare Text muss die angekündigte Sache selbst erklären: Worum wird es gehen, wer spricht über welches Thema, warum ist das relevant und welche Einordnung ist für die Medienbranche zu erwarten?" : "Der sichtbare Text muss die Sache selbst erklaeren: Was ist passiert, worum geht es, warum ist es relevant, welche Einordnung ergibt sich fuer die Medienbranche.",
     textLengthRule,
     "Den Haupttext immer neu formulieren. Keine langen Passagen aus dem Ausgangstext kopieren, keine Satz-fuer-Satz-Paraphrase. Inhalt, Reihenfolge und Einstieg eigenstaendig redaktionell strukturieren.",
     "Beim Neuformulieren den Kern der Aussagen bewahren: konkrete Akteure, Daten, Verfahren, Zahlen, Rechtsfragen, Marktfolgen und zentrale Ursache-Wirkung-Beziehungen nicht verwässern und nicht durch allgemeine Branchenfloskeln ersetzen.",
@@ -441,7 +547,7 @@ function buildImagePrompt(payload = {}) {
     news: "Bereich/Anlass: Thema/Redaktionsbeitrag. Erzeuge wie bei Themen ein eigenstaendiges, echtes fotorealistisches Redaktionsfoto aus Headline, Subline und Beitragstext: spezifisch zum Inhalt, ruhig, hochwertig, hell, glaubwuerdig, medienwirtschaftlich relevant. Wichtig: Das Ergebnis muss ein Foto sein, kein Poster, keine Grafik, kein Keyvisual mit Schrift. Keine sichtbaren Buchstaben, keine Woerter, keine Logos, keine UI-Symbole, keine Symbolgrafik, keine generischen Business-Menschen.",
     topics: "Bereich/Anlass: Thema/Redaktionsbeitrag. Erzeuge ein eigenstaendiges, echtes fotorealistisches Redaktionsfoto aus Headline, Subline und Beitragstext: spezifisch zum Inhalt, ruhig, hochwertig, hell, glaubwuerdig, medienwirtschaftlich relevant. Wichtig: Das Ergebnis muss ein Foto sein, kein Poster, keine Grafik, kein Keyvisual mit Schrift. Keine sichtbaren Buchstaben, keine Woerter, keine Logos, keine UI-Symbole, keine Symbolgrafik, keine generischen Business-Menschen.",
     press: "Bereich/Anlass: Presse/Mitteilung. Glaubwuerdige PR-/Kommunikationsoptik, institutionelle Klarheit, professioneller Ankuendigungscharakter.",
-    medienfruehstueck: "Bereich/Anlass: Medienfruehstueck. Business-Fruehstueck, Networking, Morgenlicht, Tischkultur, hochwertige Event-Atmosphaere.",
+    medienfruehstueck: "Bereich/Anlass: Medienfrühstück. Business-Frühstück, Networking, Morgenlicht, Tischkultur, hochwertige Event-Atmosphäre.",
     von_den_besten: "Bereich/Anlass: Von den Besten. Dialog, Lernen von Expertinnen und Experten, Premium-Gespraech, Wissenstransfer, menschlicher Austausch ohne Promi-Imitation.",
     rueckblick: "Bereich/Anlass: Rueckblick. Erinnerung, Event-Atmosphaere, dokumentarischer Nachklang, Reflexion, wertige Recap-Energie.",
     versammlung: "Bereich/Anlass: Versammlungen. Mitglieder, Beschluesse, Verein, Tagesordnung, Konferenztisch, professionelle Governance-Atmosphaere.",
@@ -591,13 +697,49 @@ async function writeAiLog({ profile, settings, action, payload, result, status }
   });
 }
 
+function moderationCardSafePayload(payload = {}) {
+  const cards = (Array.isArray(payload.context?.cards) ? payload.context.cards : []).slice(0, 60).map((card, index) => ({
+    id: `card-${index + 1}`,
+    title: compactText(card.title || "", 180),
+    description: compactText(card.description || "", 700),
+    notes: compactText(card.notes || "", 300)
+  }));
+  return { module: "event-admin", entityType: "moderationCards", context: { cards } };
+}
+
 async function runAiAction(action, request) {
-  const payload = request.data || {};
+  const rawPayload = request.data || {};
+  const payload = action === "generateModerationCardText" ? moderationCardSafePayload(rawPayload) : rawPayload;
   const { profile, settings } = await requireAiAccess(request);
   try {
-    const result = await callOpenAi(action, payload, settings);
+    const eventStatus = eventDateStatus(payload.context || {});
+    let result = await callOpenAi(action, payload, settings);
+    let validation = RETROSPECTIVE_EVENT_ACTIONS.has(action)
+      ? { violations: [], missingFacts: [] }
+      : validateUpcomingEventText(action, payload, result.text || "");
+    if (validation.violations.length || validation.missingFacts.length) {
+      const correctionPayload = {
+        ...payload,
+        originalText: result.text || payload.originalText || "",
+        context: {
+          ...(payload.context || {}),
+          eventStatus: "upcoming",
+          futureRewriteRequired: true,
+          futureRewriteViolations: validation.violations,
+          futureMissingFacts: validation.missingFacts
+        }
+      };
+      result = await callOpenAi(action, correctionPayload, settings);
+      validation = RETROSPECTIVE_EVENT_ACTIONS.has(action)
+        ? { violations: [], missingFacts: [] }
+        : validateUpcomingEventText(action, correctionPayload, result.text || "");
+      if (validation.violations.length || validation.missingFacts.length) {
+        const details = [...validation.violations, ...validation.missingFacts].join(", ");
+        throw new HttpsError("failed-precondition", `Der KI-Text erfüllt die Zukunfts- oder Programmlogik noch nicht (${details}). Bitte erneut erzeugen.`);
+      }
+    }
     await writeAiLog({ profile, settings, action, payload, result, status: "success" });
-    return { action, suggestedText: result.text || "", structured: result.json || null, status: "suggested" };
+    return { action, suggestedText: result.text || "", structured: result.json || null, eventStatus, status: "suggested" };
   } catch (error) {
     await writeAiLog({ profile, settings, action, payload, result: error.message || String(error), status: "failed" }).catch(() => {});
     throw error;
@@ -2534,6 +2676,7 @@ exports.generateEventFaq = callable("generateEventFaq");
 exports.generateTopicDescription = callable("generateTopicDescription");
 exports.generateEventTopicDescription = callable("generateEventTopicDescription");
 exports.generateSpeakerTalkText = callable("generateSpeakerTalkText");
+exports.generateModerationCardText = callable("generateModerationCardText");
 exports.generateSponsorText = callable("generateSponsorText");
 exports.generateRegistrationMailText = callable("generateRegistrationMailText");
 exports.generateEventSummary = callable("generateEventSummary");
@@ -2544,6 +2687,7 @@ exports.generateGalleryIntro = callable("generateGalleryIntro");
 exports.generateImageAltText = callable("generateImageAltText");
 exports.generateDownloadDescription = callable("generateDownloadDescription");
 exports.analyzeEventPipelineQuality = callable("analyzeEventPipelineQuality");
+exports.generateLinkedInPost = callable("generateLinkedInPost");
 
 exports.generateCmsThumbCollage = onCall({ region, secrets: [openAiApiKey], timeoutSeconds: 120, memory: "512MiB" }, async (request) => {
   const payload = request.data || {};

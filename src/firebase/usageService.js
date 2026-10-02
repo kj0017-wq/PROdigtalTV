@@ -1,6 +1,7 @@
 import { getFirebaseServices } from "./firebaseClient.js?v=1";
 
 const SESSION_KEY = "pdtv_usage_session";
+const ANONYMOUS_COUNT_URL = "https://europe-west3-prodigitaltv-da47b.cloudfunctions.net/countAnonymousPageView";
 
 function randomId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
@@ -40,6 +41,16 @@ function analyticsConsentGranted() {
 export async function logUsagePageView(current = {}) {
   if (typeof window === "undefined") return null;
   if (current?.path === "cms") return null;
+  if (!["localhost", "127.0.0.1"].includes(window.location.hostname)) {
+    fetch(ANONYMOUS_COUNT_URL, {
+      method: "POST",
+      mode: "cors",
+      credentials: "omit",
+      headers: { "Content-Type": "text/plain" },
+      body: current.path || "home",
+      keepalive: true
+    }).catch(() => {});
+  }
   if (!analyticsConsentGranted()) return null;
   const route = routeKey(current);
   const payload = {

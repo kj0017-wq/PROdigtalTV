@@ -1,4 +1,4 @@
-const CACHE = "pdt-platform-v961";
+const CACHE = "pdt-platform-v1101";
 const IMAGE_CACHE = "pdt-platform-images-v960";
 const APP_SHELL = [
   "/",
@@ -6,23 +6,53 @@ const APP_SHELL = [
   "/website.html",
   "/assets/js/pwa.js",
   "/assets/js/push-display.js",
+  "/assets/js/libphonenumber-mobile.js",
+  "/src/main.js",
+  "/src/utils/mobilePhone.js",
+  "/src/pages/publicPages.js",
+  "/src/components/cards.js",
+  "/src/firebase/dataService.js",
+  "/src/styles/main.css",
+  "/src/utils/calendar.js",
+  "/src/utils/format.js",
+  "/src/utils/imageUrls.js",
+  "/public-snapshot.json",
   "/assets/official/brand/prodigitaltv-logo-claim.png",
   "/images/icon-192.png"
 ];
 
-importScripts("/assets/js/push-display.js?v=1");
+importScripts("/assets/js/push-display.js?v=4");
+
+// Display own pushes even when Firebase cannot start or a page is visible.
+self.addEventListener("push", (event) => {
+  let payload;
+  try { payload = event.data?.json(); } catch { return; }
+  if (!payload?.data?.notificationId) return;
+  event.stopImmediatePropagation();
+  event.waitUntil(self.PROdigitalTVPush.show(self.registration, payload));
+});
 
 // Register custom click handling before the Firebase SDK adds its handlers.
 self.addEventListener("notificationclick", (event) => {
   if (!event.notification.data?.pdtPush && !event.notification.data?.link) return;
   event.stopImmediatePropagation();
   event.notification.close();
+  const interactionId = String(event.notification.data.interactionId || "");
+  // Tracking must not navigate out of the installed app or delay its opening.
+  if (/^push-[a-f0-9]{32}$/.test(interactionId)) {
+    event.waitUntil(fetch(`https://europe-west3-prodigitaltv-da47b.cloudfunctions.net/trackPushClick?i=${interactionId}`, {
+      mode: "no-cors", credentials: "omit", redirect: "manual"
+    }).catch(() => undefined));
+  }
   event.waitUntil((async () => {
     const link = self.PROdigitalTVPush.safeLink(event.notification.data.link);
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const exact = windows.find((client) => client.url === link);
     if (exact) return exact.focus();
-    const existing = windows.find((client) => new URL(client.url).origin === new URL(link).origin);
+    const existing = windows.find((client) => {
+      const url = new URL(client.url);
+      return url.origin === new URL(link).origin && ["/", "/index.html"].includes(url.pathname);
+    });
     if (existing?.navigate) {
       try {
         const navigated = await existing.navigate(link);
@@ -98,6 +128,22 @@ function networkFirstWithCache(request, cacheName) {
     .catch(() => caches.match(request));
 }
 
+function staleWhileRevalidate(request, cacheName, options = {}) {
+  const matchOptions = options.ignoreSearch ? { ignoreSearch: true } : undefined;
+  return caches.match(request, matchOptions).then((cached) => {
+    const fresh = fetch(request, { cache: "no-store" })
+      .then((response) => {
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(cacheName).then((cache) => cache.put(request, copy)).catch(() => undefined);
+        }
+        return response;
+      })
+      .catch(() => cached);
+    return cached || fresh;
+  });
+}
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
@@ -115,13 +161,8 @@ self.addEventListener("fetch", (event) => {
   const isNavigation = event.request.mode === "navigate" || ["", "/", "/index.html", "/website.html", "/cms.html"].includes(url.pathname);
   if (isNavigation) {
     event.respondWith(
-      fetch(event.request, { cache: "no-store" })
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(event.request, copy)).catch(() => undefined);
-          return response;
-        })
-        .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/index.html")))
+      networkFirstWithCache(event.request, CACHE)
+        .then((response) => response || caches.match("/index.html", { ignoreSearch: true }))
     );
     return;
   }
@@ -142,5 +183,3 @@ self.addEventListener("fetch", (event) => {
       .catch(() => caches.match(event.request))
   );
 });
-
-

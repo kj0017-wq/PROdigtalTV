@@ -102,4 +102,17 @@ handlers.get("notificationclick")({ notification: { data: displayed[0].options.d
 await clickPromise;
 assert.equal(navigated, "https://prodigitaltv.web.app/#/events");
 assert.equal(focused, 1);
+assert.equal(scope.PROdigitalTVPush.safeLink("https://prodigitaltv.de/website.html?v=old#/event-live/heuking"), "https://prodigitaltv.web.app/#/event-live/heuking");
+assert.equal(scope.PROdigitalTVPush.safeLink("https://example.com/"), "https://prodigitaltv.web.app/");
+assert.equal(scope.PROdigitalTVPush.safeLink("https://prodigitaltv.de/cms.html#/cms"), "https://prodigitaltv.web.app/");
+let opened = "";
+let tracked = "";
+scope.clients.matchAll = async () => [{ url: "https://prodigitaltv.web.app/checkin.html#/event-checkin-screen/heuking", navigate() { throw new Error("Do not hijack check-in screen"); } }];
+scope.clients.openWindow = async url => { opened = url; };
+ctx.fetch = async (url, options) => { tracked = url; assert.equal(options.redirect, "manual"); throw new Error("tracking offline"); };
+const waits = [];
+handlers.get("notificationclick")({ notification: { data: { pdtPush: true, link: "https://prodigitaltv.de/index.html#/event-live/heuking", interactionId: `push-${"a".repeat(32)}` }, close() {} }, stopImmediatePropagation() {}, waitUntil(promise) { waits.push(promise); } });
+await Promise.all(waits);
+assert.match(tracked, /trackPushClick/);
+assert.equal(opened, "https://prodigitaltv.web.app/#/event-live/heuking", "Open app directly even when tracking fails");
 console.log("Push security, delivery, background display and click tests passed. No messages sent.");

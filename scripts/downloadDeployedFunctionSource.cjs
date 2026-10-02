@@ -1,0 +1,24 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const { pipeline } = require('node:stream/promises');
+const base = 'C:/Users/Klaus-HP/AppData/Roaming/npm/node_modules/firebase-tools/lib';
+const auth = require(base + '/auth');
+const { requireAuth } = require(base + '/requireAuth');
+const { Client } = require(base + '/apiv2');
+(async () => {
+  const name = process.argv[2], output = process.argv[3];
+  if (!/^[A-Za-z][A-Za-z0-9_]+$/.test(name || '') || !output) throw new Error('Usage: node script functionName output.zip');
+  const options = { project: 'prodigitaltv-da47b', nonInteractive: true };
+  auth.setActiveAccount(options, auth.selectAccount(null, process.cwd())); await requireAuth(options);
+  const cloud = new Client({ urlPrefix: 'https://cloudfunctions.googleapis.com', apiVersion: 'v2', auth: true });
+  const meta = (await cloud.get(`/projects/prodigitaltv-da47b/locations/europe-west3/functions/${name}`)).body;
+  const source = meta.buildConfig?.source?.storageSource;
+  if (!source?.bucket || !source?.object) throw new Error('No deployed storage source found.');
+  const storage = new Client({ urlPrefix: 'https://storage.googleapis.com', apiVersion: 'storage/v1', auth: true });
+  const target = path.resolve(output); fs.mkdirSync(path.dirname(target), { recursive: true });
+  const queryParams = { alt: 'media', ...(source.generation ? { generation: source.generation } : {}) };
+  const response = await storage.get(`/b/${source.bucket}/o/${encodeURIComponent(source.object)}`, { queryParams, responseType: 'stream', resolveOnHTTPError: true });
+  if (response.status >= 400) throw new Error(`Source download failed: HTTP ${response.status}`);
+  await pipeline(response.body, fs.createWriteStream(target));
+  console.log(JSON.stringify({ name, target, updated: meta.updateTime, source }, null, 2));
+})().catch(error => { console.error(error.stack || error.message); process.exitCode = 1; });

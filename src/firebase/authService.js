@@ -4,14 +4,29 @@ const USER_KEY = "prodigitaltv-user";
 let authReadyPromise;
 let lastFirebaseAuthUser = null;
 
+function writeUserStorage(storage, payload) {
+  try { storage.setItem(USER_KEY, payload); return; } catch {}
+  try {
+    const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index));
+    keys.filter((key) => key?.startsWith("pdtv-public-list-") || key?.startsWith("pdtv-page-content-"))
+      .forEach((key) => storage.removeItem(key));
+    storage.setItem(USER_KEY, payload);
+  } catch {
+    try { storage.removeItem(USER_KEY); } catch {}
+  }
+}
+
 function storeUser(user) {
-  sessionStorage.setItem(USER_KEY, JSON.stringify(user));
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  globalThis.__pdtvActiveUser = user;
+  const payload = JSON.stringify(user);
+  try { writeUserStorage(sessionStorage, payload); } catch {}
+  try { writeUserStorage(localStorage, payload); } catch {}
 }
 
 function clearStoredUser() {
-  sessionStorage.removeItem(USER_KEY);
-  localStorage.removeItem(USER_KEY);
+  globalThis.__pdtvActiveUser = null;
+  try { sessionStorage.removeItem(USER_KEY); } catch {}
+  try { localStorage.removeItem(USER_KEY); } catch {}
 }
 
 function isLocalHost() {
@@ -35,15 +50,18 @@ function normalizeRole(role = "") {
 }
 
 export function currentUser() {
-  try {
-    const storedUser = JSON.parse(sessionStorage.getItem(USER_KEY) || localStorage.getItem(USER_KEY) || "null");
-    if (storedUser && !sessionStorage.getItem(USER_KEY)) sessionStorage.setItem(USER_KEY, JSON.stringify(storedUser));
-    if (storedUser) return storedUser;
-    return null;
-  } catch {
-    clearStoredUser();
-    return null;
+  if (globalThis.__pdtvActiveUser) return globalThis.__pdtvActiveUser;
+  for (const name of ["sessionStorage", "localStorage"]) {
+    try {
+      const storage = globalThis[name];
+      const user = JSON.parse(storage.getItem(USER_KEY) || "null");
+      if (user) {
+        storeUser(user);
+        return user;
+      }
+    } catch {}
   }
+  return null;
 }
 
 export function authDebugState() {
@@ -78,6 +96,9 @@ async function userFromCredential(firebase, firebaseUser, fallbackRole = "guest"
     photoURL: firebaseUser.photoURL || "",
     role,
     memberId: profileData.memberId || "",
+    passwordSetupPending: profileData.guestPasswordTemporary === true,
+    passwordSetupExpired: profileData.guestPasswordTemporary === true
+      && (profileData.guestPasswordExpiresAt?.toMillis?.() || 0) <= Date.now(),
     committeeRole: profileData.committeeRole || "",
     permissions: Array.isArray(profileData.permissions) ? profileData.permissions : [],
     status: profileData.status || "active",
@@ -122,6 +143,44 @@ export async function login(email, password, requestedRole = "member") {
     nextError.code = error?.code || "auth/login-failed";
     throw nextError;
   }
+}
+
+export async function setEventGuestPassword(newPassword) {
+  const firebase = await getFirebaseServices();
+  if (!firebase?.auth?.currentUser) throw new Error("Bitte zuerst mit dem Startpasswort anmelden.");
+  const callable = firebase.functionsLib.httpsCallable(firebase.functions, "setEventGuestPassword");
+  await callable({ newPassword });
+  return refreshAuthToken(true);
+}
+
+export async function requestEventLivePasswordReset(email) {
+  const firebase = await getFirebaseServices();
+  if (!firebase) throw new Error("Firebase-Login ist nicht erreichbar.");
+  await firebase.authLib.sendPasswordResetEmail(firebase.auth, String(email || "").trim().toLowerCase());
+}
+
+export async function changeEventLivePassword(currentPassword, newPassword) {
+  const firebase = await getFirebaseServices();
+  const user = firebase?.auth?.currentUser;
+  if (!user?.email) throw new Error("Bitte zuerst anmelden.");
+  const credential = firebase.authLib.EmailAuthProvider.credential(user.email, currentPassword);
+  await firebase.authLib.reauthenticateWithCredential(user, credential);
+  await firebase.authLib.updatePassword(user, newPassword);
+  return refreshAuthToken(true);
+}
+
+export async function createEventLiveGuestAccount(email, password) {
+  const firebase = await getFirebaseServices();
+  if (!firebase) throw new Error("Firebase-Login ist nicht erreichbar.");
+  const credential = await firebase.authLib.createUserWithEmailAndPassword(firebase.auth, String(email || "").trim().toLowerCase(), password);
+  await firebase.authLib.sendEmailVerification(credential.user);
+  return credential.user;
+}
+
+export async function resendEventLiveVerification() {
+  const firebase = await getFirebaseServices();
+  if (!firebase?.auth?.currentUser) throw new Error("Bitte zuerst anmelden.");
+  await firebase.authLib.sendEmailVerification(firebase.auth.currentUser);
 }
 
 export async function refreshAuthToken(force = false) {

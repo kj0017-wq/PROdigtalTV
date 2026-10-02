@@ -1,4 +1,4 @@
-﻿import { accessLabels } from "../data/platformConstants.js";
+import { accessLabels } from "../data/platformConstants.js";
 import { eventDateBox, escapeHtml, formatDate } from "../utils/format.js";
 import { liveImageAttrs, stableImageUrl } from "../utils/imageUrls.js?v=2";
 
@@ -60,13 +60,11 @@ export function eventCard(event, archive = false, partners = []) {
   const imageUrl = stableImageUrl(event.imageDisplayUrl || event.imageUrl || "", "event");
   const storedTicket = event.storedTicket || null;
   const myRegistration = event.myRegistration || null;
-  const registrationStatusText = myRegistration
-    ? myRegistration.emailConfirmed || myRegistration.status === "confirmed"
-      ? "Angemeldet"
-      : myRegistration.status === "waitlist"
-        ? "Warteliste"
-        : "Bestaetigung offen"
-    : "";
+  const bookingStatus = myRegistration?.status || storedTicket?.status || "";
+  const registrationStatusText = bookingStatus === "checked_in" ? "Eingecheckt"
+    : bookingStatus === "waitlist" ? "Warteliste"
+    : bookingStatus === "confirmed" || myRegistration?.emailConfirmed || (storedTicket && !bookingStatus) ? "Angemeldet"
+    : "Bestaetigung offen";
   const summary = eventSummaryText(event);
   const imageStyle = imageUrl ? ` style="--event-card-image:url(&quot;${escapeHtml(imageUrl)}&quot;)"` : "";
   return `<article class="card event-card ${imageUrl ? "event-card--with-image" : ""}"${imageStyle}>
@@ -77,7 +75,7 @@ export function eventCard(event, archive = false, partners = []) {
     </div>
     <div class="card__body">
       <span class="tag ${event.accessType !== "public" ? "tag--red" : ""}">${accessLabels[event.accessType]}</span>
-      ${storedTicket ? `<div class="event-ticket-status"><span class="event-ticket-status__icon" aria-hidden="true"></span><div><strong>Handy-Ticket aktiv</strong><span>${escapeHtml([storedTicket.firstName, storedTicket.lastName].filter(Boolean).join(" ") || "Dieses Geraet")}</span></div></div>` : ""}
+      ${storedTicket ? `<div class="event-ticket-status"><span class="event-ticket-status__icon" aria-hidden="true"></span><div><strong>${escapeHtml(registrationStatusText)}</strong><span>${escapeHtml([storedTicket.firstName, storedTicket.lastName].filter(Boolean).join(" ") || "Dieses Geraet")}</span></div></div>` : ""}
       ${!storedTicket && myRegistration ? `<div class="event-ticket-status event-ticket-status--booking"><span class="event-ticket-status__icon" aria-hidden="true"></span><div><strong>${escapeHtml(registrationStatusText)}</strong><span>${escapeHtml([myRegistration.firstName, myRegistration.lastName].filter(Boolean).join(" ") || "Ihre Buchung")}</span></div></div>` : ""}
       <h3>${escapeHtml(event.title)}</h3>
       ${summary ? `<p class="event-card__summary">${escapeHtml(summary)}</p>` : ""}
@@ -86,7 +84,7 @@ export function eventCard(event, archive = false, partners = []) {
         <div class="event-showcase__fact"><small>${event.isVirtualEvent ? "Online-Teilnahme" : "Veranstaltungsort"}</small><strong>${escapeHtml(eventLocationDisplay(event))}</strong></div>
         <div class="event-showcase__fact event-showcase__fact--partner"><small>${promotedPartners.length ? hasDistinctSponsors ? "Gastgeber / Sponsor" : "Gastgeber / Co-Gastgeber" : "Gastgeber"}</small><strong>${escapeHtml(hostNames.join(" - "))}</strong></div>
       </div>
-      ${archive ? "" : `<a class="event-card__cta" href="#/event/${event.id}">Zur Veranstaltung</a>`}
+      ${archive ? "" : `<a class="event-card__cta" href="#/event/${escapeHtml(event.id)}" data-public-event-prefetch="${escapeHtml(event.id)}">Zur Veranstaltung</a>`}
     </div>
   </article>`;
 }
@@ -94,9 +92,21 @@ export function eventCard(event, archive = false, partners = []) {
 export function topicCard(topic) {
   const imageUrl = topic.cardImageUrl || topic.imageUrl || topic.companyLogoUrl || topic.logoUrl || topic.speakerPhotoUrl || "";
   const imageType = topic.cardImageType || (topic.cardImageUrl ? "image" : topic.companyLogoUrl || topic.logoUrl ? "logo" : topic.speakerPhotoUrl ? "portrait" : "image");
+  const shortText = String(topic.shortDescription || topic.subtitle || topic.subline || "").trim();
+  const longText = String(topic.longDescription || topic.bodyText || topic.description || "").trim();
+  const teaserSource = shortText || longText;
+  const teaser = teaserSource.length > 180 ? `${teaserSource.slice(0, 177).trimEnd()}...` : teaserSource;
   return `<a class="card topic-card" href="#/topic/${topic.id}">
-    ${imageUrl ? `<figure class="topic-card__image topic-card__image--${escapeHtml(imageType)}"><img src="${escapeHtml(stableImageUrl(imageUrl, imageType === "portrait" ? "member" : "topic"))}" alt="Themenbild ${escapeHtml(topic.title)}" loading="lazy" decoding="async" ${liveImageAttrs(imageType === "portrait" ? "member" : "topic")}></figure>` : `<span class="quick-card__icon">${escapeHtml(topic.icon)}</span>`}
-    <h3>${escapeHtml(topic.title)}</h3><div class="topic-card__line"></div>
-    <p>${escapeHtml(topic.shortDescription)}</p>
+    ${imageUrl ? `<figure class="topic-card__image topic-card__image--${escapeHtml(imageType)}"><img src="${escapeHtml(stableImageUrl(imageUrl, imageType === "portrait" ? "member" : "topic"))}" alt="Themenbild ${escapeHtml(topic.title)}" loading="lazy" decoding="async"${topicImageTransformStyle(topic)} ${liveImageAttrs(imageType === "portrait" ? "member" : "topic")}></figure>` : `<span class="quick-card__icon">${escapeHtml(topic.icon)}</span>`}
+    <div class="topic-card__body"><h3>${escapeHtml(topic.title)}</h3><div class="topic-card__line"></div>
+    <p>${escapeHtml(teaser)}</p></div>
   </a>`;
+}
+
+export function topicImageTransformStyle(topic = {}, { defaultFit = "contain" } = {}) {
+  const scale = Math.min(180, Math.max(50, Number(topic.imageScale) || 100)) / 100;
+  const offsetX = Math.min(50, Math.max(-50, Number(topic.imageOffsetX) || 0));
+  const offsetY = Math.min(50, Math.max(-50, Number(topic.imageOffsetY) || 0));
+  const fit = topic.imageFit === "contain" || (!topic.imageFit && defaultFit === "contain") ? "contain" : "cover";
+  return ` style="position:relative;left:${offsetX}%;top:${offsetY}%;transform:scale(${scale});object-fit:${fit}"`;
 }

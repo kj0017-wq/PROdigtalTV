@@ -137,6 +137,14 @@ service cloud.firestore {
       allow create, update, delete: if editor();
     }
 
+    match /eventLiveAccess/{eventId} {
+      allow read, write: if admin();
+    }
+
+    match /eventLiveContactRequests/{requestId} {
+      allow read, write: if false;
+    }
+
     match /topics/{id} {
       allow read: if resource.data.status == "active" || editor();
       allow write: if editor();
@@ -182,7 +190,8 @@ service cloud.firestore {
 
     match /speakers/{id} {
       allow read: if resource.data.status == "published" || editor();
-      allow write: if editor();
+      allow create, update: if editor();
+      allow delete: if false;
     }
 
     match /sponsors/{id} {
@@ -228,6 +237,26 @@ service cloud.firestore {
       allow write: if editor();
     }
 
+    match /memberStrategyResponses/{id} {
+      allow read, delete: if admin();
+      allow create, update: if member()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.source == "zukunftsstrategie-2027-2030"
+        && (request.resource.data.responseType == "survey" || request.resource.data.responseType == "idea")
+        && request.resource.data.keys().hasOnly([
+          "id",
+          "source",
+          "responseType",
+          "userId",
+          "memberId",
+          "displayName",
+          "email",
+          "submittedAt",
+          "answers",
+          "idea",
+          "updatedAt"
+        ]);
+    }
     match /memberDirectories/{id} {
       allow read: if (member() && resource.data.visibility == "members" && resource.data.status == "active")
         || editor();
@@ -259,6 +288,10 @@ service cloud.firestore {
       allow update, delete: if editor();
     }
 
+    match /event_feedback/{id} {
+      allow read, update, delete: if editor();
+      allow create: if editor();
+    }
     match /checkinScreenEvents/{id} {
       allow read: if editor();
       allow write: if false;
@@ -276,12 +309,27 @@ service cloud.firestore {
       allow read, update, delete: if editor();
     }
 
+    match /bounceReports/{id} {
+      allow read: if admin();
+      allow write: if false;
+    }
+
     match /mailQueue/{id} {
       allow read: if editor();
       allow write: if false;
     }
 
+    match /smsQueue/{id} {
+      allow read: if editor();
+      allow write: if false;
+    }
+
     match /usageEvents/{id} {
+      allow read: if editor();
+      allow write: if false;
+    }
+
+    match /usageDaily/{id} {
       allow read: if editor();
       allow write: if false;
     }
@@ -297,6 +345,16 @@ service cloud.firestore {
     }
 
     match /liveSurveyInvites/{id} {
+      allow read: if editor();
+      allow write: if false;
+    }
+
+    match /speakerApprovals/{id} {
+      allow read: if editor();
+      allow write: if false;
+    }
+
+    match /speakerApprovalSubmissions/{id} {
       allow read: if editor();
       allow write: if false;
     }

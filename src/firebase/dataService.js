@@ -116,7 +116,7 @@ function publicCacheKey(collectionName, predicates) {
 }
 
 function publicSessionCacheKey(key = "") {
-  return `pdtv-public-list-v5:${key}`;
+  return `pdtv-public-list-${key.startsWith("topics:") || key.startsWith("editorialContent:") ? "v8" : "v7"}:${key}`;
 }
 
 function readEmbeddedPublicCache(key = "") {
@@ -178,19 +178,33 @@ function clearPublicReadCaches() {
 
 async function cachedConstrainedList(collectionName, predicates) {
   const key = publicCacheKey(collectionName, predicates);
+  const canUseSessionCache = publicSessionCacheAllowed(collectionName, predicates);
+  const sessionCached = canUseSessionCache ? readPublicSessionCache(key, { allowStale: true }) : null;
+  if (sessionCached) {
+    const cached = publicListCache.get(key);
+    if (!cached || Date.now() - cached.createdAt >= PUBLIC_LIST_CACHE_MS) {
+      const livePromise = constrainedList(collectionName, predicates);
+      publicListCache.set(key, { createdAt: Date.now(), promise: livePromise });
+      livePromise
+        .then((records) => {
+          if (canUseSessionCache) writePublicSessionCache(key, records);
+          return records;
+        })
+        .catch(() => publicListCache.delete(key));
+    }
+    return sessionCached;
+  }
   const cached = publicListCache.get(key);
   if (cached && Date.now() - cached.createdAt < PUBLIC_LIST_CACHE_MS) return cached.promise;
-  const sessionCached = publicSessionCacheAllowed(collectionName, predicates) ? readPublicSessionCache(key) : null;
-  if (sessionCached) return sessionCached;
   const promise = constrainedList(collectionName, predicates);
   publicListCache.set(key, { createdAt: Date.now(), promise });
   try {
     const records = await promise;
-    if (publicSessionCacheAllowed(collectionName, predicates)) writePublicSessionCache(key, records);
+    if (canUseSessionCache) writePublicSessionCache(key, records);
     return records;
   } catch (error) {
     publicListCache.delete(key);
-    const stale = publicSessionCacheAllowed(collectionName, predicates) ? readPublicSessionCache(key, { allowStale: true }) : null;
+    const stale = canUseSessionCache ? readPublicSessionCache(key, { allowStale: true }) : null;
     if (stale) return stale;
     throw error;
   }
@@ -402,7 +416,8 @@ function isEventVisible(event) {
   const registrationOpen = event.registrationEnabled === true
     || event.allowPublicRegistration === true
     || ["open", "offen", "active", "aktiv", "geoeffnet", "registration_open"].includes(registrationStatus);
-  if (["inactive", "cancelled", "deleted", "hidden", "private"].includes(status)) return false;
+  if (["inactive", "cancelled", "deleted", "hidden", "private"].includes(status)
+    && !(status === "inactive" && event.preStatus === "save_the_date" && event.visible === true)) return false;
   if (["internal", "private", "hidden"].includes(visibility)) return false;
   if (status === "draft" && event.visible !== true) return false;
   if (lifecycle === "archived") return true;
@@ -551,4 +566,3 @@ export async function remove(collectionName, id) {
   }
   throw new Error("Firebase ist nicht erreichbar. Es wurde nichts lokal geloescht.");
 }
-

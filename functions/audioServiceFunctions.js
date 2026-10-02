@@ -3,6 +3,7 @@ const { defineSecret } = require("firebase-functions/params");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getStorage } = require("firebase-admin/storage");
 const { createHash, randomUUID } = require("node:crypto");
+const { normalizeGermanSpeechText } = require("./voiceTextNormalizer");
 
 const region = "europe-west3";
 const db = getFirestore();
@@ -26,6 +27,20 @@ function cleanText(value = "") {
 
 function textHash(value = "") {
   return createHash("sha256").update(cleanText(value), "utf8").digest("hex");
+}
+
+function buildSpeechText({ text = "", title = "" } = {}) {
+  const cleanBody = cleanText(text);
+  const speechBody = normalizeGermanSpeechText(cleanBody);
+  const speechTitle = normalizeGermanSpeechText(cleanText(title));
+  return {
+    speechBody,
+    speechText: [speechTitle, speechBody].filter(Boolean).join("\n\n")
+  };
+}
+
+function speechTextHash({ text = "", title = "" } = {}) {
+  return createHash("sha256").update(buildSpeechText({ text, title }).speechText, "utf8").digest("hex");
 }
 
 function cleanAudioTextPart(value = "") {
@@ -156,10 +171,11 @@ async function fetchElevenLabs(path, options = {}) {
 async function createElevenLabsAudio({ text, title = "", config = {} }) {
   const cleanBody = cleanText(text);
   if (!cleanBody) throw new HttpsError("invalid-argument", "Kein Text zum Vorlesen gefunden.");
+  const { speechBody, speechText } = buildSpeechText({ text: cleanBody, title });
   const voiceId = config.voiceId || defaultElevenLabsVoiceId;
   const modelId = config.modelId || defaultElevenLabsModel;
   const payload = {
-    text: [title ? cleanText(title) : "", cleanBody].filter(Boolean).join("\n\n"),
+    text: speechText,
     model_id: modelId,
     voice_settings: {
       stability: 0.45,
@@ -178,7 +194,7 @@ async function createElevenLabsAudio({ text, title = "", config = {} }) {
     audioBuffer: Buffer.from(audioBase64, "base64"),
     timing: data.alignment || data.normalized_alignment || null,
     mimeType: "audio/mpeg",
-    textLength: cleanBody.length,
+    textLength: speechBody.length,
     truncated: String(text || "").length > maxCharacters,
     modelId,
     voiceId,
@@ -232,13 +248,15 @@ async function generateAudioForRecord(request, force = false) {
   if (!snapshot.exists) throw new HttpsError("not-found", "Inhalt nicht gefunden.");
   const item = snapshot.data();
   const sourceText = audioSourceText(collection, item);
+  const sourceTitle = item.title || item.titel || "";
   const hash = textHash(sourceText);
+  const speechHash = speechTextHash({ text: sourceText, title: sourceTitle });
   const currentAudio = item.audio || {};
-  if (!force && currentAudio.provider === "elevenlabs" && currentAudio.textHash === hash && currentAudio.status === "ready" && currentAudio.audioUrl) {
+  if (!force && currentAudio.provider === "elevenlabs" && currentAudio.textHash === hash && currentAudio.speechTextHash === speechHash && currentAudio.status === "ready" && currentAudio.audioUrl) {
     return { cached: true, audio: currentAudio };
   }
   const nextVersion = Number(currentAudio.version || item.audioVersion || 0) + 1;
-  const speech = await createElevenLabsAudio({ text: sourceText, title: item.title || item.titel || "", config });
+  const speech = await createElevenLabsAudio({ text: sourceText, title: sourceTitle, config });
   const files = await saveAudioFiles({ collection, id, version: nextVersion, audioBuffer: speech.audioBuffer, timing: speech.timing });
   const audio = {
     enabled: true,
@@ -253,6 +271,7 @@ async function generateAudioForRecord(request, force = false) {
     timingUrl: files.timingUrl,
     timingStoragePath: files.timingStoragePath,
     textHash: hash,
+    speechTextHash: speechHash,
     version: nextVersion,
     audioVersion: nextVersion,
     status: "ready",
@@ -277,6 +296,7 @@ async function generateAudioForRecord(request, force = false) {
     audioAccessibleStatus: "ready",
     audioProvider: "elevenlabs",
     audioTextHash: hash,
+    audioSpeechTextHash: speechHash,
     audioVersion: nextVersion,
     audioGeneratedAt: FieldValue.serverTimestamp(),
     audioGeneratedBy: profile.uid,
@@ -403,7 +423,8 @@ exports.getAudioStatus = onCall({ region }, async (request) => {
   if (!snapshot.exists) throw new HttpsError("not-found", "Inhalt nicht gefunden.");
   const item = snapshot.data();
   const hash = textHash(audioSourceText(collection, item));
+  const speechHash = speechTextHash({ text: audioSourceText(collection, item), title: item.title || item.titel || "" });
   const audio = item.audio || {};
-  const status = audio.audioUrl && audio.textHash === hash ? "ready" : audio.audioUrl ? "outdated" : "missing";
-  return { status, textHash: hash, audio };
+  const status = audio.audioUrl && audio.textHash === hash && audio.speechTextHash === speechHash ? "ready" : audio.audioUrl ? "outdated" : "missing";
+  return { status, textHash: hash, speechTextHash: speechHash, audio };
 });

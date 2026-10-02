@@ -58,6 +58,46 @@ service firebase.storage {
       allow write: if editor() && request.resource.size < 10 * 1024 * 1024;
     }
 
+    match /portal-gallery-photos/{userId}/{mediaId}/{fileName} {
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.auth.token.email_verified == true
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches("image/.*")
+        && firestore.exists(/databases/(default)/documents/eventMedia/$(mediaId))
+        && firestore.get(/databases/(default)/documents/eventMedia/$(mediaId)).data.uploadedBy == userId
+        && firestore.get(/databases/(default)/documents/eventMedia/$(mediaId)).data.storagePath
+          == "portal-gallery-photos/" + userId + "/" + mediaId + "/" + fileName
+        && firestore.get(/databases/(default)/documents/eventMedia/$(mediaId)).data.status == "uploading";
+      allow read: if editor() || (signedIn() && request.auth.uid == userId);
+    }
+
+    match /event-chat-attachments/{userId}/{attachmentId}/{fileName} {
+      allow create: if signedIn() && request.auth.uid == userId
+        && request.auth.token.email_verified == true
+        && request.resource.size <= 50 * 1024 * 1024
+        && request.resource.contentType.matches("(image/(jpeg|png|webp)|video/(mp4|webm|quicktime))")
+        && firestore.get(/databases/(default)/documents/eventChatAttachments/$(attachmentId)).data.uploadedBy == userId
+        && firestore.get(/databases/(default)/documents/eventChatAttachments/$(attachmentId)).data.status == "uploading"
+        && firestore.get(/databases/(default)/documents/eventChatAttachments/$(attachmentId)).data.fileSize == request.resource.size
+        && firestore.get(/databases/(default)/documents/eventChatAttachments/$(attachmentId)).data.fileType == request.resource.contentType
+        && firestore.get(/databases/(default)/documents/eventChatAttachments/$(attachmentId)).data.storagePath
+          == "event-chat-attachments/" + userId + "/" + attachmentId + "/" + fileName;
+      allow read, update, delete: if false;
+    }
+
+    match /event-live-profiles/{userId}/{fileName} {
+      allow read: if signedIn() && request.auth.token.email_verified == true && request.auth.uid == userId;
+      allow create, update: if signedIn()
+        && request.auth.uid == userId
+        && request.auth.token.email_verified == true
+        && request.resource.size < 4 * 1024 * 1024
+        && request.resource.contentType.matches("image/.*");
+      allow delete: if signedIn()
+        && request.auth.uid == userId
+        && request.auth.token.email_verified == true;
+    }
+
     match /board/{boardMemberId}/{fileName} {
       allow read: if true;
       allow write: if editor() && request.resource.size < 10 * 1024 * 1024;

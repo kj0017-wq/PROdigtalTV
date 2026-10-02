@@ -1,233 +1,584 @@
-# PROdigitalTV Funktionsbeschreibung
+# PROdigitalTV – Funktionsbeschreibung von Website und CMS
 
-Stand: August 2026
+Stand: 1. Oktober 2026
 
-Diese Beschreibung fasst die wichtigsten Funktionen der PROdigitalTV-Webseite und des CMS zusammen. Sie richtet sich an Redaktion, Administration und Vorstand und erklaert, wofuer die einzelnen Bereiche gedacht sind, wie sie genutzt werden und welche Wirkung sie auf der Webseite haben.
+Diese Dokumentation beschreibt den aktuellen Funktionsumfang der PROdigitalTV-Plattform. Sie richtet sich an Vorstand, Administration, Redaktion und Veranstaltungsteam. Sie erklärt, wo Inhalte gepflegt werden, wie die einzelnen Bereiche zusammenarbeiten und welche Schritte bei wiederkehrenden Aufgaben zu beachten sind.
 
-## Highlights der Plattform
+## Kurzüberblick
 
-PROdigitalTV verbindet Webseite, CMS, Events, Redaktion, Mitgliederbereich und Medienverwaltung in einem System.
+PROdigitalTV verbindet eine öffentliche Website, eine installierbare Web-App, ein redaktionelles CMS und einen geschützten Eventbereich in einem System.
 
-- Events koennen vollstaendig geplant, beworben, verwaltet und nachbereitet werden.
-- Teilnehmer melden sich online an und nutzen ihr Handy als Ticket.
-- Nach Veranstaltungen koennen Teilnehmer gezielt mit Rueckblicken, Galerien, Themenbeitraegen und Folgeevents informiert werden.
-- Robo-Themen machen Vortraege der Medienfruehstuecke dauerhaft sichtbar.
-- Referenten bekommen eine eigene Buehne mit Foto, Vita, Vortrag und Fachbeitrag.
-- News und Morning Briefings koennen redaktionell gepflegt und veroeffentlicht werden.
-- KI ersetzt nicht die Redaktion, sondern unterstuetzt bei Formulierung, Rechtschreibung, Struktur und Artikelbildern.
-- Bilder werden hochgeladen, gecroppt, optimiert und als WebP-Varianten bereitgestellt.
-- Audiofassungen mit Mitlese- und Karaokefunktion machen Beitraege besser nutzbar.
-- Mitglieder erhalten einen geschuetzten Bereich fuer Events, Dokumente, Verzeichnis und Profil.
-- Das Mobile CMS stellt unterwegs reduzierte Admin-Funktionen fuer Eventbetrieb, Umfragen und Einlass bereit.
-- Live-Umfragen und Voting koennen per Mail oder Push versendet und in Echtzeit ausgewertet werden.
-- Einlass-QR-Codes koennen mobil abgerufen und als PDF geteilt werden.
-- Mailabo, Abmeldung, Zustellstatus und Oeffnungsquote unterstuetzen professionellere Kommunikation.
-- Nutzer, Mitglieder, Referenten und Mailingkontakte werden besser zusammengefuehrt.
-- Das CMS prueft fehlende Bilder, Texte, Links und andere Qualitaetsprobleme.
-- Startseite, Events, Themen, News und Referenten lassen sich gezielt steuern.
+- Veranstaltungen werden von der Planung über Einladung, Anmeldung und Einlass bis zum Rückblick verwaltet.
+- Teilnehmende melden sich online an und können ihr Smartphone als persönliches Ticket verwenden.
+- Das CMS verwaltet Veranstaltungen, Referierende, Mitglieder, Redaktion, Medien, Mailings und Systemeinstellungen.
+- Der Event-Chat verbindet ausschließlich Personen, die für das jeweilige Event eingecheckt wurden.
+- Persönliche Chats, ein eventbezogener Gruppenchat, Kontaktanfragen und Kontaktkarten unterstützen das Networking.
+- Event-Fotos können mobil hochgeladen, mit einer Fortschrittsanzeige verfolgt und als Thumbnails angesehen werden.
+- Moderationskarten im Format DIN A5 und Namensetiketten können direkt aus den Eventdaten erzeugt werden.
+- Einladungen, Erinnerungen, Gästebefragungen und weitere Mailings laufen über eine zentrale Versandverwaltung.
+- Rückläufer, SMTP-Ablehnungen und verzögerte Zustellungen werden sichtbar gemacht.
+- Push-Nachrichten ergänzen E-Mails bei zeitkritischen persönlichen Benachrichtigungen.
+- Medien werden zentral gespeichert, optimiert, zugeschnitten und verschiedenen Inhalten zugeordnet.
+- Die KI-Redaktion unterstützt bei Entwürfen, Importen, Zusammenfassungen und Bildern; die redaktionelle Freigabe bleibt beim Menschen.
 
-## 1. Grundidee der Plattform
+## 1. Plattform und Zugänge
 
-PROdigitalTV ist eine redaktionelle Webseite und zugleich ein Verwaltungswerkzeug fuer den Verein. Die Plattform verbindet oeffentliche Inhalte, Eventkommunikation, Mitgliederinformationen, redaktionelle News, Rueckblicke, Themenbeitraege und interne Verwaltungsfunktionen.
+Die Plattform besteht aus vier eng verbundenen Oberflächen:
 
-Die Plattform ist als mobile-first Web-App gedacht. Besucher, Mitglieder und Eventteilnehmer sollen die wichtigsten Funktionen zuerst auf dem Smartphone nutzen koennen: Events ansehen, sich anmelden, Handy-Ticket oeffnen, Mitgliederbereich nutzen, News lesen, Themen entdecken und Inhalte teilen.
+- Die öffentliche Website informiert über PROdigitalTV, Veranstaltungen, Themen, News, Mitglieder und Referierende.
+- Die Web-App optimiert zentrale Funktionen für Smartphones und kann auf dem Home-Bildschirm gespeichert werden.
+- Das CMS ist die Verwaltungsoberfläche für Redaktion, Events, Medien, Kommunikation und Systempflege.
+- Der Eventbereich ist ein geschützter Raum für eingecheckte Gäste und berechtigte Mitglieder.
 
-Ergaenzend gibt es eine Desktop-Variante fuer umfangreichere redaktionelle und administrative Arbeit. Das CMS ist bewusst fuer groessere Bildschirme ausgelegt, weil Eventplanung, Medienbearbeitung, Teilnehmerverwaltung, Galeriepflege, Redaktion und Qualitaetssicherung mehr Platz und Praezision brauchen.
+Die Website und die Web-App sind mobile-first aufgebaut. Das CMS ist auch mobil erreichbar, bleibt für umfangreiche redaktionelle Aufgaben aber auf einem großen Bildschirm übersichtlicher.
 
-Inhalte werden im CMS gepflegt und erscheinen je nach Status, Sichtbarkeit, Datum und Startseitenfreigabe auf der oeffentlichen Webseite oder im geschuetzten Mitgliederbereich.
+### Rollen
 
-## 2. Oeffentliche Webseite
+- Gäste sehen öffentliche Inhalte und können sich zu freigegebenen Veranstaltungen anmelden.
+- Eventgäste erhalten nach Einladung, Anmeldung und Check-in Zugang zu den für sie freigegebenen Eventfunktionen.
+- Mitglieder erhalten zusätzlich Zugriff auf den Mitgliederbereich und auf Mitgliederveranstaltungen.
+- Redakteure pflegen Inhalte und Medien entsprechend ihrer Berechtigungen.
+- Administratoren verwalten zusätzlich Benutzer, Systemeinstellungen, Löschvorgänge, Mailrückläufer und Event-Reset-Funktionen.
 
-Die Startseite zeigt die wichtigsten freigegebenen Inhalte: kommende Events, ausgewaehlte Themen, Referenten, News und Reihen wie Medienfruehstueck oder Von den Besten lernen. Inhalte erscheinen dort nur, wenn sie aktiv und fuer die Startseite freigegeben sind.
+Der CMS-Link wird nur für berechtigte Rollen angezeigt. Schreibende und löschende Aktionen werden serverseitig erneut geprüft.
 
-Die Eventseite zeigt kommende Veranstaltungen, Mitglieder-Events nach Login sowie vergangene Events als Rueckblicke oder Archiv. Eventkarten koennen anzeigen, ob ein eingeloggter Nutzer bereits angemeldet ist.
+## 2. Öffentliche Website und Web-App
 
-Die Themenseite zeigt redaktionelle Themenbeitraege mit Vorschaubildern, Nachladefunktion und Detailseiten. Die Robo-Themen sind den Vortraegen der Medienfruehstuecke vorbehalten: Sie sind keine allgemeine Newsrubrik, sondern die redaktionelle Auswertung und dauerhafte Buehne fuer die fachlichen Impulse aus den Veranstaltungen.
+### Startseite
 
-Themen aus Events werden erst nach dem Eventdatum sichtbar, damit Vortragsinhalte nicht vorab veroeffentlicht werden. Die Referenten stehen dabei bewusst im Mittelpunkt: mit Foto, Vita, Unternehmen, Funktion, Vortragstitel, Themenbeitrag und Verknuepfung zum jeweiligen Event.
+Die Startseite zeigt ausgewählte Veranstaltungen, redaktionelle Inhalte, Themen, News, Referierende und weitere hervorgehobene Bereiche. Ein Inhalt erscheint nur, wenn Status, Sichtbarkeit und Startseitenfreigabe dies erlauben.
 
-Die Referentenseite zeigt Personenprofile mit Foto, Name, Unternehmen, Funktion, Vita und verknuepften Vortraegen. Referenten koennen auch auf der Startseite erscheinen.
+### Veranstaltungen
 
-Der Newsbereich enthaelt redaktionelle Nachrichten, Branchen-News, Morning Briefings und Importmeldungen. Jede Meldung soll als einzelner Newsbeitrag erscheinen.
+Die Eventübersicht unterscheidet kommende Veranstaltungen, Mitgliederveranstaltungen und Rückblicke. Eine Eventdetailseite kann enthalten:
 
-## 3. CMS-Uebersicht
+- Titel, Datum, Uhrzeit und Veranstaltungsort
+- Gastgeber, Partner und Logos
+- Beschreibung und Keywords
+- Ablaufplan und Referierende
+- Anmeldung oder gespeicherten Anmeldestatus
+- Funktion „Termin merken“ ohne automatische Anmeldung
+- Rückblick, Galerie, Downloads und weiterführende Themen
 
-Das CMS ist die Verwaltungsoberflaeche fuer Inhalte, Events, Medien, Mitglieder, News und Systemfunktionen. Es ist primaer fuer Desktop gedacht.
+Nach einer bestätigten Anmeldung wird der Gast nicht erneut mit einem irreführenden Anmeldebutton konfrontiert. Der sichtbare Zustand richtet sich nach der konkreten Registrierung.
 
-Im CMS koennen Inhalte angelegt, bearbeitet, gespeichert und veroeffentlicht werden. Status und Sichtbarkeit werden zentral gesteuert. Bilder koennen hochgeladen, gecroppt und zugeordnet werden. Events, Referenten, Vortraege und Teilnehmer werden ebenso verwaltet wie News, redaktionelle Beitraege und Qualitaetspruefungen.
+### Themen, News und Referierende
 
-Wichtig sind Status und Sichtbarkeit: Entwurf ist noch nicht oeffentlich, Aktiv/Veroeffentlicht darf angezeigt werden, Archiviert bleibt gespeichert, Oeffentlich ist fuer alle sichtbar, Mitglieder ist geschuetzt und Intern ist nur fuer interne Verwaltung gedacht.
+Themenbeiträge machen Fachinhalte und Vorträge dauerhaft auffindbar. News erscheinen als einzelne redaktionelle Beiträge. Referierendenprofile verbinden Foto, Funktion, Unternehmen, Vita, Vortrag und zugehöriges Event.
+
+### Navigation und Darstellung
+
+Die Oberfläche besitzt eine Desktop- und eine mobile Navigation. Tag- und Nachtansicht können umgeschaltet werden. Auf Mobilgeräten ist die untere Navigation auf die wichtigsten Bereiche reduziert.
+
+## 3. CMS-Navigation
+
+Das CMS ist in folgende Hauptbereiche gegliedert:
+
+- Dashboard
+- Events
+- Mitglieder
+- Redaktion
+- Medien
+- Papierkorb
+- KI-Redaktion
+- Kommunikation
+- System
+
+Aufklappbare Seitengruppen halten die Navigation kompakt. Der aktive Bereich bleibt sichtbar markiert.
+
+### Events
+
+- Events
+- Veranstaltungs-Cockpit
+- Anmeldungen
+- Referenten
+- Gästebefragung
+- Sponsoren und Gastgeber
+
+### Mitglieder
+
+- Mitglieder
+- Mitgliederbereich
+- Strategie-Auswertung
+- Mitgliedsanträge
+- Vorstand
+
+### Redaktion
+
+- Presse
+- Themen
+- News
+- Rückblicke
+- Interna
+
+### Medien
+
+- Bilder
+- KI-Bilder
+- Videos
+- Dokumente
+- Bildergalerien
+- Audio und Barrierefreiheit
+- Papierkorb
+
+### Kommunikation
+
+- Event-Versand
+- Mailingadressen
+- Mailing Queue
+- Rückläufer
+- Mailingverwaltung
+
+### System
+
+- Funktionsbeschreibung
+- Qualitätsprüfung
+- Datenschutz-Consents
+- KI-Zugänge
+- ChatGPT
+- ChatGPT-Einstellungen
+- System und Einrichtung
 
 ## 4. Eventverwaltung
 
-In den Stammdaten werden Titel, Datum, Ort, Eventtyp, Gastgeber, Partner, Eventbild, Status, Sichtbarkeit, Mitgliederfreigabe und Startseitenfreigabe gepflegt. Ein einfacher Aktiv-Schalter soll das Event sichtbar machen, waehrend ein zweiter Schalter steuert, ob es auf die Startseite soll.
+Jedes Event besitzt eine eigene Verwaltungsseite mit den Reitern Stammdaten, Vorträge/Referenten, Einladung, Anmeldung, Ablauf, Event Chat, Live-Umfrage, Gästebefragung, Rückblick und Foto.
 
-Der Einladungsbereich enthaelt Teaser, Beschreibung, Einladungstext, Hinweise und Vorschau. Save-the-Date- oder Vorschau-Links muessen immer zur passenden Eventseite fuehren, auch bei Mitglieder-Events.
+### Stammdaten
 
-Im Bereich Vortraege und Referenten werden Agenda, Vortraege, Referenten, Unternehmen, Logos, Vortragsbilder und Reihenfolge gepflegt. Nach Drag-and-drop wird die Reihenfolge neu nummeriert. Bei mehreren Referenten kann auf Listen nur eine Person stellvertretend erscheinen.
+Hier werden die grundlegenden Angaben gepflegt:
 
-Nach dem Event koennen Rueckblicktext, Eventgalerie, Nachbericht und Archivdarstellung gepflegt werden. Rueckblicke erscheinen nicht als kommende Events.
+- Titel, Untertitel und Eventtyp
+- Datum, Beginn und Ende
+- Veranstaltungsort und Adresse
+- Status und Sichtbarkeit
+- öffentliche oder mitgliederbezogene Zugangsart
+- Anmeldefreigabe
+- Darstellung auf der Startseite
+- Eventbild, Gastgeber und Sponsoren
 
-Ein wichtiger Nutzen des Eventsystems ist die Kommunikation nach der Veranstaltung. Teilnehmer koennen gezielt informiert werden, zum Beispiel mit Rueckblick, Bildergalerie, weiterfuehrenden Themenbeitraegen, Referentenprofilen oder Hinweisen auf kommende Veranstaltungen.
+Die Schalter „Aktiv“ und „Startseite“ haben unterschiedliche Aufgaben. „Aktiv“ steuert die Nutzbarkeit des Events; „Startseite“ steuert die prominente Platzierung.
 
-## 5. Anmeldesystem
+### Beiträge und Mitwirkende
 
-Das Anmeldesystem verwaltet oeffentliche und geschuetzte Eventregistrierungen. Es unterstuetzt Anmeldung, Warteliste, manuelle Teilnehmeranlage, Check-in, Stornierung, Bestaetigungsmails und Erinnerungen.
+Beiträge werden dem Event als Referat, Diskussionsrunde oder Interview zugeordnet und in eine Reihenfolge gebracht. Referate besitzen Referierende. Bei Diskussionsrunden und Interviews werden Moderation und Teilnehmende getrennt erfasst.
 
-Teilnehmer koennen manuell hinzugefuegt oder geloescht werden. Bei manueller Anlage kann ebenfalls eine Bestaetigungsmail versendet werden. Fuer jede Anmeldung kann ein Stornierungslink erzeugt werden. Datenschutz- und Foto-/Videohinweis werden im Formular abgefragt. Dubletten werden geprueft, geloeschte oder stornierte Datensaetze sollen aber nicht dauerhaft blockieren.
+Alle Mitwirkenden werden als zentrale Personenprofile gespeichert. Ist eine Person bereits vorhanden, wird dasselbe Profil erneut ausgewählt und nur mit dem neuen Beitrag und ihrer Rolle verknüpft. So werden Person, Foto, Vita und Kontaktdaten nicht doppelt angelegt. Profile enthalten insbesondere:
 
-Die Anmeldung soll fuer Teilnehmer moeglichst einfach sein: Formular ausfuellen, Datenschutz- und Foto-/Videohinweis bestaetigen, absenden und danach eine Bestaetigung per E-Mail erhalten. Bei Mitglieder-Events fuehrt der Link nach Login direkt zum passenden Event.
+- Name
+- Unternehmen und Position
+- Referierendenfoto
+- Unternehmenslogo
+- Kurzvita und ausführlichere Vita
+- Kontaktdaten und LinkedIn-Link
+- Vortragstitel und Beschreibung
 
-Die Teilnehmerliste ist auch nach dem Event wertvoll. PROdigitalTV kann Teilnehmer gezielt erneut ansprechen, etwa mit Dankesmail, Rueckblick, Fotogalerie, Veroeffentlichung der Vortraege, Robo-Themen, Referenteninformationen oder Einladungen zu passenden Folgeevents. So wird eine Veranstaltung redaktionell verlaengert und kann praeziser beworben werden.
+Referierende können Änderungs- oder Freigabelinks erhalten. Eingereichte Änderungen werden im CMS mit dem bisherigen Stand verglichen und anschließend übernommen oder verworfen.
 
-## 6. Handy als Ticket
+### Einladung
 
-Das Handy-Ticket ersetzt eine separate Papierbestaetigung. Ein eingeloggter Teilnehmer kann auf dem Mobilgeraet sehen, ob sein Ticket aktiv ist, ob die Bestaetigung noch offen ist oder ob er auf der Warteliste steht. Beim Einlass kann das Team den Teilnehmerstatus pruefen und eine Person als eingecheckt markieren.
+Der Einladungsbereich bündelt Eventbeschreibung, Einladungstext, Aktualisierungen, Mailtexte und Vorschau. Betreff und Mailinhalt werden getrennt gepflegt. Einladungen enthalten eine persönliche Anrede, wenn ein Personenname vorliegt.
 
-Technisch arbeitet das Ticket mit einem persoenlichen Token. Dieser Token ist eine eindeutige, schwer zu erratende Kennung, die mit genau einer Anmeldung und genau einem Event verbunden ist. Dadurch erkennt das System, zu welchem Gast, welchem Event und welchem Status ein Ticket gehoert.
+### Rückblick und Foto
 
-Der QR-Code ist vor allem dann relevant, wenn sich ein Teilnehmer nicht direkt am Handy, sondern am Desktop anmeldet. Nach der Anmeldung erscheint auf dem Desktop ein QR-Code. Diesen scannt der Teilnehmer mit seinem Smartphone. Dadurch wird das persoenliche Handy-Ticket auf dem Mobilgeraet geoeffnet oder aktiviert.
+Nach dem Event werden Kurztext, Langtext, Rückblickstatus, Bilder, Downloads und Galeriezuordnung gepflegt. Die Rückblickfreigabe steuert, ob das Event als redaktioneller Nachbericht erscheint.
 
-Dabei wird der persoenliche Token auf dem betreffenden Handy gespeichert. Das ist wichtig, weil das System dieses Smartphone danach der richtigen Anmeldung zuordnen kann. Das Handy wird dadurch zum persoenlichen Tickettraeger fuer genau diesen Gast und genau dieses Event.
+## 5. Ablaufplan und Veranstaltungsunterlagen
 
-Der QR-Code ist also nicht das eigentliche Einlassticket auf dem Handy, sondern die technische Bruecke vom Desktop zum Smartphone. Nach dem Scan liegt der Token auf dem Handy. Dort sieht der Gast sein Event, seinen Status und die persoenlichen Ticketdaten.
+Der Ablaufplan verwaltet Uhrzeit, Dauer, Referent oder Moderation und Titel jedes Programmpunkts. Einlass, Begrüßung, Vorträge, Pausen, Networking und Veranstaltungsende können frei angeordnet werden.
 
-Diese Loesung unterstuetzt eine professionelle Eventdurchfuehrung. Am Einlass kann das Team das Handy-Ticket pruefen und den Gast persoenlich auf dem Screen begruessen, zum Beispiel mit Name, Unternehmen und Eventstatus. Das beschleunigt den Check-in und macht den Empfang deutlich wertiger.
+Programmpunkte lassen sich verschieben, bearbeiten, ergänzen und entfernen. Aus bereits zugeordneten Vorträgen kann ein Ablauf automatisch aufgebaut werden.
 
-## 7. Mailingfunktion und Push
+### Moderationskarten
 
-Die Mailverwaltung ist die zentrale Steuerung fuer automatische und redaktionell vorbereitete E-Mails. Sie begleitet Teilnehmer, Mitglieder und Interessenten vor, waehrend und nach einer Veranstaltung.
+Über „Moderationskarten“ werden aus Ablauf, Beitrag und Personenprofil automatisch DIN-A5-Karten erzeugt. Begrüßung, Referate, Diskussionsrunden, Interviews und Verabschiedung werden berücksichtigt; reine Pausen oder Networking-Blöcke werden nicht als Moderationskarte angelegt.
 
-Schon bei der ersten Einladung kann festgelegt werden, welcher Besucherkreis angesprochen werden soll. So kann ein Event breit an den gesamten Adressbestand kommuniziert werden oder bewusst nur an Vereinsmitglieder, bestimmte Teilnehmergruppen, Partner oder ausgewaehlte Kontakte gehen.
+Die Karten übernehmen, soweit vorhanden:
 
-Die Mailingfunktion unterstuetzt Einladungen, Save-the-Date-Kommunikation, Bestaetigungsmails nach Anmeldung, Bestaetigungsmails bei manueller Teilnehmeranlage, Stornierungslinks, Aktivierungslinks, Erinnerungen, Nachfassmails, Rueckblick-Kommunikation und Links zu Event, Handy-Ticket, Storno, Rueckblick oder Mitgliederbereich.
+- Uhrzeit
+- Name, Position und Unternehmen
+- Vortrag oder Programmpunkt
+- Kurzvita
+- Kurzbeschreibung
+- Fragen und Moderationshinweise
 
-Nach dem Event wird Mailing zum redaktionellen Nachlauf: Teilnehmer koennen gezielt Rueckblicke, Galerien, Robo-Themen, Referenteninformationen, Sponsorenhinweise und Einladungen zu passenden Folgeformaten erhalten. Damit wird die Veranstaltung ueber den eigentlichen Termin hinaus weiter genutzt.
+Einzelne Karten können ausgewählt, sortiert und vor dem Ausdruck bearbeitet werden. Die Karten werden fortlaufend nummeriert. Vorschau, Druck und PDF können gemeinsam auf Hochkant oder Querformat eingestellt werden.
 
-Empfaenger sollen Veranstaltungshinweise und Umfragen selbst abbestellen koennen. Das Mailabo wird in der Mitglieder- und Userpflege sichtbar, damit Redaktion und Administration erkennen, ob ein Kontakt fuer Einladungen, Umfragen und Newsletter erreichbar bleiben moechte.
+### Namensetiketten
 
-Fuer den Mailversand sind zusaetzlich Auswertungen vorgesehen: Oeffnungen koennen ueber ein Zaehlpixel gemessen werden, Klicks ueber eindeutige Links und unzustellbare E-Mails ueber Ruecklaeufer oder Provider-Status. Daraus entstehen Oeffnungsquote, Klickverhalten, Bounces und eine bessere Pflege der Adressliste.
+Im Reiter „Anmeldung“ steht oberhalb der Gästeliste die Funktion „Namensetiketten drucken“. Sie erzeugt Etiketten aus den aktuellen Teilnehmendendaten. Auswahl, Vorschau und Druck erfolgen vor der endgültigen Ausgabe.
 
-Push-Nachrichten ergaenzen die E-Mail-Kommunikation. Sie sind besonders sinnvoll fuer kurze, zeitnahe Hinweise rund um ein Event: Erinnerungen an Beginn, Check-in, Ortsinformationen oder Programmupdates. Push bleibt freiwillig und haengt davon ab, ob Browser und Geraet dies unterstuetzen.
+## 6. Anmeldung und Gästeliste
 
-## 8. Medien und Bilder
+Der Reiter „Anmeldung“ steuert Anmeldestatus, Ticketfunktion und Teilnehmendenverwaltung.
 
-Die Medienverwaltung ist die zentrale Ablage fuer Bilder, Logos, Videos, Dokumente und Varianten. Beim Upload sollen benoetigte Varianten automatisch erzeugt und richtig zugeordnet werden.
+### Öffentliche Anmeldung
 
-Bilder koennen direkt im Formular oder aus der Mediathek gewaehlt werden. Das System erzeugt optimierte WebP-Dateien. Bei zu kleiner Aufloesung erscheint ein Hinweis, dass das Bild unscharf wirken kann.
+Ein Anmeldeformular kann bekannte Daten aus einer persönlichen Einladung vorausfüllen. Die Felder bleiben editierbar. Erfasst werden unter anderem Vorname, Nachname, Unternehmen, Funktion, E-Mail und Mobilnummer.
 
-Beim Cropping wird das Bild in einem Rahmen verschoben und mit dem Mausrad skaliert. Der ausgewaehlte Ausschnitt wird uebernommen. Referentenfotos und Vortragsbilder koennen unterschiedliche Formate haben und brauchen deshalb unterschiedliche Cropfenster.
+Datenschutz sowie Foto- und Videohinweis werden aktiv bestätigt. Das System prüft Pflichtfelder, Mobilnummern und mögliche Dubletten.
 
-Wichtige Varianten sind Eventbild, Themenbild fuer Liste und Artikel, Thumbnail fuer Vorschauen, Referentenfoto, Logo fuer Unternehmen, Gastgeber und Partner sowie Artikelbild fuer redaktionelle Detailseiten.
+Nach dem Absenden erhält die Person eine eindeutige Registrierung. Bestätigungs-, Wartelisten- und Stornierungsstatus bleiben eventbezogen.
 
-Die Redaktion kann Beitraege mit Galerien, PDFs, Videos, Thumbnails und Audiofassungen ergaenzen. Galerien sind besonders fuer Rueckblicke wichtig. PDFs koennen fuer Programme, Einladungen, Presseunterlagen oder Mitgliederinformationen genutzt werden. Videos ergaenzen Beitraege, wenn Mitschnitte, Interviews, Trailer oder externe Videoinhalte eingebunden werden sollen.
+### Manuelle Anmeldung
 
-## 9. Referentenverwaltung
+Administratoren können Personen direkt im CMS hinzufügen. Auch manuell hinzugefügte Personen können eine Bestätigung und später einen Eventzugang erhalten.
 
-Referenten koennen zentral oder im Eventkontext gepflegt werden. Ein vollstaendiges Profil enthaelt Name, Unternehmen, Funktion, Foto, Vita, Kurzbeschreibung und Zuordnung zu Vortraegen.
+### Gästeliste des Events
 
-Fotos und Vita sind wichtig, damit Referentenseiten, Themenbeitraege und Eventdetailseiten vollstaendig wirken.
+Die Liste zeigt Hauptpersonen und Begleitpersonen mit Unternehmen, E-Mail, Mobilnummer und Status. Verfügbare Aktionen umfassen:
 
-Die Plattform baut den Referenten eine eigene Buehne. Aus einem Vortrag entsteht ein eigenstaendiger Fachbeitrag, der den Referenten als fachlichen Kopf sichtbar macht und den Inhalt auch nach dem Event auffindbar, zitierbar und teilbar haelt.
+- Personendaten öffnen und bearbeiten
+- ausgewählte Personen einchecken
+- Buchung löschen
+- Startpasswort prüfen oder senden
+- Gastkonten vorbereiten
+- CSV exportieren
+- Namensetiketten drucken
 
-## 10. News, KI-Redaktion und Morning Briefing
+Vorstandsmitglieder und Referierende können als Gruppe für den Eventbetrieb eingecheckt werden.
 
-News koennen manuell, ueber KI-Newsimport oder aus einem Morning Briefing entstehen. Importierte Dateien mit mehreren Meldungen sollen in einzelne Newsbeitraege getrennt werden.
+### Gastkonten
 
-Die KI-Unterstuetzung ersetzt nicht die Redaktion. Sie ergaenzt die redaktionelle Arbeit nur als Werkzeug fuer Formulierungsvorschlaege, Rechtschreib- und Stilpruefung, Strukturierung von Texten sowie die Erstellung oder Vorbereitung von Artikelbildern. Redaktionelle Auswahl, Bewertung, Freigabe, Quellenpruefung und Verantwortung bleiben immer beim Menschen.
+„Gastkonten vorbereiten“ legt Zugänge für angemeldete Gäste an oder verknüpft bestehende Konten. Dabei werden Mitgliederkonten berücksichtigt und E-Mail-Konflikte gemeldet. Das Vorbereiten allein versendet noch keinen Zugangslink.
 
-Die Redaktion kann News anlegen und direkt im Newsbereich veroeffentlichen, Rubrik, Datum, Quelle und Bild pflegen, Morning Briefings mit aktuellen Branchenthemen erzeugen, Formulierungen verbessern, Rechtschreibung pruefen, KI-Texte redaktionell pruefen und optional Audio oder Vorschaubilder erzeugen.
+## 7. Handy-Ticket, QR-Code und Check-in
 
-## 11. Audio-Erstellung und Karaokefunktion
+Das Handy-Ticket verbindet eine Registrierung mit dem Smartphone. Ein persönlicher Token ordnet Ticket, Person und Event eindeutig zu.
 
-Aus redaktionellen Texten kann eine hochwertige Audiofassung erzeugt werden. Die Vorleser-Funktion nutzt sehr natuerlich klingende Sprachstimmen auf dem aktuellen Stand der Sprachtechnologie. Das ist besonders sinnvoll fuer News, Themenbeitraege, Rueckblicke und laengere Artikel.
+Nach einer Desktop-Anmeldung kann ein QR-Code angezeigt werden. Der Scan öffnet die persönliche mobile Ansicht und übernimmt die Zuordnung auf das Smartphone.
 
-Gleichzeitig ist die Vorleser-Funktion ein Beitrag zur Barrierefreiheit, weil Inhalte auch gehoert und nicht nur gelesen werden koennen.
+Der Einlass kann über mehrere Wege erfolgen:
 
-Die Audiofunktion erzeugt eine Audiofassung aus Titel, Subline, Kurztext und Haupttext. Der Audioplayer kann auf der Webseite angezeigt werden. Die Mitlese- oder Karaokefunktion hebt den aktuell gesprochenen Textabschnitt hervor. Beim Seitenwechsel stoppt das Audio automatisch.
+- persönliches Handy-Ticket des Gastes
+- Event-QR am Empfang
+- Suche im Veranstaltungs-Cockpit
+- manuelles Einchecken in der Gästeliste
 
-Die Karaokefunktion hilft Nutzern, den gesprochenen Text mitzulesen. Dadurch werden laengere Beitraege auf Mobilgeraeten leichter verstaendlich und barriereaermer nutzbar.
+Das Cockpit zeigt live, wie viele Personen angemeldet, bestätigt und eingecheckt sind. Ein Präsentationsmodus kann die zuletzt eingecheckte Person mit Namen und Unternehmen begrüßen.
 
-## 12. Mitgliederbereich, User und Login
+„Termin merken“ erstellt lediglich einen Kalendereintrag und keine Anmeldung. Dieser Unterschied wird ausdrücklich angezeigt.
 
-Der Mitgliederbereich ist nach Login erreichbar und gehoert zur Webseite, nicht zum mobilen CMS. Er enthaelt Mitglieder-Events, Mitgliederinformationen, Dokumente, Mitgliederverzeichnis, Profilpflege und Uploadmoeglichkeiten.
+## 8. Event-Chat und Networking
 
-Mitglieder-Events muessen fuer berechtigte Mitglieder sichtbar sein, auch wenn sie nicht oeffentlich auf der Eventseite beworben werden.
+Der Event-Chat ist immer an genau ein Event gebunden. Sichtbar sind ausschließlich die eingecheckten Personen dieses Events. Gäste erhalten ihren zeitlich begrenzten Zugang rund um die Veranstaltung; Mitglieder können entsprechend ihrer Berechtigung zugreifen.
 
-User und Mitglieder werden fachlich als zusammengehoerende Datensaetze verstanden. Im CMS sollen sie deshalb in einem gemeinsamen Mitgliederbereich gepflegt werden: mit Auswahl zwischen Mitgliederliste und Userliste, Rollen wie Admin, Editor oder Member, Aktiv-Schalter, Memberprofil, E-Mail-Adresse und Loginstatus.
+### Gästeliste und Profile
 
-Neue User koennen manuell angelegt oder aus vorhandenen Mailadressen uebernommen werden, ohne automatisch einen Versand auszuloesen. Wird ein Zugang eingeladen, erhaelt der Nutzer eine Login-Mail mit einem zeitlich begrenzten Link. Ueber diesen Link legitimiert er sich, setzt sein Passwort und gelangt danach in die Web-App.
+Die Eventansicht nennt die Teilnehmendenliste „Gästeliste des Events“. Jede Karte zeigt Name, Funktion, Unternehmen, Online-Status und – soweit vorhanden – Profilbild und Firmenlogo. Fehlt ein Profilbild, werden die Anfangsbuchstaben aus Vor- und Nachname angezeigt.
 
-Unternehmensmitglieder koennen mehrere zugeordnete Personen haben. Normale Mitglieder sollen ihr eigenes Profil bearbeiten koennen, waehrend Admins und Editoren zusaetzliche Verwaltungsrechte erhalten. Der CMS-Button wird nur fuer Admins oder Editoren angezeigt.
+Das persönliche Profil ist in Chat, Profil und Vita gegliedert. Profilbild und Firmenlogo können bearbeitet werden. Ein Klick auf das Firmenlogo öffnet dieselbe Auswahl- und Bearbeitungslogik wie beim Profilbild.
 
-Wenn sich jemand zu einem Event anmeldet, manuell als Teilnehmer angelegt wird oder als Referent gepflegt wird, sollen Name und E-Mail mit der Mailingliste abgeglichen werden. Fehlt die Person dort, kann sie als neuer Kontakt angelegt werden. Pro Event kann dadurch nachvollzogen werden, wie viele neue Kontakte entstanden sind.
+### Persönlicher Chat
 
-Das Mitgliederverzeichnis zeigt Unternehmen und Personen mit Logo, Kurzprofil, Ort, Land und Weblink. Fuer Mitglieder mit Webseite koennen knappe Profiltexte gepflegt werden. Die Texte sollen sachlich beschreiben, was das Mitglied anbietet, ohne eine Bewertung in Bezug auf PROdigitalTV abzugeben.
+Jede Person kann einen persönlichen Chat mit einer anderen eingecheckten Person führen. Nachrichten zeigen Zustell- und Lesestatus. Ungelesene Nachrichten werden mit einer roten Anzahl-Bubble in der Gästeliste und am Home-Screen-Zugang angezeigt.
 
-## 13. Foto-Upload waehrend Veranstaltungen
+Ist der Empfänger offline, wird bei persönlichen Chats unmittelbar nach dem Senden eine Push-Benachrichtigung ausgelöst, sofern auf dem Zielgerät Push aktiviert ist. Gruppenbeiträge lösen keine persönliche Offline-Push-Nachricht aus.
 
-Mitglieder koennen waehrend einer Veranstaltung oder direkt danach Fotos an PROdigitalTV senden. Diese Uploads werden nicht automatisch ungeprueft veroeffentlicht, sondern dienen der Redaktion als Materialpool.
+### Gruppenchat
 
-Die Redaktion kann eingereichte Bilder sichten, freigeben, einer Galerie zuordnen, fuer Rueckblicke verwenden oder aussortieren. So koennen Mitglieder zur Eventdokumentation beitragen, waehrend die redaktionelle Kontrolle erhalten bleibt.
+Der Gruppenchat fügt sich in die vorhandene Chatliste ein. Ein Beitrag erreicht alle eingecheckten Gäste desselben Events. Andere Veranstaltungen bleiben vollständig getrennt.
 
-## 14. Mobile CMS fuer Veranstaltungen
+### Kontaktanfragen und Kontaktkarten
 
-Das Mobile CMS ist eine reduzierte Admin-Oberflaeche fuer unterwegs. Es ersetzt nicht das Desktop-CMS, sondern stellt waehrend Veranstaltungen schnelle Funktionen bereit, die auf dem Smartphone sinnvoll sind.
+Kontaktdaten werden nicht automatisch öffentlich angezeigt. Eine Person kann im persönlichen Chat eine Kontaktanfrage senden. Die empfangende Person kann freigeben oder ablehnen. Bei Freigabe wird eine Kontaktkarte mit den erlaubten Angaben bereitgestellt.
 
-Im Mobile CMS gibt es eine Eventauswahl fuer den aktuellen Veranstaltungskontext, den Einlass-QR-Code, die Moeglichkeit, den Einlass-QR als PDF zu erzeugen und zu teilen, eine Live-Einlassstatistik, Live-Umfragen, Umfrage-Auswertungen, klappbare Bereiche und den Ruecksprung zur normalen Webseite.
+### Chat Reset
 
-Der Einlass-QR gehoert zum Veranstaltungsteam. Er kann im Mobile CMS abgerufen und als PDF geteilt werden, zum Beispiel fuer den Empfang oder mehrere Check-in-Punkte. Die Einlassstatistik zeigt live, wie viele Personen angemeldet, bestaetigt und bereits eingecheckt sind.
+Administratoren können alle Chats eines Events zurücksetzen. Dabei werden gemeinsam gelöscht:
 
-So kann das Team waehrend einer professionellen Eventdurchfuehrung jederzeit sehen, wie der Einlass laeuft, ob noch viele Gaeste offen sind und welche Personen zuletzt eingecheckt wurden.
+- persönliche Chatnachrichten
+- Gruppenchat-Nachrichten
+- geteilte Kontaktkarten im Chat
+- offene Kontaktanfragen
+- angenommene oder abgelehnte Kontaktfreigaben
 
-## 15. Umfrage und Voting
+Der Reset ist auf das ausgewählte Event begrenzt. Profile und bereits auf einem Gerät gespeicherte Kontakte bleiben erhalten. Vor der unwiderruflichen Löschung erscheint eine eindeutige Bestätigung.
 
-Eine Live-Umfrage besteht aus einer frei editierbaren Frage und ein bis sechs Antwortmoeglichkeiten. Im Editor kann festgelegt werden, ob nur eine Antwort oder mehrere Antworten erlaubt sind. Pro Teilnehmer soll nur eine Stimmabgabe zaehlen.
+## 9. Event-Fotos
 
-Der Versand heisst bewusst Live-Umfrage. Der Mailtext fuehrt nicht zur Veranstaltung, sondern zur Umfrage. Die Ansprache betont, dass die Meinung des Empfaengers wichtig ist. Der Button oeffnet die Abstimmungsseite als normale Webseite, nicht als Web-App-Oberflaeche.
+Im Veranstaltungsbereich können berechtigte Personen Fotos aus ihrer Fotomediathek hochladen. Vor dem Upload muss bestätigt werden, dass die Bilder mit den Eventteilnehmenden geteilt werden dürfen.
 
-Die Auswertung zeigt Antwortoptionen, Stimmen, Prozentwerte und eine Liste, wer abgestimmt hat. Eine Liveansicht kann in kurzen Abstaenden aktualisieren, sodass sich Balken und Zahlen waehrend einer Veranstaltung laufend veraendern.
+Der Uploadbereich steht kompakt oberhalb der Galerie. Der Auswahlknopf ist für die mobile Nutzung vergrößert. Mehrere Fotos können gemeinsam gewählt werden.
 
-Das Voting ist der eigentliche Abstimmungsprozess fuer Teilnehmer, Mitglieder oder ausgewaehlte Mailinglisten. Jeder Empfaenger erhaelt einen persoenlichen Link zur Umfrage. Ueber diesen Link kann er seine Antwort direkt auf einer einfachen Webseite abgeben. Dadurch ist keine App-Installation erforderlich und die Teilnahme funktioniert auch aus einer E-Mail heraus.
+Die Fortschrittsanzeige zeigt die Verarbeitungsschritte einzeln:
 
-Damit eine Abstimmung nicht mehrfach gewertet wird, wird jede Antwort mit einem eindeutigen Teilnehmer- oder Einladungstoken verbunden. Das System kann dadurch erkennen, ob dieselbe Person bereits abgestimmt hat. Bei Single-Choice-Fragen wird nur eine Antwort zugelassen, bei Multiple-Choice-Fragen koennen mehrere Antworten gespeichert werden.
+1. Auswahl prüfen
+2. Upload vorbereiten
+3. Fotos übertragen
+4. Fotos verarbeiten
+5. Galerie aktualisieren
 
-Im Mobile CMS kann die Redaktion oder das Eventteam nachsehen, welche Personen abgestimmt haben und welche noch nicht reagiert haben. Die Live-Auswertung eignet sich fuer den Einsatz auf Veranstaltungen, zum Beispiel bei der Frage, welcher Vortrag dem Publikum am besten gefallen hat, welches Thema vertieft werden soll oder welche Erwartung die Teilnehmer an ein Folgeformat haben.
+Bei mehreren Dateien wird „Foto X von Y“ sowie der Übertragungsfortschritt in Prozent angezeigt. Fehler markieren den betroffenen Schritt, ohne die Ursache zu verschleiern.
 
-Typischer Ablauf: Mobile CMS im Burger-Menue oeffnen, passendes Event auswaehlen, Frage und ein bis sechs Antworten eintragen, Single Choice oder Multiple Choice festlegen, Empfaengerkreis waehlen, Mail- und Push-Vorschau pruefen, Live-Umfrage versenden und die Umfrage-Auswertung live verfolgen.
+Nach erfolgreicher Verarbeitung erscheinen die Bilder als platzsparende Thumbnails. Ein Klick öffnet die große Darstellung. Neue Fotos werden eventbezogen synchronisiert und können von Administratoren moderiert oder entfernt werden.
 
-## 16. Datenschutz, Consent und Web-App-Installation
+## 10. Live-Umfrage und Gästebefragung
 
-Die Web-App fragt Datenschutz und Installation getrennt und nacheinander ab. Zuerst wird der Datenschutz-Consent eingeholt. Erst danach erscheint, falls sinnvoll, der Hinweis zur Installation oder zur manuellen Ablage auf dem Homescreen.
+### Live-Umfrage
 
-Der Datenschutz-Consent wird auf Mobilgeraeten und Desktop angezeigt. Aus rechtlichen Gruenden soll die Bestaetigung mit Datum, Uhrzeit und IP-Adresse gespeichert und im CMS abrufbar sein. Damit ist nachvollziehbar, wann ein Nutzer der lokalen Speicherung und den Hinweisen zugestimmt hat.
+Live-Umfragen werden im Event vorbereitet und im mobilen Veranstaltungs-Cockpit versendet. Eine Umfrage kann mehrere Fragen enthalten:
 
-Die Installation wird nur angeboten, wenn das Geraet sie technisch unterstuetzt. Auf iPhone/Safari gibt es keinen echten Installieren-Button. Dort zeigt die App stattdessen eine kurze Anleitung: Teilen-Menue oeffnen, nach unten scrollen und "Zum Home-Bildschirm" waehlen. In diesem Fall gibt es nur einen OK-Button.
+- Einzelauswahl
+- Mehrfachauswahl
+- Freitext
 
-Nach Login am Desktop soll die normale Webseite geladen werden, nicht die Web-App-Installationsstrecke. Die Web-App-Aufforderung ist fuer mobile Nutzung gedacht.
+Vor dem Versand werden Empfängerkreis, Mail- oder Push-Vorschau und Eventbezug geprüft. Persönliche Tokens verhindern unbeabsichtigte Mehrfachabgaben. Die Auswertung aktualisiert Stimmen und Prozentwerte laufend.
 
-## 17. Betrieb, Qualitaet und Sicherheit
+### Gästebefragung
 
-Die oeffentliche Webseite ist als mobile-first Web-App konzipiert. Sie soll auf dem Smartphone besonders schnell und klar funktionieren: Startseite, Events, Themen, News, Login, Mitgliederbereich, Handy-Ticket, QR-Code und Burger-Menue stehen im Mittelpunkt.
+Die Gästebefragung dient der strukturierten Nachbereitung. Fragen und Vorschau werden im Event gepflegt. Der Versand kann an die registrierten Gäste vorbereitet werden. Ergebnisse lassen sich filtern und als CSV exportieren.
 
-Die Desktop-Variante ist fuer komplexere Arbeit gedacht. Im CMS werden groessere Tabellen, Medienbearbeitung, Eventorganisation, Teilnehmerverwaltung, Galeriepflege, Redaktion und Qualitaetssicherung auf einem grossen Bildschirm deutlich besser bedienbar.
+## 11. Event-Versand und Mailtexte
 
-Google Analytics kann fuer die Auswertung der Nutzung eingebunden werden. Im CMS-Dashboard soll eine kleine Statistik sichtbar sein, zum Beispiel Seitenaufrufe, aktive Nutzer, wichtigste Seiten, geraetebezogene Nutzung und Entwicklung ueber die Zeit. Zusaetzlich fuehrt ein Link direkt zur Google-Analytics-Oberflaeche.
+Der Bereich „Event-Versand“ bündelt geplante Kommunikation zu Veranstaltungen. Abhängig vom Zweck können unter anderem versendet werden:
 
-Die Statistik dient der redaktionellen Steuerung: Welche Inhalte werden gelesen, welche Events interessieren, welche Seiten laden langsam und welche Bereiche sollten besser platziert oder technisch optimiert werden?
+- Save-the-Date
+- Einladung
+- Einladungsupdate
+- Anmeldebestätigung
+- Bestätigungserinnerung
+- Event-Erinnerung
+- Startpasswort oder Zugangslink
+- Live-Umfrage
+- Gästebefragung
+- Rückblick und Nachfassmail
 
-Die Qualitaetssicherung prueft fehlende Bilder, Alt-Texte, Links, Eventbilder, Sponsorenlogos, leere Galerien, fehlerhafte Sichtbarkeit und fehlende Video-Poster.
+Empfängergruppen werden vor dem Versand ausgewählt und gezählt. Vorschau, Betreff, persönliche Anrede, Absender und Ziel-Link sollen vor der Freigabe kontrolliert werden.
 
-Die Webseite wird als statischer Build auf Firebase Hosting deployt. Cache-Buster fuer CSS und JavaScript sorgen dafuer, dass neue Versionen nach dem Deploy geladen werden. Der erste Aufruf nach einem Deploy kann laenger dauern, danach sollte die Seite schneller reagieren.
+Der Begriff „Anmeldung“ wird in Einladungsbetreffzeilen vermieden, wenn dadurch der Eindruck entstehen könnte, die Person sei bereits registriert.
 
-Beim Loeschen ganzer Datensaetze soll das CMS immer nachfragen. Das schuetzt Events, Vortraege, Referenten, Teilnehmer und News vor versehentlichem Verlust.
+## 12. Mailingadressen, Queue und Rückläufer
 
-## 18. Typische Arbeitsablaeufe
+### Mailingadressen
 
-Ein Event wird im CMS angelegt. Danach werden Stammdaten, Datum, Ort, Gastgeber, Eventbild und Einladungstext gepflegt. Anschliessend wird die Anmeldung aktiviert, Vortraege und Referenten werden angelegt, Referentenfotos, Logos und Vortragsbilder zugeordnet, das Event aktiviert und der Startseiten-Schalter geprueft. Nach dem Event werden Rueckblick, Galerie und Themenbeitraege veroeffentlicht.
+Mailingadressen führen Kontakte aus Mitgliedern, Anmeldungen, Referierenden und manuell angelegten Personen zusammen. Angezeigt werden Name, E-Mail, Herkunft, Push-Status, Aktivität und mögliche Mailprobleme.
 
-News werden im CMS oder per KI-Newsimport erstellt. Titel, Datum, Rubrik und Text werden redaktionell geprueft. Jede Meldung wird als eigener Beitrag gespeichert, mit Bild oder Thumb versehen, veroeffentlicht und auf der Webseite kontrolliert.
+Eine Mailingadresse kann bearbeitet, vorübergehend deaktiviert oder aus der Mailingverwaltung entfernt werden, ohne automatisch das Mitgliedsprofil oder Login zu löschen.
 
-Beim Bild-Upload wird ein Bild hochgeladen, der Aufloesungshinweis beachtet, das Bild im passenden Rahmen ausgerichtet, der Ausschnitt uebernommen und die WebP-Varianten werden erzeugt. Danach werden Liste und Detailseite geprueft.
+### Mailing Queue
 
-Eine Live-Umfrage wird im Mobile CMS erstellt. Frage und Antworten werden eingetragen, die Antwortlogik wird festgelegt, der Empfaengerkreis wird gewaehlt, die Vorschau wird geprueft, die Live-Umfrage wird versendet und die Umfrage-Auswertung wird live verfolgt.
+Die Queue zeigt geplante, versendete und fehlgeschlagene Nachrichten. Ein Eintrag kann Versandzeit, Öffnung, Klick, Zustellstatus und Fehlermeldung enthalten.
+
+### Rückläufer und Ablehnungen
+
+Der Rückläuferbereich unterscheidet insbesondere:
+
+- SMTP-Ablehnung vor Annahme
+- späteren Bounce nach Annahme
+- verzögerte Zustellung
+- manuell gemeldeten Spamverdacht
+- technische Versandfehler
+
+Adressen werden nur dann automatisch zugeordnet oder gesperrt, wenn eine sichere Mailkennung oder eindeutige Adresse vorliegt. Eine verspätete Zustellung ist nicht automatisch mit einer dauerhaft ungültigen Adresse gleichzusetzen.
+
+## 13. Push-Benachrichtigungen und Web-App
+
+Push muss freiwillig auf dem jeweiligen Gerät aktiviert werden. Die Einstellung gilt für PROdigitalTV-Mitteilungen auf diesem Gerät. Bestehende Einstellungen bleiben unverändert, wenn keine neue Auswahl getroffen wird.
+
+Auf dem iPhone funktioniert Web-Push erst zuverlässig, wenn die Website zum Home-Bildschirm hinzugefügt und von dort geöffnet wurde. Die Oberfläche erklärt diesen Schritt, wenn Push im normalen Browserkontext nicht aktiviert werden kann.
+
+Push wird eingesetzt für zeitkritische Hinweise, persönliche Offline-Chatnachrichten, Eventerinnerungen und – abhängig vom Versandtyp – Umfragen. Gruppenchat-Nachrichten erzeugen bewusst keine Push-Flut.
+
+Homescreen- und Navigationssymbole können rote Badges mit der Anzahl ungelesener persönlicher Nachrichten anzeigen.
+
+## 14. Medienverwaltung
+
+Die Medienverwaltung ist die zentrale Ablage für Bilder, Logos, Videos, Dokumente und abgeleitete Varianten.
+
+### Upload und Optimierung
+
+Beim Bild-Upload werden Original, Web-Version und Thumbnail erzeugt. Webbilder werden in passende Abmessungen gebracht und komprimiert. Dateiname, Bildcode, Format, Abmessungen und Speicherpfad werden dokumentiert.
+
+### Bildbearbeitung
+
+Die Redaktion kann Bildausschnitt, Zoom und Position für verschiedene Einsatzzwecke festlegen. Typische Varianten sind:
+
+- Eventbild
+- News- und Themenbild
+- Listen-Thumbnail
+- Referierendenfoto
+- Mitgliederlogo
+- Gastgeber- und Sponsorenlogo
+- Social-Media-Format
+
+### Mediathek und Zuordnung
+
+Bilder können direkt hochgeladen oder aus der Mediathek ausgewählt werden. Ein Medium kann einem Event, Beitrag, Mitglied, Referierenden oder einer Galerie zugeordnet werden.
+
+Nicht mehr benötigte Medien werden zunächst in den Papierkorb verschoben. So bleiben versehentliche Löschungen besser kontrollierbar.
+
+## 15. Referierendenverwaltung und Freigabe
+
+Referierende werden zentral und im Eventkontext gepflegt. Mehrere Personen können demselben Vortrag zugeordnet werden.
+
+Das Freigabeverfahren ermöglicht externen Personen, ihre Angaben zu prüfen. Das CMS protokolliert Öffnung, Rückmeldung, Freigabe und Übernahme. Änderungen an Vita, Funktion, Unternehmen oder Vortrag können vor der Veröffentlichung verglichen werden.
+
+Ein Referierendenprofil sollte vor Veröffentlichung mindestens Namen, Funktion, Unternehmen, Foto, Vita und Eventzuordnung enthalten.
+
+## 16. Redaktion und KI-Unterstützung
+
+### Redaktionelle Inhalte
+
+Presse, Themen, News, Rückblicke und Interna werden getrennt verwaltet. Status, Sichtbarkeit, Datum, Rubrik, Teaser, Langtext, Bild und Verknüpfungen steuern die Veröffentlichung.
+
+### KI-Newsimport und Morgenbriefing
+
+Importierte Quellen können in einzelne Meldungen zerlegt werden. Das Morgenbriefing bündelt ausgewählte Branchenthemen. Entwürfe werden nicht ungeprüft veröffentlicht.
+
+### KI-Regeln
+
+KI unterstützt bei:
+
+- Struktur- und Formulierungsvorschlägen
+- Rechtschreibung und Stil
+- Zusammenfassungen
+- Einladungs- und Rückblickentwürfen
+- Moderationshinweisen
+- Bildideen und Bildvarianten
+- Alt-Texten und Metadaten
+
+Quellenprüfung, Tatsachenprüfung, Rechteprüfung und Veröffentlichung bleiben Aufgabe der Redaktion.
+
+### Audio und Barrierefreiheit
+
+Aus geeigneten Beiträgen können Audiofassungen erzeugt werden. Der Player unterstützt Mitlesen und abschnittsweise Hervorhebung. Alt-Texte, klare Kontraste, Tastaturbedienung und verständliche Statusmeldungen ergänzen die Barrierefreiheit.
+
+## 17. Mitglieder, Benutzer und Profile
+
+Mitglieder und Benutzer sind fachlich verbunden, aber nicht identisch. Ein Mitgliedsdatensatz beschreibt die Organisation oder Person; ein Benutzerkonto regelt den Login.
+
+Mitgliederprofile können Logo, Beschreibung, Website, Ort, Land und zugeordnete Personen enthalten. Unternehmensmitglieder können mehrere Personen besitzen.
+
+Benutzer werden mit Rolle und Aktivstatus verwaltet. Einladungslinks sind zeitlich begrenzt. Startpasswörter müssen beim ersten Zugriff durch ein dauerhaftes Passwort ersetzt werden.
+
+Im persönlichen Profil können Name, Unternehmen, Funktion, Telefonnummer, Profilbild, Firmenlogo, Vita, Unternehmensbeschreibung und Freigabeeinstellungen gepflegt werden. Kontaktdaten werden erst nach einer entsprechenden Freigabe geteilt.
+
+## 18. Mobile CMS und Veranstaltungs-Cockpit
+
+Das mobile CMS konzentriert sich auf Aufgaben während einer Veranstaltung:
+
+- Event auswählen
+- Einlass-QR anzeigen
+- QR als PDF bereitstellen
+- Einlasszahlen verfolgen
+- Personen suchen und einchecken
+- Live-Umfragen auswählen und versenden
+- Ergebnisse beobachten
+- letzte Aktionen kontrollieren
+
+Das mobile CMS ersetzt nicht die vollständige Desktop-Verwaltung. Komplexe Medienbearbeitung, große Tabellen und redaktionelle Langtexte bleiben am Desktop übersichtlicher.
+
+## 19. Datenschutz und Sicherheit
+
+Datenschutz-Consents werden mit Zeitpunkt und technischem Kontext dokumentiert. Pflichtbestätigungen werden nicht automatisch gesetzt.
+
+Wesentliche Sicherheitsprinzipien sind:
+
+- Rollen- und Rechteprüfung im Frontend und auf dem Server
+- eventbezogene Trennung von Chats, Fotos, Anmeldungen und Kontaktanfragen
+- persönliche, schwer erratbare Ticket- und Umfragetokens
+- zeitlich begrenzte Einladungs- und Aktivierungslinks
+- Bestätigung vor unwiderruflichen Löschungen
+- begrenzte Dateitypen und Dateigrößen
+- keine automatische Veröffentlichung ungeprüfter Uploads oder KI-Inhalte
+
+Beim Löschen kompletter Event-Chatdaten wird nur das gewählte Event bearbeitet. Beim Löschen aller personenbezogenen Testdaten müssen auch Kontaktanfragen und Kontaktfreigaben berücksichtigt werden.
+
+## 20. Qualitätssicherung und Betrieb
+
+Die Qualitätsprüfung sucht unter anderem nach fehlenden Bildern, Alt-Texten, Links, Logos, Zuordnungen, leeren Galerien und inkonsistenten Sichtbarkeiten.
+
+Die Website wird als statischer Build auf Firebase Hosting veröffentlicht. Cloud Functions übernehmen geschützte Servervorgänge wie Mailversand, Uploadfreigaben, Chataktionen und administrative Löschungen.
+
+Versionsnummern an JavaScript- und CSS-Dateien verhindern, dass nach einem Deployment dauerhaft veraltete Browserdateien verwendet werden. HTML und Service Worker werden mit restriktiven Cache-Regeln ausgeliefert.
+
+Ein Hosting-Deployment veröffentlicht keine Cloud Functions. Werden Serverfunktionen geändert, müssen die betroffenen Functions zusätzlich veröffentlicht und anschließend separat geprüft werden.
+
+## 21. Typische Arbeitsabläufe
+
+### Neues Event vorbereiten
+
+1. Event anlegen und Stammdaten speichern.
+2. Eventbild, Gastgeber und Sponsoren zuordnen.
+3. Vorträge und Referierende erfassen.
+4. Ablaufplan aufbauen und prüfen.
+5. Einladungstext und Mailvorschau kontrollieren.
+6. Anmeldung und gegebenenfalls Handy-Ticket aktivieren.
+7. Event aktivieren und Startseitenfreigabe bewusst setzen.
+8. Testanmeldung durchführen.
+9. Einladung zunächst an Testadressen und danach an die Zielgruppe senden.
+
+### Veranstaltung durchführen
+
+1. Gastkonten und Zugänge vorbereiten.
+2. Veranstaltungs-Cockpit öffnen.
+3. Einlass-QR und Check-in testen.
+4. Referierende und Vorstand gegebenenfalls gesammelt einchecken.
+5. Moderationskarten und Namensetiketten erstellen.
+6. Event-Chat und Gruppenchat kontrollieren.
+7. Live-Umfrage vorbereiten und bei Bedarf versenden.
+8. Event-Fotos und Einlassstatus beobachten.
+
+### Veranstaltung nachbereiten
+
+1. Gästebefragung versenden.
+2. Rückblicktext und Kurzfassung erstellen.
+3. Fotos sichten und Galerie freigeben.
+4. Vorträge in Themenbeiträge überführen.
+5. Referierendenfreigaben und Profile vervollständigen.
+6. Rückblick veröffentlichen.
+7. Nachfassmail mit Rückblick, Galerie und weiterführenden Inhalten senden.
+
+### Mailing prüfen
+
+1. Empfängerzahl und Filter kontrollieren.
+2. Betreff und persönliche Anrede prüfen.
+3. Ziel-Link in der Vorschau öffnen.
+4. Testmail senden.
+5. Versand freigeben.
+6. Queue, Öffnungen, Klicks und Rückläufer beobachten.
+7. Abgelehnte oder unzustellbare Adressen nachvollziehbar bearbeiten.
+
+### Chatdaten zurücksetzen
+
+1. Richtiges Event öffnen.
+2. Reiter „Event Chat“ wählen.
+3. „Chat Reset“ auswählen.
+4. Hinweis zu Chats, Kontaktkarten und Kontaktanfragen vollständig lesen.
+5. Löschung bestätigen.
+6. Erfolgsmeldung abwarten und Eventbereich neu laden.
+
+## 22. Wichtige Begriffe
+
+- Aktiv: Datensatz oder Funktion ist grundsätzlich nutzbar.
+- Startseite: Inhalt ist zusätzlich für die prominente Startseitendarstellung freigegeben.
+- Öffentlich: Inhalt ist ohne Login sichtbar.
+- Mitglieder: Inhalt ist nur für berechtigte Mitglieder sichtbar.
+- Intern: Inhalt ist ausschließlich für Verwaltung oder Redaktion bestimmt.
+- Hauptperson: Primäre Person einer Eventbuchung.
+- Begleitperson: Weitere Person innerhalb derselben Buchung.
+- Check-in: Bestätigung, dass die Person beim Event anwesend ist.
+- Event-Chat: Geschützter Kommunikationsbereich eines einzelnen Events.
+- Kontaktanfrage: Bitte einer Person, freigegebene Kontaktdaten zu erhalten.
+- Mailing Queue: Warteschlange und Protokoll des Mailversands.
+- Bounce: Nachträgliche Unzustellbarkeitsmeldung eines Mailservers.
+- SMTP-Ablehnung: Nachricht wurde bereits bei der Übergabe abgelehnt.
+- Cache-Buster: Versionswert, der Browser zum Laden einer neuen Datei veranlasst.
+
+## 23. Administrative Abschlusskontrolle
+
+Vor einem größeren Versand oder Eventstart sollten folgende Punkte geprüft werden:
+
+- Eventdatum, Uhrzeit, Ort und Ansprechpartner stimmen.
+- Anmeldestatus und Startseitenfreigabe sind richtig gesetzt.
+- Einladung verwendet eine eindeutige Formulierung und persönliche Anrede.
+- Anmeldeformular ist getestet und bekannte Daten werden korrekt vorausgefüllt.
+- Bestätigungsmail, QR-Code und Handy-Ticket führen zum richtigen Event.
+- Ablauf, Referierende, Fotos, Firmenlogos und Moderationskarten sind vollständig.
+- Namensetiketten enthalten die aktuellen Gästedaten.
+- Event-Chat zeigt nur eingecheckte Personen des Events.
+- Persönliche Push-Nachrichten wurden auf mindestens einem Offline-Testgerät geprüft.
+- Event-Foto-Upload zeigt alle Verarbeitungsschritte.
+- Testmailing wurde zugestellt und Links wurden geöffnet.
+- Rückläuferbereich und Mailing Queue sind erreichbar.
+- Nach Änderungen an Cloud Functions wurde nicht nur Hosting, sondern auch die jeweilige Function veröffentlicht.

@@ -13,6 +13,7 @@
   },
   "description": "PROdigitalTV B2B-Branchenplattform, PWA und webbasiertes CMS mit Firebase-Integration.",
   "dependencies": {
-    "firebase-admin": "^12.7.0"
+    "firebase-admin": "^12.7.0",
+    "jsqr": "1.4.0"
   }
 }
