@@ -9,7 +9,7 @@ import { linkedInFromForm } from "./utils/linkedin.js";
 import { eventLiveRequestMeta, eventLiveConnection, eventLiveInboxMarkup } from "./utils/eventLiveRequests.js?v=5";
 import { mountEventLiveChat } from "./utils/eventLiveChat.js?v=21";
 import { mountEventLivePersonTabs } from "./utils/eventLivePersonTabs.js?v=6";
-import { wireCockpitCheckin } from "./utils/cockpitCheckin.js?v=1";
+import { wireCockpitCheckin } from "./utils/cockpitCheckin.js?v=2";
 import { confirmChatReset } from "./utils/confirmChatReset.js?v=2";
 import { eventAvatarMarkup } from "./utils/eventLiveAvatar.js?v=1";
 import { resetEventChatData } from "./utils/resetEventChatData.js?v=2";
@@ -967,8 +967,9 @@ async function mobileLiveAdminPage() {
       <summary><span>Manueller Check-in</span></summary>
       <div class="mobile-manual-checkin-content">
     <details class="mobile-live-collapsible mobile-manual-checkin-group" id="mobile-cms-person-checkin">
-      <summary><span>Einzelne Personen</span></summary>
-      <label class="field">Person suchen<input type="search" data-cockpit-checkin-search placeholder="Name, Firma oder E-Mail" autocomplete="off"></label>
+      <summary><span>Gästeliste des Events</span></summary>
+      <p class="muted">Vollständige Liste aller aktiven Anmeldungen. Noch nicht eingecheckte Gäste stehen zuerst.</p>
+      <label class="field">Gast suchen<input type="search" data-cockpit-checkin-search placeholder="Name, Firma oder E-Mail" autocomplete="off"></label>
       <button type="button" class="button button--secondary" data-cockpit-checkin-refresh>Aktualisieren</button>
       <p role="status" aria-live="polite" data-cockpit-checkin-status></p>
       <div data-cockpit-checkin-list></div>

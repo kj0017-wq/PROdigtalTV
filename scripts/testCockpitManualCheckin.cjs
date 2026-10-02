@@ -18,11 +18,11 @@ const { chromium } = require(process.env.PLAYWRIGHT_PACKAGE || "playwright");
       const page = await browser.newPage({ viewport: { width, height: 844 } });
       await page.setContent('<main class="mobile-live-admin">' + markup + "</main>");
       await page.addStyleTag({ content: await fs.readFile("src/styles/main.css", "utf8") });
-      assert.equal(await page.getByText("Einzelne Personen", { exact: true }).isVisible(), false);
+      assert.equal(await page.getByText("Gästeliste des Events", { exact: true }).isVisible(), false);
       await page.getByText("Manueller Check-in", { exact: true }).click();
-      assert.deepEqual(await page.locator(".mobile-manual-checkin-group > summary span").allTextContents(), ["Einzelne Personen", "Vorstand", "Referenten"]);
+      assert.deepEqual(await page.locator(".mobile-manual-checkin-group > summary span").allTextContents(), ["Gästeliste des Events", "Vorstand", "Referenten"]);
       assert.equal(await page.locator(".mobile-manual-checkin .panel").count(), 0);
-      for (const label of ["Einzelne Personen", "Vorstand", "Referenten"]) {
+      for (const label of ["Gästeliste des Events", "Vorstand", "Referenten"]) {
         await page.getByText(label, { exact: true }).click();
         const summary = page.getByText(label, { exact: true }).locator("..");
         assert.equal(await summary.evaluate(el => el.parentElement.open), true);

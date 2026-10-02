@@ -3,15 +3,20 @@ import { escapeHtml } from "./format.js?v=3";
 const inactive = new Set(["cancelled", "canceled", "deleted", "archived", "expired", "rejected"]);
 export function cockpitCheckinRows(records, eventId, search = "") {
   const term = search.trim().toLocaleLowerCase("de");
-  const rows = records.filter(record => record.eventId === eventId && !inactive.has(record.status))
-    .map(record => ({ ...record, name: [record.firstName, record.lastName].filter(Boolean).join(" ") || record.displayName || record.email || "Person" }))
+  const eventRows = records.filter(record => record.eventId === eventId && !inactive.has(String(record.status || "").toLowerCase()))
+    .map(record => ({ ...record, name: [record.firstName, record.lastName].filter(Boolean).join(" ") || record.displayName || record.email || "Person" }));
+  const rows = eventRows
     .filter(record => [record.name, record.email, record.company].join(" ").toLocaleLowerCase("de").includes(term))
-    .sort((a, b) => a.name.localeCompare(b.name, "de"));
-  return rows.length ? rows.map(record => {
+    .sort((a, b) => Number(a.status === "checked_in") - Number(b.status === "checked_in") || a.name.localeCompare(b.name, "de"));
+  const guestCount = eventRows.reduce((sum, record) => sum + Math.max(1, Number(record.participantCount) || (record.hasCompanion || record.companion ? 2 : 1)), 0);
+  const openGuestCount = eventRows.filter(record => record.status !== "checked_in").reduce((sum, record) => sum + Math.max(1, Number(record.participantCount) || (record.hasCompanion || record.companion ? 2 : 1)), 0);
+  const overview = `<div class="cockpit-checkin-overview"><strong>${openGuestCount} noch nicht eingecheckt</strong><span>${guestCount} angemeldete Gäste · ${eventRows.length} Anmeldungen</span></div>`;
+  const result = rows.length ? rows.map(record => {
     const checked = record.status === "checked_in";
     const companion = record.hasCompanion || record.companion;
     return `<div class="cockpit-checkin-row"><div><strong>${escapeHtml(record.name)}</strong><small>${escapeHtml([record.company, record.email].filter(Boolean).join(" · "))}</small>${companion ? "<small>Mit Begleitperson</small>" : ""}</div>${checked ? '<span class="cockpit-checkin-done">Eingecheckt</span>' : `<button type="button" class="button button--secondary" data-cockpit-checkin-id="${escapeHtml(record.id)}">Einchecken</button>`}</div>`;
-  }).join("") : '<p class="muted">Keine passende Anmeldung gefunden.</p>';
+  }).join("") : `<p class="muted">${eventRows.length ? "Keine passende Anmeldung gefunden." : "Für dieses Event sind keine aktiven Anmeldungen vorhanden."}</p>`;
+  return overview + result;
 }
 
 export function wireCockpitCheckin(root, { eventSelect, load, checkIn, onChanged, confirm = window.confirm.bind(window) }) {

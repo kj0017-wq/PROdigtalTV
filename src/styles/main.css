@@ -21253,6 +21253,16 @@ body.theme-night .invitation-talk-hints p,
   padding: 14px 0;
   border-bottom: 1px solid #dbe3ef;
 }
+.cockpit-checkin-overview {
+  display: grid;
+  gap: 3px;
+  margin: 12px 0 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f2f6fb;
+}
+.cockpit-checkin-overview strong { color: #e30613; font-size: 16px; }
+.cockpit-checkin-overview span { color: #596574; font-size: 13px; }
 .cockpit-checkin-row > div { min-width: 0; overflow-wrap: anywhere; }
 .cockpit-checkin-row strong, .cockpit-checkin-row small { display: block; }
 .cockpit-checkin-row small { color: #596574; margin-top: 4px; }
