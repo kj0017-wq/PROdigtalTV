@@ -889,11 +889,9 @@ async function mobileLiveAdminPage() {
         <figcaption data-mobile-checkin-qr-title>${escapeHtml(firstEvent.title || "Veranstaltung")}</figcaption>
       </figure>
       <div data-mobile-checkin-stats-wrap>${renderMobileCheckinStats(firstEvent.id, registrations)}</div>
-      <p class="webapp-qr-card__url" data-mobile-checkin-url>Geschuetzter Link wird erzeugt ...</p>
+      <span data-mobile-checkin-url hidden></span>
       <div class="actions">
-        <a class="button button--primary" data-mobile-checkin-screen-link href="#" target="_blank" rel="noreferrer" hidden>QR Vollbild öffnen</a>
-        <button class="button button--secondary" type="button" data-mobile-checkin-pdf-link hidden>PDF teilen</button>
-        <button class="button button--secondary" type="button" data-mobile-checkin-copy hidden>Link kopieren</button>
+        <button class="button button--primary" type="button" data-mobile-checkin-pdf-link hidden>PDF erstellen</button>
       </div>` : `<p class="muted">Keine Veranstaltung mit Einlassdaten gefunden.</p>`}
       <div class="alert" data-mobile-checkin-status>Geschuetzter Einlass-QR wird erzeugt ...</div>
     </details>
@@ -12380,16 +12378,12 @@ async function updateMobileCheckinQr() {
   const svg = document.querySelector("[data-mobile-checkin-qr-svg]");
   const caption = document.querySelector("[data-mobile-checkin-qr-title]");
   const urlText = document.querySelector("[data-mobile-checkin-url]");
-  const screenLink = document.querySelector("[data-mobile-checkin-screen-link]");
   const pdfLink = document.querySelector("[data-mobile-checkin-pdf-link]");
-  const copyButton = document.querySelector("[data-mobile-checkin-copy]");
   const status = document.querySelector("[data-mobile-checkin-status]");
   if (image) image.hidden = true;
   if (svg) { svg.hidden = true; svg.innerHTML = ""; }
-  if (screenLink) screenLink.hidden = true;
   if (pdfLink) pdfLink.hidden = true;
-  if (copyButton) copyButton.hidden = true;
-  if (urlText) urlText.textContent = "Geschuetzter Link wird erzeugt ...";
+  if (urlText) urlText.textContent = "";
   if (status) {
     status.hidden = false;
     status.className = "alert";
@@ -12445,9 +12439,7 @@ async function updateMobileCheckinQr() {
   if (status && qrSvg) status.hidden = true;
   if (caption) caption.textContent = title;
   if (urlText) urlText.textContent = checkinUrl;
-  if (screenLink && screenUrl) { screenLink.href = screenUrl; screenLink.hidden = false; }
   if (pdfLink && screenUrl) { pdfLink.dataset.printUrl = `${screenUrl}${screenUrl.includes("?") ? "&" : "?"}print=1`; pdfLink.hidden = false; }
-  if (copyButton && checkinUrl) copyButton.hidden = false;
 }
 
 function pdfAscii(text = "") {
@@ -13852,24 +13844,6 @@ function wireActions() {
     updateMobileCheckinQr();
     refreshMobileCheckinStats({ silent: false });
   });
-  document.querySelector("[data-mobile-checkin-copy]")?.addEventListener("click", async () => {
-    const status = document.querySelector("[data-mobile-checkin-status]");
-    const url = document.querySelector("[data-mobile-checkin-url]")?.textContent || "";
-    try {
-      await navigator.clipboard.writeText(url);
-      if (status) {
-        status.hidden = false;
-        status.className = "alert alert--success";
-        status.textContent = "Einlass-Link wurde kopiert.";
-      }
-    } catch {
-      if (status) {
-        status.hidden = false;
-        status.className = "alert alert--warning";
-        status.textContent = url || "Link konnte nicht kopiert werden.";
-      }
-    }
-  });
   document.querySelector("[data-mobile-checkin-pdf-link]")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     const status = document.querySelector("[data-mobile-checkin-status]");
@@ -13904,7 +13878,7 @@ function wireActions() {
       console.warn("Check-in PDF fallback", error);
     } finally {
       button.disabled = false;
-      button.textContent = previous || "PDF teilen";
+      button.textContent = previous || "PDF erstellen";
     }
   });
   document.querySelector("[data-checkin-screen-pdf]")?.addEventListener("click", async (event) => {
