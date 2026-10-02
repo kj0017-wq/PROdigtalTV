@@ -810,6 +810,68 @@ function mobileCmsLauncherIcon(name = "grid") {
   return `<span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false">${paths[name] || paths.website}</svg></span>`;
 }
 
+async function mobileModerationCardsPage() {
+  const user = currentUser();
+  if (!canUseCms(user)) {
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
+  }
+  const [events, registrations, speakers, topics, boardMembers] = await Promise.all([
+    list("events").catch(() => []),
+    list("registrations").catch(() => []),
+    list("speakers").catch(() => []),
+    list("topics").catch(() => []),
+    list("boardMembers").catch(() => [])
+  ]);
+  const eventRows = events
+    .filter((event) => mobileLiveEventIsRelevant(event, registrations))
+    .sort((a, b) => String(a.date || a.startDate || "").localeCompare(String(b.date || b.startDate || "")));
+  let rememberedEventId = "";
+  try { rememberedEventId = localStorage.getItem("pdtv-mobile-cms-event") || ""; } catch {}
+  const firstEvent = eventRows.find((event) => event.id === rememberedEventId) || eventRows[0] || {};
+  const eventOptions = eventRows.map((event) => {
+    const label = [event.date ? formatDate(event.date) : "", event.title || event.id].filter(Boolean).join(" · ");
+    return `<option value="${escapeHtml(event.id)}" ${event.id === firstEvent.id ? "selected" : ""}>${escapeHtml(label)}</option>`;
+  }).join("");
+  const moderationService = await moderationCardPrintService();
+  const moderationCardPanels = eventRows.map((event) => {
+    const generatedCards = moderationService.buildModerationCards({ event, topics, speakers, boardMembers });
+    const cards = moderationService.mergeSavedModerationCards(generatedCards, event.moderationCards, event.moderationCardRemovedIds);
+    const cardRows = cards.map((card, index) => {
+      const personMeta = [card.contributionRole, card.position, card.company].filter(Boolean).join(" · ");
+      const time = card.time ? `${card.time} Uhr` : "Zeit offen";
+      return `<details class="mobile-moderation-card">
+        <summary><b class="mobile-moderation-card__number">${index + 1}</b><span class="mobile-moderation-card__heading"><strong>${escapeHtml(card.title || "Programmpunkt")}</strong><small>${escapeHtml([time, card.speakerName].filter(Boolean).join(" · "))}</small></span></summary>
+        <div class="mobile-moderation-card__body">
+          ${card.speakerName ? `<h3>${escapeHtml(card.speakerName)}</h3>` : ""}
+          ${personMeta ? `<p class="mobile-moderation-card__meta">${escapeHtml(personMeta)}</p>` : ""}
+          ${card.bio ? `<section><strong>Kurzvita</strong><p>${escapeHtml(card.bio)}</p></section>` : ""}
+          ${card.description ? `<section><strong>Moderationstext</strong><p>${escapeHtml(card.description)}</p></section>` : ""}
+          ${card.notes ? `<section><strong>Fragen / Hinweise</strong><p>${escapeHtml(card.notes)}</p></section>` : ""}
+        </div>
+      </details>`;
+    }).join("");
+    return `<div data-mobile-moderation-event-panel="${escapeHtml(event.id)}" ${event.id === firstEvent.id ? "" : "hidden"}>
+      <div class="mobile-moderation-card-list">${cardRows || `<p class="muted">Noch keine Moderationskarten vorhanden. Über „Bearbeiten / PDF erstellen“ können Karten ergänzt werden.</p>`}</div>
+      <div class="actions"><button class="button button--primary" type="button" data-moderation-cards data-mobile-moderation-open data-event-id="${escapeHtml(event.id)}">Bearbeiten / PDF erstellen</button></div>
+      <div data-mobile-moderation-result></div>
+    </div>`;
+  }).join("");
+  return `<main class="mobile-live-admin mobile-moderation-page">
+    <section class="mobile-live-hero">
+      <p class="eyebrow">Mobile CMS</p>
+      <h1>Moderationskarten</h1>
+      <p>Ablauf, Moderationstexte und Hinweise für die ausgewählte Veranstaltung.</p>
+      <div class="actions"><a class="button button--secondary button--small" href="#/cms/live">Zurück zum Event-Cockpit</a></div>
+    </section>
+    <section class="panel mobile-live-event-context">
+      <div class="field"><label>Veranstaltung</label><select data-mobile-live-event ${eventRows.length ? "" : "disabled"}>${eventOptions}</select>${eventRows.length ? "" : `<p class="muted">Keine aktive Veranstaltung mit Moderationskarten gefunden.</p>`}</div>
+    </section>
+    <section class="panel mobile-live-panel mobile-moderation-cards" id="mobile-cms-moderation-cards">
+      <div class="mobile-moderation-cards__content">${moderationCardPanels || `<p class="muted">Keine Veranstaltung für Moderationskarten ausgewählt.</p>`}</div>
+    </section>
+  </main>`;
+}
+
 async function mobileLiveAdminPage() {
   const user = currentUser();
   if (!canUseCms(user)) {
@@ -870,30 +932,6 @@ async function mobileLiveAdminPage() {
     const checkinPeople = splitEventCheckinPeople(mobileEventCheckinSpeakers(event, speakers), boardMembers);
     return `<div data-group-checkin-event-panel="${escapeHtml(event.id)}" ${event.id === firstEvent.id ? "" : "hidden"}>${mobileGroupCheckinForm(event, "board", checkinPeople.boardMembers)}${mobileGroupCheckinForm(event, "speakers", checkinPeople.speakers)}</div>`;
   }).join("");
-  const moderationService = await moderationCardPrintService();
-  const moderationCardPanels = eventRows.map((event) => {
-    const generatedCards = moderationService.buildModerationCards({ event, topics, speakers, boardMembers });
-    const cards = moderationService.mergeSavedModerationCards(generatedCards, event.moderationCards, event.moderationCardRemovedIds);
-    const cardRows = cards.map((card, index) => {
-      const personMeta = [card.contributionRole, card.position, card.company].filter(Boolean).join(" · ");
-      const time = card.time ? `${card.time} Uhr` : "Zeit offen";
-      return `<details class="mobile-moderation-card">
-        <summary><b class="mobile-moderation-card__number">${index + 1}</b><span class="mobile-moderation-card__heading"><strong>${escapeHtml(card.title || "Programmpunkt")}</strong><small>${escapeHtml([time, card.speakerName].filter(Boolean).join(" · "))}</small></span></summary>
-        <div class="mobile-moderation-card__body">
-          ${card.speakerName ? `<h3>${escapeHtml(card.speakerName)}</h3>` : ""}
-          ${personMeta ? `<p class="mobile-moderation-card__meta">${escapeHtml(personMeta)}</p>` : ""}
-          ${card.bio ? `<section><strong>Kurzvita</strong><p>${escapeHtml(card.bio)}</p></section>` : ""}
-          ${card.description ? `<section><strong>Moderationstext</strong><p>${escapeHtml(card.description)}</p></section>` : ""}
-          ${card.notes ? `<section><strong>Fragen / Hinweise</strong><p>${escapeHtml(card.notes)}</p></section>` : ""}
-        </div>
-      </details>`;
-    }).join("");
-    return `<div data-mobile-moderation-event-panel="${escapeHtml(event.id)}" ${event.id === firstEvent.id ? "" : "hidden"}>
-      <div class="mobile-moderation-card-list">${cardRows || `<p class="muted">Noch keine Moderationskarten vorhanden. Über „Bearbeiten / PDF erstellen“ können Karten ergänzt werden.</p>`}</div>
-      <div class="actions"><button class="button button--primary" type="button" data-moderation-cards data-mobile-moderation-open data-event-id="${escapeHtml(event.id)}">Bearbeiten / PDF erstellen</button></div>
-      <div data-mobile-moderation-result></div>
-    </div>`;
-  }).join("");
   return `<main class="mobile-live-admin">
     <section class="mobile-live-hero">
       <div><p class="eyebrow">Mobile CMS</p><h1>Event-Cockpit</h1><p>Schnellzugriff für die laufende Veranstaltung</p></div>
@@ -901,7 +939,7 @@ async function mobileLiveAdminPage() {
         <button type="button" data-mobile-cms-scroll="mobile-cms-checkin-qr">${mobileCmsLauncherIcon("qr")}<span>Einlass-QR</span></button>
         <button type="button" data-mobile-cms-scroll="mobile-cms-manual-checkin">${mobileCmsLauncherIcon("checkin")}<span>Check-in</span></button>
         <a data-mobile-event-chat-link ${firstEvent.id ? `href="/#/event-live/${escapeHtml(encodeURIComponent(firstEvent.id))}"` : "hidden"}>${mobileCmsLauncherIcon("chat")}<span>Event Chat</span></a>
-        <button type="button" data-mobile-cms-scroll="mobile-cms-moderation-cards">${mobileCmsLauncherIcon("cards")}<span>Moderationskarten</span></button>
+        <a href="#/cms/live-moderation">${mobileCmsLauncherIcon("cards")}<span>Moderationskarten</span></a>
         <button type="button" data-mobile-cms-scroll="mobile-cms-send">${mobileCmsLauncherIcon("survey")}<span>Umfrage</span></button>
         <a href="#/cms/live-results">${mobileCmsLauncherIcon("results")}<span>Auswertung</span></a>
         <button type="button" data-mobile-cms-scroll="mobile-cms-history">${mobileCmsLauncherIcon("history")}<span>Historie</span></button>
@@ -940,12 +978,6 @@ async function mobileLiveAdminPage() {
     <section id="mobile-cms-group-checkin">
       ${groupCheckinPanels || `<div class="alert">Keine aktive Veranstaltung für den Gruppen-Check-in gefunden.</div>`}
     </section>
-      </div>
-    </details>
-    <details class="panel mobile-live-panel mobile-live-collapsible mobile-moderation-cards" id="mobile-cms-moderation-cards">
-      <summary><span>Moderationskarten</span><small>Ablauf, Texte und Hinweise aufklappen</small></summary>
-      <div class="mobile-moderation-cards__content">
-        ${moderationCardPanels || `<p class="muted">Keine Veranstaltung für Moderationskarten ausgewählt.</p>`}
       </div>
     </details>
     <details class="panel mobile-live-panel mobile-live-collapsible" id="mobile-cms-send">
@@ -1062,10 +1094,12 @@ async function viewForRoute(current) {
   window.__pdtCmsStage = `route:${current.path}/${current.id || ""}`;
   if (current.path === "survey") return liveSurveyPage(current.id);
   if (current.path === "cms" && mobileCmsDisabled() && current.id === "live") return mobileLiveAdminPage();
+  if (current.path === "cms" && mobileCmsDisabled() && current.id === "live-moderation") return mobileModerationCardsPage();
   if (current.path === "cms" && mobileCmsDisabled() && current.id === "live-results") return mobileLiveResultsPage();
   if (current.path === "cms" && mobileCmsDisabled() && !["quality", "help"].includes(current.id)) return mobileCmsPlaceholder();
   if (current.path === "cms" && current.id === "quality" && mobileCmsDisabled()) return mobileQualityPage();
   if (current.path === "cms" && current.id === "live") return mobileLiveAdminPage();
+  if (current.path === "cms" && current.id === "live-moderation") return mobileModerationCardsPage();
   if (current.path === "cms" && current.id === "live-results") return mobileLiveResultsPage();
   if (current.path === "cms" && current.id === "media") {
     const { mediaPage } = await mediaPages();
