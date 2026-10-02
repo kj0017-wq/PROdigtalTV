@@ -960,9 +960,7 @@ async function mobileLiveAdminPage() {
       </figure>
       <div data-mobile-checkin-stats-wrap>${renderMobileCheckinStats(firstEvent.id, registrations)}</div>
       <span data-mobile-checkin-url hidden></span>
-      <div class="actions">
-        <button class="button button--primary" type="button" data-mobile-checkin-pdf-link hidden>PDF erstellen</button>
-      </div>` : `<p class="muted">Keine Veranstaltung mit Einlassdaten gefunden.</p>`}
+      ` : `<p class="muted">Keine Veranstaltung mit Einlassdaten gefunden.</p>`}
       <div class="alert" data-mobile-checkin-status>Geschuetzter Einlass-QR wird erzeugt ...</div>
     </details>
     <details class="panel mobile-live-panel mobile-live-collapsible mobile-manual-checkin" id="mobile-cms-manual-checkin">
@@ -12450,11 +12448,9 @@ async function updateMobileCheckinQr() {
   const svg = document.querySelector("[data-mobile-checkin-qr-svg]");
   const caption = document.querySelector("[data-mobile-checkin-qr-title]");
   const urlText = document.querySelector("[data-mobile-checkin-url]");
-  const pdfLink = document.querySelector("[data-mobile-checkin-pdf-link]");
   const status = document.querySelector("[data-mobile-checkin-status]");
   if (image) image.hidden = true;
   if (svg) { svg.hidden = true; svg.innerHTML = ""; }
-  if (pdfLink) pdfLink.hidden = true;
   if (urlText) urlText.textContent = "";
   if (status) {
     status.hidden = false;
@@ -12511,7 +12507,6 @@ async function updateMobileCheckinQr() {
   if (status && qrSvg) status.hidden = true;
   if (caption) caption.textContent = title;
   if (urlText) urlText.textContent = checkinUrl;
-  if (pdfLink && screenUrl) { pdfLink.dataset.printUrl = `${screenUrl}${screenUrl.includes("?") ? "&" : "?"}print=1`; pdfLink.hidden = false; }
 }
 
 function pdfAscii(text = "") {
@@ -13916,43 +13911,6 @@ function wireActions() {
     syncMobileModerationCardPanels(eventId);
     updateMobileCheckinQr();
     refreshMobileCheckinStats({ silent: false });
-  });
-  document.querySelector("[data-mobile-checkin-pdf-link]")?.addEventListener("click", async (event) => {
-    const button = event.currentTarget;
-    const status = document.querySelector("[data-mobile-checkin-status]");
-    const option = document.querySelector("[data-mobile-live-event]")?.selectedOptions?.[0];
-    const checkinUrl = option?.dataset?.checkinUrl || document.querySelector("[data-mobile-checkin-url]")?.textContent || "";
-    const qrImageSource = document.querySelector("[data-mobile-checkin-qr-img]")?.src || "";
-    const title = option?.dataset?.eventTitle || document.querySelector("[data-mobile-checkin-qr-title]")?.textContent || "PROdigitalTV Veranstaltung";
-    const printUrl = button.dataset.printUrl || "";
-    const previous = button.textContent;
-    button.disabled = true;
-    button.textContent = "PDF wird erstellt ...";
-    if (status) {
-      status.hidden = false;
-      status.className = "alert";
-      status.textContent = "PDF wird vorbereitet ...";
-    }
-    try {
-      const imageBytes = await fetchCheckinQrJpeg(qrImageSource);
-      const blob = createCheckinQrPdf({ title, eventDate: option?.dataset?.eventDate || "", checkinUrl, imageBytes });
-      const message = await shareOrDownloadCheckinPdf({ blob, title });
-      if (status) {
-        status.className = "alert alert--success";
-        status.textContent = message;
-      }
-    } catch (error) {
-      if (status) {
-        status.className = "alert alert--warning";
-        status.textContent = "PDF konnte nicht direkt erzeugt werden. Ich oeffne die Druckansicht.";
-      }
-      if (printUrl) window.open(printUrl, "_blank", "noopener,noreferrer");
-      else if (checkinUrl) window.open(checkinUrl, "_blank", "noopener,noreferrer");
-      console.warn("Check-in PDF fallback", error);
-    } finally {
-      button.disabled = false;
-      button.textContent = previous || "PDF erstellen";
-    }
   });
   document.querySelector("[data-checkin-screen-pdf]")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;

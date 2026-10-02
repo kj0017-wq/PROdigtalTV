@@ -9,7 +9,7 @@ test("mobiles Event-Cockpit verwendet einen kompakten Kachelstarter", () => {
   assert.match(mainSource, /class="mobile-cms-launcher"/);
   assert.match(mainSource, /Einlass-QR/);
   assert.match(mainSource, /data-mobile-checkin-url hidden/);
-  assert.match(mainSource, /data-mobile-checkin-pdf-link hidden>PDF erstellen/);
+  assert.doesNotMatch(mainSource, /data-mobile-checkin-pdf-link/);
   assert.doesNotMatch(mainSource, /QR Vollbild öffnen|PDF teilen|Link kopieren/);
   assert.match(mainSource, /Event Chat/);
   assert.match(mainSource, /href="#\/cms\/live-moderation"/);
