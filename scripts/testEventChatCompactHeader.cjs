@@ -9,7 +9,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_PACKAGE || "playwright");
   const start = source.indexOf('<section class="event-live-hero">', source.indexOf("data-event-live-root"));
   const template = source.slice(start, source.indexOf("</section>", start) + 10);
   const header = new Function("data", "escapeHtml", "formatDate", "return `" + template + "`;")({
-    event: { title: "Medienfrühstück bei HEUKING in München", date: "2026-10-23" }, participants: Array(10)
+    event: { title: "Medienfrühstück bei HEUKING in München", date: "2026-10-23" }, participants: Array(10), canEditProfiles: true
   }, value => value, () => "23. Oktober 2026");
   const toolbar = main.match(/inbox\.innerHTML = `([^`]+)`/)[1];
   const menu = main.match(/inbox\.insertAdjacentHTML\("beforeend", `([^`]+)`/)[1];
@@ -23,6 +23,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_PACKAGE || "playwright");
       await page.addStyleTag({ content: await fs.readFile("src/styles/main.css", "utf8") });
       const row = await page.locator(".event-live-roster").boundingBox();
       assert.ok(row.y < 220, "First participant must begin within 220px of the page");
+      assert.equal(await page.getByRole("button", { name: "Chats und Fotos verwalten" }).isVisible(), false);
       assert.equal(await page.getByRole("button", { name: "Alle Anfragen zurücksetzen" }).isVisible(), false);
       assert.equal(await page.getByRole("button", { name: "Alle Chats zurücksetzen" }).isVisible(), false);
       await page.getByLabel("Administration", { exact: true }).click();

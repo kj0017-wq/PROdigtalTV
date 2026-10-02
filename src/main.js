@@ -27,6 +27,7 @@ import "./firebase/eventChatBadge.js?v=1";
 import { articleToImportBlock, parseImportedNewsArticles } from "./utils/newsImportParser.js?v=1";
 import { splitEventCheckinPeople } from "./utils/eventCheckinPeople.js?v=1";
 import { registrationEditorPatch, registrationEditorValues } from "./utils/registrationEditor.js?v=1";
+import { buildEventTopicUnassignmentPlan } from "./utils/eventTopicUnassignment.js?v=1";
 
 import { applyEntrancePresentation } from "./utils/entrancePresentation.js?v=3";
 import { wireEntranceScanner } from "./utils/entranceScanner.js?v=1";
@@ -19285,46 +19286,34 @@ function wireActions() {
     const existingEvent = await getOne("events", button.dataset.eventId);
     const topic = await getOne("topics", button.dataset.unassignEventTopic).catch(() => null);
     if (!existingEvent || !topic) return;
-    if (!window.confirm(`Vortrag "${topic.title || button.dataset.unassignEventTopic}" aus diesem Event entfernen?`)) return;
-    const topicIds = (existingEvent.topicIds || []).filter((topicId) => topicId !== button.dataset.unassignEventTopic);
-    const [allEvents, allSpeakers, allTopics] = await Promise.all([list("events"), list("speakers"), list("topics")]);
-    const sharedTopic = allEvents.some((other) => other.id !== existingEvent.id
-      && ((other.topicIds || []).includes(topic.id) || other.topicId === topic.id));
-    const remainingTopics = allTopics.filter((item) => topicIds.includes(item.id));
-    const topicSpeakerIds = new Set([topic.speakerId, topic.moderatorId, topic.coModeratorId,
-      ...(topic.speakerIds || []), ...(topic.speakers || []), ...(topic.moderatorIds || []),
-      ...(topic.coModeratorIds || []), ...Object.keys(topic.speakerRoles || {})].filter(Boolean));
-    const relatedSpeakers = allSpeakers.filter((speaker) => topicSpeakerIds.has(speaker.id)
-      || speaker.topicId === topic.id || (speaker.topicIds || []).includes(topic.id));
-    const stillInEvent = (speaker) => remainingTopics.some((item) => [item.speakerId, item.moderatorId, item.coModeratorId,
-      ...(item.speakerIds || []), ...(item.speakers || []), ...(item.moderatorIds || []),
-      ...(item.coModeratorIds || []), ...Object.keys(item.speakerRoles || {})].includes(speaker.id)
-      || speaker.topicId === item.id || (speaker.topicIds || []).includes(item.id));
-    const removedIds = new Set(relatedSpeakers.filter((speaker) => !stillInEvent(speaker)).map((speaker) => speaker.id));
-    const speakerIds = (existingEvent.speakerIds || []).filter((id) => !removedIds.has(id));
-    for (const speaker of relatedSpeakers) {
-      const eventIds = (speaker.eventIds || []).filter((id) => id !== existingEvent.id || stillInEvent(speaker));
-      await upsert("speakers", {
-        id: speaker.id,
-        eventIds,
-        ...(sharedTopic ? {} : {
-          topicId: speaker.topicId === topic.id ? "" : speaker.topicId || "",
-          topicIds: (speaker.topicIds || []).filter((id) => id !== topic.id)
-        }),
-        updatedAt: new Date().toISOString()
+    if (!window.confirm(`Vortrag "${topic.title || button.dataset.unassignEventTopic}" vollständig aus diesem Event entfernen? Verknüpfungen im Ablauf, bei Personen und in Rückblicktexten werden ebenfalls bereinigt. Der Beitrag und wiederverwendete Personen bleiben in anderen Events erhalten.`)) return;
+    button.disabled = true;
+    try {
+      const [allEvents, allSpeakers, allTopics, allEditorial] = await Promise.all([
+        list("events"), list("speakers"), list("topics"), list("editorialContent").catch(() => [])
+      ]);
+      const retrospective = allEditorial.find((item) => item.id === existingEvent.retrospectiveArticleId
+        || item.linkedEventId === existingEvent.id || item.galleryEventId === existingEvent.id) || null;
+      const plan = buildEventTopicUnassignmentPlan({
+        event: existingEvent, topic, events: allEvents, topics: allTopics, speakers: allSpeakers, retrospective
       });
+      const now = new Date().toISOString();
+      await Promise.all(plan.speakerPatches.map((patch) => {
+        const speaker = allSpeakers.find((item) => item.id === patch.id) || { id: patch.id };
+        return upsert("speakers", { ...speaker, ...patch, updatedAt: now });
+      }));
+      await upsert("topics", { ...topic, ...plan.topicPatch, updatedAt: now });
+      if (retrospective && plan.retrospectiveAction === "delete") {
+        await remove("editorialContent", retrospective.id);
+      } else if (retrospective && plan.retrospectiveAction === "update") {
+        await upsert("editorialContent", { ...retrospective, ...plan.retrospectivePatch, updatedAt: now });
+      }
+      await upsert("events", { ...existingEvent, ...plan.eventPatch, updatedAt: now });
+      await render();
+    } catch (error) {
+      button.disabled = false;
+      window.alert(`Zuordnung konnte nicht vollständig entfernt werden: ${error?.message || error}`);
     }
-    if (!sharedTopic) {
-      await upsert("topics", {
-        id: topic.id, speakerId: "", speakerIds: [], speakers: [], moderatorId: "", moderatorIds: [],
-        coModeratorId: "", coModeratorIds: [], speakerRoles: {},
-        eventId: topic.eventId === existingEvent.id ? "" : topic.eventId || "",
-        eventIds: (topic.eventIds || []).filter((id) => id !== existingEvent.id),
-        updatedAt: new Date().toISOString()
-      });
-    }
-    await upsert("events", { ...existingEvent, topicIds, speakerIds, updatedAt: new Date().toISOString() });
-    await render();
   }));
 
   document.querySelector("#event-topic-speaker-form")?.addEventListener("submit", async (event) => {

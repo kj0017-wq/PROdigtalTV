@@ -16000,6 +16000,10 @@ form.is-saved [data-image-crop] {
   padding: 24px 0 18px;
 }
 
+.event-live-hero > [data-event-content-admin] {
+  display: none !important;
+}
+
 .event-live-hero h1 {
   font-size: clamp(1.8rem, 5vw, 2.8rem);
   line-height: 1.12;
