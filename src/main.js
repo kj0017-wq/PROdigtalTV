@@ -116,7 +116,7 @@ function askInitialPushPreference() {
 
 const lazy = {};
 const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=896");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=861");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=862");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=503");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=119");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=30");
@@ -343,7 +343,7 @@ async function mobileQualityPage() {
     if ((item.youtubeVideoId || item.youtubeUrl || item.url) && !(item.posterImageUrl || item.thumbnailUrl || item.youtubeThumbnailUrl)) push("Medien", "Video", item.title, "Videostartbild fehlt", "Videoeintrag hat kein gespeichertes Startbild.", "warning");
   });
   const rows = issues.sort((a, b) => a.severity === b.severity ? String(a.area).localeCompare(String(b.area), "de") : a.severity === "error" ? -1 : 1).map((issue) => `<tr><td>${escapeHtml(issue.area)}</td><td>${escapeHtml(issue.type)}</td><td>${escapeHtml(issue.title)}</td><td>${escapeHtml(issue.fault)}</td><td>${escapeHtml(issue.description)}</td><td>${escapeHtml(issue.href || "-")}</td><td>${issue.severity === "error" ? "Fehler" : "Warnung"}</td></tr>`).join("");
-  return `<main class="cms-app"><section class="cms-main"><div class="cms-title"><div><p class="eyebrow">Mobile Schnellansicht</p><h1>Qualitaetspruefung</h1><p>Schnelle mobile Auswertung ohne externe Netzwerkpruefung.</p></div></div><section class="panel"><div class="setup-steps"><div class="setup-step"><span>Fehler</span><strong>${issues.filter((issue) => issue.severity === "error").length}</strong></div><div class="setup-step"><span>Warnungen</span><strong>${issues.filter((issue) => issue.severity !== "error").length}</strong></div><div class="setup-step"><span>Collections</span><strong>${names.length}</strong></div><div class="setup-step"><span>Alt-Texte</span><strong><button class="link-button" type="button" data-quality-fill-alt-texts>fehlende ergaenzen</button></strong><small id="quality-alt-text-result"></small></div></div></section><section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Bereich</th><th>Typ</th><th>Titel</th><th>Fehler</th><th>Beschreibung</th><th>Pfad</th><th>Einstufung</th></tr></thead><tbody>${rows || `<tr><td colspan="7">Keine Fehler oder Warnungen gefunden.</td></tr>`}</tbody></table></div></section></section></main>`;
+  return `<main class="cms-app"><section class="cms-main"><div class="cms-title"><div><a class="button button--secondary button--small mobile-cockpit-back" data-cockpit-back href="#/cms/live">← Zurück zum Event-Cockpit</a><p class="eyebrow">Mobile Schnellansicht</p><h1>Qualitaetspruefung</h1><p>Schnelle mobile Auswertung ohne externe Netzwerkpruefung.</p></div></div><section class="panel"><div class="setup-steps"><div class="setup-step"><span>Fehler</span><strong>${issues.filter((issue) => issue.severity === "error").length}</strong></div><div class="setup-step"><span>Warnungen</span><strong>${issues.filter((issue) => issue.severity !== "error").length}</strong></div><div class="setup-step"><span>Collections</span><strong>${names.length}</strong></div><div class="setup-step"><span>Alt-Texte</span><strong><button class="link-button" type="button" data-quality-fill-alt-texts>fehlende ergaenzen</button></strong><small id="quality-alt-text-result"></small></div></div></section><section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Bereich</th><th>Typ</th><th>Titel</th><th>Fehler</th><th>Beschreibung</th><th>Pfad</th><th>Einstufung</th></tr></thead><tbody>${rows || `<tr><td colspan="7">Keine Fehler oder Warnungen gefunden.</td></tr>`}</tbody></table></div></section></section></main>`;
 }
 
 function mobileLiveEventIsRelevant(event = {}, registrations = []) {
@@ -722,11 +722,11 @@ async function mobileLiveResultsPage() {
   const surveyResultRows = renderMobileSurveyResults(liveSurveys, liveSurveyResponses, events, liveSurveyInvites, peopleDirectory);
   return `<main class="mobile-live-admin mobile-live-results-screen">
     <section class="mobile-live-hero mobile-live-results-hero">
+      <a class="button button--secondary button--small mobile-cockpit-back" data-cockpit-back href="#/cms/live">← Zurück zum Event-Cockpit</a>
       <p class="eyebrow">Umfrage-Auswertung</p>
       <h1>Umfragen live auswerten</h1>
       <p>Dieser Bildschirm aktualisiert die Umfrage jede Sekunde und zeigt Antworten, Balken und Stimmen live an.</p>
       <div class="actions">
-        <a class="button button--secondary" href="#/cms/live">Zurück zum Mobile CMS</a>
         <a class="button button--secondary" href="/website.html?v=1020#/home">Website</a>
       </div>
     </section>
@@ -858,10 +858,10 @@ async function mobileModerationCardsPage() {
   }).join("");
   return `<main class="mobile-live-admin mobile-moderation-page">
     <section class="mobile-live-hero">
+      <a class="button button--secondary button--small mobile-cockpit-back" data-cockpit-back href="#/cms/live">← Zurück zum Event-Cockpit</a>
       <p class="eyebrow">Mobile CMS</p>
       <h1>Moderationskarten</h1>
       <p>Ablauf, Moderationstexte und Hinweise für die ausgewählte Veranstaltung.</p>
-      <div class="actions"><a class="button button--secondary button--small" href="#/cms/live">Zurück zum Event-Cockpit</a></div>
     </section>
     <section class="panel mobile-live-event-context">
       <div class="field"><label>Veranstaltung</label><select data-mobile-live-event ${eventRows.length ? "" : "disabled"}>${eventOptions}</select>${eventRows.length ? "" : `<p class="muted">Keine aktive Veranstaltung mit Moderationskarten gefunden.</p>`}</div>
@@ -934,6 +934,7 @@ async function mobileLiveAdminPage() {
   }).join("");
   return `<main class="mobile-live-admin">
     <section class="mobile-live-hero">
+      <a class="button button--secondary button--small mobile-cockpit-back" data-cockpit-back href="#/cms">← Zurück zur CMS-Übersicht</a>
       <div><p class="eyebrow">Mobile CMS</p><h1>Event-Cockpit</h1><p>Schnellzugriff für die laufende Veranstaltung</p></div>
       <nav class="mobile-cms-launcher" aria-label="Mobile CMS Funktionen">
         <button type="button" data-mobile-cms-scroll="mobile-cms-checkin-qr">${mobileCmsLauncherIcon("qr")}<span>Einlass-QR</span></button>

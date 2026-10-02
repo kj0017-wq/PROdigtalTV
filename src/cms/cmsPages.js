@@ -5317,7 +5317,7 @@ export async function qualityPage() {
     <td>${escapeHtml(formatDateTime(issue.checkedAt || checkedAt))}</td>
     <td>${mobileReadOnly ?`<span class="muted">nur Desktop</span>` : qualityEditLink(issue)}</td>
   </tr>`).join("");
-  return protect(cmsShell("cms/quality", `${cmsTitle("Qualitätsprüfung", "Qualitätsprüfung")}
+  return protect(cmsShell("cms/quality", `${cmsTitle("Qualitätsprüfung", "Qualitätsprüfung", '<a class="button button--secondary button--small" data-cockpit-back href="#/cms/live">← Zurück zum Event-Cockpit</a>')}
     <section class="panel">
       <div class="setup-steps">
         <div class="setup-step"><span>Geprüfte Inhalte</span><strong>${metrics.checkedContent}</strong></div>

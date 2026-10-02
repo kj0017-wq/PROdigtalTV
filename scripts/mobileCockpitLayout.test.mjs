@@ -4,6 +4,7 @@ import test from "node:test";
 
 const mainSource = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../src/styles/main.css", import.meta.url), "utf8");
+const cmsPagesSource = await readFile(new URL("../src/cms/cmsPages.js", import.meta.url), "utf8");
 
 test("mobiles Event-Cockpit verwendet einen kompakten Kachelstarter", () => {
   assert.match(mainSource, /class="mobile-cms-launcher"/);
@@ -34,4 +35,12 @@ test("Header und Eventauswahl sind mobil verdichtet", () => {
   assert.match(mainSource, /<h1>Event-Cockpit<\/h1>/);
   assert.match(cssSource, /font-size:\s*clamp\(25px,\s*7vw,\s*34px\)/);
   assert.match(cssSource, /\.mobile-live-event-context select\s*\{\s*min-height:\s*44px/);
+});
+
+test("alle Cockpit-Seiten besitzen einen Zurück-Button", () => {
+  assert.ok((mainSource.match(/data-cockpit-back/g) || []).length >= 4);
+  assert.match(mainSource, /Zurück zur CMS-Übersicht/);
+  assert.match(mainSource, /Zurück zum Event-Cockpit/);
+  assert.match(cmsPagesSource, /data-cockpit-back href="#\/cms\/live"/);
+  assert.match(cssSource, /\.mobile-cockpit-back/);
 });

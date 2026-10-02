@@ -16660,6 +16660,12 @@ form.is-saved [data-image-crop] {
 
 .mobile-live-hero .eyebrow { margin:0 0 2px; font-size:11px; letter-spacing:.14em; }
 
+.mobile-cockpit-back {
+  width: fit-content;
+  margin: 0 0 10px;
+  text-decoration: none;
+}
+
 .mobile-cms-launcher {
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));
