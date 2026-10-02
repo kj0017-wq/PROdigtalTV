@@ -15,6 +15,9 @@ test("mobiles Event-Cockpit verwendet einen kompakten Kachelstarter", () => {
   assert.match(mainSource, /Event Chat/);
   assert.match(mainSource, /href="#\/cms\/live-moderation"/);
   assert.match(mainSource, /Auswertung/);
+  assert.match(mainSource, /data-mobile-cms-scroll="mobile-cms-person-checkin"[^>]*>[\s\S]*?<span>Gästeliste<\/span>/);
+  assert.doesNotMatch(mainSource, /data-mobile-cms-scroll="mobile-cms-history"[^>]*>[\s\S]*?<span>Historie<\/span>/);
+  assert.doesNotMatch(mainSource, /href="#\/cms\/quality"[^>]*>[\s\S]*?<span>Qualität<\/span>/);
   assert.match(cssSource, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
 });
 

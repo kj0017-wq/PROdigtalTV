@@ -799,6 +799,7 @@ function mobileCmsLauncherIcon(name = "grid") {
   const paths = {
     qr: `<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM15 14h2v2h-2zM19 14h1v3h-3v3h-3v-2h2v-2h3z"/>`,
     checkin: `<path d="M12 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm-7 18v-2a5 5 0 0 1 5-5h3M16 17l2 2 4-5"/>`,
+    guests: `<path d="M9 4a3 3 0 1 1 0 6 3 3 0 0 1 0-6Zm7 2a2.5 2.5 0 1 1 0 5M3 20v-2a5 5 0 0 1 10 0v2M14 14a4 4 0 0 1 7 3v2"/>`,
     chat: `<path d="M4 5h16v11H9l-5 4V5Zm4 4h8M8 12h5"/>`,
     survey: `<path d="M5 19V9M12 19V4M19 19v-7"/>`,
     results: `<path d="M4 19h16M6 16l4-5 3 2 5-7"/>`,
@@ -943,8 +944,7 @@ async function mobileLiveAdminPage() {
         <a href="#/cms/live-moderation">${mobileCmsLauncherIcon("cards")}<span>Moderationskarten</span></a>
         <button type="button" data-mobile-cms-scroll="mobile-cms-send">${mobileCmsLauncherIcon("survey")}<span>Umfrage</span></button>
         <a href="#/cms/live-results">${mobileCmsLauncherIcon("results")}<span>Auswertung</span></a>
-        <button type="button" data-mobile-cms-scroll="mobile-cms-history">${mobileCmsLauncherIcon("history")}<span>Historie</span></button>
-        <a href="#/cms/quality">${mobileCmsLauncherIcon("quality")}<span>Qualität</span></a>
+        <button type="button" data-mobile-cms-scroll="mobile-cms-person-checkin">${mobileCmsLauncherIcon("guests")}<span>Gästeliste</span></button>
         <a href="/website.html?v=1020#/home" data-mobile-cms-website-link>${mobileCmsLauncherIcon("website")}<span>Website</span></a>
       </nav>
     </section>
@@ -13974,6 +13974,11 @@ function wireActions() {
     }
     const target = document.getElementById(targetId);
     if (target?.tagName === "DETAILS") target.open = true;
+    let parentDetails = target?.parentElement?.closest("details");
+    while (parentDetails) {
+      parentDetails.open = true;
+      parentDetails = parentDetails.parentElement?.closest("details");
+    }
     target?.scrollIntoView({ behavior: "smooth", block: "start" });
   }));
   document.querySelector("[data-theme-toggle]")?.addEventListener("click", () => {
