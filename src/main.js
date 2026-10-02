@@ -781,6 +781,12 @@ function syncMobileGroupCheckinPanels(eventId = "") {
   });
 }
 
+function syncMobileModerationCardPanels(eventId = "") {
+  document.querySelectorAll("[data-mobile-moderation-event-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.mobileModerationEventPanel !== eventId;
+  });
+}
+
 function syncMobileEventChatLinks(eventId) {
   document.querySelectorAll("[data-mobile-event-chat-link]").forEach(link => {
     link.hidden = !eventId;
@@ -796,6 +802,7 @@ function mobileCmsLauncherIcon(name = "grid") {
     chat: `<path d="M4 5h16v11H9l-5 4V5Zm4 4h8M8 12h5"/>`,
     survey: `<path d="M5 19V9M12 19V4M19 19v-7"/>`,
     results: `<path d="M4 19h16M6 16l4-5 3 2 5-7"/>`,
+    cards: `<path d="M7 4h11a2 2 0 0 1 2 2v13H9a2 2 0 0 1-2-2V4Z"/><path d="M7 7H5a2 2 0 0 0-2 2v11h13v-1M11 9h5M11 13h5"/>`,
     history: `<path d="M4 12a8 8 0 1 0 3-6M4 4v5h5M12 7v5l3 2"/>`,
     quality: `<path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"/>`,
     website: `<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>`
@@ -863,6 +870,30 @@ async function mobileLiveAdminPage() {
     const checkinPeople = splitEventCheckinPeople(mobileEventCheckinSpeakers(event, speakers), boardMembers);
     return `<div data-group-checkin-event-panel="${escapeHtml(event.id)}" ${event.id === firstEvent.id ? "" : "hidden"}>${mobileGroupCheckinForm(event, "board", checkinPeople.boardMembers)}${mobileGroupCheckinForm(event, "speakers", checkinPeople.speakers)}</div>`;
   }).join("");
+  const moderationService = await moderationCardPrintService();
+  const moderationCardPanels = eventRows.map((event) => {
+    const generatedCards = moderationService.buildModerationCards({ event, topics, speakers, boardMembers });
+    const cards = moderationService.mergeSavedModerationCards(generatedCards, event.moderationCards, event.moderationCardRemovedIds);
+    const cardRows = cards.map((card, index) => {
+      const personMeta = [card.contributionRole, card.position, card.company].filter(Boolean).join(" · ");
+      const time = card.time ? `${card.time} Uhr` : "Zeit offen";
+      return `<details class="mobile-moderation-card">
+        <summary><b class="mobile-moderation-card__number">${index + 1}</b><span class="mobile-moderation-card__heading"><strong>${escapeHtml(card.title || "Programmpunkt")}</strong><small>${escapeHtml([time, card.speakerName].filter(Boolean).join(" · "))}</small></span></summary>
+        <div class="mobile-moderation-card__body">
+          ${card.speakerName ? `<h3>${escapeHtml(card.speakerName)}</h3>` : ""}
+          ${personMeta ? `<p class="mobile-moderation-card__meta">${escapeHtml(personMeta)}</p>` : ""}
+          ${card.bio ? `<section><strong>Kurzvita</strong><p>${escapeHtml(card.bio)}</p></section>` : ""}
+          ${card.description ? `<section><strong>Moderationstext</strong><p>${escapeHtml(card.description)}</p></section>` : ""}
+          ${card.notes ? `<section><strong>Fragen / Hinweise</strong><p>${escapeHtml(card.notes)}</p></section>` : ""}
+        </div>
+      </details>`;
+    }).join("");
+    return `<div data-mobile-moderation-event-panel="${escapeHtml(event.id)}" ${event.id === firstEvent.id ? "" : "hidden"}>
+      <div class="mobile-moderation-card-list">${cardRows || `<p class="muted">Noch keine Moderationskarten vorhanden. Über „Bearbeiten / PDF erstellen“ können Karten ergänzt werden.</p>`}</div>
+      <div class="actions"><button class="button button--primary" type="button" data-moderation-cards data-mobile-moderation-open data-event-id="${escapeHtml(event.id)}">Bearbeiten / PDF erstellen</button></div>
+      <div data-mobile-moderation-result></div>
+    </div>`;
+  }).join("");
   return `<main class="mobile-live-admin">
     <section class="mobile-live-hero">
       <div><p class="eyebrow">Mobile CMS</p><h1>Event-Cockpit</h1><p>Schnellzugriff für die laufende Veranstaltung</p></div>
@@ -870,6 +901,7 @@ async function mobileLiveAdminPage() {
         <button type="button" data-mobile-cms-scroll="mobile-cms-checkin-qr">${mobileCmsLauncherIcon("qr")}<span>Einlass-QR</span></button>
         <button type="button" data-mobile-cms-scroll="mobile-cms-manual-checkin">${mobileCmsLauncherIcon("checkin")}<span>Check-in</span></button>
         <a data-mobile-event-chat-link ${firstEvent.id ? `href="/#/event-live/${escapeHtml(encodeURIComponent(firstEvent.id))}"` : "hidden"}>${mobileCmsLauncherIcon("chat")}<span>Event Chat</span></a>
+        <button type="button" data-mobile-cms-scroll="mobile-cms-moderation-cards">${mobileCmsLauncherIcon("cards")}<span>Moderationskarten</span></button>
         <button type="button" data-mobile-cms-scroll="mobile-cms-send">${mobileCmsLauncherIcon("survey")}<span>Umfrage</span></button>
         <a href="#/cms/live-results">${mobileCmsLauncherIcon("results")}<span>Auswertung</span></a>
         <button type="button" data-mobile-cms-scroll="mobile-cms-history">${mobileCmsLauncherIcon("history")}<span>Historie</span></button>
@@ -908,6 +940,12 @@ async function mobileLiveAdminPage() {
     <section id="mobile-cms-group-checkin">
       ${groupCheckinPanels || `<div class="alert">Keine aktive Veranstaltung für den Gruppen-Check-in gefunden.</div>`}
     </section>
+      </div>
+    </details>
+    <details class="panel mobile-live-panel mobile-live-collapsible mobile-moderation-cards" id="mobile-cms-moderation-cards">
+      <summary><span>Moderationskarten</span><small>Ablauf, Texte und Hinweise aufklappen</small></summary>
+      <div class="mobile-moderation-cards__content">
+        ${moderationCardPanels || `<p class="muted">Keine Veranstaltung für Moderationskarten ausgewählt.</p>`}
       </div>
     </details>
     <details class="panel mobile-live-panel mobile-live-collapsible" id="mobile-cms-send">
@@ -13841,6 +13879,7 @@ function wireActions() {
     }
     syncMobileLiveHistory(eventId);
     syncMobileGroupCheckinPanels(eventId);
+    syncMobileModerationCardPanels(eventId);
     updateMobileCheckinQr();
     refreshMobileCheckinStats({ silent: false });
   });
@@ -13908,6 +13947,7 @@ function wireActions() {
   updateMobileCheckinQr();
   syncMobileLiveHistory(document.querySelector("[data-mobile-live-event]")?.value || "");
   syncMobileGroupCheckinPanels(document.querySelector("[data-mobile-live-event]")?.value || "");
+  syncMobileModerationCardPanels(document.querySelector("[data-mobile-live-event]")?.value || "");
   if (document.querySelector("[data-mobile-checkin-stats-wrap]")) startMobileCheckinStats();
   document.querySelector("[data-mobile-live-results-refresh]")?.addEventListener("click", () => {
     refreshMobileCmsLiveResults({ silent: false });
@@ -20969,7 +21009,7 @@ function wireActions() {
   }));
 
   document.querySelectorAll("[data-moderation-cards]").forEach((button) => button.addEventListener("click", async () => {
-    const result = document.querySelector("#event-save-result") || document.querySelector("#registration-bulk-result");
+    const result = button.closest("[data-mobile-moderation-event-panel]")?.querySelector("[data-mobile-moderation-result]") || document.querySelector("#event-save-result") || document.querySelector("#registration-bulk-result");
     button.disabled = true;
     try {
       const [event, topics, speakers, boardMembers] = await Promise.all([

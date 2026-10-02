@@ -12,8 +12,19 @@ test("mobiles Event-Cockpit verwendet einen kompakten Kachelstarter", () => {
   assert.match(mainSource, /data-mobile-checkin-pdf-link hidden>PDF erstellen/);
   assert.doesNotMatch(mainSource, /QR Vollbild öffnen|PDF teilen|Link kopieren/);
   assert.match(mainSource, /Event Chat/);
+  assert.match(mainSource, /data-mobile-cms-scroll="mobile-cms-moderation-cards"/);
   assert.match(mainSource, /Auswertung/);
   assert.match(cssSource, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+});
+
+test("Moderationskarten sind eventbezogen als Klappkarten im Cockpit verfügbar", () => {
+  assert.match(mainSource, /id="mobile-cms-moderation-cards"/);
+  assert.match(mainSource, /data-mobile-moderation-event-panel/);
+  assert.match(mainSource, /data-mobile-moderation-open/);
+  assert.match(mainSource, /buildModerationCards/);
+  assert.match(mainSource, /mergeSavedModerationCards/);
+  assert.match(cssSource, /\.mobile-moderation-card-list/);
+  assert.match(cssSource, /\.mobile-moderation-card__body/);
 });
 
 test("Header und Eventauswahl sind mobil verdichtet", () => {
