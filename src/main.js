@@ -787,6 +787,12 @@ function syncMobileModerationCardPanels(eventId = "") {
   });
 }
 
+function syncMobileGuestFeedbackPanels(eventId = "") {
+  document.querySelectorAll("[data-mobile-feedback-event-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.mobileFeedbackEventPanel !== eventId;
+  });
+}
+
 function syncMobileEventChatLinks(eventId) {
   document.querySelectorAll("[data-mobile-event-chat-link]").forEach(link => {
     link.hidden = !eventId;
@@ -803,6 +809,7 @@ function mobileCmsLauncherIcon(name = "grid") {
     chat: `<path d="M4 5h16v11H9l-5 4V5Zm4 4h8M8 12h5"/>`,
     survey: `<path d="M5 19V9M12 19V4M19 19v-7"/>`,
     results: `<path d="M4 19h16M6 16l4-5 3 2 5-7"/>`,
+    feedback: `<path d="M5 4h14v12H9l-4 4V4Z"/><path d="m8 10 2 2 5-5"/>`,
     cards: `<path d="M7 4h11a2 2 0 0 1 2 2v13H9a2 2 0 0 1-2-2V4Z"/><path d="M7 7H5a2 2 0 0 0-2 2v11h13v-1M11 9h5M11 13h5"/>`,
     history: `<path d="M4 12a8 8 0 1 0 3-6M4 4v5h5M12 7v5l3 2"/>`,
     quality: `<path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"/>`,
@@ -873,7 +880,7 @@ async function mobileModerationCardsPage() {
   </main>`;
 }
 
-async function mobileLiveAdminPage() {
+async function mobileLiveAdminPage(section = "") {
   const user = currentUser();
   if (!canUseCms(user)) {
     return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
@@ -933,25 +940,50 @@ async function mobileLiveAdminPage() {
     const checkinPeople = splitEventCheckinPeople(mobileEventCheckinSpeakers(event, speakers), boardMembers);
     return `<div data-group-checkin-event-panel="${escapeHtml(event.id)}" ${event.id === firstEvent.id ? "" : "hidden"}>${mobileGroupCheckinForm(event, "board", checkinPeople.boardMembers)}${mobileGroupCheckinForm(event, "speakers", checkinPeople.speakers)}</div>`;
   }).join("");
-  return `<main class="mobile-live-admin">
+  const cockpitPage = ["qr", "checkin", "guests", "survey", "feedback"].includes(section) ? section : "";
+  const cockpitPageMeta = {
+    qr: ["Einlass-QR", "QR-Code für Empfang und Check-in"],
+    checkin: ["Check-in", "Referenten und Vorstandsmitglieder einchecken"],
+    guests: ["Gästeliste", "Alle aktiven Anmeldungen und ihr Check-in-Status"],
+    survey: ["Live-Umfrage", "Umfrage vorbereiten und an Gäste senden"],
+    feedback: ["Gästebefragung", "Vorbereitete Befragung direkt an angemeldete Gäste senden"]
+  }[cockpitPage] || ["Event-Cockpit", "Schnellzugriff für die laufende Veranstaltung"];
+  const guestFeedbackPanels = eventRows.map((event) => {
+    const eligible = registrations.filter((item) => {
+      const status = String(item.status || "").toLowerCase();
+      return item.eventId === event.id && item.email && (["confirmed", "checked_in", "attended"].includes(status) || item.emailConfirmed === true)
+        && !["cancelled", "expired", "deleted"].includes(status);
+    });
+    const questionCount = Array.isArray(event.feedbackQuestions) ? event.feedbackQuestions.length : 0;
+    return `<div data-mobile-feedback-event-panel="${escapeHtml(event.id)}" ${event.id === firstEvent.id ? "" : "hidden"}>
+      <div class="mobile-feedback-send-card">
+        <p class="eyebrow">Versandbereit</p>
+        <h2>${escapeHtml(event.title || event.id)}</h2>
+        <p>${questionCount ? `${questionCount} vorbereitete Frage${questionCount === 1 ? "" : "n"}` : "Standard-Gästebefragung"} · ${eligible.length} erreichbare Gäste</p>
+        <button class="button button--primary" type="button" data-send-event-feedback="${escapeHtml(event.id)}" ${eligible.length ? "" : "disabled"}>Jetzt senden</button>
+      </div>
+    </div>`;
+  }).join("");
+  return `<main class="mobile-live-admin" data-cockpit-page="${escapeHtml(cockpitPage || "home")}">
     <section class="mobile-live-hero">
-      <a class="button button--secondary button--small mobile-cockpit-back" data-cockpit-back href="#/cms">← Zurück zur CMS-Übersicht</a>
-      <div><p class="eyebrow">Mobile CMS</p><h1>Event-Cockpit</h1><p>Schnellzugriff für die laufende Veranstaltung</p></div>
-      <nav class="mobile-cms-launcher" aria-label="Mobile CMS Funktionen">
-        <button type="button" data-mobile-cms-scroll="mobile-cms-checkin-qr">${mobileCmsLauncherIcon("qr")}<span>Einlass-QR</span></button>
-        <button type="button" data-mobile-cms-scroll="mobile-cms-manual-checkin">${mobileCmsLauncherIcon("checkin")}<span>Check-in</span></button>
+      <a class="button button--secondary button--small mobile-cockpit-back" data-cockpit-back href="${cockpitPage ? "#/cms/live" : "#/cms"}">← ${cockpitPage ? "Zurück zum Event-Cockpit" : "Zurück zur CMS-Übersicht"}</a>
+      <div><p class="eyebrow">Mobile CMS</p><h1>${escapeHtml(cockpitPageMeta[0])}</h1><p>${escapeHtml(cockpitPageMeta[1])}</p></div>
+      <nav class="mobile-cms-launcher" aria-label="Mobile CMS Funktionen" ${cockpitPage ? "hidden" : ""}>
+        <a href="#/cms/live/qr">${mobileCmsLauncherIcon("qr")}<span>Einlass-QR</span></a>
+        <a href="#/cms/live/checkin">${mobileCmsLauncherIcon("checkin")}<span>Check-in</span></a>
         <a data-mobile-event-chat-link ${firstEvent.id ? `href="/#/event-live/${escapeHtml(encodeURIComponent(firstEvent.id))}"` : "hidden"}>${mobileCmsLauncherIcon("chat")}<span>Event Chat</span></a>
         <a href="#/cms/live-moderation">${mobileCmsLauncherIcon("cards")}<span>Moderationskarten</span></a>
-        <button type="button" data-mobile-cms-scroll="mobile-cms-send">${mobileCmsLauncherIcon("survey")}<span>Umfrage</span></button>
+        <a href="#/cms/live/survey">${mobileCmsLauncherIcon("survey")}<span>Umfrage</span></a>
         <a href="#/cms/live-results">${mobileCmsLauncherIcon("results")}<span>Auswertung</span></a>
-        <button type="button" data-mobile-cms-scroll="mobile-cms-person-checkin">${mobileCmsLauncherIcon("guests")}<span>Gästeliste</span></button>
+        <a href="#/cms/live/guests">${mobileCmsLauncherIcon("guests")}<span>Gästeliste</span></a>
+        <a href="#/cms/live/feedback">${mobileCmsLauncherIcon("feedback")}<span>Gästebefragung</span></a>
         <a href="/website.html?v=1020#/home" data-mobile-cms-website-link>${mobileCmsLauncherIcon("website")}<span>Website</span></a>
       </nav>
     </section>
     <section class="panel mobile-live-event-context">
       <div class="field"><label>Veranstaltung</label><select data-mobile-live-event ${eventRows.length ? "" : "disabled"}>${eventOptions}</select>${eventRows.length ? "" : `<p class="muted">Keine aktive Veranstaltung mit Live-Daten gefunden.</p>`}</div>
     </section>
-    <details class="panel mobile-live-panel mobile-live-collapsible mobile-checkin-qr-panel" id="mobile-cms-checkin-qr" open>
+    <details class="panel mobile-live-panel mobile-live-collapsible mobile-checkin-qr-panel" id="mobile-cms-checkin-qr" ${cockpitPage === "qr" ? "open" : "hidden"}>
       <summary><span>Einlass-QR</span><small>QR-Code für Empfang und Check-in</small></summary>
       <p class="muted">Diesen QR-Code am Empfang anzeigen. Teilnehmer scannen ihn mit dem Handy-Ticket.</p>
       ${firstEvent.id ? `<figure class="mobile-checkin-qr">
@@ -964,10 +996,10 @@ async function mobileLiveAdminPage() {
       ` : `<p class="muted">Keine Veranstaltung mit Einlassdaten gefunden.</p>`}
       <div class="alert" data-mobile-checkin-status>Geschuetzter Einlass-QR wird erzeugt ...</div>
     </details>
-    <details class="panel mobile-live-panel mobile-live-collapsible mobile-manual-checkin" id="mobile-cms-manual-checkin">
+    <details class="panel mobile-live-panel mobile-live-collapsible mobile-manual-checkin" id="mobile-cms-manual-checkin" ${["checkin", "guests"].includes(cockpitPage) ? "open" : "hidden"}>
       <summary><span>Manueller Check-in</span></summary>
       <div class="mobile-manual-checkin-content">
-    <details class="mobile-live-collapsible mobile-manual-checkin-group" id="mobile-cms-person-checkin">
+    <details class="mobile-live-collapsible mobile-manual-checkin-group" id="mobile-cms-person-checkin" ${cockpitPage === "guests" ? "open" : "hidden"}>
       <summary><span>Gästeliste des Events</span></summary>
       <p class="muted">Vollständige Liste aller aktiven Anmeldungen. Noch nicht eingecheckte Gäste stehen zuerst.</p>
       <label class="field">Gast suchen<input type="search" data-cockpit-checkin-search placeholder="Name, Firma oder E-Mail" autocomplete="off"></label>
@@ -975,12 +1007,12 @@ async function mobileLiveAdminPage() {
       <p role="status" aria-live="polite" data-cockpit-checkin-status></p>
       <div data-cockpit-checkin-list></div>
     </details>
-    <section id="mobile-cms-group-checkin">
+    <section id="mobile-cms-group-checkin" ${cockpitPage === "checkin" ? "" : "hidden"}>
       ${groupCheckinPanels || `<div class="alert">Keine aktive Veranstaltung für den Gruppen-Check-in gefunden.</div>`}
     </section>
       </div>
     </details>
-    <details class="panel mobile-live-panel mobile-live-collapsible" id="mobile-cms-send">
+    <details class="panel mobile-live-panel mobile-live-collapsible" id="mobile-cms-send" ${cockpitPage === "survey" ? "open" : "hidden"}>
       <summary><span>Live-Umfrage</span><small>Frage erstellen und an Teilnehmer senden</small></summary>
       <form id="event-notification-form" class="form-grid mobile-live-form">
         <input type="hidden" name="notificationKind" value="event">
@@ -1048,12 +1080,16 @@ async function mobileLiveAdminPage() {
         </section>
       </form>
     </details>
-    <details class="panel mobile-live-panel mobile-live-collapsible">
+    <section class="panel mobile-live-panel mobile-feedback-send-page" id="mobile-cms-feedback" ${cockpitPage === "feedback" ? "" : "hidden"}>
+      ${guestFeedbackPanels || `<p class="muted">Keine aktive Veranstaltung für die Gästebefragung gefunden.</p>`}
+      <div id="event-feedback-admin-result" aria-live="polite"></div>
+    </section>
+    <details class="panel mobile-live-panel mobile-live-collapsible" hidden>
       <summary><span>Umfrage-Auswertung</span><small>Live-Balken und Stimmen ansehen</small></summary>
       <p class="muted">Für die laufende Veranstaltung gibt es einen eigenen Auswertungs-Screen mit automatisch aktualisierten Balken.</p>
       <a class="button button--primary" href="#/cms/live-results">Umfrage-Auswertung öffnen</a>
     </details>
-    <details class="panel mobile-live-panel mobile-live-collapsible" id="mobile-cms-history">
+    <details class="panel mobile-live-panel mobile-live-collapsible" id="mobile-cms-history" hidden>
       <summary><span>Letzte Aktionen</span><small>Live-Umfragen und Nachrichtenhistorie</small></summary>
       <div data-mobile-live-history>${recentRows}<p class="muted" data-mobile-live-history-empty ${recentRows ? "hidden" : ""}>Für diese Veranstaltung ist noch keine Live-Aktion vorhanden.</p></div>
     </details>
@@ -1093,12 +1129,12 @@ async function liveSurveyPage(surveyId = "") {
 async function viewForRoute(current) {
   window.__pdtCmsStage = `route:${current.path}/${current.id || ""}`;
   if (current.path === "survey") return liveSurveyPage(current.id);
-  if (current.path === "cms" && mobileCmsDisabled() && current.id === "live") return mobileLiveAdminPage();
+  if (current.path === "cms" && mobileCmsDisabled() && current.id === "live") return mobileLiveAdminPage(current.section || "");
   if (current.path === "cms" && mobileCmsDisabled() && current.id === "live-moderation") return mobileModerationCardsPage();
   if (current.path === "cms" && mobileCmsDisabled() && current.id === "live-results") return mobileLiveResultsPage();
   if (current.path === "cms" && mobileCmsDisabled() && !["quality", "help"].includes(current.id)) return mobileCmsPlaceholder();
   if (current.path === "cms" && current.id === "quality" && mobileCmsDisabled()) return mobileQualityPage();
-  if (current.path === "cms" && current.id === "live") return mobileLiveAdminPage();
+  if (current.path === "cms" && current.id === "live") return mobileLiveAdminPage(current.section || "");
   if (current.path === "cms" && current.id === "live-moderation") return mobileModerationCardsPage();
   if (current.path === "cms" && current.id === "live-results") return mobileLiveResultsPage();
   if (current.path === "cms" && current.id === "media") {
@@ -13911,6 +13947,7 @@ function wireActions() {
     syncMobileLiveHistory(eventId);
     syncMobileGroupCheckinPanels(eventId);
     syncMobileModerationCardPanels(eventId);
+    syncMobileGuestFeedbackPanels(eventId);
     updateMobileCheckinQr();
     refreshMobileCheckinStats({ silent: false });
   });
@@ -13942,6 +13979,7 @@ function wireActions() {
   syncMobileLiveHistory(document.querySelector("[data-mobile-live-event]")?.value || "");
   syncMobileGroupCheckinPanels(document.querySelector("[data-mobile-live-event]")?.value || "");
   syncMobileModerationCardPanels(document.querySelector("[data-mobile-live-event]")?.value || "");
+  syncMobileGuestFeedbackPanels(document.querySelector("[data-mobile-live-event]")?.value || "");
   if (document.querySelector("[data-mobile-checkin-stats-wrap]")) startMobileCheckinStats();
   document.querySelector("[data-mobile-live-results-refresh]")?.addEventListener("click", () => {
     refreshMobileCmsLiveResults({ silent: false });

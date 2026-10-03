@@ -6,7 +6,7 @@ const mainSource = await readFile(new URL("../src/main.js", import.meta.url), "u
 const cssSource = await readFile(new URL("../src/styles/main.css", import.meta.url), "utf8");
 const cmsPagesSource = await readFile(new URL("../src/cms/cmsPages.js", import.meta.url), "utf8");
 
-test("mobiles Event-Cockpit verwendet einen kompakten Kachelstarter", () => {
+test("mobiles Event-Cockpit verwendet Funktionsseiten mit kompaktem Kachelstarter", () => {
   assert.match(mainSource, /class="mobile-cms-launcher"/);
   assert.match(mainSource, /Einlass-QR/);
   assert.match(mainSource, /data-mobile-checkin-url hidden/);
@@ -15,10 +15,25 @@ test("mobiles Event-Cockpit verwendet einen kompakten Kachelstarter", () => {
   assert.match(mainSource, /Event Chat/);
   assert.match(mainSource, /href="#\/cms\/live-moderation"/);
   assert.match(mainSource, /Auswertung/);
-  assert.match(mainSource, /data-mobile-cms-scroll="mobile-cms-person-checkin"[^>]*>[\s\S]*?<span>Gästeliste<\/span>/);
+  assert.match(mainSource, /href="#\/cms\/live\/qr"/);
+  assert.match(mainSource, /href="#\/cms\/live\/checkin"/);
+  assert.match(mainSource, /href="#\/cms\/live\/survey"/);
+  assert.match(mainSource, /href="#\/cms\/live\/guests"[^>]*>[\s\S]*?<span>Gästeliste<\/span>/);
+  assert.match(mainSource, /href="#\/cms\/live\/feedback"[^>]*>[\s\S]*?<span>Gästebefragung<\/span>/);
+  assert.doesNotMatch(mainSource, /data-mobile-cms-scroll="mobile-cms-person-checkin"/);
   assert.doesNotMatch(mainSource, /data-mobile-cms-scroll="mobile-cms-history"[^>]*>[\s\S]*?<span>Historie<\/span>/);
   assert.doesNotMatch(mainSource, /href="#\/cms\/quality"[^>]*>[\s\S]*?<span>Qualität<\/span>/);
   assert.match(cssSource, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+});
+
+test("Gästebefragung besitzt eine eigene Seite mit Sofortversand", () => {
+  assert.match(mainSource, /async function mobileLiveAdminPage\(section = ""\)/);
+  assert.match(mainSource, /mobileLiveAdminPage\(current\.section \|\| ""\)/);
+  assert.match(mainSource, /id="mobile-cms-feedback"/);
+  assert.match(mainSource, /data-send-event-feedback=/);
+  assert.match(mainSource, />Jetzt senden<\/button>/);
+  assert.match(mainSource, /syncMobileGuestFeedbackPanels\(eventId\)/);
+  assert.match(cssSource, /\.mobile-feedback-send-card/);
 });
 
 test("Moderationskarten sind eventbezogen als Klappkarten im Cockpit verfügbar", () => {
@@ -35,7 +50,7 @@ test("Moderationskarten sind eventbezogen als Klappkarten im Cockpit verfügbar"
 });
 
 test("Header und Eventauswahl sind mobil verdichtet", () => {
-  assert.match(mainSource, /<h1>Event-Cockpit<\/h1>/);
+  assert.match(mainSource, /\[cockpitPage\] \|\| \["Event-Cockpit"/);
   assert.match(cssSource, /font-size:\s*clamp\(25px,\s*7vw,\s*34px\)/);
   assert.match(cssSource, /\.mobile-live-event-context select\s*\{\s*min-height:\s*44px/);
 });
