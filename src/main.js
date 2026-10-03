@@ -965,6 +965,9 @@ async function mobileLiveAdminPage(section = "") {
     </div>`;
   }).join("");
   return `<main class="mobile-live-admin" data-cockpit-page="${escapeHtml(cockpitPage || "home")}">
+    <section class="panel mobile-live-event-context">
+      <div class="field"><label>Veranstaltung</label><select data-mobile-live-event ${eventRows.length ? "" : "disabled"}>${eventOptions}</select>${eventRows.length ? "" : `<p class="muted">Keine aktive Veranstaltung mit Live-Daten gefunden.</p>`}</div>
+    </section>
     <section class="mobile-live-hero">
       <a class="button button--secondary button--small mobile-cockpit-back" data-cockpit-back href="${cockpitPage ? "#/cms/live" : "#/cms"}">← ${cockpitPage ? "Zurück zum Event-Cockpit" : "Zurück zur CMS-Übersicht"}</a>
       <div><p class="eyebrow">Mobile CMS</p><h1>${escapeHtml(cockpitPageMeta[0])}</h1><p>${escapeHtml(cockpitPageMeta[1])}</p></div>
@@ -979,9 +982,6 @@ async function mobileLiveAdminPage(section = "") {
         <a href="#/cms/live/feedback">${mobileCmsLauncherIcon("feedback")}<span>Gästebefragung</span></a>
         <a href="/website.html?v=1020#/home" data-mobile-cms-website-link>${mobileCmsLauncherIcon("website")}<span>Website</span></a>
       </nav>
-    </section>
-    <section class="panel mobile-live-event-context">
-      <div class="field"><label>Veranstaltung</label><select data-mobile-live-event ${eventRows.length ? "" : "disabled"}>${eventOptions}</select>${eventRows.length ? "" : `<p class="muted">Keine aktive Veranstaltung mit Live-Daten gefunden.</p>`}</div>
     </section>
     <details class="panel mobile-live-panel mobile-live-collapsible mobile-checkin-qr-panel" id="mobile-cms-checkin-qr" ${cockpitPage === "qr" ? "open" : "hidden"}>
       <summary><span>Einlass-QR</span><small>QR-Code für Empfang und Check-in</small></summary>

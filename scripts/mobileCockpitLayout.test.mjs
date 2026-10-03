@@ -51,6 +51,10 @@ test("Moderationskarten sind eventbezogen als Klappkarten im Cockpit verfügbar"
 
 test("Header und Eventauswahl sind mobil verdichtet", () => {
   assert.match(mainSource, /\[cockpitPage\] \|\| \["Event-Cockpit"/);
+  const cockpitStart = mainSource.indexOf('return `<main class="mobile-live-admin"');
+  const eventChoice = mainSource.indexOf('class="panel mobile-live-event-context"', cockpitStart);
+  const hero = mainSource.indexOf('class="mobile-live-hero"', cockpitStart);
+  assert.ok(eventChoice > cockpitStart && eventChoice < hero, "Die Veranstaltungsauswahl muss vor dem Cockpit-Header stehen.");
   assert.match(cssSource, /font-size:\s*clamp\(25px,\s*7vw,\s*34px\)/);
   assert.match(cssSource, /\.mobile-live-event-context select\s*\{\s*min-height:\s*44px/);
 });
