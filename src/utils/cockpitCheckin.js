@@ -14,7 +14,9 @@ export function cockpitCheckinRows(records, eventId, search = "") {
   const result = rows.length ? rows.map(record => {
     const checked = record.status === "checked_in";
     const companion = record.hasCompanion || record.companion;
-    return `<div class="cockpit-checkin-row" data-cockpit-registration-row="${escapeHtml(record.id)}"><div class="cockpit-checkin-person"><strong>${escapeHtml(record.name)}</strong><small>${escapeHtml([record.company, record.email].filter(Boolean).join(" · "))}</small>${companion ? "<small>Mit Begleitperson</small>" : ""}</div><div class="cockpit-checkin-actions">${checked ? '<span class="cockpit-checkin-done">Eingecheckt</span>' : `<button type="button" class="button button--secondary" data-cockpit-checkin-id="${escapeHtml(record.id)}">Einchecken</button>`}<button type="button" class="button button--danger" data-cockpit-delete-id="${escapeHtml(record.id)}">Löschen</button></div><small class="cockpit-checkin-swipe-hint">→ Einchecken · ← Löschen</small></div>`;
+    const checkIcon = checked ? "" : `<button type="button" class="cockpit-checkin-swipe-action cockpit-checkin-swipe-action--check" data-cockpit-checkin-id="${escapeHtml(record.id)}" aria-label="Einchecken"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.3 4.3L19 7.2"/></svg></button>`;
+    const deleteIcon = `<button type="button" class="cockpit-checkin-swipe-action cockpit-checkin-swipe-action--delete" data-cockpit-delete-id="${escapeHtml(record.id)}" aria-label="Löschen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5"/></svg></button>`;
+    return `<div class="cockpit-checkin-swipe">${checkIcon}${deleteIcon}<div class="cockpit-checkin-row" data-cockpit-registration-row="${escapeHtml(record.id)}"><div class="cockpit-checkin-person"><strong>${escapeHtml(record.name)}</strong><small>${escapeHtml([record.company, record.email].filter(Boolean).join(" · "))}</small>${companion ? "<small>Mit Begleitperson</small>" : ""}</div><div class="cockpit-checkin-actions">${checked ? '<span class="cockpit-checkin-done">Eingecheckt</span>' : `<button type="button" class="button button--secondary" data-cockpit-checkin-id="${escapeHtml(record.id)}">Einchecken</button>`}<button type="button" class="button button--danger" data-cockpit-delete-id="${escapeHtml(record.id)}">Löschen</button></div><small class="cockpit-checkin-swipe-hint">→ Einchecken · ← Löschen</small></div></div>`;
   }).join("") : `<p class="muted">${eventRows.length ? "Keine passende Anmeldung gefunden." : "Für dieses Event sind keine aktiven Anmeldungen vorhanden."}</p>`;
   return overview + result;
 }
@@ -101,6 +103,12 @@ export function wireCockpitCheckin(root, { eventSelect, load, checkIn, remove, o
     if (event.target.closest("button, input, a, textarea, select")) return;
     const row = event.target.closest("[data-cockpit-registration-row]");
     if (!row || busy) return;
+    list.querySelectorAll(".cockpit-checkin-swipe.is-checking, .cockpit-checkin-swipe.is-deleting").forEach(openSwipe => {
+      if (openSwipe === row.parentElement) return;
+      openSwipe.classList.remove("is-checking", "is-deleting");
+      const openRow = openSwipe.querySelector("[data-cockpit-registration-row]");
+      if (openRow) openRow.style.transform = "";
+    });
     swipe = { row, pointerId: event.pointerId, x: event.clientX, y: event.clientY };
     row.setPointerCapture?.(event.pointerId);
   });
@@ -109,23 +117,35 @@ export function wireCockpitCheckin(root, { eventSelect, load, checkIn, remove, o
     const dx = event.clientX - swipe.x;
     const dy = event.clientY - swipe.y;
     if (Math.abs(dx) <= Math.abs(dy)) return;
-    swipe.row.style.transform = `translateX(${Math.max(-72, Math.min(72, dx))}px)`;
+    const canCheckIn = Boolean(swipe.row.parentElement?.querySelector(".cockpit-checkin-swipe-action--check"));
+    const offset = Math.max(-72, Math.min(canCheckIn ? 72 : 0, dx));
+    swipe.row.parentElement?.classList.toggle("is-checking", offset > 0);
+    swipe.row.parentElement?.classList.toggle("is-deleting", offset < 0);
+    swipe.row.style.transform = `translateX(${offset}px)`;
   });
+  const resetSwipe = row => {
+    row.style.transform = "";
+    row.parentElement?.classList.remove("is-checking", "is-deleting");
+  };
   const finishSwipe = event => {
     if (!swipe || swipe.pointerId !== event.pointerId) return;
     const { row, x, y } = swipe;
     swipe = null;
-    row.style.transform = "";
     const dx = event.clientX - x;
     const dy = event.clientY - y;
-    if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
-    const target = dx > 0 ? row.querySelector("[data-cockpit-checkin-id]") : row.querySelector("[data-cockpit-delete-id]");
-    target?.click();
+    if (Math.abs(dx) < 36 || Math.abs(dx) < Math.abs(dy) * 1.35) return resetSwipe(row);
+    const wrapper = row.parentElement;
+    const target = dx > 0 ? wrapper?.querySelector(".cockpit-checkin-swipe-action--check") : wrapper?.querySelector(".cockpit-checkin-swipe-action--delete");
+    if (!target) return resetSwipe(row);
+    const checking = dx > 0;
+    wrapper.classList.toggle("is-checking", checking);
+    wrapper.classList.toggle("is-deleting", !checking);
+    row.style.transform = `translateX(${checking ? 72 : -72}px)`;
   };
   list.addEventListener("pointerup", finishSwipe);
   list.addEventListener("pointercancel", event => {
     if (!swipe || swipe.pointerId !== event.pointerId) return;
-    swipe.row.style.transform = "";
+    resetSwipe(swipe.row);
     swipe = null;
   });
   if (root.open) refresh();

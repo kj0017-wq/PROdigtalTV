@@ -15,12 +15,17 @@ test("Gästeliste bietet Einchecken und Löschen je Anmeldung", () => {
   assert.match(html, /data-cockpit-delete-id="open"/);
   assert.match(html, /data-cockpit-delete-id="done"/);
   assert.match(html, /→ Einchecken · ← Löschen/);
+  assert.match(html, /cockpit-checkin-swipe-action--check/);
+  assert.match(html, /cockpit-checkin-swipe-action--delete/);
 });
 
 test("Wischgesten und sichere Löschbestätigung sind verdrahtet", () => {
   assert.match(source, /list\.addEventListener\("pointerdown"/);
   assert.match(source, /list\.addEventListener\("pointerup", finishSwipe\)/);
-  assert.match(source, /Math\.abs\(dx\) < 64/);
+  assert.match(source, /Math\.abs\(dx\) < 36/);
+  assert.match(source, /classList\.toggle\("is-checking"/);
+  assert.match(source, /classList\.toggle\("is-deleting"/);
+  assert.match(source, /row\.style\.transform = `translateX\(\$\{checking \? 72 : -72\}px\)`/);
   assert.match(source, /Die Anmeldung wird dauerhaft gelöscht/);
   assert.match(source, /await remove\(record\.id\)/);
   assert.match(mainSource, /remove: async \(registrationId\) => \(await registrationService\(\)\)\.deleteAdminRegistration\(registrationId\)/);

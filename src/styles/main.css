@@ -21331,14 +21331,40 @@ body.theme-night .invitation-talk-hints p,
   .event-live-detail.event-live-detail--tabs { height: 100dvh; max-width: none; border-radius: 0; }
   .event-live-person-tabs-header { padding: 8px; gap: 6px; }
 }
+.cockpit-checkin-swipe {
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid #dbe3ef;
+  background: #fff;
+}
+.cockpit-checkin-swipe-action {
+  position: absolute;
+  inset-block: 0;
+  width: 72px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  opacity: .72;
+  transition: opacity .12s ease;
+}
+.cockpit-checkin-swipe-action svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.cockpit-checkin-swipe-action--check { left: 0; background: #18864b; }
+.cockpit-checkin-swipe-action--delete { right: 0; background: #d20b1b; }
+.cockpit-checkin-swipe-action:focus-visible { outline: 3px solid #fff; outline-offset: -5px; }
+.cockpit-checkin-swipe.is-checking .cockpit-checkin-swipe-action--check,
+.cockpit-checkin-swipe.is-deleting .cockpit-checkin-swipe-action--delete { opacity: 1; }
 .cockpit-checkin-row {
   position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: 10px 0;
-  border-bottom: 1px solid #dbe3ef;
+  background: #fff;
   touch-action: pan-y;
   transition: transform .16s ease;
 }
