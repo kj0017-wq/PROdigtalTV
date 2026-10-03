@@ -21445,6 +21445,7 @@ body.theme-night .invitation-talk-hints p,
 .cockpit-checkin-swipe-action:focus-visible { outline: 3px solid #fff; outline-offset: -5px; }
 .cockpit-checkin-swipe.is-checking .cockpit-checkin-swipe-action--check,
 .cockpit-checkin-swipe.is-deleting .cockpit-checkin-swipe-action--delete { opacity: 1; }
+.cockpit-checkin-swipe.is-alt .cockpit-checkin-row { background: #f1f5fa; }
 .cockpit-checkin-row {
   position: relative;
   z-index: 1;

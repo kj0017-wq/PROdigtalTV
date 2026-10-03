@@ -21,6 +21,7 @@ test("Gästeliste bietet Einchecken und Löschen je Anmeldung", () => {
   assert.match(html, /<span>Löschen<\/span>/);
   assert.doesNotMatch(html, /class="button button--secondary" data-cockpit-checkin-id/);
   assert.doesNotMatch(html, /class="button button--danger" data-cockpit-delete-id/);
+  assert.match(html, /cockpit-checkin-swipe is-alt/);
 });
 
 test("Wischgesten und sichere Löschbestätigung sind verdrahtet", () => {

@@ -11,12 +11,12 @@ export function cockpitCheckinRows(records, eventId, search = "") {
   const guestCount = eventRows.reduce((sum, record) => sum + Math.max(1, Number(record.participantCount) || (record.hasCompanion || record.companion ? 2 : 1)), 0);
   const openGuestCount = eventRows.filter(record => record.status !== "checked_in").reduce((sum, record) => sum + Math.max(1, Number(record.participantCount) || (record.hasCompanion || record.companion ? 2 : 1)), 0);
   const overview = `<div class="cockpit-checkin-overview"><strong>${openGuestCount} noch nicht eingecheckt</strong><span>${guestCount} angemeldete Gäste · ${eventRows.length} Anmeldungen</span></div>`;
-  const result = rows.length ? rows.map(record => {
+  const result = rows.length ? rows.map((record, index) => {
     const checked = record.status === "checked_in";
     const companion = record.hasCompanion || record.companion;
     const checkIcon = checked ? "" : `<button type="button" class="cockpit-checkin-swipe-action cockpit-checkin-swipe-action--check" data-cockpit-checkin-id="${escapeHtml(record.id)}" aria-label="Check-in"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.3 4.3L19 7.2"/></svg><span>Check-in</span></button>`;
     const deleteIcon = `<button type="button" class="cockpit-checkin-swipe-action cockpit-checkin-swipe-action--delete" data-cockpit-delete-id="${escapeHtml(record.id)}" aria-label="Löschen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5"/></svg><span>Löschen</span></button>`;
-    return `<div class="cockpit-checkin-swipe">${checkIcon}${deleteIcon}<div class="cockpit-checkin-row" data-cockpit-registration-row="${escapeHtml(record.id)}"><div class="cockpit-checkin-person"><strong>${escapeHtml(record.name)}</strong><small>${escapeHtml([record.company, record.email].filter(Boolean).join(" · "))}</small>${companion ? "<small>Mit Begleitperson</small>" : ""}</div>${checked ? '<span class="cockpit-checkin-done">Eingecheckt</span>' : ""}<small class="cockpit-checkin-swipe-hint">→ Check-in · ← Löschen</small></div></div>`;
+    return `<div class="cockpit-checkin-swipe${index % 2 ? " is-alt" : ""}">${checkIcon}${deleteIcon}<div class="cockpit-checkin-row" data-cockpit-registration-row="${escapeHtml(record.id)}"><div class="cockpit-checkin-person"><strong>${escapeHtml(record.name)}</strong><small>${escapeHtml([record.company, record.email].filter(Boolean).join(" · "))}</small>${companion ? "<small>Mit Begleitperson</small>" : ""}</div>${checked ? '<span class="cockpit-checkin-done">Eingecheckt</span>' : ""}<small class="cockpit-checkin-swipe-hint">→ Check-in · ← Löschen</small></div></div>`;
   }).join("") : `<p class="muted">${eventRows.length ? "Keine passende Anmeldung gefunden." : "Für dieses Event sind keine aktiven Anmeldungen vorhanden."}</p>`;
   return overview + result;
 }
