@@ -8,7 +8,7 @@ import { normalizeLinkedIn } from "../utils/linkedin.js";
 import { hiddenTalkTitles, isVisibleEventTalk, removeHiddenTalkMentions } from "../utils/eventTalkVisibility.js";
 import { eventMailFunnel, mailPeriod, mailPersonMatches, mailQueueRecipient, mailTime } from "../utils/mailAnalytics.js";
 import { buildBounceOverview } from "../utils/bounceOverview.js";
-import { registrationParticipants } from "../utils/registrationParticipants.js";
+import { registrationParticipants } from "../utils/registrationParticipants.js?v=2";
 import { splitEventCheckinPeople } from "../utils/eventCheckinPeople.js?v=1";
 
 function localCmsAccessBypass() {
@@ -2437,7 +2437,12 @@ function eventRegistrationParticipantRow(participant = {}, eventId = "") {
   const actions = companion
     ? `${loginLinkAction}<a class="link" href="#/cms/people?email=${encodeURIComponent(participant.email || "")}">Mailingadresse</a>`
     : `${loginLinkAction}<button class="icon-button icon-button--danger" type="button" data-delete-registration="${escapeHtml(participant.bookingId)}" data-event-id="${escapeHtml(eventId)}" title="Buchung loeschen" aria-label="Buchung loeschen">${iconImage("trash")}</button>`;
-  return `<tr${badgeData} data-registration-row="${escapeHtml(participant.bookingId)}"><td>${selection}</td><td><button class="registration-person-edit" type="button" data-edit-registration data-registration-id="${escapeHtml(participant.bookingId)}" data-participant-role="${escapeHtml(participant.participantRole || "Hauptperson")}">${escapeHtml(name)}</button><small style="display:block">${companion ? `Begleitperson von ${escapeHtml(participant.bookingEmail || "-")}` : "Hauptperson"}</small></td><td>${escapeHtml(participant.company || "-")}</td><td>${escapeHtml(participant.email || "-")}<small style="display:block">Mobil: ${escapeHtml(participant.phone || "-")}</small></td><td>${status(participant.status)}<small style="display:block">${phoneStatus}</small>${!companion && participant.pushClickedAt ? '<small style="display:block">Push angetippt</small>' : ""}${!companion && participant.pushLinkVisitedAt ? '<small style="display:block">Linkseite erreicht</small>' : ""}</td><td><div class="table-actions table-actions--icons">${actions}</div></td></tr>`;
+  const roleNote = companion
+    ? `Begleitperson von ${escapeHtml(participant.bookingEmail || "-")}`
+    : participant.participantRole === "Zusätzliche Person"
+      ? `Eigenständige Anmeldung · angemeldet von ${escapeHtml(participant.registeredByEmail || "-")}`
+      : "Hauptperson";
+  return `<tr${badgeData} data-registration-row="${escapeHtml(participant.bookingId)}"><td>${selection}</td><td><button class="registration-person-edit" type="button" data-edit-registration data-registration-id="${escapeHtml(participant.bookingId)}" data-participant-role="${escapeHtml(participant.participantRole || "Hauptperson")}">${escapeHtml(name)}</button><small style="display:block">${roleNote}</small></td><td>${escapeHtml(participant.company || "-")}</td><td>${escapeHtml(participant.email || "-")}<small style="display:block">Mobil: ${escapeHtml(participant.phone || "-")}</small></td><td>${status(participant.status)}<small style="display:block">${phoneStatus}</small>${!companion && participant.pushClickedAt ? '<small style="display:block">Push angetippt</small>' : ""}${!companion && participant.pushLinkVisitedAt ? '<small style="display:block">Linkseite erreicht</small>' : ""}</td><td><div class="table-actions table-actions--icons">${actions}</div></td></tr>`;
 }
 
 function eventCheckinSpeakers(event = {}, speakers = []) {

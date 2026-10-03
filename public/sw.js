@@ -1,4 +1,4 @@
-const CACHE = "pdt-platform-v1114";
+const CACHE = "pdt-platform-v1115";
 const IMAGE_CACHE = "pdt-platform-images-v960";
 const APP_SHELL = [
   "/",

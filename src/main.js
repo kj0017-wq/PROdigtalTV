@@ -115,8 +115,8 @@ function askInitialPushPreference() {
 }
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=896");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=862");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=897");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=863");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=503");
 const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=119");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=30");
@@ -17248,7 +17248,8 @@ function wireActions() {
         return;
       }
       const pushHint = (values.notifyForThisEvent ? " Ihre Event-Erinnerungen sind vorgemerkt; SMS nutzen wir bei vorhandener Mobilnummer." : "") + (pushActivated ? " Push wird nach der E-Mail-Bestätigung Ihrer Person zugeordnet und gilt für die gesamte PROdigitalTV-Kommunikation auf diesem Gerät." : "");
-      result.innerHTML = '<div class="alert alert--success">Anmeldung gesendet. Bitte bestätigen Sie Ihre E-Mail-Adresse über den Link in der Nachricht an ' + escapeHtml(values.email) + '.</div>';
+      const confirmationAddresses = values.hasCompanion ? `${values.email} und ${values.companionEmail}` : values.email;
+      result.innerHTML = '<div class="alert alert--success">Anmeldung gesendet. ' + (values.hasCompanion ? 'Beide Personen erhalten eine eigene E-Mail und müssen ihre Anmeldung jeweils selbst bestätigen: ' : 'Bitte bestätigen Sie Ihre E-Mail-Adresse über den Link in der Nachricht an ') + escapeHtml(confirmationAddresses) + '.</div>';
       if (submitButton) submitButton.textContent = "Anmeldung gesendet";
       const confirmationDialog = document.createElement("dialog");
       confirmationDialog.className = "registration-confirmation-dialog";
@@ -17258,8 +17259,8 @@ function wireActions() {
         + '<div class="registration-confirmation-dialog__icon" aria-hidden="true">✉</div>'
         + '<p class="registration-confirmation-dialog__eyebrow">Anmeldung gesendet</p>'
         + '<h2 id="registration-confirmation-title">Jetzt E-Mail bestätigen</h2>'
-        + '<p id="registration-confirmation-description">Ihre Anmeldung ist erst gültig, wenn Sie den Bestätigungslink in der E-Mail anklicken.</p>'
-        + '<p class="registration-confirmation-dialog__address">Gesendet an <strong>' + escapeHtml(values.email) + '</strong></p>'
+        + '<p id="registration-confirmation-description">' + (values.hasCompanion ? 'Beide Anmeldungen sind erst gültig, wenn jede Person ihren eigenen Bestätigungslink anklickt.' : 'Ihre Anmeldung ist erst gültig, wenn Sie den Bestätigungslink in der E-Mail anklicken.') + '</p>'
+        + '<p class="registration-confirmation-dialog__address">Gesendet an <strong>' + escapeHtml(confirmationAddresses) + '</strong></p>'
         + '<p class="registration-confirmation-dialog__hint">Keine E-Mail gefunden? Bitte prüfen Sie auch Ihren Spamordner. Ist die Anmeldung nach etwa 30 Minuten noch offen, senden wir Ihnen einmalig eine SMS mit dem Bestätigungslink.' + escapeHtml(pushHint) + '</p>'
         + '<form method="dialog"><button class="button button--primary" type="submit">Verstanden</button></form>'
         + '</div>';

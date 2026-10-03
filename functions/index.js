@@ -1167,6 +1167,18 @@ function registrationBlocksNewBooking(registration = {}) {
   return !["cancelled", "canceled", "expired", "deleted", "archived", "inactive", "removed", "storniert", "geloescht", "gelöscht"].includes(status);
 }
 
+async function blockingEventRegistrationByEmail(eventId = "", email = "") {
+  const normalized = clean(email).toLowerCase();
+  if (!eventId || !normalized) return null;
+  const [direct, legacyCompanion] = await Promise.all([
+    db.collection("registrations").where("eventId", "==", eventId).where("email", "==", normalized).limit(10).get(),
+    db.collection("registrations").where("eventId", "==", eventId).where("companion.email", "==", normalized).limit(10).get().catch(() => ({ docs: [] }))
+  ]);
+  return [...direct.docs, ...legacyCompanion.docs]
+    .map((document) => ({ id: document.id, ...document.data() }))
+    .find(registrationBlocksNewBooking) || null;
+}
+
 function stripTags(value = "") {
   return clean(value).replace(/[<>]/g, "");
 }
@@ -4016,35 +4028,44 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
     input.companion.phone = requiredRegistrationMobileNumber(input.companion.phone, "Mobilnummer der Begleitperson");
     if (input.companion.email === input.email) throw new HttpsError("invalid-argument", "Bitte verwenden Sie fuer die Begleitperson eine eigene E-Mail-Adresse.");
   }
-  const existingRegistration = await db.collection("registrations")
-    .where("eventId", "==", eventRecord.id)
-    .where("email", "==", input.email)
-    .limit(10)
-    .get();
-  const duplicate = existingRegistration.docs
-    .map((document) => ({ id: document.id, ...document.data() }))
-    .find(registrationBlocksNewBooking);
-  if (duplicate) {
-    throw new HttpsError("already-exists", "Diese E-Mail-Adresse ist fuer dieses Event bereits angemeldet.");
+  const bookingEmails = [input.email, input.hasCompanion ? input.companion.email : ""].filter(Boolean);
+  for (const email of bookingEmails) {
+    if (await blockingEventRegistrationByEmail(eventRecord.id, email)) {
+      throw new HttpsError("already-exists", `${email} ist fuer dieses Event bereits angemeldet.`);
+    }
   }
   if (checkinAccessExpired) throw new HttpsError("deadline-exceeded", "Der Einlass-Link ist abgelaufen.");
   const now = FieldValue.serverTimestamp();
+  const bookingGroupId = input.hasCompanion ? `booking-group-${randomBytes(16).toString("hex")}` : "";
   const registrationRef = db.collection("registrations").doc(`registration-${randomBytes(16).toString("hex")}`);
+  const companionRegistrationRef = input.hasCompanion ? db.collection("registrations").doc(`registration-${randomBytes(16).toString("hex")}`) : null;
   const lockRef = db.collection("registrationLocks").doc(registrationLockId(eventRecord.id, input.email));
+  const companionLockRef = input.hasCompanion ? db.collection("registrationLocks").doc(registrationLockId(eventRecord.id, input.companion.email)) : null;
   const headers = request.rawRequest?.headers || {};
-  const personMatch = await findPersonByEmail(input.email);
+  const [personMatch, companionPersonMatch] = await Promise.all([
+    findPersonByEmail(input.email),
+    input.hasCompanion ? findPersonByEmail(input.companion.email) : Promise.resolve(null)
+  ]);
   const isMemberByEmail = Boolean(personMatch.isMember);
+  const companionIsMemberByEmail = Boolean(companionPersonMatch?.isMember);
   const confirmationToken = randomBytes(32).toString("hex");
+  const companionConfirmationToken = input.hasCompanion ? randomBytes(32).toString("hex") : "";
   const statusToken = randomBytes(32).toString("hex");
+  const companionStatusToken = input.hasCompanion ? randomBytes(32).toString("hex") : "";
   const checkinTicketToken = checkinMode ? randomBytes(32).toString("hex") : "";
+  const companionCheckinTicketToken = checkinMode && input.hasCompanion ? randomBytes(32).toString("hex") : "";
   const confirmationExpiresAt = Timestamp.fromMillis(Date.now() + 48 * 60 * 60 * 1000);
+  const primaryInput = { ...input, hasCompanion: false, companion: null, participantCount: 1 };
   const registration = {
     id: registrationRef.id,
     eventId: eventRecord.id,
     eventTitle: eventRecord.title || "",
     eventDate: eventRecord.date || "",
     eventAccessType: eventRecord.accessType || "",
-    ...input,
+    ...primaryInput,
+    bookingGroupId,
+    registrationRole: "primary",
+    additionalRegistrationId: companionRegistrationRef?.id || "",
     phoneFormatStatus: "valid",
     phoneFormatCheckedAt: now,
     phoneVerificationStatus: "unverified",
@@ -4090,25 +4111,67 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
     createdAt: now,
     updatedAt: now
   };
+  const companionRegistration = input.hasCompanion ? {
+    ...registration,
+    id: companionRegistrationRef.id,
+    firstName: input.companion.firstName,
+    lastName: input.companion.lastName,
+    email: input.companion.email,
+    phone: input.companion.phone,
+    linkedIn: input.companion.linkedIn || "",
+    company: "",
+    position: "",
+    message: "",
+    notifyForThisEvent: false,
+    notifyFutureEvents: false,
+    notificationConsentAccepted: false,
+    notificationChannels: [],
+    mailConsent: false,
+    pushConsent: false,
+    smsConsent: false,
+    pushTrackingConsent: false,
+    pushTrackingConsentAt: null,
+    pushTrackingConsentText: "",
+    isMember: companionIsMemberByEmail,
+    existingPersonMatched: Boolean(companionPersonMatch?.matched),
+    personMatchSource: companionPersonMatch?.source || "new",
+    matchedMemberId: companionPersonMatch?.memberId || "",
+    matchedUserId: companionPersonMatch?.userId || "",
+    matchedContactId: companionPersonMatch?.contactId || "",
+    matchedSpeakerId: companionPersonMatch?.speakerId || "",
+    registrationAudienceType: companionIsMemberByEmail ? "member" : (eventRecord.accessType === "members_only" ? "member_guest" : "guest"),
+    registrationRole: "additional_person",
+    primaryRegistrationId: registrationRef.id,
+    registeredByRegistrationId: registrationRef.id,
+    registeredByEmail: input.email,
+    additionalRegistrationId: "",
+    registrationSource: checkinMode ? "event_checkin_additional_person" : "online_additional_person",
+    confirmationTokenHash: hashToken(companionConfirmationToken),
+    registrationStatusTokenHash: hashToken(companionStatusToken),
+    ...(checkinMode ? {
+      ticketTokenHash: hashToken(companionCheckinTicketToken),
+      ticketIssuedAt: now,
+      ticketDeviceLinked: false,
+      deviceLinkedAt: null
+    } : {})
+  } : null;
   await db.runTransaction(async (transaction) => {
-    const lockSnapshot = await transaction.get(lockRef);
-    const lock = lockSnapshot.exists ? lockSnapshot.data() : null;
-    if (lock?.registrationId) {
-      const lockedRegistration = await transaction.get(db.collection("registrations").doc(lock.registrationId));
-      if (lockedRegistration.exists && registrationBlocksNewBooking(lockedRegistration.data() || {})) {
+    const lockRefs = [lockRef, companionLockRef].filter(Boolean);
+    const lockSnapshots = await Promise.all(lockRefs.map((ref) => transaction.get(ref)));
+    const lockedIds = lockSnapshots.map((snapshot) => snapshot.exists ? snapshot.data()?.registrationId : "").filter(Boolean);
+    const lockedRegistrations = await Promise.all(lockedIds.map((id) => transaction.get(db.collection("registrations").doc(id))));
+    if (lockedRegistrations.some((snapshot) => snapshot.exists && registrationBlocksNewBooking(snapshot.data() || {}))) {
         throw new HttpsError("already-exists", "Diese E-Mail-Adresse ist fuer dieses Event bereits angemeldet.");
-      }
     }
     transaction.set(registrationRef, registration);
-    transaction.set(lockRef, {
-      id: lockRef.id,
-      eventId: eventRecord.id,
-      email: input.email,
-      registrationId: registrationRef.id,
-      status: registration.status,
-      updatedAt: now,
-      createdAt: lock?.createdAt || now
-    }, { merge: true });
+    if (companionRegistration) transaction.set(companionRegistrationRef, companionRegistration);
+    [
+      { ref: lockRef, email: input.email, registrationId: registrationRef.id, snapshot: lockSnapshots[0] },
+      ...(companionLockRef ? [{ ref: companionLockRef, email: input.companion.email, registrationId: companionRegistrationRef.id, snapshot: lockSnapshots[1] }] : [])
+    ].forEach(({ ref, email, registrationId, snapshot }) => transaction.set(ref, {
+      id: ref.id, eventId: eventRecord.id, email, registrationId, status: registration.status,
+      updatedAt: now, createdAt: snapshot?.data()?.createdAt || now
+    }, { merge: true }));
   });
   if (checkinMode) {
     const companionName = input.hasCompanion ? [input.companion?.firstName, input.companion?.lastName].filter(Boolean).join(" ") : "";
@@ -4116,11 +4179,12 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
     await db.collection("checkinScreenEvents").doc(eventRecord.id).set({
       eventId: eventRecord.id,
       registrationId: registrationRef.id,
+      registrationIds: [registrationRef.id, companionRegistrationRef?.id].filter(Boolean),
       firstName: input.firstName || "",
       lastName: input.lastName || "",
       company: input.company || "",
-      companion: input.companion || null,
-      participantCount: input.participantCount || 1,
+      companion: null,
+      participantCount: input.hasCompanion ? 2 : 1,
       displayName: [primaryName, companionName].filter(Boolean).join(" und "),
       checkedInAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp()
@@ -4149,33 +4213,43 @@ exports.createEventRegistration = onCall({ region, invoker: "public" }, async (r
   }
   const contactSync = await upsertContactFromRegistration(registration, eventRecord, now);
   if (contactSync.created) await countNewMailingContactForEvent(eventRecord.id, "event_registration", contactSync, now);
-  const companionContact = await upsertCompanionContact(registration, eventRecord, now);
-  if (companionContact.created) await countNewMailingContactForEvent(eventRecord.id, "event_companion", companionContact, now);
-  if (!checkinMode) {
-  await queueMail({
-    type: "registration_confirmation",
-    to: registration.email,
-    subject: `Bitte bestaetigen Sie Ihre Anmeldung: ${eventRecord.title}`,
-    template: "registration_confirmation",
-    eventId: registration.eventId,
-    registrationId: registrationRef.id,
-    confirmationUrl: registrationConfirmationUrl(confirmationToken),
-    tokenExpiresAt: confirmationExpiresAt
-  });
+  if (companionRegistration) {
+    const companionContact = await upsertContactFromRegistration(companionRegistration, eventRecord, now);
+    if (companionContact.created) await countNewMailingContactForEvent(eventRecord.id, "event_additional_registration", companionContact, now);
   }
-  await queueMail({
-    type: "admin_notification",
-    to: adminRegistrationMailTo(),
-    subject: `Neue Anmeldung: ${eventRecord.title}`,
-    template: "admin_notification",
-    eventId: registration.eventId,
-    registrationId: registrationRef.id
-  });
+  if (!checkinMode) {
+    await Promise.all([
+      queueMail({
+        type: "registration_confirmation", to: registration.email,
+        subject: `Bitte bestaetigen Sie Ihre Anmeldung: ${eventRecord.title}`, template: "registration_confirmation",
+        eventId: registration.eventId, registrationId: registrationRef.id,
+        confirmationUrl: registrationConfirmationUrl(confirmationToken), tokenExpiresAt: confirmationExpiresAt
+      }),
+      ...(companionRegistration ? [queueMail({
+        type: "registration_confirmation", to: companionRegistration.email,
+        subject: `Bitte bestaetigen Sie Ihre Anmeldung: ${eventRecord.title}`, template: "registration_confirmation",
+        eventId: companionRegistration.eventId, registrationId: companionRegistrationRef.id,
+        confirmationUrl: registrationConfirmationUrl(companionConfirmationToken), tokenExpiresAt: confirmationExpiresAt
+      })] : [])
+    ]);
+  }
+  await Promise.all([registration, companionRegistration].filter(Boolean).map((record) => queueMail({
+    type: "admin_notification", to: adminRegistrationMailTo(),
+    subject: `Neue Anmeldung: ${eventRecord.title}`, template: "admin_notification",
+    eventId: record.eventId, registrationId: record.id
+  })));
   return {
     checkedIn: checkinMode,
     ticketToken: checkinTicketToken,
     statusToken,
     ...registration,
+    additionalRegistration: companionRegistration ? {
+      registrationId: companionRegistration.id,
+      email: companionRegistration.email,
+      firstName: companionRegistration.firstName,
+      lastName: companionRegistration.lastName,
+      confirmationRequired: !checkinMode
+    } : null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };

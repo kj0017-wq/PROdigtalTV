@@ -1,6 +1,7 @@
 export function registrationParticipants(registrations = []) {
   return registrations.flatMap((registration) => {
-    const primary = { ...registration, participantRole: "Hauptperson", bookingId: registration.id, bookingEmail: registration.email || "" };
+    const participantRole = registration.registrationRole === "additional_person" ? "Zusätzliche Person" : "Hauptperson";
+    const primary = { ...registration, participantRole, bookingId: registration.id, bookingEmail: registration.registeredByEmail || registration.email || "" };
     const companion = registration.companion || {};
     if (!companion.firstName && !companion.lastName && !companion.email) return [primary];
     return [primary, {

@@ -2993,13 +2993,13 @@ export async function registrationPage(id, query = new URLSearchParams()) {
       <div class="form-grid--two"><div class="field"><label for="email">E-Mail *</label><input id="email" name="email" type="email" autocomplete="email" value="${prefillValue("email")}" required></div><div class="field"><label for="phone">Mobilnummer mit Landesvorwahl *</label><input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+49 170 1234567" value="${prefillValue("phone")}" required><small>Bitte mit + und Landesvorwahl eingeben. Falls Ihre E-Mail-Bestätigung ausbleibt, senden wir nach etwa 30 Minuten einmalig eine SMS mit dem Bestätigungslink.</small></div></div>
       ${event.invitationCodeRequired ? `<div class="field"><label for="invitationCode">Einladungscode *</label><input id="invitationCode" name="invitationCode" autocomplete="one-time-code" required></div>` : ""}
       </fieldset>
-      <fieldset class="registration-section registration-section--compact"><legend>Begleitperson</legend>
-        <label class="checkbox"><input type="checkbox" name="hasCompanion" data-registration-companion-toggle> Ich komme mit einer Begleitperson</label>
+      <fieldset class="registration-section registration-section--compact"><legend>Zweite Person mit anmelden</legend>
+        <label class="checkbox"><input type="checkbox" name="hasCompanion" data-registration-companion-toggle> Ich melde eine zweite Person mit an</label>
         <div data-registration-companion-fields hidden>
           <div class="form-grid--two"><div class="field"><label for="companionFirstName">Vorname der Begleitperson *</label><input id="companionFirstName" name="companionFirstName" autocomplete="off" disabled></div><div class="field"><label for="companionLastName">Nachname der Begleitperson *</label><input id="companionLastName" name="companionLastName" autocomplete="off" disabled></div></div>
           <div class="form-grid--two"><div class="field"><label for="companionEmail">E-Mail der Begleitperson *</label><input id="companionEmail" name="companionEmail" type="email" autocomplete="off" disabled></div><div class="field"><label for="companionPhone">Mobilnummer der Begleitperson mit Landesvorwahl *</label><input id="companionPhone" name="companionPhone" type="tel" inputmode="tel" autocomplete="off" placeholder="+49 170 1234567" disabled></div></div>
           <div class="field"><label for="companionLinkedIn">LinkedIn-Profil der Begleitperson (optional)</label><input id="companionLinkedIn" name="companionLinkedIn" type="url" autocomplete="off" placeholder="https://www.linkedin.com/in/..." disabled></div>
-          <p class="muted">Beide Personen werden mit demselben Handy-Ticket am Einlass eingecheckt.</p>
+          <p class="muted">Die zweite Person wird als eigenständige Anmeldung geführt und erhält an ihre E-Mail-Adresse einen eigenen Bestätigungslink sowie ein eigenes Ticket.</p>
         </div>
       </fieldset>
       <fieldset class="registration-section registration-section--compact"><legend>Hinweise und Einwilligungen</legend>
