@@ -793,6 +793,12 @@ function syncMobileGuestFeedbackPanels(eventId = "") {
   });
 }
 
+function syncMobileDashboardPanels(eventId = "") {
+  document.querySelectorAll("[data-mobile-dashboard-event-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.mobileDashboardEventPanel !== eventId;
+  });
+}
+
 function syncMobileEventChatLinks(eventId) {
   document.querySelectorAll("[data-mobile-event-chat-link]").forEach(link => {
     link.hidden = !eventId;
@@ -803,6 +809,7 @@ function syncMobileEventChatLinks(eventId) {
 
 function mobileCmsLauncherIcon(name = "grid") {
   const paths = {
+    dashboard: `<path d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z"/>`,
     qr: `<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM15 14h2v2h-2zM19 14h1v3h-3v3h-3v-2h2v-2h3z"/>`,
     checkin: `<path d="M12 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm-7 18v-2a5 5 0 0 1 5-5h3M16 17l2 2 4-5"/>`,
     guests: `<path d="M9 4a3 3 0 1 1 0 6 3 3 0 0 1 0-6Zm7 2a2.5 2.5 0 1 1 0 5M3 20v-2a5 5 0 0 1 10 0v2M14 14a4 4 0 0 1 7 3v2"/>`,
@@ -991,8 +998,9 @@ async function mobileLiveAdminPage(section = "") {
     const checkinPeople = splitEventCheckinPeople(mobileEventCheckinSpeakers(event, speakers), boardMembers);
     return `<div data-group-checkin-event-panel="${escapeHtml(event.id)}" ${event.id === firstEvent.id ? "" : "hidden"}>${mobileGroupCheckinForm(event, "board", checkinPeople.boardMembers)}${mobileGroupCheckinForm(event, "speakers", checkinPeople.speakers)}</div>`;
   }).join("");
-  const cockpitPage = ["qr", "checkin", "guests", "survey", "feedback"].includes(section) ? section : "";
+  const cockpitPage = ["dashboard", "qr", "checkin", "guests", "survey", "feedback"].includes(section) ? section : "";
   const cockpitPageMeta = {
+    dashboard: ["Event-Dashboard", "Status und Schnellzugriffe zur ausgewählten Veranstaltung"],
     qr: ["Einlass-QR", "QR-Code für Empfang und Check-in"],
     checkin: ["Check-in", "Referenten und Vorstandsmitglieder einchecken"],
     guests: ["Gästeliste", "Aktive Anmeldungen und Check-in-Status"],
@@ -1038,6 +1046,32 @@ async function mobileLiveAdminPage(section = "") {
       </div>
     </div>`;
   }).join("");
+  const dashboardPanels = eventRows.map((event) => {
+    const stats = mobileCheckinStats(event.id, registrations);
+    const speakerCount = mobileEventSpeakerCount(event, speakers, topics);
+    const agendaCount = Array.isArray(event.schedule) ? event.schedule.length : (Array.isArray(event.agenda) ? event.agenda.length : mobileEventTopicTitles(event, topics).length);
+    const eventNotificationsCount = notifications.filter((item) => item.eventId === event.id && !["draft", "cancelled"].includes(String(item.status || "").toLowerCase())).length;
+    const eventMeta = [event.date ? formatDate(event.date) : "", event.startTime || "", event.locationName || event.city || ""].filter(Boolean).join(" · ");
+    return `<section class="mobile-event-dashboard" data-mobile-dashboard-event-panel="${escapeHtml(event.id)}" ${event.id === firstEvent.id ? "" : "hidden"}>
+      <header><p class="eyebrow">Ausgewähltes Event</p><h2>${escapeHtml(event.title || event.id)}</h2>${eventMeta ? `<p>${escapeHtml(eventMeta)}</p>` : ""}</header>
+      <div class="mobile-event-dashboard__stats">
+        <article><span>Angemeldet</span><strong>${stats.activeCount}</strong></article>
+        <article><span>Bestätigt</span><strong>${stats.confirmedCount}</strong></article>
+        <article class="is-accent"><span>Eingecheckt</span><strong>${stats.checkedInCount}</strong></article>
+        <article><span>Noch offen</span><strong>${stats.open}</strong></article>
+        <article><span>Referenten</span><strong>${speakerCount}</strong></article>
+        <article><span>Programmpunkte</span><strong>${agendaCount}</strong></article>
+      </div>
+      <div class="mobile-event-dashboard__progress"><div><span>Einlassquote</span><strong>${stats.percent}%</strong></div><i style="--value:${stats.percent}%"></i></div>
+      <p class="mobile-event-dashboard__activity">${eventNotificationsCount} versendete oder vorbereitete Event-Aktion${eventNotificationsCount === 1 ? "" : "en"}</p>
+      <nav class="mobile-event-dashboard__actions" aria-label="Event-Schnellzugriffe">
+        <a href="#/cms/live/checkin">Check-in</a>
+        <a href="#/cms/live/guests">Gästeliste</a>
+        <a data-mobile-event-chat-link href="/#/event-live/${escapeHtml(encodeURIComponent(event.id))}">Event Chat</a>
+        <a href="#/cms/live/feedback">Gästebefragung</a>
+      </nav>
+    </section>`;
+  }).join("");
   return `<main class="mobile-live-admin" data-cockpit-page="${escapeHtml(cockpitPage || "home")}">
     <section class="panel mobile-live-event-context">
       <div class="field"><label>Veranstaltung</label><select data-mobile-live-event ${eventRows.length ? "" : "disabled"}>${eventOptions}</select>${eventRows.length ? "" : `<p class="muted">Keine aktive Veranstaltung mit Live-Daten gefunden.</p>`}</div>
@@ -1046,6 +1080,7 @@ async function mobileLiveAdminPage(section = "") {
       <a class="button button--secondary button--small mobile-cockpit-back" data-cockpit-back href="${cockpitPage ? "#/cms/live" : "#/cms"}">← ${cockpitPage ? "Zurück zum Event-Cockpit" : "Zurück zur CMS-Übersicht"}</a>
       <div><p class="eyebrow">Mobile CMS</p><h1>${escapeHtml(cockpitPageMeta[0])}</h1><p>${escapeHtml(cockpitPageMeta[1])}</p></div>
       <nav class="mobile-cms-launcher" aria-label="Mobile CMS Funktionen" ${cockpitPage ? "hidden" : ""}>
+        <a href="#/cms/live/dashboard">${mobileCmsLauncherIcon("dashboard")}<span>Event-Dashboard</span></a>
         <a href="#/cms/live/qr">${mobileCmsLauncherIcon("qr")}<span>Einlass-QR</span></a>
         <a href="#/cms/live/checkin">${mobileCmsLauncherIcon("checkin")}<span>Check-in</span></a>
         <a data-mobile-event-chat-link ${firstEvent.id ? `href="/#/event-live/${escapeHtml(encodeURIComponent(firstEvent.id))}"` : "hidden"}>${mobileCmsLauncherIcon("chat")}<span>Event Chat</span></a>
@@ -1056,6 +1091,9 @@ async function mobileLiveAdminPage(section = "") {
         <a href="#/cms/live/feedback">${mobileCmsLauncherIcon("feedback")}<span>Gästebefragung</span></a>
         <a href="/website.html?v=1020#/home" data-mobile-cms-website-link>${mobileCmsLauncherIcon("website")}<span>Website</span></a>
       </nav>
+    </section>
+    <section class="panel mobile-live-panel mobile-dashboard-page" id="mobile-cms-dashboard" ${cockpitPage === "dashboard" ? "" : "hidden"}>
+      ${dashboardPanels || `<p class="muted">Keine aktive Veranstaltung für das Event-Dashboard gefunden.</p>`}
     </section>
     <details class="panel mobile-live-panel mobile-live-collapsible mobile-checkin-qr-panel" id="mobile-cms-checkin-qr" ${cockpitPage === "qr" ? "open" : "hidden"}>
       <summary><span>Einlass-QR</span><small>QR-Code für Empfang und Check-in</small></summary>
@@ -14022,6 +14060,7 @@ function wireActions() {
     syncMobileGroupCheckinPanels(eventId);
     syncMobileModerationCardPanels(eventId);
     syncMobileGuestFeedbackPanels(eventId);
+    syncMobileDashboardPanels(eventId);
     updateMobileCheckinQr();
     refreshMobileCheckinStats({ silent: false });
   });
@@ -14054,6 +14093,7 @@ function wireActions() {
   syncMobileGroupCheckinPanels(document.querySelector("[data-mobile-live-event]")?.value || "");
   syncMobileModerationCardPanels(document.querySelector("[data-mobile-live-event]")?.value || "");
   syncMobileGuestFeedbackPanels(document.querySelector("[data-mobile-live-event]")?.value || "");
+  syncMobileDashboardPanels(document.querySelector("[data-mobile-live-event]")?.value || "");
   if (document.querySelector("[data-mobile-checkin-stats-wrap]")) startMobileCheckinStats();
   document.querySelector("[data-mobile-live-results-refresh]")?.addEventListener("click", () => {
     refreshMobileCmsLiveResults({ silent: false });

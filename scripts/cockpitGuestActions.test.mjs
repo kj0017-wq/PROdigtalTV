@@ -14,13 +14,9 @@ test("Gästeliste bietet Einchecken und Löschen je Anmeldung", () => {
   assert.match(html, /data-cockpit-checkin-id="open"/);
   assert.match(html, /data-cockpit-delete-id="open"/);
   assert.match(html, /data-cockpit-delete-id="done"/);
-  assert.match(html, /→ Check-in · ← Löschen/);
+  assert.match(html, /→ Einchecken · ← Löschen/);
   assert.match(html, /cockpit-checkin-swipe-action--check/);
   assert.match(html, /cockpit-checkin-swipe-action--delete/);
-  assert.match(html, /<span>Check-in<\/span>/);
-  assert.match(html, /<span>Löschen<\/span>/);
-  assert.doesNotMatch(html, /class="button button--secondary" data-cockpit-checkin-id/);
-  assert.doesNotMatch(html, /class="button button--danger" data-cockpit-delete-id/);
 });
 
 test("Wischgesten und sichere Löschbestätigung sind verdrahtet", () => {

@@ -8,6 +8,7 @@ const cmsPagesSource = await readFile(new URL("../src/cms/cmsPages.js", import.m
 
 test("mobiles Event-Cockpit verwendet Funktionsseiten mit kompaktem Kachelstarter", () => {
   assert.match(mainSource, /class="mobile-cms-launcher"/);
+  assert.match(mainSource, /href="#\/cms\/live\/dashboard"[^>]*>[\s\S]*?<span>Event-Dashboard<\/span>/);
   assert.match(mainSource, /Einlass-QR/);
   assert.match(mainSource, /data-mobile-checkin-url hidden/);
   assert.doesNotMatch(mainSource, /data-mobile-checkin-pdf-link/);
@@ -24,6 +25,16 @@ test("mobiles Event-Cockpit verwendet Funktionsseiten mit kompaktem Kachelstarte
   assert.doesNotMatch(mainSource, /data-mobile-cms-scroll="mobile-cms-history"[^>]*>[\s\S]*?<span>Historie<\/span>/);
   assert.doesNotMatch(mainSource, /href="#\/cms\/quality"[^>]*>[\s\S]*?<span>Qualität<\/span>/);
   assert.match(cssSource, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+});
+
+test("Event-Dashboard hat eigenen Button, Kennzahlen und Schnellzugriffe", () => {
+  assert.match(mainSource, /dashboard: \["Event-Dashboard"/);
+  assert.match(mainSource, /id="mobile-cms-dashboard"/);
+  assert.match(mainSource, /data-mobile-dashboard-event-panel/);
+  assert.match(mainSource, /mobile-event-dashboard__stats/);
+  assert.match(mainSource, /Einlassquote/);
+  assert.match(mainSource, /syncMobileDashboardPanels\(eventId\)/);
+  assert.match(cssSource, /\.mobile-event-dashboard__actions/);
 });
 
 test("Gästebefragung besitzt Editor, Ansicht und Sofortversand", () => {
