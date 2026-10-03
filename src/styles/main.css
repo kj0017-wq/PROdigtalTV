@@ -16935,6 +16935,69 @@ form.is-saved [data-image-crop] {
   margin-bottom: 18px;
 }
 
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-live-hero {
+  margin-bottom: 8px;
+}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-live-hero h1 {
+  margin-block: 1px 2px;
+  font-size: clamp(23px, 6vw, 28px);
+}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-live-hero p:not(.eyebrow) {
+  font-size: 12px;
+}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-live-hero .eyebrow {
+  font-size: 9px;
+}
+.mobile-guest-list {
+  margin-block: 8px;
+  border-radius: 14px;
+}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-guest-list > summary {
+  display: none;
+}
+.mobile-guest-list > summary {
+  min-height: 52px;
+  padding: 11px 12px;
+  gap: 8px;
+}
+.mobile-guest-list > summary span {
+  font-size: 18px;
+  line-height: 1.15;
+}
+.mobile-guest-list > summary::after {
+  width: 32px;
+  height: 32px;
+  flex-basis: 32px;
+  font-size: 21px;
+}
+.mobile-guest-list > :not(summary) {
+  margin-left: 12px;
+  margin-right: 12px;
+}
+.mobile-guest-list > .muted {
+  margin-top: 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  line-height: 1.3;
+}
+.mobile-guest-list > .field {
+  margin-bottom: 7px;
+  font-size: 13px;
+}
+.mobile-guest-list > .field input {
+  min-height: 40px;
+  padding-block: 8px;
+  font-size: 14px;
+}
+.mobile-guest-list > [data-cockpit-checkin-refresh] {
+  min-height: 36px;
+  padding: 7px 11px;
+  font-size: 13px;
+}
+.mobile-guest-list > :last-child {
+  margin-bottom: 12px;
+}
+
 .mobile-manual-checkin .mobile-manual-checkin-content { margin: 0 14px 14px; }
 .mobile-manual-checkin-group { border: 0; border-top: 1px solid var(--pdt-border); border-radius: 0; background: transparent; box-shadow: none; }
 .mobile-manual-checkin-group > summary { min-height: 56px; padding: 10px 4px; }

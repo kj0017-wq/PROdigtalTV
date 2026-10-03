@@ -995,7 +995,7 @@ async function mobileLiveAdminPage(section = "") {
   const cockpitPageMeta = {
     qr: ["Einlass-QR", "QR-Code für Empfang und Check-in"],
     checkin: ["Check-in", "Referenten und Vorstandsmitglieder einchecken"],
-    guests: ["Gästeliste", "Alle aktiven Anmeldungen und ihr Check-in-Status"],
+    guests: ["Gästeliste", "Aktive Anmeldungen und Check-in-Status"],
     survey: ["Live-Umfrage", "Umfrage vorbereiten und an Gäste senden"],
     feedback: ["Gästebefragung", "Vorbereitete Befragung direkt an angemeldete Gäste senden"]
   }[cockpitPage] || ["Event-Cockpit", "Schnellzugriff für die laufende Veranstaltung"];
@@ -1080,7 +1080,7 @@ async function mobileLiveAdminPage(section = "") {
     </details>
     <details class="panel mobile-live-panel mobile-live-collapsible mobile-guest-list" id="mobile-cms-person-checkin" ${cockpitPage === "guests" ? "open" : "hidden"}>
       <summary><span>Gästeliste des Events</span></summary>
-      <p class="muted">Vollständige Liste aller aktiven Anmeldungen. Noch nicht eingecheckte Gäste stehen zuerst.</p>
+      <p class="muted">Aktive Anmeldungen – noch nicht eingecheckte Gäste zuerst.</p>
       <label class="field">Gast suchen<input type="search" data-cockpit-checkin-search placeholder="Name, Firma oder E-Mail" autocomplete="off"></label>
       <button type="button" class="button button--secondary" data-cockpit-checkin-refresh>Aktualisieren</button>
       <p role="status" aria-live="polite" data-cockpit-checkin-status></p>
