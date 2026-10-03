@@ -26,14 +26,25 @@ test("mobiles Event-Cockpit verwendet Funktionsseiten mit kompaktem Kachelstarte
   assert.match(cssSource, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
 });
 
-test("Gästebefragung besitzt eine eigene Seite mit Sofortversand", () => {
+test("Gästebefragung besitzt Editor, Ansicht und Sofortversand", () => {
   assert.match(mainSource, /async function mobileLiveAdminPage\(section = ""\)/);
   assert.match(mainSource, /mobileLiveAdminPage\(current\.section \|\| ""\)/);
   assert.match(mainSource, /id="mobile-cms-feedback"/);
+  assert.match(mainSource, /data-mobile-feedback-editor/);
+  assert.match(mainSource, /<summary><span>Editor<\/span>/);
+  assert.match(mainSource, /<summary><span>Ansicht<\/span>/);
+  assert.match(mainSource, /data-event-feedback-preview-content/);
+  assert.match(mainSource, /Gästebefragung speichern/);
+  assert.match(mainSource, /data-feedback-auto-send-enabled/);
+  assert.match(mainSource, /data-feedback-auto-send-at/);
+  assert.match(mainSource, /Voreinstellung: zwei Stunden nach Veranstaltungsende/);
+  assert.match(mainSource, /feedbackUpdate\.feedbackAutoSendEnabled = feedbackAutoSendEnabled/);
+  assert.match(mainSource, /feedbackUpdate\.feedbackAutoSendAt =/);
   assert.match(mainSource, /data-send-event-feedback=/);
   assert.match(mainSource, />Jetzt senden<\/button>/);
   assert.match(mainSource, /syncMobileGuestFeedbackPanels\(eventId\)/);
   assert.match(cssSource, /\.mobile-feedback-send-card/);
+  assert.match(cssSource, /\.mobile-feedback-editor-card/);
 });
 
 test("manueller Check-in und Gästeliste sind getrennte Funktionsseiten", () => {

@@ -3346,14 +3346,8 @@ exports.submitEventFeedback = onCall({ region, invoker: "public" }, async (reque
   return { ok: true, followUpStatus };
 });
 
-exports.sendEventFeedbackInvitations = onCall({ region }, async (request) => {
-  const actorProfile = await requireEditor(request);
-  const eventId = clean(request.data?.eventId || "");
-  const rawRegistrationIds = Array.isArray(request.data?.registrationIds) ? request.data.registrationIds : [];
+async function queueEventFeedbackInvitationsForEvent({ eventId, eventRecord, rawRegistrationIds = [], createdBy = "system", createdByEmail = "" }) {
   if (!eventId) throw new HttpsError("invalid-argument", "Event fehlt.");
-  const eventSnapshot = await db.collection("events").doc(eventId).get();
-  if (!eventSnapshot.exists) throw new HttpsError("not-found", "Event wurde nicht gefunden.");
-  const eventRecord = { id: eventSnapshot.id, ...eventSnapshot.data() };
   let registrations = [];
   if (rawRegistrationIds.length) {
     const ids = [...new Set(rawRegistrationIds.map(clean).filter(Boolean))].slice(0, 200);
@@ -3395,8 +3389,8 @@ exports.sendEventFeedbackInvitations = onCall({ region }, async (request) => {
         firstName: registration.firstName || "",
         lastName: registration.lastName || "",
         personName: compactNameParts(registration),
-        createdBy: request.auth.uid,
-        createdByEmail: actorProfile.email || request.auth.token.email || ""
+        createdBy,
+        createdByEmail
       });
       queued += 1;
       results.push({ registrationId: registration.id, email: registration.email, mailQueueId: mailRef.id, status: "queued" });
@@ -3408,12 +3402,28 @@ exports.sendEventFeedbackInvitations = onCall({ region }, async (request) => {
     action: "send_event_feedback_invitations",
     entityType: "event",
     entityId: eventId,
-    userId: request.auth.uid,
-    userEmail: actorProfile.email || request.auth.token.email || "",
+    userId: createdBy,
+    userEmail: createdByEmail,
     details: { queued, skipped: skipped.length, requested: registrations.length },
     createdAt: FieldValue.serverTimestamp()
   });
   return { ok: true, eventId, queued, skipped: skipped.length, results, skippedItems: skipped };
+}
+
+exports.sendEventFeedbackInvitations = onCall({ region }, async (request) => {
+  const actorProfile = await requireEditor(request);
+  const eventId = clean(request.data?.eventId || "");
+  const rawRegistrationIds = Array.isArray(request.data?.registrationIds) ? request.data.registrationIds : [];
+  if (!eventId) throw new HttpsError("invalid-argument", "Event fehlt.");
+  const eventSnapshot = await db.collection("events").doc(eventId).get();
+  if (!eventSnapshot.exists) throw new HttpsError("not-found", "Event wurde nicht gefunden.");
+  return queueEventFeedbackInvitationsForEvent({
+    eventId,
+    eventRecord: { id: eventSnapshot.id, ...eventSnapshot.data() },
+    rawRegistrationIds,
+    createdBy: request.auth.uid,
+    createdByEmail: actorProfile.email || request.auth.token.email || ""
+  });
 });
 exports.sendMemberStrategyInvitation = onCall({ region }, async (request) => {
   const actorProfile = await requireAdmin(request);
@@ -5708,7 +5718,55 @@ exports.publishEndedEventRetrospectives = onSchedule({ region, schedule: "every 
   console.log(`Automatische Rückblicke: ${writes} Schreibvorgänge.`);
 });
 
-exports.processEventNotifications = onSchedule({ region, schedule: "every 15 minutes" }, async () => {
+async function processAutomaticEventFeedback(eventDocument, eventRecord) {
+  if (eventRecord.feedbackAutoSendEnabled !== true || eventRecord.feedbackAutoSentAt) return;
+  const dueAt = new Date(clean(eventRecord.feedbackAutoSendAt)).getTime();
+  if (!Number.isFinite(dueAt) || dueAt > Date.now()) return;
+  const jobRef = db.collection("eventNotifications").doc(`event-feedback-auto-${eventRecord.id}`);
+  const existingJob = await jobRef.get().catch(() => null);
+  const existingStatus = clean(existingJob?.data()?.status).toLowerCase();
+  if (["processing", "sent"].includes(existingStatus)) return;
+  await jobRef.set({
+    id: jobRef.id,
+    eventId: eventRecord.id,
+    notificationKind: "event_feedback",
+    title: `Gästebefragung: ${eventRecord.title || "PROdigitalTV Veranstaltung"}`,
+    status: "processing",
+    scheduledAt: eventRecord.feedbackAutoSendAt,
+    createdBy: "system",
+    createdAt: existingJob?.exists ? existingJob.data()?.createdAt || FieldValue.serverTimestamp() : FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+  try {
+    const result = await queueEventFeedbackInvitationsForEvent({
+      eventId: eventRecord.id,
+      eventRecord,
+      createdBy: "system",
+      createdByEmail: "automatik@prodigitaltv.de"
+    });
+    await Promise.all([
+      eventDocument.ref.set({
+        feedbackAutoSendEnabled: false,
+        feedbackAutoSentAt: FieldValue.serverTimestamp(),
+        feedbackAutoSendResult: { queued: result.queued, skipped: result.skipped },
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true }),
+      jobRef.set({
+        status: "sent",
+        targetCount: result.queued + result.skipped,
+        queuedMailCount: result.queued,
+        skippedCount: result.skipped,
+        sentAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true })
+    ]);
+  } catch (error) {
+    await jobRef.set({ status: "failed", error: clean(error?.message || "Versand fehlgeschlagen"), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    console.error(`Automatische Gästebefragung ${eventRecord.id} fehlgeschlagen:`, error);
+  }
+}
+
+exports.processEventNotifications = onSchedule({ region, schedule: "every 15 minutes", timeZone: "Europe/Berlin" }, async () => {
   const now = Timestamp.now();
   const due = await db.collection("eventNotifications")
     .where("status", "==", "scheduled")
@@ -5741,6 +5799,7 @@ exports.processEventNotifications = onSchedule({ region, schedule: "every 15 min
   for (const eventDocument of eventSnapshot.docs) {
     const eventRecord = { id: eventDocument.id, ...eventDocument.data() };
     if (["archived", "deleted"].includes(clean(eventRecord.status).toLowerCase())) continue;
+    await processAutomaticEventFeedback(eventDocument, eventRecord);
     const startMs = eventDateTimeMillis(eventRecord);
     if (!startMs || startMs < Date.now()) continue;
     for (const [field, minutes, label] of reminders) {

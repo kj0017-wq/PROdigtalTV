@@ -16718,6 +16718,55 @@ form.is-saved [data-image-crop] {
   display: block;
 }
 
+.mobile-feedback-workspace {
+  display: grid;
+  gap: 14px;
+}
+
+.mobile-feedback-editor-card,
+.mobile-feedback-preview-card {
+  border: 1px solid var(--pdt-border);
+  border-radius: 18px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.mobile-feedback-editor-card > summary,
+.mobile-feedback-preview-card > summary {
+  min-height: 70px;
+  padding: 16px 18px;
+}
+
+.mobile-feedback-editor-card > form,
+.mobile-feedback-preview-card > section {
+  margin: 0;
+  padding: 0 16px 18px;
+}
+
+.mobile-feedback-editor-card .event-survey-drafts {
+  display: grid;
+  gap: 12px;
+}
+
+.mobile-feedback-editor-card .event-feedback-question-editor {
+  padding: 14px;
+}
+
+.mobile-feedback-schedule {
+  display: grid;
+  gap: 12px;
+}
+
+.mobile-feedback-schedule .checkbox {
+  margin: 0;
+}
+
+.mobile-feedback-preview-card .event-feedback-preview__device {
+  padding: 14px;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
 .mobile-feedback-send-card {
   padding: 20px;
   border: 1px solid var(--pdt-border);

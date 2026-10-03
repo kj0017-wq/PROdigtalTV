@@ -818,6 +818,57 @@ function mobileCmsLauncherIcon(name = "grid") {
   return `<span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false">${paths[name] || paths.website}</svg></span>`;
 }
 
+const mobileDefaultEventFeedbackQuestions = [
+  { id: "relevance", type: "single", title: "Wie relevant war die Veranstaltung für Sie persönlich oder beruflich?", options: ["Sehr relevant", "Eher relevant", "Teilweise relevant", "Weniger relevant", "Nicht relevant"], commentPrompt: "Was war für Sie besonders relevant – oder was hat gefehlt?" },
+  { id: "benefit", type: "multiple", title: "Was war für Sie der größte Nutzen der Veranstaltung?", options: ["Neue Kontakte", "Fachlicher Input", "Austausch mit anderen Gästen", "Einblick in aktuelle Branchenthemen", "Inspiration für eigene Projekte", "Sichtbarkeit / eigene Positionierung", "Sonstiges"], commentPrompt: "Welcher konkrete Moment, Kontakt oder Inhalt war für Sie besonders wertvoll?" },
+  { id: "industry_fit", type: "single", title: "Wie gut passten Thema, Gäste und Format zur aktuellen Entwicklung der Medienbranche?", options: ["Sehr gut", "Gut", "Teilweise", "Eher weniger", "Gar nicht"], commentPrompt: "Welche Themen sollten wir künftig stärker aufgreifen?" },
+  { id: "attend_again", type: "single", title: "Würden Sie an einer weiteren PROdigitalTV-Veranstaltung teilnehmen?", options: ["Ja, auf jeden Fall", "Wahrscheinlich ja", "Vielleicht", "Eher nicht", "Nein"], commentPrompt: "Was müsste eine nächste Veranstaltung bieten, damit sie für Sie besonders interessant ist?" },
+  { id: "membership_interest", type: "single", title: "Könnten Sie sich vorstellen, Teil des PROdigitalTV-Netzwerks zu werden?", options: ["Ja, als persönliches Mitglied", "Ja, für mein Unternehmen interessant", "Vielleicht, ich möchte mehr Informationen", "Derzeit eher nicht", "Nein"], commentPrompt: "Was müsste PROdigitalTV Ihnen oder Ihrem Unternehmen konkret bieten, damit eine Mitgliedschaft interessant wird?", memberHidden: true }
+];
+
+function mobileEventFeedbackQuestions(event = {}) {
+  const customById = new Map((Array.isArray(event.feedbackQuestions) ? event.feedbackQuestions : []).map((question) => [question.id, question]));
+  return mobileDefaultEventFeedbackQuestions.map((base) => {
+    const custom = customById.get(base.id) || {};
+    return {
+      ...base,
+      title: custom.title || base.title,
+      options: Array.isArray(custom.options) && custom.options.length ? custom.options : base.options,
+      commentPrompt: custom.commentPrompt || base.commentPrompt
+    };
+  });
+}
+
+function mobileFeedbackAutoSendValue(event = {}) {
+  const configured = String(event.feedbackAutoSendAt || "").trim();
+  const source = configured || (event.date ? `${event.date}T${event.endTime || "18:00"}:00` : "");
+  if (!source) return "";
+  const date = new Date(source);
+  if (!Number.isFinite(date.getTime())) return source.slice(0, 16);
+  if (!configured) date.setHours(date.getHours() + 2);
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function mobileEventFeedbackQuestionEditor(question = {}, index = 0) {
+  return `<article class="event-survey-question event-feedback-question-editor" data-event-feedback-question data-question-id="${escapeHtml(question.id)}" data-question-type="${escapeHtml(question.type || "single")}">
+    <div class="event-survey-question__head"><strong>Frage ${index + 1}</strong>${question.memberHidden ? `<span class="status status--draft">nur Nichtmitglieder</span>` : `<span class="status">alle Gäste</span>`}</div>
+    <div class="field"><label>Fragetext</label><textarea rows="4" data-event-feedback-title required>${escapeHtml(question.title || "")}</textarea></div>
+    <div class="field"><label>Antwortmöglichkeiten</label><textarea rows="5" data-event-feedback-options>${escapeHtml((question.options || []).join("\n"))}</textarea><p class="muted">Eine Antwort pro Zeile · ${question.type === "multiple" ? "Mehrfachauswahl" : "Einzelauswahl"}</p></div>
+    <div class="field"><label>Kommentarfeld</label><textarea rows="4" data-event-feedback-comment required>${escapeHtml(question.commentPrompt || "")}</textarea></div>
+  </article>`;
+}
+
+function mobileEventFeedbackPreview(event = {}, questions = []) {
+  return `<div class="event-feedback-preview__device">
+    <div class="event-feedback-preview__hero"><p class="eyebrow">Feedback</p><h3>Ihre Rückmeldung</h3><p>Ihre Einschätzung hilft PROdigitalTV, Veranstaltungen und Netzwerkangebote gezielt weiterzuentwickeln.</p></div>
+    <div class="event-feedback-preview__event"><span>Veranstaltung</span><strong>${escapeHtml(event.title || "PROdigitalTV Event")}</strong></div>
+    <div class="event-feedback-preview__questions">${questions.map((question, index) => `<fieldset class="event-feedback-question"><legend><span>${index + 1}</span>${escapeHtml(question.title || "Feedbackfrage")}</legend><div class="event-feedback-options">${(question.options || []).map((option) => `<label class="event-feedback-option"><input type="${question.type === "multiple" ? "checkbox" : "radio"}" disabled><span>${escapeHtml(option)}</span></label>`).join("")}</div><div class="field"><label>${escapeHtml(question.commentPrompt || "Kommentar")}</label><textarea rows="2" placeholder="Optional" disabled></textarea></div></fieldset>`).join("")}</div>
+    <fieldset class="event-feedback-question event-feedback-question--compact"><legend><span>+</span>Dürfen wir Sie zu PROdigitalTV-Veranstaltungen und Informationen zum Netzwerk kontaktieren?</legend><div class="event-feedback-options event-feedback-options--inline"><label class="event-feedback-option"><input type="radio" disabled><span>Ja</span></label><label class="event-feedback-option"><input type="radio" disabled><span>Nein</span></label></div></fieldset>
+    <button class="button button--primary" type="button" disabled>Feedback absenden</button>
+  </div>`;
+}
+
 async function mobileModerationCardsPage() {
   const user = currentUser();
   if (!canUseCms(user)) {
@@ -954,13 +1005,36 @@ async function mobileLiveAdminPage(section = "") {
       return item.eventId === event.id && item.email && (["confirmed", "checked_in", "attended"].includes(status) || item.emailConfirmed === true)
         && !["cancelled", "expired", "deleted"].includes(status);
     });
-    const questionCount = Array.isArray(event.feedbackQuestions) ? event.feedbackQuestions.length : 0;
-    return `<div data-mobile-feedback-event-panel="${escapeHtml(event.id)}" ${event.id === firstEvent.id ? "" : "hidden"}>
+    const feedbackQuestions = mobileEventFeedbackQuestions(event);
+    const feedbackAutoSendAt = mobileFeedbackAutoSendValue(event);
+    return `<div class="mobile-feedback-workspace" data-mobile-feedback-event-panel="${escapeHtml(event.id)}" data-feedback-editor-scope ${event.id === firstEvent.id ? "" : "hidden"}>
+      <details class="mobile-live-collapsible mobile-feedback-editor-card" open>
+        <summary><span>Editor</span><small>Fragen und Antworten bearbeiten</small></summary>
+        <form data-mobile-feedback-editor data-event-id="${escapeHtml(event.id)}" data-event-form-section="feedback" class="form-grid is-save-aware event-survey-editor event-feedback-editor">
+          <div class="alert"><strong>Hinweis:</strong> Die Mitgliedschaftsfrage erscheint automatisch nur für Nichtmitglieder.</div>
+          <fieldset class="registration-section registration-section--compact mobile-feedback-schedule">
+            <legend>Automatischer Versand</legend>
+            <label class="checkbox"><input type="checkbox" name="feedbackAutoSendEnabled" data-feedback-auto-send-enabled ${event.feedbackAutoSendEnabled !== false ? "checked" : ""}> Gästebefragung automatisch senden</label>
+            <div class="field"><label>Regulärer Versandzeitpunkt</label><input type="datetime-local" name="feedbackAutoSendAt" data-feedback-auto-send-at value="${escapeHtml(feedbackAutoSendAt)}" ${event.feedbackAutoSendEnabled === false ? "disabled" : ""}></div>
+            <p class="muted">Voreinstellung: zwei Stunden nach Veranstaltungsende. Der Zeitpunkt kann jederzeit geändert oder der automatische Versand deaktiviert werden. Die Verarbeitung erfolgt spätestens innerhalb von 15 Minuten.</p>
+            ${event.feedbackAutoSentAt ? `<div class="alert alert--success">Automatisch versendet: ${escapeHtml(formatDateTime(event.feedbackAutoSentAt) || event.feedbackAutoSentAt)}</div>` : ""}
+          </fieldset>
+          <input type="hidden" name="feedbackQuestionsJson" data-event-feedback-questions-json value="${escapeHtml(JSON.stringify(feedbackQuestions))}">
+          <div class="event-survey-drafts" data-event-feedback-questions>${feedbackQuestions.map(mobileEventFeedbackQuestionEditor).join("")}</div>
+          <button class="button button--primary" type="submit">Gästebefragung speichern</button>
+          <div id="event-save-result" aria-live="polite"></div>
+        </form>
+      </details>
+      <details class="mobile-live-collapsible mobile-feedback-preview-card">
+        <summary><span>Ansicht</span><small>So sehen Gäste die Befragung</small></summary>
+        <section class="event-feedback-preview" data-event-feedback-preview data-event-title="${escapeHtml(event.title || "PROdigitalTV Event")}" aria-label="Ansicht der Gästebefragung"><div data-event-feedback-preview-content>${mobileEventFeedbackPreview(event, feedbackQuestions)}</div></section>
+      </details>
       <div class="mobile-feedback-send-card">
         <p class="eyebrow">Versandbereit</p>
         <h2>${escapeHtml(event.title || event.id)}</h2>
-        <p>${questionCount ? `${questionCount} vorbereitete Frage${questionCount === 1 ? "" : "n"}` : "Standard-Gästebefragung"} · ${eligible.length} erreichbare Gäste</p>
+        <p>${feedbackQuestions.length} vorbereitete Fragen · ${eligible.length} erreichbare Gäste</p>
         <button class="button button--primary" type="button" data-send-event-feedback="${escapeHtml(event.id)}" ${eligible.length ? "" : "disabled"}>Jetzt senden</button>
+        <div data-event-feedback-admin-result aria-live="polite"></div>
       </div>
     </div>`;
   }).join("");
@@ -1082,7 +1156,6 @@ async function mobileLiveAdminPage(section = "") {
     </details>
     <section class="panel mobile-live-panel mobile-feedback-send-page" id="mobile-cms-feedback" ${cockpitPage === "feedback" ? "" : "hidden"}>
       ${guestFeedbackPanels || `<p class="muted">Keine aktive Veranstaltung für die Gästebefragung gefunden.</p>`}
-      <div id="event-feedback-admin-result" aria-live="polite"></div>
     </section>
     <details class="panel mobile-live-panel mobile-live-collapsible" hidden>
       <summary><span>Umfrage-Auswertung</span><small>Live-Balken und Stimmen ansehen</small></summary>
@@ -18555,9 +18628,10 @@ function wireActions() {
   }
 
   function renderEventFeedbackPreview(form) {
-    const target = document.querySelector("[data-event-feedback-preview-content]");
+    const scope = form.closest("[data-feedback-editor-scope]") || document;
+    const target = scope.querySelector("[data-event-feedback-preview-content]");
     if (!target) return;
-    const eventTitle = document.querySelector("[data-event-feedback-preview]")?.dataset.eventTitle || "PROdigitalTV Event";
+    const eventTitle = scope.querySelector("[data-event-feedback-preview]")?.dataset.eventTitle || "PROdigitalTV Event";
     const questions = collectEventFeedbackQuestions(form);
     target.innerHTML = `<div class="event-feedback-preview__device">
       <div class="event-feedback-preview__hero"><p class="eyebrow">Feedback</p><h3>Ihre Rückmeldung</h3><p>Ihre Einschätzung hilft PROdigitalTV, Veranstaltungen und Netzwerkangebote gezielt weiterzuentwickeln.</p></div>
@@ -18687,7 +18761,16 @@ function wireActions() {
           if (!question.options.length) throw new Error(`Frage ${questionIndex + 1} benötigt mindestens eine Antwortmöglichkeit.`);
           if (!question.commentPrompt) throw new Error(`Bitte Kommentarfeld zu Frage ${questionIndex + 1} beschriften.`);
         });
-        await upsert("events", { ...existing, feedbackQuestions, updatedAt: new Date().toISOString() });
+        const feedbackUpdate = { ...existing, feedbackQuestions, updatedAt: new Date().toISOString() };
+        const feedbackAutoSendControl = form.querySelector("[data-feedback-auto-send-enabled]");
+        if (feedbackAutoSendControl) {
+          const feedbackAutoSendEnabled = feedbackAutoSendControl.checked === true;
+          const feedbackAutoSendInput = String(form.querySelector("[data-feedback-auto-send-at]")?.value || "").trim();
+          if (feedbackAutoSendEnabled && !feedbackAutoSendInput) throw new Error("Bitte den automatischen Versandzeitpunkt festlegen.");
+          feedbackUpdate.feedbackAutoSendEnabled = feedbackAutoSendEnabled;
+          feedbackUpdate.feedbackAutoSendAt = feedbackAutoSendInput ? new Date(feedbackAutoSendInput).toISOString() : "";
+        }
+        await upsert("events", feedbackUpdate);
         if (result && !silent) result.innerHTML = `<div class="alert alert--success">Gästebefragung wurde gespeichert.</div>`;
         form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: { id: form.dataset.eventId, section: "feedback" } }));
         return true;
@@ -18815,17 +18898,21 @@ function wireActions() {
     }
   }
 
-  document.querySelector("#event-edit-form")?.addEventListener("submit", async (event) => {
+  document.querySelectorAll("#event-edit-form, [data-mobile-feedback-editor]").forEach((form) => form.addEventListener("submit", async (event) => {
     event.preventDefault();
     await saveEventEditForm(event.currentTarget);
-  });
+  }));
 
-  const feedbackEditor = document.querySelector(".event-feedback-editor");
-  if (feedbackEditor) {
+  document.querySelectorAll(".event-feedback-editor").forEach((feedbackEditor) => {
     renderEventFeedbackPreview(feedbackEditor);
     feedbackEditor.addEventListener("input", () => renderEventFeedbackPreview(feedbackEditor));
     feedbackEditor.addEventListener("change", () => renderEventFeedbackPreview(feedbackEditor));
-  }
+    const autoSendToggle = feedbackEditor.querySelector("[data-feedback-auto-send-enabled]");
+    const autoSendAt = feedbackEditor.querySelector("[data-feedback-auto-send-at]");
+    autoSendToggle?.addEventListener("change", () => {
+      if (autoSendAt) autoSendAt.disabled = !autoSendToggle.checked;
+    });
+  });
 
   document.querySelector("[data-scroll-to-event-feedback-preview]")?.addEventListener("click", () => {
     document.querySelector("#event-feedback-preview")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -21181,7 +21268,8 @@ function wireActions() {
 
   document.querySelectorAll("[data-send-event-feedback]").forEach((button) => button.addEventListener("click", async () => {
     const eventId = button.dataset.sendEventFeedback || "";
-    const result = document.querySelector("#event-feedback-admin-result");
+    const result = button.closest("[data-mobile-feedback-event-panel]")?.querySelector("[data-event-feedback-admin-result]")
+      || document.querySelector("#event-feedback-admin-result");
     if (!eventId) return;
     const originalLabel = button.textContent;
     try {
