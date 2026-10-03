@@ -21405,15 +21405,22 @@ body.theme-night .invitation-talk-hints p,
   inset-block: 0;
   width: 72px;
   display: grid;
-  place-items: center;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
   color: #fff;
   border: 0;
   padding: 0;
   cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 850;
+  line-height: 1;
   opacity: .72;
   transition: opacity .12s ease;
 }
 .cockpit-checkin-swipe-action svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.cockpit-checkin-swipe-action span { display: block; }
 .cockpit-checkin-swipe-action--check { left: 0; background: #18864b; }
 .cockpit-checkin-swipe-action--delete { right: 0; background: #d20b1b; }
 .cockpit-checkin-swipe-action:focus-visible { outline: 3px solid #fff; outline-offset: -5px; }
