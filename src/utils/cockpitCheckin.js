@@ -14,12 +14,12 @@ export function cockpitCheckinRows(records, eventId, search = "") {
   const result = rows.length ? rows.map(record => {
     const checked = record.status === "checked_in";
     const companion = record.hasCompanion || record.companion;
-    return `<div class="cockpit-checkin-row"><div><strong>${escapeHtml(record.name)}</strong><small>${escapeHtml([record.company, record.email].filter(Boolean).join(" · "))}</small>${companion ? "<small>Mit Begleitperson</small>" : ""}</div>${checked ? '<span class="cockpit-checkin-done">Eingecheckt</span>' : `<button type="button" class="button button--secondary" data-cockpit-checkin-id="${escapeHtml(record.id)}">Einchecken</button>`}</div>`;
+    return `<div class="cockpit-checkin-row" data-cockpit-registration-row="${escapeHtml(record.id)}"><div class="cockpit-checkin-person"><strong>${escapeHtml(record.name)}</strong><small>${escapeHtml([record.company, record.email].filter(Boolean).join(" · "))}</small>${companion ? "<small>Mit Begleitperson</small>" : ""}</div><div class="cockpit-checkin-actions">${checked ? '<span class="cockpit-checkin-done">Eingecheckt</span>' : `<button type="button" class="button button--secondary" data-cockpit-checkin-id="${escapeHtml(record.id)}">Einchecken</button>`}<button type="button" class="button button--danger" data-cockpit-delete-id="${escapeHtml(record.id)}">Löschen</button></div><small class="cockpit-checkin-swipe-hint">→ Einchecken · ← Löschen</small></div>`;
   }).join("") : `<p class="muted">${eventRows.length ? "Keine passende Anmeldung gefunden." : "Für dieses Event sind keine aktiven Anmeldungen vorhanden."}</p>`;
   return overview + result;
 }
 
-export function wireCockpitCheckin(root, { eventSelect, load, checkIn, onChanged, confirm = window.confirm.bind(window) }) {
+export function wireCockpitCheckin(root, { eventSelect, load, checkIn, remove, onChanged, confirm = window.confirm.bind(window) }) {
   if (!root || root.dataset.wired || !eventSelect) return;
   root.dataset.wired = "1";
   const search = root.querySelector("[data-cockpit-checkin-search]");
@@ -56,27 +56,38 @@ export function wireCockpitCheckin(root, { eventSelect, load, checkIn, onChanged
     if (root.open) refresh();
   });
   list.addEventListener("click", async event => {
-    const button = event.target.closest("[data-cockpit-checkin-id]");
+    const checkInButton = event.target.closest("[data-cockpit-checkin-id]");
+    const deleteButton = event.target.closest("[data-cockpit-delete-id]");
+    const button = checkInButton || deleteButton;
     if (!button || busy) return;
     const eventId = eventSelect.value;
-    const record = records.find(item => item.id === button.dataset.cockpitCheckinId && item.eventId === eventId);
-    if (!record || record.status === "checked_in" || inactive.has(record.status)) return;
+    const registrationId = checkInButton?.dataset.cockpitCheckinId || deleteButton?.dataset.cockpitDeleteId || "";
+    const record = records.find(item => item.id === registrationId && item.eventId === eventId);
+    if (!record || inactive.has(String(record.status || "").toLowerCase())) return;
     const name = [record.firstName, record.lastName].filter(Boolean).join(" ") || record.email;
     const title = eventSelect.selectedOptions[0]?.dataset.eventTitle || eventSelect.selectedOptions[0]?.textContent || "";
-    if (!confirm(`${name}${record.hasCompanion || record.companion ? " inklusive Begleitperson" : ""} für „${title}“ einchecken?`)) return;
+    const deleting = Boolean(deleteButton);
+    if (deleting) {
+      if (!remove || !confirm(`${name}${record.hasCompanion || record.companion ? " inklusive Begleitperson" : ""} aus der Gästeliste für „${title}“ löschen? Die Anmeldung wird dauerhaft gelöscht.`)) return;
+    } else {
+      if (record.status === "checked_in") return;
+      if (!confirm(`${name}${record.hasCompanion || record.companion ? " inklusive Begleitperson" : ""} für „${title}“ einchecken?`)) return;
+    }
     busy = true;
     generation++;
     eventSelect.disabled = true;
     refreshButton.disabled = true;
     search.disabled = true;
     list.querySelectorAll("button").forEach(control => { control.disabled = true; });
-    status.textContent = "Check-in läuft ...";
+    status.textContent = deleting ? "Anmeldung wird gelöscht ..." : "Check-in läuft ...";
     try {
-      const response = await checkIn(eventId, [record.id]);
+      const response = deleting ? await remove(record.id) : await checkIn(eventId, [record.id]);
       await refresh();
-      status.textContent = response.checkedInCount > 0 ? `${name} ist eingecheckt.` : "Keine Änderung. Die Anmeldung wurde bereits eingecheckt oder ist nicht mehr aktiv.";
+      status.textContent = deleting
+        ? `${name} wurde aus der Gästeliste gelöscht.`
+        : response.checkedInCount > 0 ? `${name} ist eingecheckt.` : "Keine Änderung. Die Anmeldung wurde bereits eingecheckt oder ist nicht mehr aktiv.";
       await onChanged?.();
-    } catch (error) { status.textContent = error.message || "Check-in fehlgeschlagen."; }
+    } catch (error) { status.textContent = error.message || (deleting ? "Löschen fehlgeschlagen." : "Check-in fehlgeschlagen."); }
     finally {
       busy = false;
       eventSelect.disabled = false;
@@ -84,6 +95,38 @@ export function wireCockpitCheckin(root, { eventSelect, load, checkIn, onChanged
       search.disabled = false;
       list.querySelectorAll("button").forEach(control => { control.disabled = false; });
     }
+  });
+  let swipe = null;
+  list.addEventListener("pointerdown", event => {
+    if (event.target.closest("button, input, a, textarea, select")) return;
+    const row = event.target.closest("[data-cockpit-registration-row]");
+    if (!row || busy) return;
+    swipe = { row, pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    row.setPointerCapture?.(event.pointerId);
+  });
+  list.addEventListener("pointermove", event => {
+    if (!swipe || swipe.pointerId !== event.pointerId) return;
+    const dx = event.clientX - swipe.x;
+    const dy = event.clientY - swipe.y;
+    if (Math.abs(dx) <= Math.abs(dy)) return;
+    swipe.row.style.transform = `translateX(${Math.max(-72, Math.min(72, dx))}px)`;
+  });
+  const finishSwipe = event => {
+    if (!swipe || swipe.pointerId !== event.pointerId) return;
+    const { row, x, y } = swipe;
+    swipe = null;
+    row.style.transform = "";
+    const dx = event.clientX - x;
+    const dy = event.clientY - y;
+    if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
+    const target = dx > 0 ? row.querySelector("[data-cockpit-checkin-id]") : row.querySelector("[data-cockpit-delete-id]");
+    target?.click();
+  };
+  list.addEventListener("pointerup", finishSwipe);
+  list.addEventListener("pointercancel", event => {
+    if (!swipe || swipe.pointerId !== event.pointerId) return;
+    swipe.row.style.transform = "";
+    swipe = null;
   });
   if (root.open) refresh();
 }

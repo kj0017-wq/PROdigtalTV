@@ -9,7 +9,7 @@ import { linkedInFromForm } from "./utils/linkedin.js";
 import { eventLiveRequestMeta, eventLiveConnection, eventLiveInboxMarkup } from "./utils/eventLiveRequests.js?v=5";
 import { mountEventLiveChat } from "./utils/eventLiveChat.js?v=21";
 import { mountEventLivePersonTabs } from "./utils/eventLivePersonTabs.js?v=6";
-import { wireCockpitCheckin } from "./utils/cockpitCheckin.js?v=2";
+import { wireCockpitCheckin } from "./utils/cockpitCheckin.js?v=3";
 import { confirmChatReset } from "./utils/confirmChatReset.js?v=2";
 import { eventAvatarMarkup } from "./utils/eventLiveAvatar.js?v=1";
 import { resetEventChatData } from "./utils/resetEventChatData.js?v=2";
@@ -14005,6 +14005,7 @@ function wireActions() {
     eventSelect: document.querySelector("[data-mobile-live-event]"),
     load: () => list("registrations"),
     checkIn: async (eventId, ids) => (await registrationService()).checkInAdminRegistrations(eventId, ids),
+    remove: async (registrationId) => (await registrationService()).deleteAdminRegistration(registrationId),
     onChanged: () => refreshMobileCheckinStats({ silent: false })
   });
   syncMobileEventChatLinks(document.querySelector("[data-mobile-live-event]")?.value || "");
