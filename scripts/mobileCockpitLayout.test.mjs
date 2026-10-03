@@ -36,6 +36,12 @@ test("Gästebefragung besitzt eine eigene Seite mit Sofortversand", () => {
   assert.match(cssSource, /\.mobile-feedback-send-card/);
 });
 
+test("manueller Check-in und Gästeliste sind getrennte Funktionsseiten", () => {
+  assert.match(mainSource, /id="mobile-cms-manual-checkin" \$\{cockpitPage === "checkin" \? "open" : "hidden"\}/);
+  assert.match(mainSource, /class="panel mobile-live-panel mobile-live-collapsible mobile-guest-list" id="mobile-cms-person-checkin" \$\{cockpitPage === "guests" \? "open" : "hidden"\}/);
+  assert.doesNotMatch(mainSource, /\["checkin", "guests"\]\.includes\(cockpitPage\)/);
+});
+
 test("Moderationskarten sind eventbezogen als Klappkarten im Cockpit verfügbar", () => {
   assert.match(mainSource, /async function mobileModerationCardsPage/);
   assert.match(mainSource, /current\.id === "live-moderation"/);

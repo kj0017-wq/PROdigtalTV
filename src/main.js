@@ -996,21 +996,21 @@ async function mobileLiveAdminPage(section = "") {
       ` : `<p class="muted">Keine Veranstaltung mit Einlassdaten gefunden.</p>`}
       <div class="alert" data-mobile-checkin-status>Geschuetzter Einlass-QR wird erzeugt ...</div>
     </details>
-    <details class="panel mobile-live-panel mobile-live-collapsible mobile-manual-checkin" id="mobile-cms-manual-checkin" ${["checkin", "guests"].includes(cockpitPage) ? "open" : "hidden"}>
+    <details class="panel mobile-live-panel mobile-live-collapsible mobile-manual-checkin" id="mobile-cms-manual-checkin" ${cockpitPage === "checkin" ? "open" : "hidden"}>
       <summary><span>Manueller Check-in</span></summary>
       <div class="mobile-manual-checkin-content">
-    <details class="mobile-live-collapsible mobile-manual-checkin-group" id="mobile-cms-person-checkin" ${cockpitPage === "guests" ? "open" : "hidden"}>
+        <section id="mobile-cms-group-checkin">
+          ${groupCheckinPanels || `<div class="alert">Keine aktive Veranstaltung für den Gruppen-Check-in gefunden.</div>`}
+        </section>
+      </div>
+    </details>
+    <details class="panel mobile-live-panel mobile-live-collapsible mobile-guest-list" id="mobile-cms-person-checkin" ${cockpitPage === "guests" ? "open" : "hidden"}>
       <summary><span>Gästeliste des Events</span></summary>
       <p class="muted">Vollständige Liste aller aktiven Anmeldungen. Noch nicht eingecheckte Gäste stehen zuerst.</p>
       <label class="field">Gast suchen<input type="search" data-cockpit-checkin-search placeholder="Name, Firma oder E-Mail" autocomplete="off"></label>
       <button type="button" class="button button--secondary" data-cockpit-checkin-refresh>Aktualisieren</button>
       <p role="status" aria-live="polite" data-cockpit-checkin-status></p>
       <div data-cockpit-checkin-list></div>
-    </details>
-    <section id="mobile-cms-group-checkin" ${cockpitPage === "checkin" ? "" : "hidden"}>
-      ${groupCheckinPanels || `<div class="alert">Keine aktive Veranstaltung für den Gruppen-Check-in gefunden.</div>`}
-    </section>
-      </div>
     </details>
     <details class="panel mobile-live-panel mobile-live-collapsible" id="mobile-cms-send" ${cockpitPage === "survey" ? "open" : "hidden"}>
       <summary><span>Live-Umfrage</span><small>Frage erstellen und an Teilnehmer senden</small></summary>
