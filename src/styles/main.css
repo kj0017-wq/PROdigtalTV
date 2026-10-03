@@ -21498,6 +21498,56 @@ body.theme-night .invitation-talk-hints p,
   font-size: 15px;
   min-height: 44px;
 }
+
+/* Einheitlicher runder Zurück-Button in Mobile CMS und Eventbereich. */
+[data-cockpit-back],
+.mobile-cockpit-back,
+.event-live-back {
+  position: relative;
+  width: 52px !important;
+  height: 52px !important;
+  min-width: 52px !important;
+  min-height: 52px !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  flex: 0 0 52px !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: #e30613 !important;
+  color: transparent !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+  text-decoration: none !important;
+  box-shadow: 0 5px 14px rgba(7, 26, 51, .18) !important;
+  cursor: pointer;
+}
+[data-cockpit-back]::before,
+.mobile-cockpit-back::before,
+.event-live-back::before {
+  content: "" !important;
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  width: 15px !important;
+  height: 15px !important;
+  display: block !important;
+  border: 0 !important;
+  border-left: 6px solid #fff !important;
+  border-bottom: 6px solid #fff !important;
+  border-radius: 2px !important;
+  transform: translate(-50%, -50%) translateX(3px) rotate(45deg) !important;
+}
+[data-cockpit-back]:hover,
+.mobile-cockpit-back:hover,
+.event-live-back:hover { background: #bd0010 !important; }
+[data-cockpit-back]:active,
+.mobile-cockpit-back:active,
+.event-live-back:active { background: #99000d !important; }
+[data-cockpit-back]:focus-visible,
+.mobile-cockpit-back:focus-visible,
+.event-live-back:focus-visible { outline: 3px solid rgba(227, 6, 19, .35) !important; outline-offset: 3px !important; }
 [data-event-live-root] > .event-live-hero .eyebrow {
   justify-self: end;
   margin: 0;

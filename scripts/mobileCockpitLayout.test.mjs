@@ -93,4 +93,6 @@ test("alle Cockpit-Seiten besitzen einen Zurück-Button", () => {
   assert.match(mainSource, /Zurück zum Event-Cockpit/);
   assert.match(cmsPagesSource, /data-cockpit-back href="#\/cms\/live"/);
   assert.match(cssSource, /\.mobile-cockpit-back/);
+  assert.match(cssSource, /\[data-cockpit-back\],[\s\S]*\.event-live-back/);
+  assert.match(cssSource, /border-left:\s*6px solid #fff/);
 });
