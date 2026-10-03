@@ -95,4 +95,8 @@ test("alle Cockpit-Seiten besitzen einen Zurück-Button", () => {
   assert.match(cssSource, /\.mobile-cockpit-back/);
   assert.match(cssSource, /\[data-cockpit-back\],[\s\S]*\.event-live-back/);
   assert.match(cssSource, /border-left:\s*6px solid #fff/);
+  assert.match(mainSource, /window\.__pdtCockpitBackGuard/);
+  assert.match(mainSource, /a\[data-cockpit-back\]\[href\]/);
+  assert.match(mainSource, /Ungespeicherte Änderungen verwerfen und zurück zum Event-Cockpit\?/);
+  assert.match(mainSource, /!form\.closest\("\[hidden\]"\)/);
 });

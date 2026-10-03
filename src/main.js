@@ -14457,6 +14457,27 @@ function wireActions() {
     select.addEventListener("change", syncContributionRole);
     syncContributionRole();
   });
+  if (!window.__pdtCockpitBackGuard) {
+    window.__pdtCockpitBackGuard = true;
+    document.addEventListener("click", (event) => {
+      const link = event.target?.closest?.("a[data-cockpit-back][href]");
+      if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const href = link.getAttribute("href") || "";
+      if (!href) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const visibleDirtyForms = Array.from(document.querySelectorAll("form.is-save-aware.is-dirty"))
+        .filter((form) => !form.closest("[hidden]"));
+      if (visibleDirtyForms.length && !window.confirm("Ungespeicherte Änderungen verwerfen und zurück zum Event-Cockpit?")) return;
+      visibleDirtyForms.forEach(markSaveAwareFormClean);
+      if (href.startsWith("#")) {
+        if (window.location.hash === href) render();
+        else window.location.hash = href;
+        return;
+      }
+      window.location.href = href;
+    }, true);
+  }
   if (!window.__pdtSaveAwareLeaveGuard) {
     window.__pdtSaveAwareLeaveGuard = true;
     window.addEventListener("beforeunload", (event) => {
