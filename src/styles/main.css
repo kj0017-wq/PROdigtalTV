@@ -21336,8 +21336,8 @@ body.theme-night .invitation-talk-hints p,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 0;
+  gap: 8px;
+  padding: 10px 0;
   border-bottom: 1px solid #dbe3ef;
   touch-action: pan-y;
   transition: transform .16s ease;
@@ -21352,18 +21352,19 @@ body.theme-night .invitation-talk-hints p,
 }
 .cockpit-checkin-overview strong { color: #e30613; font-size: 16px; }
 .cockpit-checkin-overview span { color: #596574; font-size: 13px; }
-.cockpit-checkin-person { min-width: 0; overflow-wrap: anywhere; }
+.cockpit-checkin-person { min-width: 0; overflow-wrap: anywhere; line-height: 1.2; }
 .cockpit-checkin-row strong, .cockpit-checkin-row small { display: block; }
-.cockpit-checkin-row small { color: #596574; margin-top: 4px; }
-.cockpit-checkin-row button { flex-shrink: 0; min-height: 44px; }
+.cockpit-checkin-row strong { font-size: 15px; }
+.cockpit-checkin-row small { color: #596574; margin-top: 3px; font-size: 12px; line-height: 1.25; }
+.cockpit-checkin-row button { flex-shrink: 0; min-height: 36px; }
 .cockpit-checkin-done { color: #14743c; font-size: 14px; flex-shrink: 0; }
-.cockpit-checkin-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-shrink:0; }
-.cockpit-checkin-actions .button { padding-inline:12px; }
-.cockpit-checkin-swipe-hint { display:none !important; flex-basis:100%; text-align:right; font-size:11px; }
+.cockpit-checkin-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-shrink:0; }
+.cockpit-checkin-actions .button { min-height:36px; padding:7px 10px; border-radius:999px; font-size:13px; line-height:1; }
+.cockpit-checkin-swipe-hint { display:none !important; margin:0 0 0 auto !important; color:#748091 !important; text-align:right; font-size:10px !important; line-height:1.15 !important; }
 @media (max-width: 520px) {
-  .cockpit-checkin-row { flex-wrap: wrap; }
+  .cockpit-checkin-row { flex-wrap: wrap; align-items:flex-end; }
   .cockpit-checkin-person { flex-basis: 100%; }
-  .cockpit-checkin-actions { width:100%; }
+  .cockpit-checkin-actions { width:auto; }
 }
 @media (hover: none) and (pointer: coarse) {
   .cockpit-checkin-swipe-hint { display:block !important; }
