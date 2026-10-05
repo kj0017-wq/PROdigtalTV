@@ -7619,3 +7619,71 @@ exports.Morgenbriefing_Taeglich = onSchedule({ schedule: "every monday 06:15", r
  * "queued", deliver through Postmark/Brevo/SendGrid and then write "sent" or
  * "failed". Credentials belong in Firebase Secret Manager, never in source.
  */
+
+// Event-specific moderator access; no general CMS privileges are granted.
+const { canModerate, cardsPatch } = require("./eventModerator");
+async function moderatorProfile(request) {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Bitte anmelden.");
+  const profile = (await db.collection("users").doc(request.auth.uid).get()).data();
+  if (!profile || profile.status === "inactive") throw new HttpsError("permission-denied", "Zugang nicht aktiv.");
+  return profile;
+}
+async function moderatorEvent(request) {
+  const profile = await moderatorProfile(request);
+  const eventId = clean(request.data?.eventId);
+  if (!eventId || eventId.includes("/")) throw new HttpsError("invalid-argument", "Veranstaltung fehlt.");
+  const ref = db.collection("events").doc(eventId);
+  const snapshot = await ref.get();
+  const event = snapshot.data() || {};
+  if (!snapshot.exists || !canModerate(event, request.auth.uid, profile)) throw new HttpsError("permission-denied", "Keine Moderatorberechtigung für diese Veranstaltung.");
+  return { ref, event: { ...event, id: snapshot.id } };
+}
+exports.assignEventModerators = onCall({ region }, async request => {
+  const editorProfile = await requireEditor(request);
+  if (editorProfile.status === "inactive") throw new HttpsError("permission-denied", "Zugang nicht aktiv.");
+  const eventId = clean(request.data?.eventId);
+  if (!eventId || eventId.includes("/")) throw new HttpsError("invalid-argument", "Veranstaltung fehlt.");
+  const emails = [...new Set((Array.isArray(request.data?.emails) ? request.data.emails : []).map(email => clean(email).toLowerCase()).filter(Boolean))];
+  if (emails.length > 10) throw new HttpsError("invalid-argument", "Maximal zehn Moderatoren.");
+  const users = [];
+  for (const email of emails) {
+    let user;
+    try { user = await getAuth().getUserByEmail(email); } catch { throw new HttpsError("not-found", `Kein Benutzerkonto für ${email}. Bitte zuerst ein Konto anlegen.`); }
+    const profile = (await db.collection("users").doc(user.uid).get()).data();
+    if (user.disabled || !profile || profile.status === "inactive") throw new HttpsError("failed-precondition", `Benutzerkonto für ${email} ist nicht aktiv.`);
+    users.push(user.uid);
+  }
+  await db.collection("events").doc(eventId).update({ moderatorUserIds: users, moderatorLoginEmails: emails, updatedAt: FieldValue.serverTimestamp() });
+  return { ok: true };
+});
+exports.listMyModeratorEvents = onCall({ region }, async request => {
+  await moderatorProfile(request);
+  const snapshot = await db.collection("events").where("moderatorUserIds", "array-contains", request.auth.uid).get();
+  return { events: snapshot.docs.map(doc => ({ id: doc.id, title: doc.data().title || "Veranstaltung", date: doc.data().date || "" })) };
+});
+exports.getModeratorCards = onCall({ region }, async request => {
+  const { event } = await moderatorEvent(request);
+  const [topics, speakers, board] = await Promise.all([db.collection("topics").get(), db.collection("speakers").get(), db.collection("boardMembers").get()]);
+  const pick = (data, fields) => Object.fromEntries(fields.filter(key => data[key] !== undefined).map(key => [key, data[key]]));
+  const topicFields = ["id", "title", "type", "shortDescription", "description", "longDescription", "speakerId", "speakerIds", "moderatorId", "moderatorIds", "speakerRoles", "speakerRoleById", "notes"];
+  const eventTopics = topics.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter(topic => (event.topicIds || []).includes(topic.id) || topic.eventId === event.id || (topic.eventIds || []).includes(event.id));
+  const profileFields = ["id", "name", "firstName", "lastName", "displayName", "title", "position", "role", "company", "organization", "shortBio", "bio", "longBio", "vita", "biography"];
+  return {
+    event: pick(event, ["id", "title", "date", "startTime", "endTime", "scheduleItems", "scheduleText", "agendaText", "moderatorName", "moderationCards", "moderationCardRemovedIds", "moderationCardOrientation"]),
+    topics: eventTopics.map(topic => pick(topic, topicFields)),
+    speakers: speakers.docs.map(doc => pick({ ...doc.data(), id: doc.id }, profileFields)),
+    boardMembers: board.docs.map(doc => pick({ ...doc.data(), id: doc.id }, profileFields))
+  };
+});
+exports.saveModeratorCards = onCall({ region }, async request => {
+  const { ref } = await moderatorEvent(request);
+  let patch;
+  try { patch = cardsPatch(request.data || {}); } catch (error) { throw new HttpsError("invalid-argument", error.message); }
+  // Recheck assignment inside the write transaction so revocation takes effect immediately.
+  await db.runTransaction(async transaction => {
+    const [eventSnapshot, profileSnapshot] = await Promise.all([transaction.get(ref), transaction.get(db.collection("users").doc(request.auth.uid))]);
+    if (!canModerate(eventSnapshot.data() || {}, request.auth.uid, profileSnapshot.data())) throw new HttpsError("permission-denied", "Moderatorberechtigung wurde entzogen.");
+    transaction.update(ref, { ...patch, moderationCardsUpdatedAt: FieldValue.serverTimestamp() });
+  });
+  return { ok: true };
+});

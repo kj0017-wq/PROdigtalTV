@@ -1,3 +1,4 @@
+import { cachedParticipantPhoto } from "../utils/participantPhotoCache.js?v=1";
 import { getFirebaseServices } from "./firebaseClient.js?v=2";
 
 async function call(name, data) {
@@ -55,6 +56,7 @@ export async function loadPortalParticipantPhoto(mediaId) {
   const firebase = await getFirebaseServices();
   const user = firebase?.auth?.currentUser;
   if (!user) throw new Error("Bitte anmelden.");
+  const blob = await cachedParticipantPhoto(user.uid, mediaId, async () => {
   const token = await user.getIdToken();
   const projectId = firebase.app.options.projectId;
   const endpoint = "https://europe-west3-" + projectId + ".cloudfunctions.net/getPortalParticipantPhoto";
@@ -62,5 +64,8 @@ export async function loadPortalParticipantPhoto(mediaId) {
     headers: { Authorization: "Bearer " + token }, cache: "no-store"
   });
   if (!response.ok) throw new Error(await response.text() || "Foto konnte nicht geladen werden.");
-  return URL.createObjectURL(await response.blob());
+  return response.blob();
+  });
+  if (firebase.auth.currentUser?.uid !== user.uid) throw new Error("Benutzerkonto wurde gewechselt.");
+  return URL.createObjectURL(blob);
 }

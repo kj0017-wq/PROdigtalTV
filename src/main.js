@@ -1,8 +1,10 @@
+import { wirePauseGong, stopPauseGong } from "./utils/pauseGong.js?v=5";
+import { callEventModerator } from "./firebase/eventModeratorService.js?v=1";
 import { route, onRouteChange, go } from "./utils/router.js?v=4";
 import { mountEventArea } from "./utils/eventArea.js?v=8";
 import { completeEventEmailLogin } from "./utils/eventEmailLogin.js";
 import { filterFeedback, feedbackFilterOptions, isAcquisitionFilter } from "./utils/feedbackAcquisition.js";
-import { currentUser, canUseCms, isAdmin, login, logout, refreshAuthToken, waitForAuthReady, resendEventLiveVerification, setEventGuestPassword, changeEventLivePassword, requestEventLivePasswordReset } from "./firebase/authService.js?v=477";
+import { currentUser, canUseCms, isAdmin, login, logout, refreshAuthToken, waitForAuthReady, resendEventLiveVerification, setEventGuestPassword, changeEventLivePassword, requestEventLivePasswordReset } from "./firebase/authService.js?v=479";
 import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=535";
 import { escapeHtml, formatDate, richTextHtml, initials } from "./utils/format.js?v=3";
 import { linkedInFromForm } from "./utils/linkedin.js";
@@ -53,6 +55,8 @@ const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9
 let renderGeneration = 0;
 let pendingRenderHash = "";
 let mobileCmsLiveResultsTimer = null;
+let mobileCmsLiveResultsRunning = false;
+let mobileCmsLiveResultsGeneration = 0;
 let mobileCheckinStatsTimer = null;
 const memberProfileWarmups = new Map();
 let mobileSurveyPeopleCache = { createdAt: 0, directory: null };
@@ -289,7 +293,7 @@ function initCheckinScreenWatcher() {
 async function mobileQualityPage() {
   const user = currentUser();
   if (!canUseCms(user)) {
-    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Qualitaetspruefung</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte im CMS anmelden. Danach diese Seite erneut oeffnen.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Qualitaetspruefung</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte im CMS anmelden. Danach diese Seite erneut oeffnen.</p><a class="button button--primary" href="#/cms/login?returnTo=${encodeURIComponent(window.location.hash || "#/cms/live")}">Zum Login</a></div></section>`;
   }
   const names = ["events", "editorialContent", "topics", "members", "galleries", "eventMedia", "media_assets", "downloads", "memberDocuments", "videos", "sponsors"];
   const loadOne = async (name) => {
@@ -574,8 +578,7 @@ function renderMobileSurveyResults(liveSurveys = [], liveSurveyResponses = [], e
       seenSurveys.add(key);
       uniqueSurveys.push(survey);
     });
-  return uniqueSurveys
-    .slice(0, 6)
+  const resultCards = uniqueSurveys
     .map((survey) => {
       const surveyEvent = eventById.get(survey.eventId) || {};
       const surveyResponses = liveSurveyResponses
@@ -583,7 +586,10 @@ function renderMobileSurveyResults(liveSurveys = [], liveSurveyResponses = [], e
         .map((response) => enrichSurveyResponseIdentity(response, inviteIdentity, peopleDirectory))
         .sort((a, b) => surveyTimeValue(b) - surveyTimeValue(a));
       const questions = Array.isArray(survey.questions) && survey.questions.length ? survey.questions : [{ id: "question-1", type: survey.allowMultiple ? "multiple" : "single", question: survey.question, options: survey.options || [] }];
-      const total = surveyResponses.length || Number(survey.responseCount || 0);
+      const total = Math.max(surveyResponses.length, Number(survey.responseCount || 0));
+      const requestedCount = new Set(liveSurveyInvites
+        .filter((invite) => invite.surveyId === survey.id)
+        .map((invite) => surveyIdentityKey(invite.email) || invite.emailHash || invite.id)).size;
       const answerForQuestion = (response, question, questionIndex) => {
         const answers = Array.isArray(response.answers) ? response.answers : [];
         const direct = answers.find((answer) => answer.questionId === question.id);
@@ -626,14 +632,18 @@ function renderMobileSurveyResults(liveSurveys = [], liveSurveyResponses = [], e
           return `<div class="mobile-live-vote-row"><strong>${escapeHtml(person)}</strong><span>${escapeHtml(answer)}</span>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}</div>`;
         })
         .join("");
-      return `<article class="mobile-live-survey-result"><h3>${escapeHtml(survey.title || survey.question || "Umfrage")}</h3><p class="muted">${escapeHtml(surveyEvent.title || survey.eventId || "Ohne Event")} · ${total} Antwort${total === 1 ? "" : "en"}</p>${questionResults}<details class="mobile-live-votes"><summary>Wer hat geantwortet?</summary>${voters || `<p class="muted">Noch keine Antworten abgegeben.</p>`}</details></article>`;
-    })
-    .join("");
+      return `<article class="mobile-live-survey-result"><h3>${escapeHtml(survey.title || survey.question || "Umfrage")}</h3><p class="muted">${escapeHtml(surveyEvent.title || survey.eventId || "Ohne Event")}</p><div class="mobile-live-survey-counts"><span>Angefragt: <strong>${requestedCount}</strong></span><span>Antworten eingegangen: <strong>${total}</strong></span></div>${questionResults}<details class="mobile-live-votes"><summary>Wer hat geantwortet?</summary>${voters || `<p class="muted">Noch keine Antworten abgegeben.</p>`}</details></article>`;
+    });
+  if (!resultCards.length) return "";
+  const [currentResult, ...otherResults] = resultCards;
+  return `${currentResult}${otherResults.length ? `<details class="mobile-live-votes mobile-live-survey-history" data-survey-history><summary>Weitere Umfragen (${otherResults.length})</summary>${otherResults.join("")}</details>` : ""}`;
 }
 
 function stopMobileCmsLiveResults() {
-  if (mobileCmsLiveResultsTimer) window.clearInterval(mobileCmsLiveResultsTimer);
+  if (mobileCmsLiveResultsTimer) window.clearTimeout(mobileCmsLiveResultsTimer);
   mobileCmsLiveResultsTimer = null;
+  mobileCmsLiveResultsRunning = false;
+  mobileCmsLiveResultsGeneration++;
 }
 
 function stopMobileCheckinStats() {
@@ -644,7 +654,7 @@ function stopMobileCheckinStats() {
 async function refreshMobileCheckinStats({ silent = false } = {}) {
   const target = document.querySelector("[data-mobile-checkin-stats-wrap]");
   const select = document.querySelector("[data-mobile-live-event]");
-  if (!target || !select) {
+  if (!target || !select || target.closest("[hidden]")) {
     stopMobileCheckinStats();
     return;
   }
@@ -677,6 +687,20 @@ function syncMobileLiveHistory(eventId = "") {
   if (empty) empty.hidden = visibleCount > 0;
 }
 
+function mobileSurveyRefreshDelay(surveys = [], invites = []) {
+  const latest = [...surveys].sort((a, b) => surveyTimeValue(b) - surveyTimeValue(a))[0];
+  if (!latest) return 30000;
+  const people = new Map();
+  invites.filter((invite) => invite.surveyId === latest.id).forEach((invite) => {
+    const key = surveyIdentityKey(invite.email) || invite.emailHash || invite.id;
+    people.set(key, people.get(key) || invite.status === "used" || Boolean(invite.usedAt || invite.usedAtIso));
+  });
+  if (!people.size) return 10000;
+  const answered = [...people.values()].filter(Boolean).length;
+  if (answered === people.size) return 0;
+  return answered / people.size >= 0.9 ? 30000 : 1000;
+}
+
 async function refreshMobileCmsLiveResults({ silent = false } = {}) {
   const container = document.querySelector("[data-mobile-live-results]");
   const status = document.querySelector("[data-mobile-live-results-status]");
@@ -692,44 +716,54 @@ async function refreshMobileCmsLiveResults({ silent = false } = {}) {
       list("liveSurveyResponses").catch(() => []),
       list("liveSurveyInvites").catch(() => [])
     ]);
-    const peopleDirectory = await loadSurveyPeopleDirectory();
+    const peopleDirectory = mobileSurveyPeopleCache.directory || {};
+    loadSurveyPeopleDirectory().catch(() => {});
+    if (!container.isConnected) return;
     const html = renderMobileSurveyResults(liveSurveys, liveSurveyResponses, events, liveSurveyInvites, peopleDirectory);
+    const historyOpen = container.querySelector("[data-survey-history]")?.open || false;
     container.innerHTML = html || `<p class="muted">Noch keine Umfrage-Auswertung vorhanden.</p>`;
-    if (status) status.textContent = `Aktualisiert: ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+    const history = container.querySelector("[data-survey-history]");
+    if (history) history.open = historyOpen;
+    const delay = mobileSurveyRefreshDelay(liveSurveys, liveSurveyInvites);
+    const cadence = delay === 0 ? "Alle Angefragten haben abgestimmt · Live-Modus beendet."
+      : delay === 30000 ? "Prüfung alle 30 Sekunden." : delay === 10000 ? "Prüfung alle 10 Sekunden." : "Live: jede Sekunde.";
+    if (status) status.textContent = `Aktualisiert: ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · ${mobileCmsLiveResultsRunning ? cadence : "Live-Modus gestoppt."}`;
+    return delay;
   } catch (error) {
     if (status) status.textContent = error.message || "Aktualisierung fehlgeschlagen.";
+    return 10000;
   }
 }
 
 function startMobileCmsLiveResults() {
   stopMobileCmsLiveResults();
-  refreshMobileCmsLiveResults({ silent: false });
-  mobileCmsLiveResultsTimer = window.setInterval(() => refreshMobileCmsLiveResults({ silent: true }), 1000);
+  mobileCmsLiveResultsRunning = true;
+  const generation = mobileCmsLiveResultsGeneration;
+  const poll = async (silent) => {
+    const delay = await refreshMobileCmsLiveResults({ silent });
+    if (!mobileCmsLiveResultsRunning || generation !== mobileCmsLiveResultsGeneration) return;
+    if (delay === 0) {
+      stopMobileCmsLiveResults();
+      const button = document.querySelector("[data-mobile-live-results-toggle]");
+      if (button) button.textContent = "Live starten";
+      return;
+    }
+    mobileCmsLiveResultsTimer = window.setTimeout(() => poll(true), delay || 10000);
+  };
+  poll(false);
 }
 
 async function mobileLiveResultsPage() {
   const user = currentUser();
   if (!canUseCms(user)) {
-    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/cms/login?returnTo=${encodeURIComponent(window.location.hash || "#/cms/live")}">Zum Login</a></div></section>`;
   }
-  const [events, liveSurveys, liveSurveyResponses, liveSurveyInvites] = await Promise.all([
-    list("events").catch(() => []),
-    list("liveSurveys").catch(() => []),
-    list("liveSurveyResponses").catch(() => []),
-    list("liveSurveyInvites").catch(() => [])
-  ]);
-  const peopleDirectory = await loadSurveyPeopleDirectory({ maxAge: 0 });
-  const surveyResultRows = renderMobileSurveyResults(liveSurveys, liveSurveyResponses, events, liveSurveyInvites, peopleDirectory);
+  const surveyResultRows = `<p class="muted" role="status">Umfrage-Ergebnisse werden geladen …</p>`;
   return `<main class="mobile-live-admin mobile-live-results-screen">
-    <section class="mobile-live-hero mobile-live-results-hero">
-      <a class="button button--secondary button--small mobile-cockpit-back" data-cockpit-back href="#/cms/live">← Zurück zum Event-Cockpit</a>
-      <p class="eyebrow">Umfrage-Auswertung</p>
-      <h1>Umfragen live auswerten</h1>
-      <p>Dieser Bildschirm aktualisiert die Umfrage jede Sekunde und zeigt Antworten, Balken und Stimmen live an.</p>
-      <div class="actions">
-        <a class="button button--secondary" href="/website.html?v=1020#/home">Website</a>
-      </div>
-    </section>
+    <nav class="mobile-live-hero mobile-live-results-hero" aria-label="Auswertungsnavigation">
+      <a class="button button--secondary button--small mobile-cockpit-back" data-cockpit-back href="#/cms/live">← Event-Cockpit</a>
+      <a class="button button--secondary button--small" href="/website.html?v=1020#/home">Website</a>
+    </nav>
     <section class="panel mobile-live-panel mobile-live-results-stage" id="mobile-cms-results" data-mobile-live-results-screen>
       <div class="mobile-live-results-head">
         <div>
@@ -879,7 +913,7 @@ function mobileEventFeedbackPreview(event = {}, questions = []) {
 async function mobileModerationCardsPage() {
   const user = currentUser();
   if (!canUseCms(user)) {
-    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/cms/login?returnTo=${encodeURIComponent(window.location.hash || "#/cms/live")}">Zum Login</a></div></section>`;
   }
   const [events, registrations, speakers, topics, boardMembers] = await Promise.all([
     list("events").catch(() => []),
@@ -938,19 +972,41 @@ async function mobileModerationCardsPage() {
   </main>`;
 }
 
+let mobileCockpitDataCache = null;
+let mobileCockpitDataRequest = null;
+let mobileCockpitDataUid = "";
+async function loadMobileCockpitData() {
+  const uid = currentUser()?.uid || "";
+  if (mobileCockpitDataUid !== uid) {
+    mobileCockpitDataCache = null;
+    mobileCockpitDataRequest = null;
+    mobileCockpitDataUid = uid;
+  }
+  const cached = mobileCockpitDataCache;
+  if (cached && Date.now() - cached.loadedAt < 30000) return cached.rows;
+  if (!mobileCockpitDataRequest) {
+    const request = Promise.all(["events", "registrations", "speakers", "topics", "eventNotifications", "boardMembers"].map(name => list(name).catch(error => {
+      if (name === "events" || name === "registrations") throw error;
+      return [];
+    })));
+    mobileCockpitDataRequest = request;
+    request.then(rows => {
+      if (mobileCockpitDataRequest === request && mobileCockpitDataUid === uid) mobileCockpitDataCache = { rows, loadedAt: Date.now() };
+    }).catch(() => {}).finally(() => {
+      if (mobileCockpitDataRequest === request) mobileCockpitDataRequest = null;
+    });
+  }
+  // Keep navigation responsive while refreshing existing cockpit data.
+  if (cached) return cached.rows;
+  return mobileCockpitDataRequest;
+}
+
 async function mobileLiveAdminPage(section = "") {
   const user = currentUser();
   if (!canUseCms(user)) {
-    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/cms/login?returnTo=${encodeURIComponent(window.location.hash || "#/cms/live")}">Zum Login</a></div></section>`;
   }
-  const [events, registrations, speakers, topics, notifications, boardMembers] = await Promise.all([
-    list("events").catch(() => []),
-    list("registrations").catch(() => []),
-    list("speakers").catch(() => []),
-    list("topics").catch(() => []),
-    list("eventNotifications").catch(() => []),
-    list("boardMembers").catch(() => [])
-  ]);
+  const [events, registrations, speakers, topics, notifications, boardMembers] = await loadMobileCockpitData();
   const eventRows = events
     .filter((event) => mobileLiveEventIsRelevant(event, registrations))
     .sort((a, b) => String(a.date || a.startDate || "").localeCompare(String(b.date || b.startDate || "")));
@@ -1088,6 +1144,7 @@ async function mobileLiveAdminPage(section = "") {
         <a href="#/cms/live/survey">${mobileCmsLauncherIcon("survey")}<span>Umfrage</span></a>
         <a href="#/cms/live-results">${mobileCmsLauncherIcon("results")}<span>Auswertung</span></a>
         <a href="#/cms/live/guests">${mobileCmsLauncherIcon("guests")}<span>Gästeliste</span></a>
+        <button type="button" data-pause-gong aria-pressed="false" title="Pausengong mit anschließender Ansage abspielen; erneut drücken zum Stoppen"><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v2m-5 14h10M5 17h14l-2-3V9a5 5 0 0 0-10 0v5l-2 3Zm5 4h4"/></svg></span><span data-gong-label>Pausengong</span></button>
         <a href="#/cms/live/feedback">${mobileCmsLauncherIcon("feedback")}<span>Gästebefragung</span></a>
         <a href="/website.html?v=1020#/home" data-mobile-cms-website-link>${mobileCmsLauncherIcon("website")}<span>Website</span></a>
       </nav>
@@ -1239,6 +1296,7 @@ async function liveSurveyPage(surveyId = "") {
 }
 async function viewForRoute(current) {
   window.__pdtCmsStage = `route:${current.path}/${current.id || ""}`;
+  if (current.path === "cms" && current.id === "login") return (await publicPages()).loginPage();
   if (current.path === "survey") return liveSurveyPage(current.id);
   if (current.path === "cms" && mobileCmsDisabled() && current.id === "live") return mobileLiveAdminPage(current.section || "");
   if (current.path === "cms" && mobileCmsDisabled() && current.id === "live-moderation") return mobileModerationCardsPage();
@@ -1467,6 +1525,17 @@ async function render() {
     } else if (root && !isCmsRoute) {
       showRoutePending({ getAttribute: () => `#/${publicActiveRoute(currentRoute)}` });
     }
+    if (isCmsRoute && root?.innerHTML) {
+      let notice = document.querySelector("[data-cms-route-loading]");
+      if (!notice) {
+        notice = document.createElement("div");
+        notice.dataset.cmsRouteLoading = "1";
+        notice.className = "alert";
+        notice.setAttribute("role", "status");
+        root.prepend(notice);
+      }
+      notice.textContent = "Bereich wird geöffnet …";
+    }
     const viewPromise = viewForRoute(currentRoute);
     if (["imprint", "privacy"].includes(currentRoute?.path)) {
       const main = root?.querySelector("main.page");
@@ -1482,7 +1551,7 @@ async function render() {
       : "Die Seite laedt zu lange. Bitte tippen Sie die Navigation erneut oder laden Sie die Website neu.";
     const viewHtml = await Promise.race([
       viewPromise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), isCmsRoute ? 9000 : 14000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), isCmsRoute ? 30000 : 14000))
     ]);
     if (loadingTimer) window.clearTimeout(loadingTimer);
     if (generation !== renderGeneration) return;
@@ -1553,7 +1622,7 @@ async function render() {
     const message = error.message || String(error);
     const isCmsRoute = currentRoute?.path === "cms";
     const isPermissionError = /missing or insufficient permissions|permission-denied|permissions/i.test(message);
-    if (isCmsRoute && isPermissionError) {
+    if (isCmsRoute && isPermissionError && !canUseCms(currentUser())) {
       await logout().catch(() => {});
       root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Zugriff geschuetzt</p><h1>CMS-Login erforderlich</h1><p style="margin:14px 0 24px">Die Firebase-Sitzung ist abgelaufen oder hat keine CMS-Rechte. Bitte neu anmelden.</p><div class="actions"><a class="button button--primary" href="#/login">Anmelden</a></div></div></section>`;
       return;
@@ -1886,6 +1955,7 @@ function closePublicTts() {
 }
 
 function stopAllAudioPlayback() {
+  stopPauseGong();
   closePublicTts();
   document.querySelectorAll("audio").forEach((audio) => {
     try {
@@ -13260,7 +13330,7 @@ function wireMemberStrategyResponses() {
 }
 function wireEventLiveActions() {
   const adminSettings = [...document.querySelectorAll("[data-event-live-settings]")].filter(root => root.querySelector("[data-event-content-admin]"));
-  if (adminSettings.length) import("./utils/eventContentModeration.js?v=1").then(({ mountEventContentModeration }) => adminSettings.forEach(mountEventContentModeration));
+  if (adminSettings.length) import("./utils/eventContentModeration.js?v=2").then(({ mountEventContentModeration }) => adminSettings.forEach(mountEventContentModeration));
 
   const profileForm = document.querySelector("[data-live-profile-form]");
   if (profileForm) {
@@ -13459,7 +13529,7 @@ function wireEventLiveActions() {
   });
   if (rootNode) {
     mountEventArea(rootNode, liveData());
-    import("./utils/eventPhotos.js?v=6").then(({ mountEventPhotos }) => mountEventPhotos(rootNode));
+    import("./utils/eventPhotos.js?v=7").then(({ mountEventPhotos }) => mountEventPhotos(rootNode));
   }
   const linkedPeer = new URLSearchParams(location.hash.split("?")[1] || "").get("peer");
   if (rootNode && linkedPeer && !rootNode.dataset.linkedPeerOpened
@@ -13862,7 +13932,7 @@ function wireEventLiveActions() {
 function wireActions() {
   const photoGallery = document.querySelector("[data-participant-photos]");
   if (document.querySelector("[data-participant-photo-badge]") || photoGallery) {
-    import("./utils/participantPhotos.js?v=6").then(({ mountParticipantPhotos, mountParticipantPhotoBadges }) => {
+    import("./utils/participantPhotos.js?v=8").then(({ mountParticipantPhotos, mountParticipantPhotoBadges }) => {
       if (photoGallery) mountParticipantPhotos(photoGallery);
       mountParticipantPhotoBadges(document.querySelector(".member-portal-shell"));
     });
@@ -14094,13 +14164,13 @@ function wireActions() {
   syncMobileModerationCardPanels(document.querySelector("[data-mobile-live-event]")?.value || "");
   syncMobileGuestFeedbackPanels(document.querySelector("[data-mobile-live-event]")?.value || "");
   syncMobileDashboardPanels(document.querySelector("[data-mobile-live-event]")?.value || "");
-  if (document.querySelector("[data-mobile-checkin-stats-wrap]")) startMobileCheckinStats();
+  if (document.querySelector('[data-cockpit-page="qr"] [data-mobile-checkin-stats-wrap]')) startMobileCheckinStats();
   document.querySelector("[data-mobile-live-results-refresh]")?.addEventListener("click", () => {
     refreshMobileCmsLiveResults({ silent: false });
   });
   document.querySelector("[data-mobile-live-results-toggle]")?.addEventListener("click", (event) => {
     const button = event.currentTarget;
-    if (mobileCmsLiveResultsTimer) {
+    if (mobileCmsLiveResultsRunning) {
       stopMobileCmsLiveResults();
       button.textContent = "Live starten";
       const status = document.querySelector("[data-mobile-live-results-status]");
@@ -18104,7 +18174,8 @@ function wireActions() {
       const values = formObject(form);
       const user = await login(values.email, values.password, values.role);
       const returnTarget = loginReturnTarget();
-      go(returnTarget || postLoginRouteForUser(user));
+      if (route().path === "cms" && !canUseCms(user)) throw new Error("Dieses Konto hat keine Berechtigung für das Veranstaltungscockpit. Bitte mit einem Admin- oder Redaktionskonto anmelden.");
+      go(returnTarget || (route().path === "cms" ? "cms/live" : postLoginRouteForUser(user)));
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || "Login fehlgeschlagen.")}</div>`;
     } finally {
@@ -20843,7 +20914,7 @@ function wireActions() {
     const button = form.querySelector('button[type="submit"]');
     if (button) button.disabled = true;
     try {
-      const { uploadPortalGalleryPhotos } = await import("./firebase/portalGalleryPhotoService.js?v=3");
+      const { uploadPortalGalleryPhotos } = await import("./firebase/portalGalleryPhotoService.js?v=5");
       await uploadPortalGalleryPhotos(files, form.elements.note?.value?.trim() || "", (progress) => {
         const bar = result.querySelector(".progress span");
         if (bar) bar.style.width = `${progress}%`;
@@ -21167,6 +21238,32 @@ function wireActions() {
     }
   }));
 
+  document.querySelectorAll("[data-event-agenda-toggle]").forEach((button) => button.addEventListener("change", async (event) => {
+    const target = event.currentTarget;
+    const eventId = target.dataset.eventAgendaToggle;
+    const showAgenda = target.checked;
+    const result = document.querySelector("#event-registration-toggle-result");
+    if (!eventId) return;
+    const originalChecked = !showAgenda;
+    target.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Öffentliche Agenda wird ${showAgenda ? "aktiviert" : "deaktiviert"} ...</div>`;
+    try {
+      const existing = await getOne("events", eventId);
+      if (!existing) throw new Error("Event wurde nicht gefunden.");
+      await upsert("events", {
+        ...existing,
+        showAgenda,
+        updatedAt: new Date().toISOString()
+      });
+      if (result) result.innerHTML = `<div class="alert alert--success">Öffentliche Agenda wurde ${showAgenda ? "aktiviert" : "deaktiviert"}.</div>`;
+      await render();
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Öffentliche Agenda konnte nicht geaendert werden: ${escapeHtml(error.message || String(error))}</div>`;
+      target.checked = originalChecked;
+      target.disabled = false;
+    }
+  }));
+
   document.querySelectorAll("[data-event-mobile-ticket-toggle]").forEach((button) => button.addEventListener("change", async (event) => {
     const target = event.currentTarget;
     const eventId = target.dataset.eventMobileTicketToggle;
@@ -21195,16 +21292,29 @@ function wireActions() {
     }
   }));
 
+  wirePauseGong();
+  document.querySelectorAll("[data-event-moderator-assignment]").forEach(form => form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = form.querySelector("button[type=submit]");
+    const result = form.querySelector("[data-moderator-assignment-result]");
+    button.disabled = true;
+    try {
+      await callEventModerator("assignEventModerators", { eventId: form.dataset.eventModeratorAssignment, emails: form.elements.emails.value.split(/[,;\n]+/).map(value => value.trim()).filter(Boolean) });
+      result.textContent = "Moderatorenzugang gespeichert.";
+    } catch (error) { result.textContent = error.message || "Moderatorenzugang konnte nicht gespeichert werden."; }
+    finally { button.disabled = false; }
+  }));
+
   document.querySelectorAll("[data-moderation-cards]").forEach((button) => button.addEventListener("click", async () => {
     const result = button.closest("[data-mobile-moderation-event-panel]")?.querySelector("[data-mobile-moderation-result]") || document.querySelector("#event-save-result") || document.querySelector("#registration-bulk-result");
     button.disabled = true;
     try {
-      const [event, topics, speakers, boardMembers] = await Promise.all([
-        getOne("events", button.dataset.eventId),
-        list("topics"),
-        list("speakers"),
-        list("boardMembers").catch(() => [])
-      ]);
+      const moderatorPortal = button.hasAttribute("data-moderator-portal");
+      const [event, topics, speakers, boardMembers] = moderatorPortal
+        ? await callEventModerator("getModeratorCards", { eventId: button.dataset.eventId }).then(data => [data.event, data.topics, data.speakers, data.boardMembers])
+        : await Promise.all([
+          getOne("events", button.dataset.eventId), list("topics"), list("speakers"), list("boardMembers").catch(() => [])
+        ]);
       if (!event) throw new Error("Event wurde nicht gefunden.");
       const service = await moderationCardPrintService();
       service.openModerationCardDialog({
@@ -21212,7 +21322,7 @@ function wireActions() {
         topics,
         speakers,
         boardMembers,
-        generateAiTexts: async (cards) => {
+        generateAiTexts: moderatorPortal ? null : async (cards) => {
           const response = await callChatGptAction("generateModerationCardText", {
             module: "event-admin",
             entityType: "moderationCards",
@@ -21245,6 +21355,10 @@ function wireActions() {
             description: String(card.description || ""),
             notes: String(card.notes || "")
           }));
+          if (moderatorPortal) {
+            await callEventModerator("saveModeratorCards", { eventId: event.id, cards: moderationCards, removedIds, orientation });
+            return;
+          }
           await upsert("events", {
             id: event.id,
             moderationCards,

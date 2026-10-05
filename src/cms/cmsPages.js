@@ -1798,13 +1798,14 @@ function cmsEventHandyTicketEnabled(event = {}) {
 function eventRegistrationTogglePanel(event = {}) {
   const isOpen = cmsEventRegistrationIsOpen(event);
   const showOnHome = cmsEventShowsOnHome(event);
+  const showAgenda = event.showAgenda !== false;
   const handyTicketEnabled = cmsEventHandyTicketEnabled(event);
   return `<section class="panel" style="background:var(--pdt-bg);margin-bottom:18px">
     <div class="actions" style="justify-content:space-between;align-items:center;gap:18px">
       <div>
         <p class="eyebrow">Anmeldestatus</p>
         <h2>${isOpen ?"Anmeldung offen" : "Anmeldung geschlossen"}</h2>
-        <p class="muted">Aktiv oeffnet die Anmeldung. Inaktiv zeigt das Event nur als Save the Date. Der Startseiten-Schalter steuert die prominente Anzeige auf der Startseite.</p>
+        <p class="muted">Aktiv oeffnet die Anmeldung. Inaktiv zeigt das Event nur als Save the Date. Der Startseiten-Schalter steuert die prominente Anzeige auf der Startseite. „Agenda öffentlich“ blendet das Programm im öffentlichen Veranstaltungsbereich ein oder aus.</p>
       </div>
       <div class="actions" style="gap:14px;align-items:center">
         <label class="cms-switch ${isOpen ?"is-active" : ""}" title="Event aktivieren und Anmeldung oeffnen">
@@ -1817,6 +1818,11 @@ function eventRegistrationTogglePanel(event = {}) {
           <span class="cms-switch__track" aria-hidden="true"></span>
           <span class="cms-switch__text">Startseite</span>
         </label>
+        <label class="cms-switch ${showAgenda ? "is-active" : ""}" title="Agenda im öffentlichen Veranstaltungsbereich anzeigen">
+          <input type="checkbox" data-event-agenda-toggle="${escapeHtml(event.id || "")}" ${showAgenda ? "checked" : ""}>
+          <span class="cms-switch__track" aria-hidden="true"></span>
+          <span class="cms-switch__text">Agenda öffentlich</span>
+        </label>
         <label class="cms-switch ${handyTicketEnabled ?"is-active" : ""}" title="Handy-Ticket und Einlass-QR verwenden">
           <input type="checkbox" data-event-mobile-ticket-toggle="${escapeHtml(event.id || "")}" ${handyTicketEnabled ?"checked" : ""}>
           <span class="cms-switch__track" aria-hidden="true"></span>
@@ -1824,6 +1830,11 @@ function eventRegistrationTogglePanel(event = {}) {
         </label>
       </div>
     </div>
+    <form data-event-moderator-assignment="${escapeHtml(event.id || "")}" class="form-grid" style="margin-top:18px">
+      <div class="field"><label>Moderatorenzugang für dieses Event</label><input name="emails" value="${escapeHtml((event.moderatorLoginEmails || []).join(", "))}" placeholder="E-Mail des bestehenden Benutzerkontos"><p class="muted">Mehrere E-Mail-Adressen durch Komma trennen. Diese Benutzer dürfen ausschließlich die Moderationskarten dieses Events bearbeiten. Ein leeres Feld entzieht den Zugang.</p></div>
+      <div class="actions"><button class="button button--secondary button--small" type="submit">Moderatorenzugang speichern</button></div>
+      <div data-moderator-assignment-result role="status"></div>
+    </form>
     <div id="event-registration-toggle-result"></div>
   </section>`;
 }

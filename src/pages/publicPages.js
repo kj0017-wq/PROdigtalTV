@@ -1,7 +1,8 @@
+import { callEventModerator } from "../firebase/eventModeratorService.js?v=1";
 import { agendaMarkup } from "../utils/eventArea.js?v=8";
 import { eventAgendaItems } from "../utils/eventAgenda.js?v=2";
 import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=535";
-import { currentUser, canUseCms, isAdmin, isMember } from "../firebase/authService.js?v=477";
+import { currentUser, canUseCms, isAdmin, isMember } from "../firebase/authService.js?v=479";
 import { publicShell, logo } from "../components/layout.js?v=17";
 import { eventCard, topicCard, topicImageTransformStyle } from "../components/cards.js?v=25";
 import { pushControls } from "../components/pushControls.js?v=3";
@@ -994,6 +995,7 @@ function eventInvitationClosingText(event = {}, registrationAllowed = false) {
 }
 
 function eventScheduleMarkup(event = {}, topics = [], speakers = []) {
+  if (event.showAgenda === false) return "";
   const topicIds = new Set(event.topicIds || []);
   const eventTopics = topics.filter(topic => topicIds.has(topic.id) || topic.eventId === event.id || (topic.eventIds || []).includes(event.id));
   const visibleTopics = eventTopics.filter(isVisibleEventTalk);
@@ -3730,7 +3732,7 @@ function participantPhotoBadge(count = 0, eventId = "") {
 
 async function myEventPhotosSection() {
   try {
-    const { listPortalParticipantPhotos } = await import("../firebase/portalGalleryPhotoService.js?v=3");
+    const { listPortalParticipantPhotos } = await import("../firebase/portalGalleryPhotoService.js?v=5");
     const { photos = [], events = [] } = await listPortalParticipantPhotos();
     const photoQuery = new URLSearchParams(window.location.hash.split("?")[1] || "");
     const guestPreviewQuery = photoQuery.get("preview") === "guest" && isAdmin(currentUser()) ? "&preview=guest" : "";
@@ -3750,11 +3752,19 @@ async function myEventPhotosSection() {
   }
 }
 
+async function moderatorPortalSection() {
+  const { events = [] } = await callEventModerator("listMyModeratorEvents");
+  if (!events.length) return "";
+  return `<section class="member-portal-section"><div class="section-head"><h2>Meine Moderatorenkarten</h2></div><p class="muted">Moderatorenzugang: Bearbeiten Sie die Karten Ihrer zugewiesenen Veranstaltungen.</p><div class="card-grid card-grid--three">${events.map(event => `<article class="card card__body" data-mobile-moderation-event-panel><h3>${escapeHtml(event.title)}</h3><p>${escapeHtml(event.date)}</p><button class="button button--primary" data-moderation-cards data-moderator-portal data-event-id="${escapeHtml(event.id)}" type="button">Moderatorenkarten bearbeiten</button><div data-mobile-moderation-result role="status"></div></article>`).join("")}</div></section>`;
+}
+
 export async function portalPage({ guestPreview = false } = {}) {
   const user = currentUser();
   if (!user) return loginPage();
+  const moderatorSection = !guestPreview ? await moderatorPortalSection() : "";
+  if (moderatorSection && !isMember(user)) return publicShell("login", `${subhero("Moderatorenzugang", `Willkommen, ${escapeHtml(user.displayName || user.email)}.`, "Ihre Moderationskarten.")}<section class="section"><div class="container">${moderatorSection}<button type="button" class="button button--secondary" data-logout-button>Abmelden</button></div></section>`);
   if (!isMember(user) || (guestPreview && isAdmin(user))) {
-    const { listPortalParticipantPhotos } = await import("../firebase/portalGalleryPhotoService.js?v=3");
+    const { listPortalParticipantPhotos } = await import("../firebase/portalGalleryPhotoService.js?v=5");
     const query = new URLSearchParams(window.location.hash.split("?")[1] || "");
     let eventId = guestPreview ? query.get("eventId") : "";
     if (!eventId) {
@@ -3930,6 +3940,7 @@ export async function memberPortalPage() {
   if (!user) return loginPage();
   if (!isMember(user)) return portalPage();
   if (isAdmin(user) && new URLSearchParams(window.location.hash.split("?")[1] || "").get("preview") === "guest") return portalPage({ guestPreview: true });
+  const moderatorSection = await moderatorPortalSection();
   const leanPortal = mobileLeanStart();
   const activeTab = (() => {
     try {
@@ -4052,6 +4063,7 @@ export async function memberPortalPage() {
     <section class="section section--white member-portal-shell"><div class="container">
       ${tabNav}
       ${profileAccessNotice}
+      ${moderatorSection}
       ${content}
     </div></section>`);
 }

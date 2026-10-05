@@ -1,7 +1,7 @@
-import { mountEventContentModeration } from "./eventContentModeration.js?v=1";
+import { mountEventContentModeration } from "./eventContentModeration.js?v=2";
 import { escapeHtml } from "./format.js?v=3";
-import { listPortalParticipantPhotos, uploadPortalGalleryPhotos } from "../firebase/portalGalleryPhotoService.js?v=4";
-import { mountParticipantPhotos, mountParticipantPhotoBadges } from "./participantPhotos.js?v=6";
+import { listPortalParticipantPhotos, uploadPortalGalleryPhotos } from "../firebase/portalGalleryPhotoService.js?v=5";
+import { mountParticipantPhotos, mountParticipantPhotoBadges } from "./participantPhotos.js?v=8";
 import { eventPhotoUploadProgressModel } from "./eventPhotoUploadProgress.js?v=1";
 
 const uploadStepLabels = {

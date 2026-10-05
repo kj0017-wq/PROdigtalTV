@@ -1,5 +1,5 @@
 import { escapeHtml } from "./format.js?v=3";
-import { loadPortalParticipantPhoto, listPortalParticipantPhotos, markPortalParticipantPhotosSeen } from "../firebase/portalGalleryPhotoService.js?v=3";
+import { loadPortalParticipantPhoto, listPortalParticipantPhotos, markPortalParticipantPhotosSeen } from "../firebase/portalGalleryPhotoService.js?v=5";
 
 export function openParticipantPhoto(card, trigger) {
   const source = card.querySelector("[data-participant-photo-image]");
