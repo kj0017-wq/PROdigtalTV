@@ -36,6 +36,7 @@ const { createEventChatNotifications, online: eventChatOnline } = require("./eve
 initializeApp();
 const db = getFirestore();
 const welcomeSchedule = createWelcomeSchedule({ db, FieldValue, Timestamp });
+const eventWelcomeLogin = require("./eventWelcomeLogin").createEventWelcomeLogin({ db, auth: getAuth(), FieldValue, Timestamp, HttpsError });
 const pushService = createPushService({ db, messaging: getMessaging(), FieldValue, HttpsError });
 const eventChatNotifications = createEventChatNotifications({ db, pushService, FieldValue, Timestamp, contactId, HttpsError });
 const region = "europe-west3";
@@ -1611,6 +1612,9 @@ function renderMail(mail, context = {}) {
       agendaText ? "Hier ist die Agenda fuer die Veranstaltung:" : "Die Agenda zur Veranstaltung wird vor Ort kommuniziert.",
       agendaText,
       "",
+      mail.welcomeLoginCode ? `Ihr Anmeldecode: ${mail.welcomeLoginCode} (10 Minuten gültig, einmal verwendbar).` : "",
+      mail.welcomeLoginCode ? "PROdigitalTV-App bereits gespeichert? Öffnen Sie Ihr vorhandenes App-Symbol und geben Sie im Veranstaltungsbereich Ihre E-Mail-Adresse und diesen Code ein. Bitte kein zweites App-Symbol speichern." : "",
+      mail.welcomeLoginCode ? "Noch keine App gespeichert? Öffnen Sie den Veranstaltungsbereich über den folgenden Link. Sie können ihn in Safari über Teilen → Zum Home-Bildschirm als Web-App speichern und den Code dort eingeben." : "",
       eventLink ? `Zur Veranstaltung: ${eventLink}` : "",
       "",
       "Viele Gruesse",
@@ -1623,6 +1627,7 @@ function renderMail(mail, context = {}) {
         `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${salutation}</p>`,
         `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">willkommen bei <strong>${clean(title)}</strong>. Schoen, dass Sie da sind.</p>`,
         agendaText ? `<h2 style="font-size:20px;line-height:1.3;margin:24px 0 12px;color:#071b34">Agenda</h2>${textToHtml(agendaText)}` : `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">Die Agenda zur Veranstaltung wird vor Ort kommuniziert.</p>`,
+        mail.welcomeLoginCode ? `<section style="padding:18px;background:#eef4fa;border-radius:12px"><h2 style="font-size:20px">Ihr Anmeldecode</h2><p style="font-size:30px;letter-spacing:6px;font-weight:bold">${escapeAttribute(mail.welcomeLoginCode)}</p><p>10 Minuten gültig · einmal verwendbar</p><p><strong>App bereits gespeichert?</strong> Öffnen Sie Ihr vorhandenes PROdigitalTV-App-Symbol und geben Sie Ihre E-Mail-Adresse und diesen Code im Veranstaltungsbereich ein. Bitte kein zweites App-Symbol speichern.</p><p><strong>Noch keine App gespeichert?</strong> Öffnen Sie den Veranstaltungsbereich unten. Sie können ihn in Safari über Teilen → Zum Home-Bildschirm als Web-App speichern und den Code dort eingeben.</p></section>` : "",
         mailButton("Zum Veranstaltungsbereich", eventLink)
       ].filter(Boolean).join(""))
     };
@@ -1890,7 +1895,8 @@ async function sendQueuedMail(mail) {
     const email = mailAddress(mail.to || context.registration?.email);
     const eventId = mail.eventId || context.registration?.eventId;
     const url = "https://prodigitaltv.de/#/event-live/" + encodeURIComponent(eventId) + "?email=" + encodeURIComponent(email);
-    mail = { ...mail, eventAccessLink: url };
+    const welcomeLogin = await eventWelcomeLogin.issue(eventId, email);
+    mail = { ...mail, eventAccessLink: url, welcomeLoginCode: welcomeLogin?.code || "" };
     try {
       mail.eventAccessLink = await getAuth().generateSignInWithEmailLink(email, { url, handleCodeInApp: true });
     } catch (error) {
@@ -7905,3 +7911,8 @@ exports.verifyLoginSmsPasswordReset=onCall({region,maxInstances:5},smsPasswordRe
 exports.completeLoginSmsPasswordReset=onCall({region,maxInstances:5},smsPasswordReset.setPassword);
 
 exports.getSmsAccountBalance=onCall({region,secrets:[SMS_API_URL,SMS_API_TOKEN],maxInstances:3},require('./smsBalance').createSmsBalance({requireEditor,HttpsError,apiUrl:()=>SMS_API_URL.value(),apiToken:()=>SMS_API_TOKEN.value()}));
+
+exports.requestEventWelcomeLoginCode = onCall({ region, invoker: "public" }, request => eventWelcomeLogin.requestCode(request));
+exports.verifyEventWelcomeLoginCode = onCall({ region, invoker: "public" }, request => eventWelcomeLogin.verify(request));
+
+exports.loginEventByCheckedInTicket = onCall({ region, invoker: "public" }, require("./eventTicketLogin").createEventTicketLogin({ db, auth: getAuth(), FieldValue, HttpsError, isMemberEmail: async email => (await findPersonByEmail(email)).isMember === true }));

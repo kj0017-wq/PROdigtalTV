@@ -3512,7 +3512,7 @@ export async function eventCheckinPage(eventId = "", query = new URLSearchParams
   const ownRegistration = accountRegistrations.find((item) => item.eventId === eventId && item.status === "checked_in")
     || accountRegistrations.find((item) => item.eventId === eventId);
   const storedTickets = listStoredTickets(eventId);
-  if (query.get("selected") !== "1" && (accessToken || storedTickets.length > 1)) {
+  if (query.get("selected") !== "1" && (storedTickets.length > 1 || (accessToken && !ticket?.ticketToken))) {
     const registrationOpen = Boolean(event && eventRegistrationIsOpen(event));
     const registrationUrl = accessToken
       ? `#/register/${encodeURIComponent(eventId)}?source=checkin&access=${encodeURIComponent(accessToken)}`
@@ -3537,7 +3537,7 @@ export async function eventCheckinPage(eventId = "", query = new URLSearchParams
     ? ticket : ownRegistration?.status === "checked_in" ? ownRegistration : null;
   if (checkedIn) {
     return publicShell("events", `${subhero("Einlass", event?.title || checkedIn.eventTitle || "Veranstaltung", "Sie sind eingecheckt.")}
-      <section class="section"><div class="container" style="max-width:760px"><div class="form-card login-card"><h2>${escapeHtml(registrationPartyLabel(checkedIn))}</h2><div class="alert alert--success">Sie sind bereits eingecheckt. Ein erneuter Check-in ist nicht erforderlich.</div><a class="button button--secondary" href="#/event/${encodeURIComponent(eventId)}">Zum Event</a></div></div></section>`);
+      <section class="section"><div class="container" style="max-width:760px"><div class="form-card login-card"><h2>${escapeHtml(registrationPartyLabel(checkedIn))}</h2><div class="alert alert--success">Sie sind bereits eingecheckt. Ein erneuter Check-in ist nicht erforderlich.</div><button class="button button--primary" type="button" data-ticket-event-access data-event-id="${escapeHtml(eventId)}">Zum Event</button><p class="muted">Beim Wechsel in Ihre gespeicherte iPhone-App können Sie den persönlichen Code aus der Welcome-Mail verwenden.</p></div></div></section>`);
   }
   if ((!ticket?.ticketToken || query.get("relink") === "1") && accessToken) {
     return publicShell("events", `${subhero("Einlass", event?.title || "Veranstaltung", "Verknüpfen Sie dieses Handy mit Ihrer vorhandenen Anmeldung.")}<section class="section"><div class="container" style="max-width:760px"><form class="form-card login-card" data-entrance-link data-event-id="${escapeHtml(eventId)}" data-access-token="${escapeHtml(accessToken)}"><label>E-Mail-Adresse Ihrer Anmeldung<input type="email" name="email" autocomplete="email" required></label><button type="submit" class="button button--primary">Handy verknüpfen und einchecken</button><p data-entrance-link-result role="status"></p></form></div></section>`);

@@ -13960,6 +13960,8 @@ function wireEventLiveActions() {
 }
 
 function wireActions() {
+  if (document.querySelector("[data-ticket-event-access]")) import("./firebase/eventTicketLogin.js?v=1").then(module => module.mountEventTicketLogin()).catch(console.error);
+  if (document.querySelector("[data-live-code-login]")) import("./firebase/eventWelcomeLogin.js?v=1").then(module => module.mountEventWelcomeLogin()).catch(console.error);
   if (document.querySelector("[data-sms-balance]")) import("./firebase/smsBalance.js?v=1").then(module => module.mountSmsBalance()).catch(console.error);
   if (document.querySelector("[data-login-sms-reset]")) import("./firebase/smsPasswordReset.js?v=1").then(module => module.mountSmsPasswordReset()).catch(console.error);
   const photoGallery = document.querySelector("[data-participant-photos]");
@@ -14124,6 +14126,7 @@ function wireActions() {
           : partySize > 1 ? "Beide Personen wurden erfolgreich eingecheckt." : "Check-in erfolgreich.";
       }
       button.hidden = true;
+      go(`event-checkin/${encodeURIComponent(button.dataset.eventId)}?selected=1&registered=1`);
     } catch (error) {
       button.disabled = false;
       button.textContent = previous;

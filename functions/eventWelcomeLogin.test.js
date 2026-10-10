@@ -1,0 +1,23 @@
+const assert=require('node:assert/strict');const {createEventWelcomeLogin}=require('../functions/eventWelcomeLogin');
+const REMOVE=Symbol('delete');let clock=Date.now();const map=new Map();const mails=[];let uidCounter=0;
+const stamp=n=>({toMillis:()=>n});const ref=(c,id)=>({path:c+'/'+id,id,get:async()=>snap(c+'/'+id),set:async(v,o)=>write(c+'/'+id,v,o?.merge),update:async v=>write(c+'/'+id,v,true)});
+const snap=p=>({id:p.split('/')[1],exists:map.has(p),data:()=>map.get(p)});function write(p,v,merge){const data=merge?{...(map.get(p)||{})}:{};for(const[k,x]of Object.entries(v)){if(x===REMOVE)delete data[k];else data[k]=x;}map.set(p,data);}
+const db={collection:c=>({doc:id=>ref(c,id),where:(field,op,value)=>({get:async()=>({docs:[...map.entries()].filter(([p,r])=>p.startsWith(c+'/')&&r[field]===value).map(([p])=>snap(p))})}),add:async v=>{mails.push(v);return ref(c,'mail'+mails.length);}}),runTransaction:async fn=>{const pending=[];const result=await fn({get:r=>r.get(),set:(r,v,o)=>pending.push(()=>write(r.path,v,o?.merge)),update:(r,v)=>pending.push(()=>write(r.path,v,true))});pending.forEach(f=>f());return result;}};
+const accounts=new Map();const auth={getUserByEmail:async e=>{if(!accounts.has(e))throw Object.assign(new Error(),{code:'auth/user-not-found'});return accounts.get(e);},createUser:async u=>{const a={...u,uid:'u'+ ++uidCounter};accounts.set(u.email,a);return a;},updateUser:async(uid,patch)=>{const u=[...accounts.values()].find(u=>u.uid===uid);Object.assign(u,patch);return u;},createCustomToken:async uid=>'token:'+uid};
+class ErrorType extends Error{constructor(code,msg){super(msg);this.code=code;}}
+const service=createEventWelcomeLogin({db,auth,FieldValue:{serverTimestamp:()=>stamp(clock),delete:()=>REMOVE},Timestamp:{fromMillis:stamp},HttpsError:ErrorType,now:()=>clock});
+map.set('events/event',{eventLiveEnabled:true,status:'active'});map.set('eventLiveAccess/event',{enabled:true});map.set('registrations/r',{eventId:'event',email:'guest@example.org',firstName:'Anna',lastName:'Gast',status:'checked_in'});
+const request=code=>({data:{eventId:'event',email:'guest@example.org',code},rawRequest:{ip:'127.0.0.1'}});
+(async()=>{
+ let issued=await service.issue('event','guest@example.org');assert.match(issued.code,/^\d{6}$/);assert(![...map.values()].some(v=>v.code===issued.code));
+ let login=await service.verify(request(issued.code));assert.equal(login.customToken,'token:u1');assert.equal(map.get('users/u1').role,'guest');await assert.rejects(service.verify(request(issued.code)),e=>e.code==='permission-denied');
+ issued=await service.issue('event','guest@example.org');clock+=10*60*1000+1;await assert.rejects(service.verify(request(issued.code)),e=>e.code==='permission-denied');
+ issued=await service.issue('event','guest@example.org');const wrong=issued.code==='000000'?'000001':'000000';for(let i=0;i<5;i++)await assert.rejects(service.verify(request(wrong)),e=>e.code==='permission-denied');await assert.rejects(service.verify(request(issued.code)),e=>e.code==='permission-denied');
+ issued=await service.issue('event','guest@example.org');map.get('registrations/r').status='cancelled';await assert.rejects(service.verify(request(issued.code)),e=>e.code==='permission-denied');map.get('registrations/r').status='checked_in';
+ map.get('users/u1').role='editor';issued=await service.issue('event','guest@example.org');await service.verify(request(issued.code));assert.equal(map.get('users/u1').role,'editor');
+ accounts.get('guest@example.org').disabled=true;issued=await service.issue('event','guest@example.org');await assert.rejects(service.verify(request(issued.code)),e=>e.code==='permission-denied');accounts.get('guest@example.org').disabled=false;
+ map.get('users/u1').guestPasswordTemporary=true;issued=await service.issue('event','guest@example.org');await service.verify(request(issued.code));assert.equal(map.get('users/u1').guestPasswordTemporary,false);assert.equal(map.get('users/u1').role,'editor');
+ clock+=10*60*1000;await service.requestCode(request());assert.equal(mails.length,1);assert.match(mails[0].text,/\d{6}/);await assert.rejects(service.requestCode(request()),e=>e.code==='resource-exhausted');
+ clock+=60001;map.get('eventLiveAccess/event').enabled=false;const before=mails.length;await service.requestCode(request());assert.equal(mails.length,before);assert.equal(await service.issue('event','guest@example.org'),null);
+ console.log('PASS: one-time use, expiry, five-attempt lockout, cancelled registration, role preservation, disabled account, temporary guest migration, resend throttling, disabled event, hashed code storage');
+})().catch(e=>{console.error(e);process.exitCode=1});
