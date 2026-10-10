@@ -1,5 +1,5 @@
 import { escapeHtml } from "./format.js?v=3";
-import { loadPortalParticipantPhoto, listPortalParticipantPhotos, markPortalParticipantPhotosSeen } from "../firebase/portalGalleryPhotoService.js?v=3";
+import { deletePortalParticipantPhoto, loadPortalParticipantPhoto, listPortalParticipantPhotos, markPortalParticipantPhotosSeen } from "../firebase/portalGalleryPhotoService.js?v=6";
 
 export function openParticipantPhoto(card, trigger) {
   const source = card.querySelector("[data-participant-photo-image]");
@@ -30,6 +30,43 @@ export function openParticipantPhoto(card, trigger) {
 export function mountParticipantPhotos(root) {
   if (root.dataset.bound) return;
   root.dataset.bound = "1";
+  const addDeleteButtons = () => root.querySelectorAll('[data-photo-can-delete="1"]').forEach((card) => {
+    if (card.querySelector("[data-participant-photo-delete]")) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "participant-photo-delete";
+    button.dataset.participantPhotoDelete = "1";
+    button.title = "Eigenes Foto löschen";
+    button.setAttribute("aria-label", "Eigenes Foto löschen");
+    button.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg>';
+    card.querySelector("figcaption")?.append(button);
+  });
+  addDeleteButtons();
+  root.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-participant-photo-delete]");
+    if (!button || !root.contains(button) || button.disabled) return;
+    const card = button.closest("[data-participant-photo]");
+    if (!window.confirm("Ihr Foto endgültig für alle Eventteilnehmer löschen?")) return;
+    button.disabled = true;
+    try {
+      await deletePortalParticipantPhoto(root.dataset.eventId, card.dataset.participantPhoto);
+      const url = card.querySelector("img")?.src;
+      viewers.forEach((viewer) => { if (viewer.querySelector("img")?.src === url) viewer.close(); });
+      observer.unobserve(card);
+      viewedObserver.unobserve(card);
+      visible.delete(card);
+      seenPending.delete(card.dataset.participantPhoto);
+      if (url && urls.has(url)) { URL.revokeObjectURL(url); urls.delete(url); }
+      card.remove();
+      if (!root.querySelector("[data-participant-photo]")) root.innerHTML = "<p>Noch keine Fotos für diese Veranstaltung.</p>";
+      document.dispatchEvent(new CustomEvent("participant-photos-seen"));
+    } catch (error) {
+      button.disabled = false;
+      let notice = card.querySelector("[data-photo-delete-error]");
+      if (!notice) { notice = document.createElement("p"); notice.dataset.photoDeleteError = "1"; notice.setAttribute("role", "alert"); card.querySelector("figcaption").append(notice); }
+      notice.textContent = error.message || "Foto konnte nicht gelöscht werden.";
+    }
+  });
   const urls = new Set();
   const viewers = new Set();
   root.addEventListener("click", (event) => {
@@ -160,12 +197,14 @@ export function mountParticipantPhotos(root) {
         card.className = "participant-photo-card";
         card.dataset.participantPhoto = photo.id;
         card.dataset.photoUnread = photo.unread ? "1" : "0";
+        card.dataset.photoCanDelete = photo.canDelete ? "1" : "0";
         card.innerHTML = `<button type="button" data-participant-photo-link aria-label="Foto vergrößern"><img data-participant-photo-image alt="${escapeHtml(photo.caption || photo.fileName || "Eventfoto")}" hidden><span data-participant-photo-status>Foto wird geladen …</span></button><figcaption>${photo.caption ? `<p>${escapeHtml(photo.caption)}</p>` : ""}<small>${escapeHtml(photo.uploadedByName || "Eventteilnehmer")}</small></figcaption>`;
         root.querySelector(":scope > p, :scope > .alert")?.remove();
         root.prepend(card);
         observer.observe(card);
         viewedObserver.observe(card);
       });
+      addDeleteButtons();
       if (additions.length || removed) document.dispatchEvent(new CustomEvent("participant-photos-seen"));
     } catch (error) {
       if (/permission-denied|unauthenticated/.test(error.code || "")) {

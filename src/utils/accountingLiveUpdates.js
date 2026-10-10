@@ -1,0 +1,4 @@
+import {getFirebaseServices} from '../firebase/firebaseClient.js?v=3';
+export async function watchAccountingCollection(host,onRows,onError=()=>{},getServices=getFirebaseServices,collectionName='accountingIncomingInvoices'){const f=await getServices();if(!f||!host.isConnected)return ()=>{};let stopped=false,unsubscribe=()=>{};const observer=new MutationObserver(()=>{if(!host.isConnected)stop();});function stop(){if(stopped)return;stopped=true;unsubscribe();observer.disconnect();}observer.observe(document.body,{childList:true,subtree:true});unsubscribe=f.firestore.onSnapshot(f.firestore.collection(f.db,collectionName),snapshot=>{if(stopped||!host.isConnected){stop();return;}onRows(snapshot.docs.map(doc=>({id:doc.id,...doc.data()})));},error=>{if(!stopped&&host.isConnected)onError(error);});return stop;}
+
+export const watchAccountingInvoices=watchAccountingCollection;

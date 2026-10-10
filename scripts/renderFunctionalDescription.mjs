@@ -75,6 +75,8 @@ function markdownToHtml(markdown) {
 
 const markdown = await readFile(sourcePath, "utf8");
 const { body, headings } = markdownToHtml(markdown);
+const documentDate = markdown.match(/^Stand:\s*(.+)$/m)?.[1];
+if (!documentDate) throw new Error("Stand der Dokumentation fehlt.");
 const navigation = headings.map(({ id, text }) => `<a href="#${id}">${escapeHtml(text)}</a>`).join("\n");
 const html = `<!doctype html>
 <html lang="de">
@@ -94,7 +96,7 @@ const html = `<!doctype html>
   <body>
     <header class="hero"><div class="hero__inner"><div class="hero__brand"><span class="hero__mark">PRO</span><span>PROdigitalTV · Dokumentation</span></div><h1>Funktionsbeschreibung von Website und CMS</h1><p>Aktueller Überblick für Vorstand, Administration, Redaktion und Veranstaltungsteam.</p></div></header>
     <div class="layout"><nav class="toc" aria-label="Inhaltsverzeichnis"><strong>Inhalt</strong>${navigation}</nav><article>${body}</article></div>
-    <footer class="footer">PROdigitalTV · Funktionsbeschreibung · Stand 1. Oktober 2026</footer>
+    <footer class="footer">PROdigitalTV · Funktionsbeschreibung · Stand ${escapeHtml(documentDate)}</footer>
   </body>
 </html>`;
 

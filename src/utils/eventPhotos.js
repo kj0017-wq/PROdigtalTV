@@ -1,7 +1,7 @@
-import { mountEventContentModeration } from "./eventContentModeration.js?v=1";
+import { mountEventContentModeration } from "./eventContentModeration.js?v=2";
 import { escapeHtml } from "./format.js?v=3";
-import { listPortalParticipantPhotos, uploadPortalGalleryPhotos } from "../firebase/portalGalleryPhotoService.js?v=4";
-import { mountParticipantPhotos, mountParticipantPhotoBadges } from "./participantPhotos.js?v=6";
+import { listPortalParticipantPhotos, uploadPortalGalleryPhotos } from "../firebase/portalGalleryPhotoService.js?v=5";
+import { mountParticipantPhotos, mountParticipantPhotoBadges } from "./participantPhotos.js?v=9";
 import { eventPhotoUploadProgressModel } from "./eventPhotoUploadProgress.js?v=1";
 
 const uploadStepLabels = {
@@ -47,20 +47,37 @@ export function mountEventPhotos(root) {
     const dialog = document.createElement("dialog");
     dialog.className = "event-photo-dialog";
     dialog.setAttribute("aria-labelledby", "event-photo-title");
-    dialog.innerHTML = `<header class="event-photo-dialog__header"><h2 id="event-photo-title">Event Fotos</h2><button class="button button--secondary button--small" type="button" data-event-photo-close aria-label="Event Fotos schließen">Schließen</button></header><div data-event-photo-content><p>Fotos werden geladen …</p></div>`;
+    dialog.innerHTML = `<header class="event-photo-dialog__header"><h2 id="event-photo-title">Event Fotos</h2><button class="button button--secondary button--small" type="button" data-event-photo-close aria-label="Event Fotos schließen">Schließen</button></header><nav class="event-photo-dialog__tabs" aria-label="Event-Fotos"><button type="button" data-event-photo-view="gallery" aria-pressed="true" class="is-active">Galerie</button><button type="button" data-event-photo-view="upload" aria-pressed="false">Fotos hochladen</button></nav><div data-event-photo-content><p>Fotos werden geladen …</p></div>`;
     document.body.append(dialog);
     dialog.querySelector("[data-event-photo-close]").onclick = () => dialog.close();
     dialog.addEventListener("close", () => { dialog.remove(); button.focus(); }, { once: true });
     dialog.showModal();
     const content = dialog.querySelector("[data-event-photo-content]");
+    let activeView = "gallery";
+    const selectView = (view) => {
+      activeView = view === "upload" ? "upload" : "gallery";
+      dialog.querySelectorAll("[data-event-photo-view]").forEach((tab) => {
+        const selected = tab.dataset.eventPhotoView === activeView;
+        tab.classList.toggle("is-active", selected);
+        tab.setAttribute("aria-pressed", String(selected));
+      });
+      content.querySelectorAll("[data-event-photo-panel]").forEach((panel) => {
+        panel.hidden = panel.dataset.eventPhotoPanel !== activeView;
+      });
+      const gallery = content.querySelector("[data-participant-photos]");
+      if (activeView === "gallery" && gallery) mountParticipantPhotos(gallery);
+    };
+    dialog.querySelectorAll("[data-event-photo-view]").forEach((tab) => {
+      tab.addEventListener("click", () => selectView(tab.dataset.eventPhotoView));
+    });
     const refresh = async () => {
       try {
         const { photos = [] } = await listPortalParticipantPhotos(eventId);
         if (!dialog.isConnected) return;
-        const photoGrid = `<div class="participant-photo-grid participant-photo-grid--thumbs" data-participant-photos data-event-id="${escapeHtml(eventId)}">${photos.length ? photos.map((photo) => `<figure class="participant-photo-card participant-photo-card--thumb" data-participant-photo="${escapeHtml(photo.id)}" data-photo-unread="${photo.unread ? "1" : "0"}"><button type="button" data-participant-photo-link aria-label="Foto vergrößern"><img data-participant-photo-image alt="${escapeHtml(photo.caption || photo.fileName || "Eventfoto")}" hidden><span data-participant-photo-status>Foto wird geladen …</span></button><figcaption>${photo.caption ? `<p>${escapeHtml(photo.caption)}</p>` : ""}<small>${escapeHtml(photo.uploadedByName || "Eventteilnehmer")}</small></figcaption></figure>`).join("") : '<p>Noch keine Fotos für diese Veranstaltung.</p>'}</div>`;
+        const photoGrid = `<div class="participant-photo-grid participant-photo-grid--thumbs" data-participant-photos data-event-id="${escapeHtml(eventId)}">${photos.length ? photos.map((photo) => `<figure class="participant-photo-card participant-photo-card--thumb" data-participant-photo="${escapeHtml(photo.id)}" data-photo-unread="${photo.unread ? "1" : "0"}" data-photo-can-delete="${photo.canDelete ? "1" : "0"}"><button type="button" data-participant-photo-link aria-label="Foto vergrößern"><img data-participant-photo-image alt="${escapeHtml(photo.caption || photo.fileName || "Eventfoto")}" hidden><span data-participant-photo-status>Foto wird geladen …</span></button><figcaption>${photo.caption ? `<p>${escapeHtml(photo.caption)}</p>` : ""}<small>${escapeHtml(photo.uploadedByName || "Eventteilnehmer")}</small></figcaption></figure>`).join("") : '<p>Noch keine Fotos für diese Veranstaltung.</p>'}</div>`;
         const uploadForm = `<section class="event-photo-dialog__upload event-photo-dialog__upload--compact"><div class="event-photo-dialog__upload-heading"><div><h3>Fotos hochladen</h3><p>Aus der Fotomediathek auswählen und mit den Eventteilnehmern teilen.</p></div></div><form data-event-photo-upload class="event-photo-upload-form"><label class="field event-photo-upload-form__files"><span>Fotos auswählen</span><input name="files" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple required></label><label class="field event-photo-upload-form__note"><span>Bildbeschreibung</span><textarea name="note" rows="1" maxlength="500" placeholder="Optional"></textarea></label><label class="checkbox-line event-photo-upload-form__rights"><input type="checkbox" name="rightsConfirmed" required> Ich darf diese Fotos mit den Eventteilnehmern teilen.</label><button class="button button--primary event-photo-upload-form__submit" type="submit">Fotos hochladen</button><section class="event-photo-upload-progress" data-event-photo-progress hidden aria-live="polite"><div class="event-photo-upload-progress__headline"><strong data-event-photo-progress-label>Auswahl wird geprüft</strong><span data-event-photo-progress-percent></span></div><progress max="100" value="0" aria-label="Fortschritt des Foto-Uploads"></progress><ol>${Object.entries(uploadStepLabels).map(([key, label]) => `<li data-event-photo-step="${key}" data-state="pending"><span aria-hidden="true"></span>${label}</li>`).join("")}</ol></section><div data-event-photo-result role="status" aria-live="polite"></div></form></section>`;
-        content.innerHTML = `${uploadForm}${photoGrid}`;
-        mountParticipantPhotos(content.querySelector("[data-participant-photos]"));
+        content.innerHTML = `<section data-event-photo-panel="gallery">${photoGrid}</section><section data-event-photo-panel="upload" hidden>${uploadForm}</section>`;
+        selectView(activeView);
         content.querySelector("[data-event-photo-upload]").onsubmit = async (event) => {
           event.preventDefault();
           const form = event.currentTarget;
@@ -76,6 +93,7 @@ export function mountEventPhotos(root) {
               updateEventPhotoUploadProgress(form, progress);
             }, eventId);
             updateEventPhotoUploadProgress(form, { stage: "refreshing", totalFiles: files.length, overallProgress: 100 });
+            activeView = "gallery";
             await refresh();
             const notice = document.createElement("p");
             notice.className = "alert alert--success";

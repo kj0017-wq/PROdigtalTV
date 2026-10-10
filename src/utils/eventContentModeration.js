@@ -1,7 +1,7 @@
 import { getFirebaseServices } from "../firebase/firebaseClient.js?v=2";
 import { escapeHtml } from "./format.js?v=3";
-import { loadPortalParticipantPhoto } from "../firebase/portalGalleryPhotoService.js?v=3";
-import { openParticipantPhoto } from "./participantPhotos.js?v=6";
+import { loadPortalParticipantPhoto } from "../firebase/portalGalleryPhotoService.js?v=5";
+import { openParticipantPhoto } from "./participantPhotos.js?v=8";
 
 async function call(name, data) {
   const firebase = await getFirebaseServices();

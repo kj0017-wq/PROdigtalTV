@@ -1,0 +1,1 @@
+export function singleFlightImport(task){let running=null;return (...args)=>{if(running)return running;running=Promise.resolve().then(()=>task(...args)).finally(()=>{running=null;});return running;};}

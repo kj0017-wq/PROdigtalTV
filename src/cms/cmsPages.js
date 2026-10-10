@@ -1,4 +1,6 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=481";
+import {speakerEventsForRemoval} from '../utils/eventSpeakerRemoval.js?v=1';
+import { eventInvitationDefaults } from "../utils/eventInvitationDefaults.js?v=1";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=484";
 import { filterFeedback, feedbackFilterOptions, isAcquisitionFilter } from "../utils/feedbackAcquisition.js";
 import { list, getOne } from "../firebase/dataService.js?v=504";
 import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=477";
@@ -1303,7 +1305,7 @@ export async function eventsAdminPage() {
     .filter(hasLiveCmsEventIdentity)
     .filter((event) => !isPastCmsEvent(event))
     .sort((a, b) => (a.date || "9999-12-31").localeCompare(b.date || "9999-12-31"));
-  return protect(cmsShell("cms/events", `${cmsTitle("Event-Management", "Events", `<a class="button button--primary button--small" href="#/cms/event/new">Neues Event erstellen</a>`)}
+  return protect(cmsShell("cms/events", `${cmsTitle("Event-Management", "Event Verwaltung", `<a class="button button--primary button--small" href="#/cms/event/new">Neues Event erstellen</a>`)}
   ${eventTable(events, { showThumb: true, mediaAssets, registrations, returnTo: "#/cms/events" })}`));
 }
 
@@ -1404,7 +1406,7 @@ export async function eventFeedbackAdminPage(query = new URLSearchParams()) {
     </section>`));
 }
 function eventTabs(id, active) {
-  return `<nav class="tabs">${[["base", "Stammdaten"], ["topics", "Vortraege/Referenten"], ["pre", "Einladung"], ["registration", "Anmeldung"], ["schedule", "Ablauf"], ["event-live", "Event Chat"], ["survey", "Live-Umfrage"], ["feedback", "Gästebefragung"], ["post", "Rückblick"], ["media", "Foto"]].map(([key, label]) => `<a href="#/cms/event/${encodeURIComponent(id)}?tab=${encodeURIComponent(key)}" data-event-tab="${key}" data-event-id="${id}" class="${active === key ?"active" : ""}">${label}</a>`).join("")}</nav>`;
+  return `<nav class="tabs">${[["base", "Stammdaten"], ["topics", "Vortraege/Referenten"], ["pre", "Einladungen"], ["registration", "Anmeldung"], ["schedule", "Ablauf"], ["event-live", "Event Chat"], ["survey", "Live-Umfrage"], ["feedback", "Gästebefragung"], ["post", "Rückblick"], ["media", "Foto"]].map(([key, label]) => `<a href="#/cms/event/${encodeURIComponent(id)}?tab=${encodeURIComponent(key)}" data-event-tab="${key}" data-event-id="${id}" class="${active === key ?"active" : ""}">${label}</a>`).join("")}</nav>`;
 }
 
 function eventLiveSettingsContent(event = {}) {
@@ -1795,16 +1797,43 @@ function cmsEventHandyTicketEnabled(event = {}) {
   ].some(explicitOffFlag);
 }
 
+function eventModeratorAccessPanel(event = {}, registrations = []) {
+  const selectedModerators = new Set((event.moderatorLoginEmails || []).map(email => String(email).trim().toLowerCase()));
+  const seenEmails = new Set();
+  const moderatorGuests = registrationParticipants(registrations).filter(person => {
+    const email = String(person.email || "").trim().toLowerCase();
+    if (email && seenEmails.has(email)) return false;
+    if (email) seenEmails.add(email);
+    return true;
+  }).sort((a, b) => `${a.lastName || ""} ${a.firstName || ""}`.localeCompare(`${b.lastName || ""} ${b.firstName || ""}`, "de"));
+  const moderatorChoices = moderatorGuests.map(person => {
+    const email = String(person.email || "").trim().toLowerCase();
+    const name = [person.firstName, person.lastName].filter(Boolean).join(" ") || person.name || email || "Name fehlt";
+    return `<label class="selection-item"><input type="checkbox" data-moderator-email-selection value="${escapeHtml(email)}" ${email && selectedModerators.has(email) ? "checked" : ""} ${email ? "" : "disabled"}><span><strong>${escapeHtml(name)}</strong><small>${escapeHtml([person.company, email || "Keine E-Mail hinterlegt"].filter(Boolean).join(" · "))}</small></span></label>`;
+  }).join("");
+  const selectedModeratorNames = moderatorGuests.filter(person => selectedModerators.has(String(person.email || "").trim().toLowerCase())).map(person => [person.firstName, person.lastName].filter(Boolean).join(" ") || person.name || person.email).filter(Boolean).join(", ");
+  const unavailableModerators = [...selectedModerators].filter(email => !seenEmails.has(email));
+  return `    <details class="panel cms-disclosure-panel event-moderation-picker">
+      <summary><div class="event-moderation-picker__heading"><span>Moderation</span><strong data-moderator-assignment-count>${escapeHtml(selectedModeratorNames)}</strong></div></summary>
+    <div data-event-moderator-assignment="${escapeHtml(event.id || "")}" class="form-grid">
+      <fieldset class="field" style="border:0;padding:0;margin:0;min-width:0"><legend>Moderatoren der Veranstaltung</legend><p class="muted">Eine oder mehrere Personen aus der Gästeliste auswählen. Die Zuweisung gibt automatisch Zugriff auf die eigenen Moderationskarten. Ein aktives Benutzerkonto ist erforderlich. Ohne Auswahl wird die Moderation aufgehoben.</p><div class="selection-grid">${moderatorChoices || `<p class="muted">Noch keine Personen in der Gästeliste dieses Events.</p>`}</div>${unavailableModerators.length ? `<p class="muted">${unavailableModerators.length} bisherige Moderatorenzuweisungen sind nicht mehr in der Gästeliste. Beim Speichern werden sie entfernt.</p>` : ""}</fieldset>
+      <div class="actions"><button class="button button--primary button--small" type="button" data-save-moderator-assignment>Moderation speichern</button></div>
+      <div data-moderator-assignment-result role="status"></div>
+    </div>
+    </details>`;
+}
+
 function eventRegistrationTogglePanel(event = {}) {
   const isOpen = cmsEventRegistrationIsOpen(event);
   const showOnHome = cmsEventShowsOnHome(event);
+  const showAgenda = event.showAgenda !== false;
   const handyTicketEnabled = cmsEventHandyTicketEnabled(event);
   return `<section class="panel" style="background:var(--pdt-bg);margin-bottom:18px">
     <div class="actions" style="justify-content:space-between;align-items:center;gap:18px">
       <div>
         <p class="eyebrow">Anmeldestatus</p>
         <h2>${isOpen ?"Anmeldung offen" : "Anmeldung geschlossen"}</h2>
-        <p class="muted">Aktiv oeffnet die Anmeldung. Inaktiv zeigt das Event nur als Save the Date. Der Startseiten-Schalter steuert die prominente Anzeige auf der Startseite.</p>
+        <p class="muted">Aktiv oeffnet die Anmeldung. Inaktiv zeigt das Event nur als Save the Date. Der Startseiten-Schalter steuert die prominente Anzeige auf der Startseite. „Agenda öffentlich“ blendet das Programm im öffentlichen Veranstaltungsbereich ein oder aus.</p>
       </div>
       <div class="actions" style="gap:14px;align-items:center">
         <label class="cms-switch ${isOpen ?"is-active" : ""}" title="Event aktivieren und Anmeldung oeffnen">
@@ -1817,6 +1846,11 @@ function eventRegistrationTogglePanel(event = {}) {
           <span class="cms-switch__track" aria-hidden="true"></span>
           <span class="cms-switch__text">Startseite</span>
         </label>
+        <label class="cms-switch ${showAgenda ? "is-active" : ""}" title="Agenda im öffentlichen Veranstaltungsbereich anzeigen">
+          <input type="checkbox" data-event-agenda-toggle="${escapeHtml(event.id || "")}" ${showAgenda ? "checked" : ""}>
+          <span class="cms-switch__track" aria-hidden="true"></span>
+          <span class="cms-switch__text">Agenda öffentlich</span>
+        </label>
         <label class="cms-switch ${handyTicketEnabled ?"is-active" : ""}" title="Handy-Ticket und Einlass-QR verwenden">
           <input type="checkbox" data-event-mobile-ticket-toggle="${escapeHtml(event.id || "")}" ${handyTicketEnabled ?"checked" : ""}>
           <span class="cms-switch__track" aria-hidden="true"></span>
@@ -1824,6 +1858,7 @@ function eventRegistrationTogglePanel(event = {}) {
         </label>
       </div>
     </div>
+
     <div id="event-registration-toggle-result"></div>
   </section>`;
 }
@@ -2062,15 +2097,13 @@ function companyLogoForSpeakers(topic = {}, topicSpeakers = [], sponsors = [], m
   const company = companies[0] || "";
   if (!company) return { company: "", logoUrl: "" };
   const companyKey = normalizeCompanyKey(company);
-  const sponsor = sponsors.find((item) => normalizeCompanyKey(item.name || item.company || item.title) === companyKey)
-    || sponsors.find((item) => companyKey && (normalizeCompanyKey(item.name || item.company || item.title).includes(companyKey) || companyKey.includes(normalizeCompanyKey(item.name || item.company || item.title))));
+  const sponsor = companyKey ? sponsors.find((item) => normalizeCompanyKey(item.name || item.company || item.title) === companyKey) : null;
   if (sponsor) {
     const asset = recordMediaAsset(sponsor, mediaAssets, "sponsors", "logoUrl");
     const logoUrl = mediaAssetUrl(asset || {}) || sponsor.logoUrl || sponsor.logo_url || sponsor.imageUrl || sponsor.image_url || sponsor.assetUrl || "";
     if (logoUrl) return { company: sponsor.name || company, logoUrl };
   }
-  const member = members.find((item) => normalizeCompanyKey(item.name || item.company || item.title) === companyKey)
-    || members.find((item) => companyKey && (normalizeCompanyKey(item.name || item.company || item.title).includes(companyKey) || companyKey.includes(normalizeCompanyKey(item.name || item.company || item.title))));
+  const member = companyKey ? members.find((item) => normalizeCompanyKey(item.name || item.company || item.title) === companyKey) : null;
   if (member) {
     const logoUrl = memberLogoUrl(member, mediaAssets);
     if (logoUrl) return { company: member.name || company, logoUrl };
@@ -2094,7 +2127,7 @@ function eventTopicSpeakerActions(event, topic, topicSpeakers) {
     <div><strong>${escapeHtml(speaker.name || "")}</strong><small>${topicPersonRole(topic, speaker.id) === "moderator" ? "Moderation" : contributionLabel === "Referat" ? "Referent/in" : "Teilnehmer/in"} · ${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" - "))}</small></div>
     <div class="speaker-action-card__actions">
       <a class="button button--secondary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}&speaker=${speaker.id}">Bearbeiten</a>
-      <button type="button" class="button button--secondary button--small" data-remove-event-topic-speaker="${speaker.id}" data-event-id="${event.id}" data-topic-id="${topic.id}">Loeschen</button>
+      <button type="button" class="button button--secondary button--small" data-remove-event-topic-speaker="${speaker.id}" data-event-id="${event.id}" data-topic-id="${topic.id}">Aus Vortrag entfernen</button>
     </div>
   </div>`).join("")}
     <div class="actions"><a class="button button--primary button--small" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}">+ weitere Person zuordnen</a></div>
@@ -2179,8 +2212,8 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
           ${contributionType === "lecture" ? `<input type="hidden" name="contributionRole" value="participant">` : `<div class="field"><label>Rolle</label><select name="contributionRole"><option value="participant" ${selectedRole === "participant" ? "selected" : ""}>Teilnehmer/in</option><option value="moderator" ${selectedRole === "moderator" ? "selected" : ""}>Moderator/in</option></select></div>`}
           ${speakerProfileSelect(speakers, existingSelectedSpeaker?.id || "", existingSelectedSpeaker ? [] : topicSpeakers.map((speaker) => speaker.id))}
           <div class="form-grid--two">
-            <div class="field"><label>Vorname</label><input name="speakerFirstName" value="${escapeHtml(speakerParts.firstName || "")}" required></div>
-            <div class="field"><label>Nachname</label><input name="speakerLastName" value="${escapeHtml(speakerParts.lastName || "")}" required></div>
+            <div class="field"><label>Vorname *</label><input name="speakerFirstName" value="${escapeHtml(speakerParts.firstName || "")}" required></div>
+            <div class="field"><label>Nachname *</label><input name="speakerLastName" value="${escapeHtml(speakerParts.lastName || "")}" required></div>
             <div class="field"><label>Firma</label><input name="speakerCompany" value="${escapeHtml(selectedSpeaker.company || "")}"></div>
             <div class="field"><label>Position</label><input name="speakerPosition" value="${escapeHtml(selectedSpeaker.position || "")}"></div>
             <div class="field"><label>Webseite</label><input name="speakerWebsite" type="url" value="${escapeHtml(selectedSpeaker.website || selectedSpeaker.url || "")}"></div>
@@ -2229,8 +2262,8 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
         <div class="field" data-contribution-role-field ${contributionType === "lecture" ? "hidden" : ""}><label>Rolle</label><select name="contributionRole"><option value="participant" ${initialRole === "participant" ? "selected" : ""}>Teilnehmer/in</option><option value="moderator" ${initialRole === "moderator" ? "selected" : ""}>Moderator/in</option></select></div>
         ${speakerProfileSelect(speakers, speakerForForm.id || "")}
         <div class="form-grid--two">
-          <div class="field"><label>Vorname</label><input name="speakerFirstName" value="${escapeHtml(speakerParts.firstName || "")}" required></div>
-          <div class="field"><label>Nachname</label><input name="speakerLastName" value="${escapeHtml(speakerParts.lastName || "")}" required></div>
+          <div class="field"><label>Vorname *</label><input name="speakerFirstName" value="${escapeHtml(speakerParts.firstName || "")}" required></div>
+          <div class="field"><label>Nachname *</label><input name="speakerLastName" value="${escapeHtml(speakerParts.lastName || "")}" required></div>
           <div class="field"><label>Firma</label><input name="speakerCompany" value="${escapeHtml(speakerForForm.company || "")}"></div>
           <div class="field"><label>Position</label><input name="speakerPosition" value="${escapeHtml(speakerForForm.position || "")}"></div>
           <div class="field"><label>Webseite</label><input name="speakerWebsite" type="url" value="${escapeHtml(speakerForForm.website || speakerForForm.url || "")}"></div>
@@ -2243,9 +2276,9 @@ function topicEditorPanel(event, topics, speakers, galleries = [], downloads = [
       </section>
       <section class="panel">
         <h3>2. Inhalt</h3>
-        <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(selectedTopic.title || "")}" required>${aiFieldActions([{ action: "improveText", target: "title", label: "Titel mit ChatGPT", entityType: "topics", entityId: topicEntityId, fieldName: "title" }])}</div>
+        <div class="field"><label>Titel *</label><input name="title" value="${escapeHtml(selectedTopic.title || "")}" required>${aiFieldActions([{ action: "improveText", target: "title", label: "Titel mit ChatGPT", entityType: "topics", entityId: topicEntityId, fieldName: "title" }])}</div>
         <div class="field"><label>Subline</label><input name="subline" value="${escapeHtml(selectedTopic.subline || selectedTopic.subtitle || "")}"></div>
-        <div class="field"><label>Beschreibung</label><textarea name="text" required>${escapeHtml(selectedTopic.longDescription || selectedTopic.description || selectedTopic.shortDescription || "")}</textarea>${aiFieldActions([{ action: "generateTopicDescription", target: "text", label: "Beitragstext mit KI erzeugen", entityType: "topics", entityId: topicEntityId, fieldName: "longDescription" }])}</div>
+        <div class="field"><label>Beschreibung *</label><textarea name="text" required>${escapeHtml(selectedTopic.longDescription || selectedTopic.description || selectedTopic.shortDescription || "")}</textarea>${aiFieldActions([{ action: "generateTopicDescription", target: "text", label: "Beitragstext mit KI erzeugen", entityType: "topics", entityId: topicEntityId, fieldName: "longDescription" }])}</div>
         <div class="form-grid--two">
           <div class="field"><label>Unternehmenslogo</label>${imageDropzone({ inputName: "topicCompanyLogo", removeName: "removeTopicCompanyLogo", imageUrl: selectedTopic.companyLogoUrl || selectedTopic.logoUrl || "", label: "Unternehmenslogo", defaultSize: "600x300", simple: true })}</div>
           <div class="field"><label>Vortragsbild</label>${imageDropzone({ inputName: "topicImage", removeName: "removeTopicImage", imageUrl: topicImageUrl(selectedTopic, mediaAssets), label: "Vortragsbild", defaultSize: "1200x675", simple: true, mediaHref: selectedTopic.id ?mediaLibraryHref({ collection: "topics", id: topicEntityId, field: "imageUrl", altField: "thumbnail_alt", returnTo: `#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topicEntityId}` }) : "" })}${topicImagePositionEditor(selectedTopic, mediaAssets)}</div>
@@ -2406,7 +2439,7 @@ function eventTopicsEditor(event, topics, speakers, allEvents, galleries = [], d
           <div class="assigned-topic-card__body">
             <span class="status">${escapeHtml(topicContributionLabel(topic))}</span><a class="assigned-topic-card__title" href="#/cms/event/${event.id}?tab=topics&mode=edit&topic=${topic.id}" title="${escapeHtml(topic.title || "")}">${escapeHtml(topic.title || "")}</a>
             ${summary ?`<p>${escapeHtml(shortText(summary, 180))}</p>` : `<p class="muted">Noch keine Kurzbeschreibung hinterlegt.</p>`}
-            <div class="topic-speaker-badges">${topicSpeakers.length ?topicSpeakers.map((speaker) => { const approval = approvalFor(topic.id, speaker.id); const role = topicPersonRole(topic, speaker.id) === "moderator" ? "Moderation" : topicContributionType(topic) === "lecture" ? "Referent/in" : "Teilnehmer/in"; return `<span class="speaker-badge-stack"><a class="speaker-badge" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}&speaker=${speaker.id}" title="${escapeHtml([speaker.name, role, speaker.company, speaker.position].filter(Boolean).join(" - "))}">${speakerAvatar(speaker, "speaker-badge__avatar")}<span><strong>${escapeHtml(speaker.name || "")}</strong><small>${escapeHtml([role, speaker.company, speaker.position].filter(Boolean).join(" · "))}</small></span></a>${approvalControl(approval, topic.id, speaker.id)}</span>`; }).join("") : `<a class="speaker-badge speaker-badge--empty" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}">Person hinzufuegen</a>`}</div>
+            <div class="topic-speaker-badges">${topicSpeakers.length ?topicSpeakers.map((speaker) => { const approval = approvalFor(topic.id, speaker.id); const role = topicPersonRole(topic, speaker.id) === "moderator" ? "Moderation" : topicContributionType(topic) === "lecture" ? "Referent/in" : "Teilnehmer/in"; return `<span class="speaker-badge-stack"><a class="speaker-badge" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}&speaker=${speaker.id}" title="${escapeHtml([speaker.name, role, speaker.company, speaker.position].filter(Boolean).join(" - "))}">${speakerAvatar(speaker, "speaker-badge__avatar")}<span><strong>${escapeHtml(speaker.name || "")}</strong><small>${escapeHtml([role, speaker.company, speaker.position].filter(Boolean).join(" · "))}</small></span></a>${approvalControl(approval, topic.id, speaker.id)}<button type="button" class="button button--secondary button--tiny" data-remove-speaker-from-event="${escapeHtml(speaker.id)}" data-event-id="${escapeHtml(event.id)}" title="Nur aus diesem Event entfernen; Personenprofil bleibt erhalten">Aus Event entfernen</button></span>`; }).join("") : `<a class="speaker-badge speaker-badge--empty" href="#/cms/event/${event.id}?tab=topics&mode=referent&topic=${topic.id}">Person hinzufuegen</a>`}</div>
           </div>
           <div class="assigned-topic-card__actions table-actions table-actions--icons">
             <button class="icon-button ${topicIsActive ? "icon-button--visible" : "icon-button--hidden"}" type="button" data-record-status="topics" data-record-id="${escapeHtml(topic.id)}" data-status="${topicIsActive ? "inactive" : "active"}" title="${escapeHtml(topicVisibilityTitle)}" aria-label="${escapeHtml(topicVisibilityTitle)}">${iconImage(topicIsActive ? "eye" : "eyeOff")}</button>
@@ -2785,48 +2818,36 @@ function eventScheduleItems(event = {}, topics = [], speakers = []) {
   return defaultEventScheduleItems(event, topics, speakers);
 }
 
-function eventScheduleEditor(event = {}, topics = [], speakers = []) {
+function eventScheduleEditor(event = {}, topics = [], speakers = [], registrations = []) {
   const scheduleItems = eventScheduleItems(event, topics, speakers);
   const scheduleText = scheduleItemsToText(scheduleItems);
   const assignedTopicData = eventAssignedTopics(event, topics).filter(eventScheduleTopicIsActive).map((topic) => eventScheduleTopicData(event, topic, speakers));
   const rowMarkup = scheduleItems.map((item) => eventScheduleEditorRow(item)).join("");
-  const moderatorOptions = speakers
-    .filter((speaker) => !["archived", "deleted", "inactive"].includes(String(speaker.status || "").toLowerCase()))
-    .map((speaker) => speaker.name || [speaker.firstName, speaker.lastName].filter(Boolean).join(" "))
-    .filter(Boolean)
-    .sort((a, b) => a.localeCompare(b, "de"));
   return `<section class="panel event-schedule-editor" style="background:var(--pdt-bg)" data-event-schedule-editor data-event-schedule-topics="${escapeHtml(JSON.stringify(assignedTopicData))}">
     <div class="field-label-row">
       <div><p class="eyebrow">Ablaufplan</p><h3>Uhrzeitliche Planung</h3></div>
       <span class="muted">Container per Griff verschieben</span>
     </div>
-    <div class="event-schedule-editor__meta">
+    <div class="event-schedule-editor__meta event-schedule-editor__meta--reference">
       <div><span>Veranstaltung</span><strong>${escapeHtml(event.title || "Veranstaltung ohne Titel")}</strong></div>
       <div><span>Datum</span><strong>${escapeHtml(event.date || "Datum offen")}</strong></div>
-      <div><span>Moderation</span><strong>${escapeHtml(event.moderatorName || "Noch offen")}</strong></div>
+      <button class="button button--primary event-schedule-save" type="submit" title="Änderungen am Ablauf speichern.">Speichern</button>
     </div>
-    <div class="event-schedule-editor__moderator-tools">
-      <div class="field event-schedule-editor__moderator"><label for="event-moderator-name">Moderatoren der Veranstaltung</label><input id="event-moderator-name" name="moderatorName" list="event-moderator-options" value="${escapeHtml(event.moderatorName || "")}" placeholder="Name eingeben oder Referenten auswählen" autocomplete="off"><datalist id="event-moderator-options">${moderatorOptions.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("")}</datalist></div>
+    <div class="event-schedule-moderation-row">
+      ${eventModeratorAccessPanel(event, registrations)}
       <button class="button button--primary" type="button" data-moderation-cards data-event-id="${escapeHtml(event.id)}" data-event-title="${escapeHtml(event.title || "Event")}">Moderationskarten erstellen</button>
-      <a class="button button--secondary" href="#/cms/event/${escapeHtml(event.id)}?tab=topics">Vorträge / Referenten übernehmen</a>
+    </div>
+    <input type="hidden" name="moderatorName" value="${escapeHtml(event.moderatorName || "")}">
+    <div class="event-schedule-planning-row">
+      <div class="field event-schedule-planning-row__duration"><label for="event-talk-duration">Vortragslänge in Minuten</label><input id="event-talk-duration" type="number" name="talkDurationMinutes" data-event-schedule-duration min="5" max="180" step="5" value="${escapeHtml(eventTalkDurationMinutes(event))}"><small class="muted">Standard sind 30 Minuten.<br>Gilt beim Neuaufbau des Ablaufplans.</small></div>
+      <div class="event-schedule-planning-row__manage"><a class="button button--secondary" href="#/cms/event/${escapeHtml(event.id)}?tab=topics" title="Vorträge und Referenten für dieses Event verwalten und zuordnen.">Vorträge / Referenten verwalten</a></div>
+      <div class="field event-schedule-planning-row__rebuild"><label>Ablauf aus Vorträgen erzeugen</label><button type="button" class="button button--secondary" data-regenerate-event-schedule title="Den aktuellen Ablauf vollständig aus den zugeordneten Vorträgen neu erstellen. Manuelle Programmpunkte werden ersetzt.">Aus Vorträgen neu aufbauen</button><small class="muted">Ersetzt den aktuellen Ablauf inklusive manueller Punkte. Danach können die Zeilen verschoben und bearbeitet werden. Anschließend speichern.</small></div>
     </div>
     <div class="event-schedule-view-tabs" role="tablist" aria-label="Ablaufplan Ansicht">
       <button type="button" class="is-active" data-event-schedule-view="editor" aria-selected="true">Editor</button>
       <button type="button" data-event-schedule-view="list" aria-selected="false">Listenansicht</button>
     </div>
     <div class="event-schedule-view is-active" data-event-schedule-panel="editor">
-      <div class="form-grid--two">
-        <div class="field">
-          <label>Vortragslaenge in Minuten</label>
-          <input type="number" name="talkDurationMinutes" data-event-schedule-duration min="5" max="180" step="5" value="${escapeHtml(eventTalkDurationMinutes(event))}">
-          <p class="muted">Standard sind 30 Minuten. Gilt beim Neuaufbau des Ablaufplans.</p>
-        </div>
-        <div class="field">
-          <label>Ablauf aus Vortraegen erzeugen</label>
-          <button type="button" class="button button--secondary" data-regenerate-event-schedule>Aus Vortraegen neu aufbauen</button>
-          <p class="muted">Ersetzt die aktuelle Tabelle durch Einlass, Moderation, Vortraege, Pausen und Ende. Danach koennen die Zeilen frei verschoben und bearbeitet werden.</p>
-        </div>
-      </div>
       <div class="event-schedule-editor__table" data-event-schedule-list>
         <div class="event-schedule-editor__head" aria-hidden="true">
           <span></span>
@@ -3000,13 +3021,20 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
         .replace(`<div class="field"><label>Lifecycle</label><select name="lifecyclePhase">${Object.entries(lifecycleLabels).map(([key, value]) => `<option value="${key}" ${key === event.lifecyclePhase ?"selected" : ""}>${value}</option>`).join("")}</select></div>`, "");
     }
   } else if (tab === "schedule") {
-    content = `<form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="schedule" class="form-grid is-save-aware"><input type="hidden" name="date" value="${escapeHtml(event.date || "")}"><input type="hidden" name="startTime" value="${escapeHtml(event.startTime || "")}"><input type="hidden" name="endTime" value="${escapeHtml(event.endTime || "")}">${eventScheduleEditor(event, topics, speakers)}<div class="actions"><button class="button button--primary">Ablauf speichern</button></div><div id="event-save-result"></div></form>`;
+    content = `<form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="schedule" class="form-grid is-save-aware"><input type="hidden" name="date" value="${escapeHtml(event.date || "")}"><input type="hidden" name="startTime" value="${escapeHtml(event.startTime || "")}"><input type="hidden" name="endTime" value="${escapeHtml(event.endTime || "")}">${eventScheduleEditor(event, topics, speakers, registrations.filter(item => item.eventId === event.id))}<div id="event-save-result"></div></form>`;
   } else if (tab === "event-live") {
     content = eventLiveSettingsContent(event);
   } else if (tab === "survey") {
     content = eventSurveyEditorContent(event);
   } else if (tab === "topics") {
     content = eventTopicsEditor(event, topics, speakers, allEvents, galleries, downloads, mediaAssets, query, sponsors, members, speakerApprovals);
+    const [mailingContacts, mailingUsers] = await Promise.all([list("contacts"), list("users")]);
+    const mailingPeople = mergePeopleContactsAndMembers(mailingContacts, members, mailingUsers).map(person => {
+      const member = members.find(item => item.id === (person.__memberId || person.memberId));
+      return Object.fromEntries(["name", "firstName", "lastName", "company", "position", "email", "mobile", "phone", "website", "url", "shortBio", "bio", "longBio", "vita", "biography"].map(key => [key, person[key] || (key === "website" ? member?.website || member?.url : "") || ""]));
+    });
+    content += `<div hidden data-speaker-mailing-data>${escapeHtml(JSON.stringify(mailingPeople))}</div>`;
+
   } else if (tab === "__old_topics") {
     content = `<h2>Zugeordnete Themen</h2><div class="filters">${topics.map((topic) => `<span class="filter ${event.topicIds.includes(topic.id) ?"active" : ""}">${escapeHtml(topic.title)}</span>`).join("")}</div><p>Themenspezifische Beschreibung und Sortierung koennen hier redaktionell erweitert werden.</p><div class="table-wrap" style="margin-top:22px"><table class="table"><thead><tr><th>Thema</th><th>Referenten</th></tr></thead><tbody>${topics.filter((topic) => event.topicIds.includes(topic.id)).map((topic) => { const topicSpeakers = speakers.filter((speaker) => speaker.topicId === topic.id || (event.speakerIds || []).includes(speaker.id)); return `<tr><td>${escapeHtml(topic.title)}</td><td>${topicSpeakers.length ?topicSpeakers.map((speaker) => `<div class="person"><div>${speaker.photoUrl ?`<img src="${escapeHtml(speaker.photoUrl)}" alt="">` : ""}</div><div><strong>${escapeHtml(speaker.name)}</strong><small>${escapeHtml([speaker.company, speaker.position].filter(Boolean).join(" · "))}</small>${speaker.shortBio ?`<p>${escapeHtml(speaker.shortBio)}</p>` : ""}</div></div>`).join("") : "Noch kein Referent zugeordnet."}</td></tr>`; }).join("")}</tbody></table></div>`;
   } else if (tab === "speakers") {
@@ -3022,12 +3050,14 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     const registrationMailText = event.mailText || defaultEventRegistrationMailText(event, "confirmation", globalMailTemplates);
     const waitlistMailText = event.waitlistMail || defaultEventRegistrationMailText(event, "waitlist", globalMailTemplates);
     const reminderMailText = event.reminderMail || defaultEventRegistrationMailText(event, "reminder", globalMailTemplates);
-    const adminAddRegistrationPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)" open><summary><strong>Person manuell hinzufuegen</strong><span>Admin-Anmeldung</span></summary><form id="admin-registration-form" data-event-id="${event.id}" class="form-grid form-grid--compact"><div class="form-grid--two"><div class="field"><label>Vorname *</label><input name="firstName" autocomplete="given-name" required></div><div class="field"><label>Nachname *</label><input name="lastName" autocomplete="family-name" required></div></div><div class="form-grid--two"><div class="field"><label>Unternehmen</label><input name="company" autocomplete="organization"></div><div class="field"><label>Position / Funktion</label><input name="position" autocomplete="organization-title"></div></div><div class="field"><label>LinkedIn-Profil (optional)</label><input name="linkedIn" type="url" autocomplete="url" placeholder="https://www.linkedin.com/in/..."></div><div class="form-grid--two"><div class="field"><label>E-Mail *</label><input name="email" type="email" autocomplete="email" required></div><div class="field"><label>Mobilnummer mit Landesvorwahl *</label><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+49 170 1234567" required></div></div><label class="checkbox checkbox--required"><input type="checkbox" name="privacyAccepted" required> Einwilligung / Datenschutz liegt vor *</label><div class="actions"><button class="button button--primary button--small" type="submit">Person hinzufuegen</button><div id="admin-registration-result"></div></div></form></details>`;
+    const [mailingContacts, mailingUsers] = await Promise.all([list("contacts"), list("users")]);
+    const mailingChoices = mergePeopleContactsAndMembers(mailingContacts, members, mailingUsers).map(person => Object.fromEntries(["name", "firstName", "lastName", "company", "position", "email", "mobile", "phone", "linkedIn"].map(field => [field, person[field] || ""])));
+    const adminAddRegistrationPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)" open><summary><strong>Person manuell hinzufuegen</strong><span>Admin-Anmeldung</span></summary><form id="admin-registration-form" data-event-id="${event.id}" class="form-grid form-grid--compact"><div hidden data-registration-mailing-data>${escapeHtml(JSON.stringify(mailingChoices))}</div><div class="field"><label for="registration-mailing-search">Aus Mailliste übernehmen</label><input id="registration-mailing-search" type="search" data-registration-mailing-search placeholder="Name, Firma oder E-Mail suchen" autocomplete="off"><div data-registration-mailing-results class="registration-mailing-results" aria-live="polite"></div><small class="muted">Person auswählen, Daten prüfen und anschließend hinzufügen.</small></div><div class="form-grid--two"><div class="field"><label>Vorname *</label><input name="firstName" autocomplete="given-name" required></div><div class="field"><label>Nachname *</label><input name="lastName" autocomplete="family-name" required></div></div><div class="form-grid--two"><div class="field"><label>Unternehmen</label><input name="company" autocomplete="organization"></div><div class="field"><label>Position / Funktion</label><input name="position" autocomplete="organization-title"></div></div><div class="field"><label>LinkedIn-Profil (optional)</label><input name="linkedIn" type="url" autocomplete="url" placeholder="https://www.linkedin.com/in/..."></div><div class="form-grid--two"><div class="field"><label>E-Mail *</label><input name="email" type="email" autocomplete="email" required></div><div class="field"><label>Mobilnummer mit Landesvorwahl *</label><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+49 170 1234567" required></div></div><label class="checkbox checkbox--required"><input type="checkbox" name="privacyAccepted" required> Einwilligung / Datenschutz liegt vor *</label><div class="actions"><button class="button button--primary button--small" type="submit">Person hinzufuegen</button><div id="admin-registration-result"></div></div></form></details>`;
     const registrationsToolbar = `<div class="registration-toolbar"><div class="registration-toolbar__heading"><h2>Anmeldungen</h2><span class="muted">${assignedPeopleCount} Personen · ${assigned.length} Buchungen</span></div><div class="actions registration-toolbar__actions"><button class="button button--primary button--small" type="button" data-print-name-badges data-event-date="${escapeHtml(event.date || "")}" data-event-id="${escapeHtml(event.id)}" data-event-title="${escapeHtml(event.title || "Event")}">Namensetiketten drucken</button><button class="button button--secondary button--small" type="button" data-prepare-guest-accounts data-event-id="${escapeHtml(event.id)}">Gastkonten vorbereiten</button><button class="button button--secondary button--small" data-export-event="${event.id}">CSV herunterladen</button><button type="button" class="button button--secondary button--small" data-checkin-selected-registrations data-event-id="${escapeHtml(event.id)}" disabled>Ausgewählte einchecken</button><button class="button button--danger button--small" data-delete-selected-registrations data-event-id="${event.id}" disabled>Ausgewählte löschen</button></div></div>`;
     const registrationsTable = `<div id="registration-bulk-result"></div><div class="table-wrap"><table class="table"><thead><tr><th><input type="checkbox" data-registration-select-all aria-label="Alle Anmeldungen auswaehlen"></th><th>Teilnehmer</th><th>Unternehmen</th><th>E-Mail</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${registrationParticipants(assigned).map((participant) => eventRegistrationParticipantRow(participant, event.id)).join("")}</tbody></table></div>`;
     const checkinPanel = cmsEventHandyTicketEnabled(event)
-      ? `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Einlass / Event-QR</strong><span>QR-Code anzeigen</span></summary><p>Diese Seite zeigt den geschuetzten QR-Code, den Teilnehmer vor Ort mit dem Handy scannen.</p><div class="actions"><button class="button button--primary button--small" type="button" data-open-event-checkin-screen="new" data-event-id="${event.id}">Event-QR oeffnen</button><button class="button button--secondary button--small" type="button" data-open-event-checkin-screen="same" data-event-id="${event.id}">Event-QR im Browser oeffnen</button></div><div id="event-checkin-access-result"></div></details>`
-      : `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Einlass / Event-QR</strong><span>deaktiviert</span></summary><p>Fuer dieses Event ist das Handy-Ticket ausgeschaltet. Die Anmeldung wird per E-Mail bestaetigt, aber es wird kein Einlass-QR benoetigt.</p></details>`;
+      ? `<div class="actions"><button class="button button--primary button--small" type="button" data-open-event-checkin-screen="new" data-event-id="${escapeHtml(event.id)}" title="Geschützten Einlass-QR für dieses Event öffnen">Einlass-QR öffnen</button></div><div id="event-checkin-access-result" role="status"></div>`
+      : `<p class="muted">Einlass-QR ist für dieses Event deaktiviert.</p>`;
     const checkinPeople = splitEventCheckinPeople(eventCheckinSpeakers(event, speakers), boardMembers);
     const groupCheckinPanel = `<section class="cms-group-checkin-section"><h3>Gruppen-Check-in</h3><div class="cms-group-checkin-grid">${groupCheckinForm(event, "board", checkinPeople.boardMembers)}${groupCheckinForm(event, "speakers", checkinPeople.speakers)}</div></section>`;
     const mailPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)"><summary><strong>Mailtexte und Erinnerungen</strong><span>anzeigen / bearbeiten</span></summary><form id="event-edit-form" data-event-id="${event.id}" data-event-form-section="registration" class="form-grid is-save-aware"><p>KI erzeugt Mailtexte mit Platzhaltern und ohne echte Teilnehmerdaten. Der Diff-Layer zeigt den vorhandenen Text und den neuen Vorschlag; gespeichert wird erst nach Uebernehmen.</p><div id="${mailAiContextId}" hidden>${escapeHtml(JSON.stringify({ event, registrations: assigned.slice(0, 3) }))}</div><fieldset class="registration-section registration-section--compact"><legend>Automatische Erinnerungen</legend><div class="registration-consents registration-consents--inline"><label class="checkbox"><input type="checkbox" name="reminder7d" ${event.reminder7d ? "checked" : ""}> 7 Tage vorher</label><label class="checkbox"><input type="checkbox" name="reminder1d" ${event.reminder1d ? "checked" : ""}> 1 Tag vorher</label><label class="checkbox"><input type="checkbox" name="reminder2h" ${event.reminder2h ? "checked" : ""}> 2 Stunden vorher</label><label class="checkbox"><input type="checkbox" name="notifyOnEventChange" ${event.notifyOnEventChange ? "checked" : ""}> Sofort bei Termin- oder Ortsaenderung</label><label class="checkbox"><input type="checkbox" name="checkinWelcomeMailEnabled" ${(event.checkinWelcomeMailEnabled ?? event.checkinAgendaMailEnabled) ? "checked" : ""}> Welcome-Mail beim Check-in</label></div></fieldset><div class="field"><label>Erinnerungsmail an Teilnehmer</label><textarea name="reminderMail" rows="9">${escapeHtml(reminderMailText)}</textarea><p class="muted">Dieser Text wird fuer automatische Teilnehmer-Erinnerungen verwendet. Bei angemeldeten Empfaengern wird automatisch ein persoenlicher Button „Teilnahme absagen“ angefuegt.</p>${aiFieldActions([{ action: "generateRegistrationMailText", target: "reminderMail", contextTarget: mailAiContextId, label: "Erinnerungsmail erzeugen", entityId: event.id, fieldName: "reminderMail" }])}</div><div class="field"><label>Bestaetigungsmail</label><textarea name="mailText" rows="10">${escapeHtml(registrationMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "mailText", contextTarget: mailAiContextId, label: "Bestaetigungsmail erzeugen", entityId: event.id, fieldName: "mailText" }])}</div><div class="field"><label>Wartelistenmail</label><textarea name="waitlistMail" rows="10">${escapeHtml(waitlistMailText)}</textarea>${aiFieldActions([{ action: "generateRegistrationMailText", target: "waitlistMail", contextTarget: mailAiContextId, label: "Wartelistenmail erzeugen", entityId: event.id, fieldName: "waitlistMail" }])}</div><div class="actions"><button class="button button--primary button--small" type="submit">Mailtexte und Erinnerungen speichern</button></div><div id="event-save-result"></div></form></details>`;
@@ -3163,6 +3193,7 @@ Ihr PROdigitalTV-Team`, hiddenTalkTitles(event, topics));
   const eventPreviewAction = tab === "feedback"
     ? `<button class="button button--secondary button--small" type="button" data-scroll-to-event-feedback-preview>Vorschau</button>`
     : `<a class="button button--secondary button--small" href="#/event/${event.id}?preview=1">Vorschau</a>`;
+  if (tab === "pre" && id !== "new") content = await eventNotificationsPage({ eventRecord: event, embedded: true, editorContent: content });
   return protect(cmsShell(activeSection, `${cmsTitle("Event bearbeiten", escapeHtml(event.title || "Neues Event"), eventPreviewAction)}<section class="panel">${eventTabs(event.id, tab)}${content}</section>`));
 }
 
@@ -3223,7 +3254,7 @@ export async function registrationsPage(query = new URLSearchParams()) {
   return protect(cmsShell("cms/registrations", `${cmsTitle("Teilnehmermanagement", "Anmeldungen")}<section class="panel">${chooser}<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Event</th><th>Bestaetigung</th><th>Mailstatus</th></tr></thead><tbody>${rows}</tbody></table></div></section>`));
 }
 
-export async function eventNotificationsPage() {
+export async function eventNotificationsPage({ eventRecord = null, embedded = false, editorContent = "" } = {}) {
   if (!hasCmsAccess()) return denied();
   const historyErrors = [];
   const readHistory = (collection) => list(collection).catch(error => {
@@ -3236,12 +3267,14 @@ export async function eventNotificationsPage() {
   const activeEvents = events
     .filter((event) => !["archived", "deleted", "inactive", "draft"].includes(String(event.status || "").toLowerCase()) && !isPastCmsEvent(event))
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
-  const firstEvent = activeEvents[0] || {};
+  const firstEvent = eventRecord || activeEvents[0] || {};
+  const defaults = eventRecord ? eventInvitationDefaults(eventRecord) : { source: "invitationText", recipientGroup: "members_contacts", registrationStatus: "all", titlePrefix: "Einladung" };
+  const selectableEvents = eventRecord ? [eventRecord] : activeEvents;
   const speakerSourceEvents = events
     .filter((event) => !["deleted", "draft"].includes(String(event.status || "").toLowerCase()) && ((event.speakerIds || []).length || (event.topicIds || []).length))
     .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   const publicBaseUrl = "https://prodigitaltv.de";
-  const eventLink = firstEvent.id ? `${publicBaseUrl}/event/${firstEvent.id}?v=943` : "";
+  const eventLink = firstEvent.id ? `${publicBaseUrl}/#/event/${encodeURIComponent(firstEvent.id)}` : "";
   const eventNotificationText = (event = {}, key = "invitationText") => {
     const title = event.title || "PROdigitalTV Veranstaltung";
     const fallback = {
@@ -3258,7 +3291,7 @@ export async function eventNotificationsPage() {
     title: event.title || "",
     date: event.date || "",
     startTime: event.startTime || "",
-    link: event.id ?`${publicBaseUrl}/event/${event.id}?v=943` : "",
+    link: event.id ?`${publicBaseUrl}/#/event/${encodeURIComponent(event.id)}` : "",
     texts: {
       saveTheDateText: eventNotificationText(event, "saveTheDateText"),
       invitationText: eventNotificationText(event, "invitationText"),
@@ -3288,43 +3321,44 @@ export async function eventNotificationsPage() {
       historyAt: mail.sentAt || mail.queuedAt || mail.createdAt
     }))
   ];
-  const rows = history.sort((a,b) => timeMillis(b.createdAt || b.historyAt) - timeMillis(a.createdAt || a.historyAt)).slice(0,100).map(item => {
+  const rows = history.filter(item => !eventRecord || item.eventId === eventRecord.id).sort((a,b) => timeMillis(b.createdAt || b.historyAt) - timeMillis(a.createdAt || a.historyAt)).slice(0,100).map(item => {
     const event = events.find(candidate => candidate.id === item.eventId) || {};
     return `<tr><td>${escapeHtml(item.title || "–")}</td><td>${escapeHtml(event.title || item.eventId || "–")}</td><td>${status(item.status || "draft")}</td><td>${escapeHtml(String(item.targetCount ?? "–"))}${item.historyRecipient ? `<small style="display:block">${escapeHtml(String(item.historyRecipient))}</small>` : ""}</td><td>${escapeHtml(item.historyMail)}${item.error ? `<small style="display:block">${escapeHtml(String(item.error))}</small>` : ""}</td><td>${knownNotificationIds.has(item.id) ? Number(item.pushedCount || 0) + " gesendet" : "–"}${item.pushFailedCount ? `<small>${Number(item.pushFailedCount)} fehlgeschlagen</small>` : ""}</td><td>${escapeHtml(mailQueueDate(item.historyAt))}</td></tr>`;
   }).join("");
   const historyError = historyErrors.length ? `<div class="alert alert--warning">Versandprotokoll konnte nicht vollständig geladen werden: ${escapeHtml(historyErrors.join(" · "))}</div>` : "";
-  return protect(cmsShell("cms/event-notifications", `${cmsTitle("Kommunikation", "Event Versand")}
+  const pageContent = `${embedded ? `<h2>Einladungen versenden</h2><p class="muted">${escapeHtml(firstEvent.title || "")} · ${escapeHtml(firstEvent.eventType || "Event")} · ${formatDate(firstEvent.date)} · ${escapeHtml(firstEvent.startTime || "")}–${escapeHtml(firstEvent.endTime || "")} Uhr</p><p class="muted">Event, Mailing-Art und Empfänger sind aus dem Veranstaltungsworkflow vorbelegt. Bereits angemeldete Personen werden ausgeschlossen. Der ausgewählte Einladungstext im Editor wird für Vorschau und Versand verwendet.</p>` : cmsTitle("Kommunikation", "Event Versand")}
+<section class="panel" data-sms-balance><div class="section-head"><div><h2>SMS-Guthaben</h2><p><strong data-sms-balance-value>–</strong></p><p class="muted" data-sms-balance-status role="status" aria-live="polite">Guthaben wird geladen ...</p></div><button type="button" class="button button--secondary button--small" data-sms-balance-refresh>Guthaben aktualisieren</button></div></section>
     <section class="panel">
-      <form id="event-notification-form" class="form-grid">
+      <form id="event-notification-form" class="form-grid" ${embedded ? `data-event-context="${escapeHtml(firstEvent.id)}"` : ""}>
         <div class="form-grid--two">
-          <div class="field"><label>Art</label><select name="notificationKind" data-notification-kind><option value="event">Event-Benachrichtigung</option><option value="member_message">Mitglieder-Nachricht</option></select></div>
+          <div class="field" ${embedded ? "hidden" : ""}><label>Art</label><select name="notificationKind" data-notification-kind><option value="event">Event-Benachrichtigung</option><option value="member_message">Mitglieder-Nachricht</option></select></div>
           <div class="field"><label>Versand</label><select name="sendMode" data-notification-send-mode><option value="now">Sofort</option><option value="scheduled">Geplant</option><option value="auto_before_event">Automatisch vor Veranstaltung</option></select></div>
         </div>
-        <div class="field" data-notification-event-field><label>Veranstaltung</label><select name="eventId" data-notification-event-select required>${activeEvents.map((event) => `<option value="${escapeHtml(event.id)}" data-event-title="${escapeHtml(event.title || "")}" data-event-link="${publicBaseUrl}/event/${escapeHtml(event.id)}?v=943" data-event-payload="${notificationEventPayload(event)}">${escapeHtml(event.title || event.id)}</option>`).join("")}</select>${activeEvents.length ? "" : `<p class="muted">Keine aktive zukuenftige Veranstaltung vorhanden.</p>`}</div>
-        <div class="field" data-notification-text-source-field>
+        <div class="field" data-notification-event-field ${embedded ? "hidden" : ""}><label>Veranstaltung</label><select name="eventId" data-notification-event-select required>${selectableEvents.map((event) => `<option value="${escapeHtml(event.id)}" data-event-title="${escapeHtml(event.title || "")}" data-event-link="${publicBaseUrl}/event/${escapeHtml(event.id)}?v=943" data-event-payload="${notificationEventPayload(event)}">${escapeHtml(event.title || event.id)}</option>`).join("")}</select>${selectableEvents.length ? "" : `<p class="muted">Keine aktive zukuenftige Veranstaltung vorhanden.</p>`}</div>
+        <div class="field" data-notification-text-source-field ${embedded ? "hidden" : ""}>
           <div class="field-label-row"><label>Einladungstext aus Event verwenden</label><a class="button button--secondary button--small" href="#/cms/event/${escapeHtml(firstEvent.id || "")}?tab=pre" data-notification-event-editor-link ${firstEvent.id ? "" : "hidden"}>Im Editor bearbeiten</a></div>
           <select name="messageSource" data-notification-text-source>
-            <option value="invitationText">Einladungstext</option>
-            <option value="saveTheDateText">Save-the-Date</option>
-            <option value="invitationUpdateText">Einladungsupdate</option>
-            <option value="mailText">Anmelde-/Bestaetigungstext</option>
-            <option value="description">Eventbeschreibung</option>
-            <option value="custom">Eigener Text / manuell pruefen</option>
+            <option value="invitationText" ${defaults.source === "invitationText" ? "selected" : ""}>Einladungstext</option>
+            <option value="saveTheDateText" ${defaults.source === "saveTheDateText" ? "selected" : ""}>Save-the-Date</option>
+            <option value="invitationUpdateText" ${defaults.source === "invitationUpdateText" ? "selected" : ""}>Einladungsupdate</option>
+            <option value="mailText" ${defaults.source === "mailText" ? "selected" : ""}>Anmelde-/Bestaetigungstext</option>
+            <option value="description" ${defaults.source === "description" ? "selected" : ""}>Eventbeschreibung</option>
+            <option value="custom" ${defaults.source === "custom" ? "selected" : ""}>Eigener Text / manuell pruefen</option>
           </select>
           <p class="muted">Der Text wird unten in die Vorschau uebernommen und kann vor dem Versand noch angepasst werden.</p>
         </div>
         <div class="form-grid--two event-notification-recipient-grid">
-          <div class="field"><label>Empfaenger</label><select name="recipientGroup" data-notification-recipient-group><option value="members_contacts">Mitglieder und Kontakte</option><option value="members">Nur Mitglieder</option><option value="contacts">Nur Kontakte</option><option value="other_event_speakers">Referenten eines anderen Events</option><option value="test_group">Testgruppe</option><option value="test_person">Testpersonen</option></select>
+          <div class="field"><label>Empfaenger</label><select name="recipientGroup" data-notification-recipient-group><option value="members_contacts" ${defaults.recipientGroup === "members_contacts" ? "selected" : ""}>Mitglieder und Kontakte</option><option value="members" ${defaults.recipientGroup === "members" ? "selected" : ""}>Nur Mitglieder</option><option value="contacts">Nur Kontakte</option><option value="other_event_speakers">Referenten eines anderen Events</option><option value="test_group">Testgruppe</option><option value="single_person">Einzelne Person</option><option value="test_person">Testpersonen</option></select>
             <output class="notification-recipient-count" data-notification-mail-count role="status" aria-live="polite">E-Mail-Anzahl wird ermittelt ...</output>
             <div class="field" data-notification-speaker-source-field hidden><label>Quell-Event der Referenten</label><select name="extraSpeakerEventId" data-notification-speaker-source disabled><option value="">Veranstaltung auswaehlen</option>${speakerSourceEvents.map((event) => `<option value="${escapeHtml(event.id)}">${escapeHtml(`${event.date ? `${formatDate(event.date)} · ` : ""}${event.title || event.id}`)}</option>`).join("")}</select><p class="muted">Nur Referenten und Co-Referenten dieses Events. Einladungstext und Link beziehen sich auf die oben gewaehlte Veranstaltung.</p></div>
-            <div class="notification-test-inline" data-notification-test-field hidden>
+            <div class="field" data-notification-single-field hidden><label>Person suchen / E-Mail-Adresse</label><input type="email" name="singleRecipientEmail" data-notification-single-recipient list="notification-single-people" placeholder="Name oder E-Mail-Adresse suchen" autocomplete="off"><datalist id="notification-single-people"></datalist><small data-notification-single-status>Eine Person aus Mitgliedern oder Adressliste auswählen. Es wird nur diese Person angeschrieben.</small></div><div class="notification-test-inline" data-notification-test-field hidden>
               <label>Testpersonen</label>
               <textarea name="testRecipients" rows="3" placeholder="E-Mail-Adressen, getrennt durch Komma oder neue Zeile"></textarea>
               <div class="field"><label>Mobilnummern für SMS</label><input name="testRecipientMobiles" placeholder="+491701234567, getrennt durch Komma oder neue Zeile"></div>
               <p class="muted">Im Testmodus wird nur an diese Personen gesendet. Push wird automatisch über die registrierte E-Mail-Adresse erkannt.</p>
             </div>
           </div>
-          <div class="field" data-notification-registration-status-field><label>Anmeldestatus</label><select name="registrationStatus"><option value="all">Alle</option><option value="unregistered">Noch nicht angemeldet</option><option value="registered">Bereits angemeldet</option></select></div>
+          <div class="field" data-notification-registration-status-field><label>Anmeldestatus</label><select name="registrationStatus"><option value="all" ${defaults.registrationStatus === "all" ? "selected" : ""}>Alle</option><option value="unregistered" ${defaults.registrationStatus === "unregistered" ? "selected" : ""}>Noch nicht angemeldet</option><option value="registered">Bereits angemeldet</option></select></div>
         </div>
         <input type="hidden" name="includeMembers" value="true" data-notification-include-members>
         <input type="hidden" name="includeContacts" value="true" data-notification-include-contacts>
@@ -3332,32 +3366,38 @@ export async function eventNotificationsPage() {
           <div class="field" data-notification-scheduled-field hidden><label>Geplanter Zeitpunkt</label><input type="datetime-local" name="scheduledAt"></div>
           <div class="field" data-notification-offset-field hidden><label>Automatisch vor Veranstaltung</label><select name="offsetMinutes"><option value="10080">7 Tage vorher</option><option value="1440">1 Tag vorher</option><option value="120">2 Stunden vorher</option></select></div>
         </div>
-        <div class="field"><label>Titel</label><input name="title" data-notification-title value="${escapeHtml(firstEvent.title ? `Einladung: ${firstEvent.title}` : "Einladung zur Veranstaltung")}" required></div>
-        <div class="field"><label>Nachrichtentext</label><textarea name="shortText" rows="7" data-notification-shorttext>${escapeHtml(firstEvent.id ?eventNotificationText(firstEvent, "invitationText") : "Aktuelle Informationen zur PROdigitalTV-Veranstaltung.")}</textarea></div>
-        <div class="field"><label>SMS-Text</label><textarea name="smsText" rows="4" data-notification-sms-text placeholder="Kurzer SMS-Text, max. 612 Zeichen"></textarea><label class="checkbox"><input type="checkbox" name="smsLinkEnabled" data-notification-sms-link checked> Kurzen Event-Link automatisch anhängen</label><p class="muted">Eigener Text für SMS. Platzhalter: <code>{{firstName}}</code>, <code>{{lastName}}</code>, <code>{{eventTitle}}</code>, <code>{{link}}</code>. Maximal 612 Zeichen.</p></div>
+
+        ${embedded ? `<input type="hidden" name="shortText" data-notification-shorttext value="${escapeHtml(eventNotificationText(firstEvent, defaults.source))}">` : `<div class="field"><label>Nachrichtentext</label><textarea name="shortText" rows="7" data-notification-shorttext>${escapeHtml(firstEvent.id ?eventNotificationText(firstEvent, defaults.source) : "Aktuelle Informationen zur PROdigitalTV-Veranstaltung.")}</textarea></div>`}
         <div class="field"><label>Versandkanäle</label><div class="actions" data-notification-channels>
           <label class="checkbox"><input type="checkbox" data-notification-channel value="mail" checked> E-Mail</label>
-          <label class="checkbox"><input type="checkbox" data-notification-channel value="push" checked> Browser-Push</label>
+          <label class="checkbox"><input type="checkbox" data-notification-channel value="push" ${embedded ? "" : "checked"}> Browser-Push</label>
           <label class="checkbox"><input type="checkbox" data-notification-channel value="sms"> SMS</label>
         </div><p class="muted">SMS werden nur an Empfänger mit gültiger internationaler Telefonnummer versendet. Vor dem Senden werden die voraussichtlichen Nettokosten anhand der aktuellen Anbietertarife angezeigt und gespeichert. Maximal 612 Zeichen pro SMS-Nachricht.</p></div>
-        <section class="panel" style="background:var(--pdt-bg)">
+
+        ${embedded ? `<input type="hidden" name="linkEnabled" value="true">` : `        <section class="panel" style="background:var(--pdt-bg)">
           <label class="checkbox"><input type="checkbox" name="linkEnabled" data-notification-link-toggle checked> Link in Mail und Push mitsenden</label>
           <div class="field"><label>Zielseite / Link</label><input name="link" data-notification-link value="${escapeHtml(eventLink)}" placeholder="https://... oder leer lassen"><p class="muted">Dieser Link wird als Ziel fuer den Button in der Mail und als Oeffnen-Link in der Push-Nachricht verwendet. Bei Event-Einladungen ist das normalerweise die Eventseite.</p></div>
-        </section>
-<div class="event-notification-preview" data-notification-preview>
+        </section>`}
+<div class="event-notification-preview" data-notification-preview ${embedded ? "hidden" : ""}>
           <p class="eyebrow">Live-Vorschau</p>
-          <h3>${escapeHtml(firstEvent.title ? `Einladung: ${firstEvent.title}` : "Einladung zur Veranstaltung")}</h3>
+          <h3>${escapeHtml(firstEvent.title ? `${defaults.titlePrefix}: ${firstEvent.title}` : "Einladung zur Veranstaltung")}</h3>
           <p>${escapeHtml(firstEvent.title ? `Aktuelle Informationen zur Veranstaltung ${firstEvent.title}.` : "Aktuelle Informationen zur PROdigitalTV-Veranstaltung.")}</p>
           <a href="${escapeHtml(eventLink)}">Zur Veranstaltung</a>
         </div>
-        <div class="actions"><button class="button button--primary">Versand starten</button><div id="event-notification-result"></div></div>
+        <div class="actions"><button class="button button--primary" type="submit">Senden vorbereiten</button><div id="event-notification-result"></div></div>
+        <h3>Texte bearbeiten</h3>
+        <div class="field"><label>Titel</label><input name="title" data-notification-title value="${escapeHtml(firstEvent.title ? `${defaults.titlePrefix}: ${firstEvent.title}` : "Einladung zur Veranstaltung")}" required></div>
+        <div class="field"><label>SMS-Text</label><textarea name="smsText" rows="4" data-notification-sms-text placeholder="Kurzer SMS-Text, max. 612 Zeichen"></textarea><label class="checkbox"><input type="checkbox" name="smsLinkEnabled" data-notification-sms-link checked> Kurzen Event-Link automatisch anhängen</label><p class="muted">Eigener Text für SMS. Platzhalter: <code>{{firstName}}</code>, <code>{{lastName}}</code>, <code>{{eventTitle}}</code>, <code>{{link}}</code>. Maximal 612 Zeichen.</p></div>
       </form>
     </section>
 
-    <section class="panel">
+    ${embedded ? editorContent : ""}
+    <details class="panel">
+      <summary class="button button--secondary" title="Versandprotokoll der letzten Benachrichtigungen öffnen">Letzte Benachrichtigungen anzeigen</summary>
       <h2>Letzte Event-Benachrichtigungen</h2>${historyError}<p class="muted">Event-Mitteilungen und automatische Event-Mails · letzte 100 Einträge. Welcome-Mails erscheinen ab ihrer Freigabe zum Versand.</p>
       <div class="table-wrap"><table class="table"><thead><tr><th>Titel</th><th>Event</th><th>Status</th><th>Empfänger</th><th>E-Mail</th><th>Push</th><th>Versand / geplant für</th></tr></thead><tbody>${rows || `<tr><td colspan="7">${historyErrors.length ? "Versanddaten konnten nicht vollständig geladen werden." : "Noch keine Event-Benachrichtigungen vorhanden."}</td></tr>`}</tbody></table></div>
-    </section>`));
+    </details>`;
+  return embedded ? pageContent : protect(cmsShell("cms/event-notifications", pageContent));
 }
 
 export async function memberAreaAdminPage() {
@@ -5585,7 +5625,9 @@ export async function moduleListPage(module, section = "all", query = new URLSea
       const linked = speakerLinkedToTopic(speaker) || speakerLinkedToEvent(speaker);
       const deleteTitle = !adminCanManage ? "Löschen nur für Admins" : linked ? "Referent ist mit einem Vortrag oder Event verknüpft" : "Referent löschen";
       const removeButton = `<button class="icon-button icon-button--danger" type="button" data-delete-record="speakers" data-record-id="${escapeHtml(speaker.id)}" data-speaker-linked="${linked ? "yes" : "no"}" title="${deleteTitle}" aria-label="${deleteTitle}" ${adminCanManage ? "" : "disabled"}>${iconImage("trash")}</button>`;
-      return `<div class="table-actions table-actions--icons">${edit}${toggle}${removeButton}</div>`;
+      const eventAssignments=speakerEventsForRemoval(speaker,speakerEvents,speakerTopics);
+      const unlink=eventAssignments.length?`<details><summary style="cursor:pointer;white-space:nowrap">Event-Zuordnungen</summary>${eventAssignments.map(event=>`<div style="margin:6px 0"><button type="button" class="button button--secondary button--small" data-remove-speaker-from-event="${escapeHtml(speaker.id)}" data-event-id="${escapeHtml(event.id)}" title="Personenprofil bleibt erhalten">Aus Event entfernen · ${escapeHtml(event.title||event.id)}</button></div>`).join('')}</details>`:'';
+      return `<div class="table-actions table-actions--icons">${edit}${toggle}${removeButton}${unlink}</div>`;
     };
     const approvalsForSpeaker = (speakerId = "") => speakerApprovals
       .filter((approval) => approval.speakerId === speakerId)
@@ -6494,6 +6536,7 @@ Ausgangstext:
         <p class="eyebrow">Zugang steuern</p>
         <p class="muted">Ab diesem Datum hat das Mitglied keinen Portalzugang mehr und erscheint nicht mehr im Mitgliederverzeichnis.</p>
         <div class="form-grid form-grid--two">
+          <div class="field"><label>Eintrittsdatum</label><input name="membershipStartDate" type="date" value="${escapeHtml(timestampInputDate(item?.membershipStartDate))}"><p class="muted">Neue Mitglieder zahlen im Eintrittsjahr anteilig ab dem nächsten Monatsersten. Ohne Datum wird der volle Jahresbeitrag berechnet.</p></div>
           <div class="field"><label>Mitgliedschaftsstatus</label><select name="membershipAccessStatus">
             <option value="active" ${memberAccessStatus === "active" ?"selected" : ""}>Aktiv</option>
             <option value="inactive" ${memberAccessStatus === "inactive" ?"selected" : ""}>Inaktiv</option>
@@ -6804,7 +6847,7 @@ function peopleContactRow(item = {}, membersByEmail = new Map(), highlightEmail 
   const editAction = `<button class="button button--secondary button--small" type="button" ${editAttrs}>Bearbeiten</button>`;
   const spamAction = sourceCollection === "users" && !isAdmin(currentUser()) ? "" : `<button class="button button--secondary button--small" type="button" data-people-spam-toggle data-source-collection="${sourceCollection}" data-source-id="${escapeHtml(sourceId)}" data-source-email="${escapeHtml(email.toLowerCase())}" data-spam-suspected="${spamSuspected ? "yes" : "no"}">${spamSuspected ? "Spamverdacht entfernen" : "Spamverdacht markieren"}</button>`;
   const deleteAction = `<button class="icon-button icon-button--danger" type="button" data-people-delete-source="${sourceCollection}" data-people-delete-id="${escapeHtml(sourceId)}" data-people-delete-member-id="${escapeHtml(sourceMemberId)}" data-people-delete-email="${escapeHtml(email.toLowerCase())}" data-people-name="${escapeHtml(name)}" title="Mailing-Adresse löschen" aria-label="Mailing-Adresse von ${escapeHtml(name)} löschen">${iconImage("trash")}</button>`;
-  return `<tr data-people-row data-email="${escapeHtml(email.toLowerCase())}" data-contact-id="${sourceCollection === "contacts" ?escapeHtml(item.id || "") : ""}" data-source-collection="${sourceCollection}" data-source-id="${escapeHtml(sourceId)}" data-name="${escapeHtml(search)}" data-type="${escapeHtml(type)}" data-active="${disabled ? "no" : "yes"}" data-push="unknown" data-mail-error="${failed ? "yes" : "no"}" data-mail-spam="${spamSuspected ? "yes" : "no"}" ${email && email.toLowerCase() === highlightEmail ?"class=\"is-highlighted\"" : ""}>
+  return `<tr data-people-row data-missing-both-names="${!String(item.firstName || "").trim() && !String(item.lastName || "").trim() ? "yes" : "no"}" data-email="${escapeHtml(email.toLowerCase())}" data-contact-id="${sourceCollection === "contacts" ?escapeHtml(item.id || "") : ""}" data-source-collection="${sourceCollection}" data-source-id="${escapeHtml(sourceId)}" data-name="${escapeHtml(search)}" data-type="${escapeHtml(type)}" data-active="${disabled ? "no" : "yes"}" data-push="unknown" data-mail-error="${failed ? "yes" : "no"}" data-mail-spam="${spamSuspected ? "yes" : "no"}" ${email && email.toLowerCase() === highlightEmail ?"class=\"is-highlighted\"" : ""}>
     <td><strong>${nameAction}</strong>${company ?`<small>${escapeHtml(company)}</small>` : ""}${eventLiveNote ? `<small title="${escapeHtml(eventLiveDetails)}">${escapeHtml(eventLiveNote)}</small>` : ""}</td>
     <td>${escapeHtml(email || "-")}</td>
     <td>${escapeHtml(position || "-")}</td>
@@ -6820,6 +6863,16 @@ function peopleContactRow(item = {}, membersByEmail = new Map(), highlightEmail 
   </tr>`;
 }
 
+function peopleExistingNames(person = {}, fallbackName = "") {
+  const firstName = String(person.firstName || "").trim();
+  const lastName = String(person.lastName || "").trim();
+  if (firstName || lastName) return { firstName, lastName };
+  const fullName = String(fallbackName || "").trim().replace(/^(?:Herr|Frau)\s+/i, "");
+  if (!fullName || fullName.includes("@")) return { firstName: "", lastName: "" };
+  const parts = fullName.split(/\s+/);
+  return parts.length > 1 ? { firstName: parts.slice(0, -1).join(" "), lastName: parts.at(-1) } : { firstName: "", lastName: "" };
+}
+
 function peopleMemberContactRows(member = {}) {
   const baseName = member.name || member.company || member.title || "";
   const excludedEmails = new Set((Array.isArray(member.mailingExcludedEmails) ?member.mailingExcludedEmails : []).map((email) => String(email || "").trim().toLowerCase()).filter(Boolean));
@@ -6830,8 +6883,7 @@ function peopleMemberContactRows(member = {}) {
       __peopleSource: "member",
       __memberId: member.id,
       type: "member",
-      firstName: contact.firstName || "",
-      lastName: contact.lastName || "",
+      ...peopleExistingNames(contact, contact.name),
       name: contact.name || [contact.firstName, contact.lastName].filter(Boolean).join(" ") || baseName,
       company: baseName,
       position: contact.role || contact.function || contact.position || "",
@@ -6850,7 +6902,8 @@ function peopleMemberContactRows(member = {}) {
     __peopleSource: "member",
     __memberId: member.id,
     type: "member",
-    name: baseName || fallbackEmail,
+    ...peopleExistingNames(member, member.contactName || member.profileContactName || (member.membershipType === "individual" ? baseName : "")),
+    name: member.contactName || member.profileContactName || baseName || fallbackEmail,
     company: baseName,
     position: member.category || member.membershipType || "",
     email: fallbackEmail,
@@ -6875,6 +6928,7 @@ function peopleUserContactRows(users = [], membersById = new Map()) {
         __userId: user.id,
         __memberId: user.memberId || "",
         type: "member",
+        ...peopleExistingNames(user, user.displayName || user.name),
         name: user.displayName || [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email,
         company: member?.name || user.company || "",
         position: user.committeeRole || user.role || "member",
@@ -7068,11 +7122,13 @@ export async function peoplePage(query = new URLSearchParams()) {
       <p class="muted">Push wird von der jeweiligen Person im Mitgliederbereich unter <a class="link" href="/#/portal?tab=profile" target="_blank" rel="noopener">Mein Profil</a> aktiviert. Die Spalte zeigt, ob fuer diese Mailadresse bereits ein Browser registriert ist.</p>
       <div class="form-grid--three people-filter-grid" style="margin-bottom:10px">
         <div class="field"><label>Suche</label><input data-people-search placeholder="Name, Firma, E-Mail"></div>
+        <div class="field"><label>Namensangaben</label><select data-people-name-filter><option value="all">Alle</option><option value="missing_both" ${query.get("names") === "missing_both" ? "selected" : ""}>Vor- und Nachname fehlen</option></select></div>
         <div class="field"><label>Typ</label><select data-people-type-filter><option value="all">Alle</option><option value="contact">Kontakte</option><option value="member">Mitglieder</option></select></div>
         <div class="field"><label>Status</label><select data-people-active-filter><option value="all">Alle</option><option value="yes">Aktiv</option><option value="no">Inaktiv</option></select></div>
         <div class="field"><label>Push</label><select data-people-push-filter><option value="all">Alle</option><option value="yes">Push vorhanden</option><option value="no">Ohne Push</option></select></div>
         <div class="field"><label>Mailstatus</label><select data-people-mail-filter><option value="all">Alle</option><option value="yes" ${query.get("mail") === "error" ? "selected" : ""}>Mailfehler</option><option value="no">Ohne Mailfehler</option><option value="spam" ${query.get("mail") === "spam" ? "selected" : ""}>Spamverdacht</option></select></div>
       </div>
+      <p class="muted" data-people-filter-count aria-live="polite"></p>
       <div class="table-wrap"><table class="table table--people"><thead><tr><th>Name</th><th>E-Mail</th><th>Funktion</th><th>Typ</th><th>Push</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>
         ${rows || `<tr data-people-empty><td colspan="7">Noch keine Mailingadressen vorhanden.</td></tr>`}
         <tr data-people-empty hidden><td colspan="7">Keine Adressen fuer diesen Filter gefunden.</td></tr>
@@ -7098,7 +7154,7 @@ export async function cmsHelpPage() {
     </div></section>
     <section class="panel cms-help-panel">
       <div class="cms-help-intro">
-        <div><p class="eyebrow">Stand ${connections ? "2." : "1."} Oktober 2026</p><h2>${connections ? "Bereiche, Daten und Abläufe" : "Website und CMS"}</h2><p>${connections ? "Der Plan zeigt die Verbindungen zwischen CMS, Datenbank, Eventzugängen und Versand sowie die zuständigen Softwarebausteine." : "Die Hilfe beschreibt den aktuellen Funktionsumfang, typische Arbeitsabläufe und wichtige administrative Prüfungen."}</p></div>
+        <div><p class="eyebrow">Stand ${connections ? "2." : "8."} Oktober 2026</p><h2>${connections ? "Bereiche, Daten und Abläufe" : "Website und CMS"}</h2><p>${connections ? "Der Plan zeigt die Verbindungen zwischen CMS, Datenbank, Eventzugängen und Versand sowie die zuständigen Softwarebausteine." : "Die Hilfe beschreibt den aktuellen Funktionsumfang, typische Arbeitsabläufe und wichtige administrative Prüfungen."}</p></div>
         <a class="button button--primary button--small" href="${markdown}" target="_blank" rel="noopener">Markdown öffnen</a>
       </div>
       <iframe class="cms-help-frame" src="${path}.html" title="PROdigitalTV ${title}" loading="eager"></iframe>

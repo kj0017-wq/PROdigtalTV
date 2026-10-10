@@ -1,4 +1,4 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=479";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=484";
 import { list, getOne } from "../firebase/dataService.js?v=488";
 import { currentUser, canUseCms, waitForAuthReady } from "../firebase/authService.js?v=477";
 import { escapeHtml } from "../utils/format.js";

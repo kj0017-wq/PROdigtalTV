@@ -1,8 +1,19 @@
+import {mountEventSpeakerRemoval} from './utils/eventSpeakerRemoval.js?v=1';
+import { eventTextsChanged, showEventTextUpdate } from "./utils/eventTextUpdateDialog.js?v=1";
+import { mountSpeakerMailingPicker } from "./utils/speakerMailingPicker.js?v=1";
+import { invitationEditorMessage } from "./utils/invitationEditorMessage.js?v=1";
+import { namesFromEmail } from "./utils/namesFromEmail.js?v=1";
+import { confirmNotificationPreview } from "./utils/notificationPreviewDialog.js?v=2";
+import { mountRegistrationMailingPicker } from "./utils/registrationMailingPicker.js?v=1";
+import { chooseModeratorCards } from "./utils/chooseModeratorCards.js?v=1";
+import { mountCmsButtonHelp } from "./utils/cmsButtonHelp.js?v=1";
+import { wirePauseGong, stopPauseGong } from "./utils/pauseGong.js?v=5";
+import { callEventModerator } from "./firebase/eventModeratorService.js?v=1";
 import { route, onRouteChange, go } from "./utils/router.js?v=4";
-import { mountEventArea } from "./utils/eventArea.js?v=8";
+import { mountEventArea } from "./utils/eventArea.js?v=9";
 import { completeEventEmailLogin } from "./utils/eventEmailLogin.js";
 import { filterFeedback, feedbackFilterOptions, isAcquisitionFilter } from "./utils/feedbackAcquisition.js";
-import { currentUser, canUseCms, isAdmin, login, logout, refreshAuthToken, waitForAuthReady, resendEventLiveVerification, setEventGuestPassword, changeEventLivePassword, requestEventLivePasswordReset } from "./firebase/authService.js?v=477";
+import { currentUser, canUseCms, isAdmin, login, logout, refreshAuthToken, waitForAuthReady, resendEventLiveVerification, setEventGuestPassword, changeEventLivePassword, requestEventLivePasswordReset } from "./firebase/authService.js?v=479";
 import { getOne, list, upsert, remove } from "./firebase/dataService.js?v=535";
 import { escapeHtml, formatDate, richTextHtml, initials } from "./utils/format.js?v=3";
 import { linkedInFromForm } from "./utils/linkedin.js";
@@ -33,6 +44,7 @@ import { applyEntrancePresentation } from "./utils/entrancePresentation.js?v=3";
 import { wireEntranceScanner } from "./utils/entranceScanner.js?v=1";
 
 const root = document.querySelector("#app");
+window.addEventListener("pdtv-accounting-saved", () => render());
 window.addEventListener("pdtv-push-changed", () => {
   if (document.querySelector("[data-live-guest-gate]")) render();
 });
@@ -53,6 +65,8 @@ const defaultAiEditorialThumbnailPrompt = "Fotorealistisches redaktionelles 16:9
 let renderGeneration = 0;
 let pendingRenderHash = "";
 let mobileCmsLiveResultsTimer = null;
+let mobileCmsLiveResultsRunning = false;
+let mobileCmsLiveResultsGeneration = 0;
 let mobileCheckinStatsTimer = null;
 const memberProfileWarmups = new Map();
 let mobileSurveyPeopleCache = { createdAt: 0, directory: null };
@@ -115,18 +129,18 @@ function askInitialPushPreference() {
 }
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=897");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=863");
-const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=503");
-const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=119");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=900");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=888");
+const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=505");
+const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=121");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=30");
 const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=12");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=13");
 const firebaseClientService = () => lazy.firebaseClientService ||= import("./firebase/firebaseClient.js?v=1");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
-const csvService = () => lazy.csvService ||= import("./utils/csv.js?v=5");
+const csvService = () => lazy.csvService ||= import("./utils/csv.js?v=7");
 const nameBadgePrintService = () => lazy.nameBadgePrint ||= import("./utils/nameBadgePrint.js?v=4");
-const moderationCardPrintService = () => lazy.moderationCardPrint ||= import("./utils/moderationCardPrint.js?v=10");
+const moderationCardPrintService = () => lazy.moderationCardPrint ||= import("./utils/moderationCardPrint.js?v=16");
 const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=331");
 const eventLiveService = () => lazy.eventLiveService ||= import("./firebase/eventLiveService.js?v=8");
 
@@ -289,7 +303,7 @@ function initCheckinScreenWatcher() {
 async function mobileQualityPage() {
   const user = currentUser();
   if (!canUseCms(user)) {
-    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Qualitaetspruefung</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte im CMS anmelden. Danach diese Seite erneut oeffnen.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Qualitaetspruefung</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte im CMS anmelden. Danach diese Seite erneut oeffnen.</p><a class="button button--primary" href="#/cms/login?returnTo=${encodeURIComponent(window.location.hash || "#/cms/live")}">Zum Login</a></div></section>`;
   }
   const names = ["events", "editorialContent", "topics", "members", "galleries", "eventMedia", "media_assets", "downloads", "memberDocuments", "videos", "sponsors"];
   const loadOne = async (name) => {
@@ -574,8 +588,7 @@ function renderMobileSurveyResults(liveSurveys = [], liveSurveyResponses = [], e
       seenSurveys.add(key);
       uniqueSurveys.push(survey);
     });
-  return uniqueSurveys
-    .slice(0, 6)
+  const resultCards = uniqueSurveys
     .map((survey) => {
       const surveyEvent = eventById.get(survey.eventId) || {};
       const surveyResponses = liveSurveyResponses
@@ -583,7 +596,10 @@ function renderMobileSurveyResults(liveSurveys = [], liveSurveyResponses = [], e
         .map((response) => enrichSurveyResponseIdentity(response, inviteIdentity, peopleDirectory))
         .sort((a, b) => surveyTimeValue(b) - surveyTimeValue(a));
       const questions = Array.isArray(survey.questions) && survey.questions.length ? survey.questions : [{ id: "question-1", type: survey.allowMultiple ? "multiple" : "single", question: survey.question, options: survey.options || [] }];
-      const total = surveyResponses.length || Number(survey.responseCount || 0);
+      const total = Math.max(surveyResponses.length, Number(survey.responseCount || 0));
+      const requestedCount = new Set(liveSurveyInvites
+        .filter((invite) => invite.surveyId === survey.id)
+        .map((invite) => surveyIdentityKey(invite.email) || invite.emailHash || invite.id)).size;
       const answerForQuestion = (response, question, questionIndex) => {
         const answers = Array.isArray(response.answers) ? response.answers : [];
         const direct = answers.find((answer) => answer.questionId === question.id);
@@ -626,14 +642,18 @@ function renderMobileSurveyResults(liveSurveys = [], liveSurveyResponses = [], e
           return `<div class="mobile-live-vote-row"><strong>${escapeHtml(person)}</strong><span>${escapeHtml(answer)}</span>${meta ? `<small>${escapeHtml(meta)}</small>` : ""}</div>`;
         })
         .join("");
-      return `<article class="mobile-live-survey-result"><h3>${escapeHtml(survey.title || survey.question || "Umfrage")}</h3><p class="muted">${escapeHtml(surveyEvent.title || survey.eventId || "Ohne Event")} · ${total} Antwort${total === 1 ? "" : "en"}</p>${questionResults}<details class="mobile-live-votes"><summary>Wer hat geantwortet?</summary>${voters || `<p class="muted">Noch keine Antworten abgegeben.</p>`}</details></article>`;
-    })
-    .join("");
+      return `<article class="mobile-live-survey-result"><h3>${escapeHtml(survey.title || survey.question || "Umfrage")}</h3><p class="muted">${escapeHtml(surveyEvent.title || survey.eventId || "Ohne Event")}</p><div class="mobile-live-survey-counts"><span>Angefragt: <strong>${requestedCount}</strong></span><span>Antworten eingegangen: <strong>${total}</strong></span></div>${questionResults}<details class="mobile-live-votes"><summary>Wer hat geantwortet?</summary>${voters || `<p class="muted">Noch keine Antworten abgegeben.</p>`}</details></article>`;
+    });
+  if (!resultCards.length) return "";
+  const [currentResult, ...otherResults] = resultCards;
+  return `${currentResult}${otherResults.length ? `<details class="mobile-live-votes mobile-live-survey-history" data-survey-history><summary>Weitere Umfragen (${otherResults.length})</summary>${otherResults.join("")}</details>` : ""}`;
 }
 
 function stopMobileCmsLiveResults() {
-  if (mobileCmsLiveResultsTimer) window.clearInterval(mobileCmsLiveResultsTimer);
+  if (mobileCmsLiveResultsTimer) window.clearTimeout(mobileCmsLiveResultsTimer);
   mobileCmsLiveResultsTimer = null;
+  mobileCmsLiveResultsRunning = false;
+  mobileCmsLiveResultsGeneration++;
 }
 
 function stopMobileCheckinStats() {
@@ -644,7 +664,7 @@ function stopMobileCheckinStats() {
 async function refreshMobileCheckinStats({ silent = false } = {}) {
   const target = document.querySelector("[data-mobile-checkin-stats-wrap]");
   const select = document.querySelector("[data-mobile-live-event]");
-  if (!target || !select) {
+  if (!target || !select || target.closest("[hidden]")) {
     stopMobileCheckinStats();
     return;
   }
@@ -677,6 +697,20 @@ function syncMobileLiveHistory(eventId = "") {
   if (empty) empty.hidden = visibleCount > 0;
 }
 
+function mobileSurveyRefreshDelay(surveys = [], invites = []) {
+  const latest = [...surveys].sort((a, b) => surveyTimeValue(b) - surveyTimeValue(a))[0];
+  if (!latest) return 30000;
+  const people = new Map();
+  invites.filter((invite) => invite.surveyId === latest.id).forEach((invite) => {
+    const key = surveyIdentityKey(invite.email) || invite.emailHash || invite.id;
+    people.set(key, people.get(key) || invite.status === "used" || Boolean(invite.usedAt || invite.usedAtIso));
+  });
+  if (!people.size) return 10000;
+  const answered = [...people.values()].filter(Boolean).length;
+  if (answered === people.size) return 0;
+  return answered / people.size >= 0.9 ? 30000 : 1000;
+}
+
 async function refreshMobileCmsLiveResults({ silent = false } = {}) {
   const container = document.querySelector("[data-mobile-live-results]");
   const status = document.querySelector("[data-mobile-live-results-status]");
@@ -692,44 +726,54 @@ async function refreshMobileCmsLiveResults({ silent = false } = {}) {
       list("liveSurveyResponses").catch(() => []),
       list("liveSurveyInvites").catch(() => [])
     ]);
-    const peopleDirectory = await loadSurveyPeopleDirectory();
+    const peopleDirectory = mobileSurveyPeopleCache.directory || {};
+    loadSurveyPeopleDirectory().catch(() => {});
+    if (!container.isConnected) return;
     const html = renderMobileSurveyResults(liveSurveys, liveSurveyResponses, events, liveSurveyInvites, peopleDirectory);
+    const historyOpen = container.querySelector("[data-survey-history]")?.open || false;
     container.innerHTML = html || `<p class="muted">Noch keine Umfrage-Auswertung vorhanden.</p>`;
-    if (status) status.textContent = `Aktualisiert: ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+    const history = container.querySelector("[data-survey-history]");
+    if (history) history.open = historyOpen;
+    const delay = mobileSurveyRefreshDelay(liveSurveys, liveSurveyInvites);
+    const cadence = delay === 0 ? "Alle Angefragten haben abgestimmt · Live-Modus beendet."
+      : delay === 30000 ? "Prüfung alle 30 Sekunden." : delay === 10000 ? "Prüfung alle 10 Sekunden." : "Live: jede Sekunde.";
+    if (status) status.textContent = `Aktualisiert: ${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · ${mobileCmsLiveResultsRunning ? cadence : "Live-Modus gestoppt."}`;
+    return delay;
   } catch (error) {
     if (status) status.textContent = error.message || "Aktualisierung fehlgeschlagen.";
+    return 10000;
   }
 }
 
 function startMobileCmsLiveResults() {
   stopMobileCmsLiveResults();
-  refreshMobileCmsLiveResults({ silent: false });
-  mobileCmsLiveResultsTimer = window.setInterval(() => refreshMobileCmsLiveResults({ silent: true }), 1000);
+  mobileCmsLiveResultsRunning = true;
+  const generation = mobileCmsLiveResultsGeneration;
+  const poll = async (silent) => {
+    const delay = await refreshMobileCmsLiveResults({ silent });
+    if (!mobileCmsLiveResultsRunning || generation !== mobileCmsLiveResultsGeneration) return;
+    if (delay === 0) {
+      stopMobileCmsLiveResults();
+      const button = document.querySelector("[data-mobile-live-results-toggle]");
+      if (button) button.textContent = "Live starten";
+      return;
+    }
+    mobileCmsLiveResultsTimer = window.setTimeout(() => poll(true), delay || 10000);
+  };
+  poll(false);
 }
 
 async function mobileLiveResultsPage() {
   const user = currentUser();
   if (!canUseCms(user)) {
-    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/cms/login?returnTo=${encodeURIComponent(window.location.hash || "#/cms/live")}">Zum Login</a></div></section>`;
   }
-  const [events, liveSurveys, liveSurveyResponses, liveSurveyInvites] = await Promise.all([
-    list("events").catch(() => []),
-    list("liveSurveys").catch(() => []),
-    list("liveSurveyResponses").catch(() => []),
-    list("liveSurveyInvites").catch(() => [])
-  ]);
-  const peopleDirectory = await loadSurveyPeopleDirectory({ maxAge: 0 });
-  const surveyResultRows = renderMobileSurveyResults(liveSurveys, liveSurveyResponses, events, liveSurveyInvites, peopleDirectory);
+  const surveyResultRows = `<p class="muted" role="status">Umfrage-Ergebnisse werden geladen …</p>`;
   return `<main class="mobile-live-admin mobile-live-results-screen">
-    <section class="mobile-live-hero mobile-live-results-hero">
-      <a class="button button--secondary button--small mobile-cockpit-back" data-cockpit-back href="#/cms/live">← Zurück zum Event-Cockpit</a>
-      <p class="eyebrow">Umfrage-Auswertung</p>
-      <h1>Umfragen live auswerten</h1>
-      <p>Dieser Bildschirm aktualisiert die Umfrage jede Sekunde und zeigt Antworten, Balken und Stimmen live an.</p>
-      <div class="actions">
-        <a class="button button--secondary" href="/website.html?v=1020#/home">Website</a>
-      </div>
-    </section>
+    <nav class="mobile-live-hero mobile-live-results-hero" aria-label="Auswertungsnavigation">
+      <a class="button button--secondary button--small mobile-cockpit-back" data-cockpit-back href="#/cms/live">← Event-Cockpit</a>
+      <a class="button button--secondary button--small" href="/website.html?v=1020#/home">Website</a>
+    </nav>
     <section class="panel mobile-live-panel mobile-live-results-stage" id="mobile-cms-results" data-mobile-live-results-screen>
       <div class="mobile-live-results-head">
         <div>
@@ -879,7 +923,7 @@ function mobileEventFeedbackPreview(event = {}, questions = []) {
 async function mobileModerationCardsPage() {
   const user = currentUser();
   if (!canUseCms(user)) {
-    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/cms/login?returnTo=${encodeURIComponent(window.location.hash || "#/cms/live")}">Zum Login</a></div></section>`;
   }
   const [events, registrations, speakers, topics, boardMembers] = await Promise.all([
     list("events").catch(() => []),
@@ -938,19 +982,41 @@ async function mobileModerationCardsPage() {
   </main>`;
 }
 
+let mobileCockpitDataCache = null;
+let mobileCockpitDataRequest = null;
+let mobileCockpitDataUid = "";
+async function loadMobileCockpitData() {
+  const uid = currentUser()?.uid || "";
+  if (mobileCockpitDataUid !== uid) {
+    mobileCockpitDataCache = null;
+    mobileCockpitDataRequest = null;
+    mobileCockpitDataUid = uid;
+  }
+  const cached = mobileCockpitDataCache;
+  if (cached && Date.now() - cached.loadedAt < 30000) return cached.rows;
+  if (!mobileCockpitDataRequest) {
+    const request = Promise.all(["events", "registrations", "speakers", "topics", "eventNotifications", "boardMembers"].map(name => list(name).catch(error => {
+      if (name === "events" || name === "registrations") throw error;
+      return [];
+    })));
+    mobileCockpitDataRequest = request;
+    request.then(rows => {
+      if (mobileCockpitDataRequest === request && mobileCockpitDataUid === uid) mobileCockpitDataCache = { rows, loadedAt: Date.now() };
+    }).catch(() => {}).finally(() => {
+      if (mobileCockpitDataRequest === request) mobileCockpitDataRequest = null;
+    });
+  }
+  // Keep navigation responsive while refreshing existing cockpit data.
+  if (cached) return cached.rows;
+  return mobileCockpitDataRequest;
+}
+
 async function mobileLiveAdminPage(section = "") {
   const user = currentUser();
   if (!canUseCms(user)) {
-    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/login">Zum Login</a></div></section>`;
+    return `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Mobile CMS</p><h1>Login erforderlich</h1><p style="margin:14px 0 24px">Bitte als Admin oder Editor anmelden.</p><a class="button button--primary" href="#/cms/login?returnTo=${encodeURIComponent(window.location.hash || "#/cms/live")}">Zum Login</a></div></section>`;
   }
-  const [events, registrations, speakers, topics, notifications, boardMembers] = await Promise.all([
-    list("events").catch(() => []),
-    list("registrations").catch(() => []),
-    list("speakers").catch(() => []),
-    list("topics").catch(() => []),
-    list("eventNotifications").catch(() => []),
-    list("boardMembers").catch(() => [])
-  ]);
+  const [events, registrations, speakers, topics, notifications, boardMembers] = await loadMobileCockpitData();
   const eventRows = events
     .filter((event) => mobileLiveEventIsRelevant(event, registrations))
     .sort((a, b) => String(a.date || a.startDate || "").localeCompare(String(b.date || b.startDate || "")));
@@ -1088,6 +1154,7 @@ async function mobileLiveAdminPage(section = "") {
         <a href="#/cms/live/survey">${mobileCmsLauncherIcon("survey")}<span>Umfrage</span></a>
         <a href="#/cms/live-results">${mobileCmsLauncherIcon("results")}<span>Auswertung</span></a>
         <a href="#/cms/live/guests">${mobileCmsLauncherIcon("guests")}<span>Gästeliste</span></a>
+        <button type="button" data-pause-gong aria-pressed="false" title="Pausengong mit anschließender Ansage abspielen; erneut drücken zum Stoppen"><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v2m-5 14h10M5 17h14l-2-3V9a5 5 0 0 0-10 0v5l-2 3Zm5 4h4"/></svg></span><span data-gong-label>Pausengong</span></button>
         <a href="#/cms/live/feedback">${mobileCmsLauncherIcon("feedback")}<span>Gästebefragung</span></a>
         <a href="/website.html?v=1020#/home" data-mobile-cms-website-link>${mobileCmsLauncherIcon("website")}<span>Website</span></a>
       </nav>
@@ -1187,7 +1254,7 @@ async function mobileLiveAdminPage(section = "") {
             <div class="field" data-notification-link-field><label>Link zur Nachricht</label><input name="link" data-notification-link value="${escapeHtml(eventLink)}" placeholder="https://..."></div>
             <p class="muted" data-live-survey-link-required hidden><strong>Umfragelink ist immer aktiv.</strong> Der persönliche Link wird beim Senden automatisch erzeugt und mitgesendet.</p>
           </div>
-          <div class="mobile-live-send-grid"><div class="event-notification-preview" data-notification-preview></div><div class="mobile-live-send-actions"><button class="button button--primary" type="submit" ${eventRows.length ? "" : "disabled"}>Vorschau erstellen</button></div></div>
+          <div class="mobile-live-send-grid"><div class="event-notification-preview" data-notification-preview></div><div class="mobile-live-send-actions"><button class="button button--primary" type="submit" ${eventRows.length ? "" : "disabled"}>Senden vorbereiten</button></div></div>
           <div id="event-notification-result"></div>
         </section>
       </form>
@@ -1239,6 +1306,7 @@ async function liveSurveyPage(surveyId = "") {
 }
 async function viewForRoute(current) {
   window.__pdtCmsStage = `route:${current.path}/${current.id || ""}`;
+  if (current.path === "cms" && current.id === "login") return (await publicPages()).loginPage();
   if (current.path === "survey") return liveSurveyPage(current.id);
   if (current.path === "cms" && mobileCmsDisabled() && current.id === "live") return mobileLiveAdminPage(current.section || "");
   if (current.path === "cms" && mobileCmsDisabled() && current.id === "live-moderation") return mobileModerationCardsPage();
@@ -1248,6 +1316,7 @@ async function viewForRoute(current) {
   if (current.path === "cms" && current.id === "live") return mobileLiveAdminPage(current.section || "");
   if (current.path === "cms" && current.id === "live-moderation") return mobileModerationCardsPage();
   if (current.path === "cms" && current.id === "live-results") return mobileLiveResultsPage();
+  if (current.path === "cms" && current.id === "accounting") return (await import("./cms/accounting.js?v=105")).accountingPage(current.query);
   if (current.path === "cms" && current.id === "media") {
     const { mediaPage } = await mediaPages();
     return mediaPage(current.section || "library", current.query);
@@ -1467,6 +1536,17 @@ async function render() {
     } else if (root && !isCmsRoute) {
       showRoutePending({ getAttribute: () => `#/${publicActiveRoute(currentRoute)}` });
     }
+    if (isCmsRoute && root?.innerHTML) {
+      let notice = document.querySelector("[data-cms-route-loading]");
+      if (!notice) {
+        notice = document.createElement("div");
+        notice.dataset.cmsRouteLoading = "1";
+        notice.className = "alert";
+        notice.setAttribute("role", "status");
+        root.prepend(notice);
+      }
+      notice.textContent = "Bereich wird geöffnet …";
+    }
     const viewPromise = viewForRoute(currentRoute);
     if (["imprint", "privacy"].includes(currentRoute?.path)) {
       const main = root?.querySelector("main.page");
@@ -1482,7 +1562,7 @@ async function render() {
       : "Die Seite laedt zu lange. Bitte tippen Sie die Navigation erneut oder laden Sie die Website neu.";
     const viewHtml = await Promise.race([
       viewPromise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), isCmsRoute ? 9000 : 14000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), isCmsRoute ? 30000 : 14000))
     ]);
     if (loadingTimer) window.clearTimeout(loadingTimer);
     if (generation !== renderGeneration) return;
@@ -1503,6 +1583,7 @@ async function render() {
       }
     }
     root.innerHTML = viewHtml;
+    mountCmsButtonHelp(isCmsRoute);
     applyEntrancePresentation(root);
     if (!currentUser()) wireEntranceScanner(root);
     markAlreadyBrokenImages(root);
@@ -1553,7 +1634,7 @@ async function render() {
     const message = error.message || String(error);
     const isCmsRoute = currentRoute?.path === "cms";
     const isPermissionError = /missing or insufficient permissions|permission-denied|permissions/i.test(message);
-    if (isCmsRoute && isPermissionError) {
+    if (isCmsRoute && isPermissionError && !canUseCms(currentUser())) {
       await logout().catch(() => {});
       root.innerHTML = `<section class="login-wrap"><div class="form-card login-card"><p class="eyebrow">Zugriff geschuetzt</p><h1>CMS-Login erforderlich</h1><p style="margin:14px 0 24px">Die Firebase-Sitzung ist abgelaufen oder hat keine CMS-Rechte. Bitte neu anmelden.</p><div class="actions"><a class="button button--primary" href="#/login">Anmelden</a></div></div></section>`;
       return;
@@ -1886,6 +1967,7 @@ function closePublicTts() {
 }
 
 function stopAllAudioPlayback() {
+  stopPauseGong();
   closePublicTts();
   document.querySelectorAll("audio").forEach((audio) => {
     try {
@@ -2501,6 +2583,31 @@ function eventScheduleRowMatchesTopic(row = {}, topic = {}) {
       .some((title) => String(row.title || "").trim().toLocaleLowerCase("de") === String(title).trim().toLocaleLowerCase("de"));
 }
 
+
+const pendingEventTextUpdates = new Map();
+let eventTextUpdateTimer = null;
+let eventTextUpdateOpen = false;
+function queueEventTextUpdate(before, after, force = false) {
+  if (!after?.id || (!force && !eventTextsChanged(before, after))) return;
+  if (!["description", "saveTheDateText", "invitationText", "invitationUpdateText", "mailText"].some(field => String(after[field] || "").trim())) return;
+  if (!pendingEventTextUpdates.has(after.id)) pendingEventTextUpdates.set(after.id, before);
+  window.clearTimeout(eventTextUpdateTimer);
+  eventTextUpdateTimer = window.setTimeout(flushEventTextUpdates, 1000);
+}
+async function flushEventTextUpdates() {
+  if (eventTextUpdateOpen || !pendingEventTextUpdates.size) return;
+  if (document.querySelector("dialog[open]")) {
+    eventTextUpdateTimer = window.setTimeout(flushEventTextUpdates, 1000);
+    return;
+  }
+  const [eventId, previousEvent] = pendingEventTextUpdates.entries().next().value;
+  pendingEventTextUpdates.delete(eventId);
+  eventTextUpdateOpen = true;
+  try { await showEventTextUpdate({ eventId, previousEvent, getOne, upsert, generate: callChatGptAction }); }
+  catch (error) { console.error("Textaktualisierung konnte nicht geöffnet werden", error); }
+  finally { eventTextUpdateOpen = false; if (pendingEventTextUpdates.size) eventTextUpdateTimer = window.setTimeout(flushEventTextUpdates, 1000); }
+}
+
 async function syncTopicScheduleVisibility(topic = {}) {
   if (!topic.id) return;
   const inactive = ["inactive", "archived", "draft", "deleted", "hidden"].includes(String(topic.status || "").toLowerCase());
@@ -2525,26 +2632,17 @@ async function syncTopicScheduleVisibility(topic = {}) {
         changed = true;
       }
     }
-    const textUpdates = {};
-    if (inactive && (event.topicIds || []).includes(topic.id)) {
-      const titles = [topic.title, topic.previousTitle].filter(Boolean);
-      for (const field of ["saveTheDateText", "invitationText", "invitationUpdateText", "description", "mailText"]) {
-        if (!event[field]) continue;
-        const cleaned = removeHiddenTalkMentions(event[field], titles);
-        if (cleaned !== event[field]) textUpdates[field] = cleaned;
-      }
-    }
-    if (!changed && !Object.keys(textUpdates).length) continue;
+    if (!changed) continue;
     const scheduleText = eventScheduleRowsToText(items);
-    await upsert("events", {
+    const updatedEvent = await upsert("events", {
       ...event,
-      ...textUpdates,
       scheduleItems: items,
       inactiveScheduleItems: inactive ? hidden : hidden.filter((entry) => entry.topicId !== topic.id),
       scheduleText,
       agendaText: scheduleText,
       updatedAt: new Date().toISOString()
     });
+    queueEventTextUpdate(event, updatedEvent, true);
   }
 }
 
@@ -9303,22 +9401,16 @@ function wireNewsFlip() {
     turning = true;
     const current = cards[index];
     const incoming = cards[target];
-    let loadTimeout;
-    const imageReady = await Promise.race([
-      warmImage(target),
-      new Promise((resolve) => { loadTimeout = window.setTimeout(() => resolve(false), 5000); })
-    ]);
-    window.clearTimeout(loadTimeout);
+    // Image loading must not delay navigation after a swipe.
+    void warmImage(target);
+    const incomingImage = incoming.querySelector(".news-flip-card__image img");
+    const imageReady = !incomingImage || (incomingImage.complete && incomingImage.naturalWidth > 0);
     if (!flip.isConnected || !mobileView.matches || scope.dataset.newsView !== "flip") {
       turning = false;
       return;
     }
-    const imageFailed = !imageReady && incoming.querySelector(".news-flip-card__image img")?.complete;
-    if (!imageReady && !imageFailed) {
-      turning = false;
-      return;
-    }
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches || imageFailed;
+    // Loading images can appear on the new card without blocking the next gesture.
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches || !imageReady;
     let fold = null;
     incoming.classList.add("is-queued");
     if (!reducedMotion) {
@@ -9369,9 +9461,10 @@ function wireNewsFlip() {
         fold.appendChild(half);
       });
       flip.querySelector(".news-flip__stage").appendChild(fold);
-      await Promise.all(Array.from(fold.querySelectorAll("img")).map((image) =>
-        typeof image.decode === "function" ? image.decode().catch(() => {}) : Promise.resolve()
-      ));
+      // Preloaded originals are ready. Decode copies without delaying the animation.
+      fold.querySelectorAll("img").forEach((image) => {
+        if (typeof image.decode === "function") void image.decode().catch(() => {});
+      });
       await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
       if (fold.isConnected) {
         current.classList.add("is-fold-source");
@@ -9401,7 +9494,7 @@ function wireNewsFlip() {
       foldingHalf.addEventListener("transitionend", (event) => {
         if (event.target === foldingHalf && event.propertyName === "transform") finish();
       });
-      window.setTimeout(finish, 850);
+      window.setTimeout(finish, 500);
     }
   };
   flip.addEventListener("keydown", (event) => {
@@ -9874,7 +9967,8 @@ async function saveEventTopicSpeakerForm(form) {
   } : null;
   if (linkedTopicUpdate) await upsert("topics", linkedTopicUpdate);
   const scheduleUpdate = linkedTopicUpdate ? eventScheduleFieldsWithTopic(existingEvent, linkedTopicUpdate, savedSpeaker) : {};
-  await upsert("events", { ...existingEvent, speakerIds: eventSpeakerIds, ...scheduleUpdate, updatedAt: new Date().toISOString() });
+  const updatedEvent = await upsert("events", { ...existingEvent, speakerIds: eventSpeakerIds, ...scheduleUpdate, updatedAt: new Date().toISOString() });
+  queueEventTextUpdate(existingEvent, updatedEvent, ["name", "company", "position"].some(field => existingSpeaker[field] !== savedSpeaker[field]));
   form.dataset.speakerId = speakerId;
   if (result) result.innerHTML = `<div class="alert alert--success">Referent wurde gespeichert.${image ? " Bildvarianten wurden automatisch gerendert und zugeordnet." : ""}</div>`;
   const imageStatus = form.querySelector("[data-image-status]");
@@ -12997,7 +13091,13 @@ function wireEditorialFormatting() {
       button.addEventListener("click", () => {
         if (button.disabled) return;
         if (!form.reportValidity()) {
-          setFormSaveFeedback("error", "Bitte Pflichtfelder prüfen.");
+          const invalidFields = Array.from(form.elements).filter((field) => field.willValidate && !field.validity.valid);
+          const details = invalidFields.map((field) => {
+            const label = field.labels?.[0]?.textContent || field.closest(".field")?.querySelector("label")?.textContent || field.name || "Eingabe";
+            const reason = field.validity.valueMissing ? "fehlt" : field.validity.typeMismatch ? (field.type === "email" ? "ungültige E-Mail-Adresse" : field.type === "url" ? "vollständige Webadresse mit https:// nötig" : "ungültige Eingabe") : "bitte prüfen";
+            return `${label.trim().replace(/\s*\*$/, "")}: ${reason}`;
+          });
+          setFormSaveFeedback("error", details.length ? details.join(" · ") : "Bitte Eingaben prüfen.");
           return;
         }
         form.requestSubmit();
@@ -13007,7 +13107,7 @@ function wireEditorialFormatting() {
       setFormSaveFeedback("saving", "Aenderungen werden gespeichert ...");
       window.setTimeout(() => {
         if (form.isConnected && form.querySelector(".cms-editor-save-row .button")?.disabled) {
-          setFormSaveFeedback("error", "Speichern dauert zu lange. Bitte erneut versuchen.");
+          setFormSaveFeedback("saving", "Speichern läuft noch. Bitte das Formular geöffnet lassen.");
         }
       }, 15000);
     });
@@ -13260,7 +13360,7 @@ function wireMemberStrategyResponses() {
 }
 function wireEventLiveActions() {
   const adminSettings = [...document.querySelectorAll("[data-event-live-settings]")].filter(root => root.querySelector("[data-event-content-admin]"));
-  if (adminSettings.length) import("./utils/eventContentModeration.js?v=1").then(({ mountEventContentModeration }) => adminSettings.forEach(mountEventContentModeration));
+  if (adminSettings.length) import("./utils/eventContentModeration.js?v=2").then(({ mountEventContentModeration }) => adminSettings.forEach(mountEventContentModeration));
 
   const profileForm = document.querySelector("[data-live-profile-form]");
   if (profileForm) {
@@ -13459,7 +13559,7 @@ function wireEventLiveActions() {
   });
   if (rootNode) {
     mountEventArea(rootNode, liveData());
-    import("./utils/eventPhotos.js?v=6").then(({ mountEventPhotos }) => mountEventPhotos(rootNode));
+    import("./utils/eventPhotos.js?v=9").then(({ mountEventPhotos }) => mountEventPhotos(rootNode));
   }
   const linkedPeer = new URLSearchParams(location.hash.split("?")[1] || "").get("peer");
   if (rootNode && linkedPeer && !rootNode.dataset.linkedPeerOpened
@@ -13860,9 +13960,11 @@ function wireEventLiveActions() {
 }
 
 function wireActions() {
+  if (document.querySelector("[data-sms-balance]")) import("./firebase/smsBalance.js?v=1").then(module => module.mountSmsBalance()).catch(console.error);
+  if (document.querySelector("[data-login-sms-reset]")) import("./firebase/smsPasswordReset.js?v=1").then(module => module.mountSmsPasswordReset()).catch(console.error);
   const photoGallery = document.querySelector("[data-participant-photos]");
   if (document.querySelector("[data-participant-photo-badge]") || photoGallery) {
-    import("./utils/participantPhotos.js?v=6").then(({ mountParticipantPhotos, mountParticipantPhotoBadges }) => {
+    import("./utils/participantPhotos.js?v=9").then(({ mountParticipantPhotos, mountParticipantPhotoBadges }) => {
       if (photoGallery) mountParticipantPhotos(photoGallery);
       mountParticipantPhotoBadges(document.querySelector(".member-portal-shell"));
     });
@@ -14094,13 +14196,13 @@ function wireActions() {
   syncMobileModerationCardPanels(document.querySelector("[data-mobile-live-event]")?.value || "");
   syncMobileGuestFeedbackPanels(document.querySelector("[data-mobile-live-event]")?.value || "");
   syncMobileDashboardPanels(document.querySelector("[data-mobile-live-event]")?.value || "");
-  if (document.querySelector("[data-mobile-checkin-stats-wrap]")) startMobileCheckinStats();
+  if (document.querySelector('[data-cockpit-page="qr"] [data-mobile-checkin-stats-wrap]')) startMobileCheckinStats();
   document.querySelector("[data-mobile-live-results-refresh]")?.addEventListener("click", () => {
     refreshMobileCmsLiveResults({ silent: false });
   });
   document.querySelector("[data-mobile-live-results-toggle]")?.addEventListener("click", (event) => {
     const button = event.currentTarget;
-    if (mobileCmsLiveResultsTimer) {
+    if (mobileCmsLiveResultsRunning) {
       stopMobileCmsLiveResults();
       button.textContent = "Live starten";
       const status = document.querySelector("[data-mobile-live-results-status]");
@@ -14166,6 +14268,7 @@ function wireActions() {
   wireEditorialToolJumps();
   wireEditorialFormatting();
   wireCmsMenu();
+  if (document.querySelector("[data-accounting-records]")) import("./cms/accounting.js?v=105").then(module => module.mountAccounting()).catch(error => console.error("Buchhaltung konnte nicht gestartet werden", error));
   wireImageDropzones();
   wireGalleryEditor();
   wireGalleryPlayers();
@@ -17382,6 +17485,18 @@ function wireActions() {
     const textSourceSelect = eventNotificationForm.querySelector("[data-notification-text-source]");
     const textSourceField = eventNotificationForm.querySelector("[data-notification-text-source-field]");
     const eventEditorLink = eventNotificationForm.querySelector("[data-notification-event-editor-link]");
+    const invitationEditor = eventNotificationForm.dataset.eventContext ? document.querySelector('#event-edit-form[data-event-form-section="pre"]') : null;
+    const syncInvitationEditor = () => {
+      const message = invitationEditorMessage(invitationEditor);
+      if (!message) return;
+      if (textSourceSelect && textSourceSelect.value !== message.source) {
+        const eventTitle = eventSelect?.selectedOptions?.[0]?.dataset.eventTitle || "Veranstaltung";
+        titleInput.value = `${message.prefix}: ${eventTitle}`;
+        textSourceSelect.value = message.source;
+      }
+      textInput.value = message.text;
+    };
+
     const linkInput = eventNotificationForm.querySelector("[data-notification-link]");
     const linkToggle = eventNotificationForm.querySelector("[data-notification-link-toggle]");
     const linkChoice = eventNotificationForm.querySelector("[data-notification-link-choice]");
@@ -17389,6 +17504,11 @@ function wireActions() {
     const surveyLinkRequired = eventNotificationForm.querySelector("[data-live-survey-link-required]");
     const testField = eventNotificationForm.querySelector("[data-notification-test-field]");
     const recipientGroup = eventNotificationForm.querySelector("[data-notification-recipient-group]");
+    const singleField=eventNotificationForm.querySelector('[data-notification-single-field]');
+    const singleInput=eventNotificationForm.querySelector('[data-notification-single-recipient]');
+    let singleDirectoryLoaded=false;
+    const loadSingleDirectory=async()=>{if(!singleField||singleDirectoryLoaded)return;singleDirectoryLoaded=true;const hint=singleField.querySelector('[data-notification-single-status]');try{hint.textContent='Adressliste wird geladen …';const groups=await Promise.all([list('members'),list('contacts'),list('users')]);const people=new Map();for(const person of groups.flat()){for(const email of [person.email,person.contactEmail,person.primaryEmail,...(Array.isArray(person.emails)?person.emails:[])]){if(typeof email!=='string'||! /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))continue;const key=email.trim().toLowerCase();if(!people.has(key))people.set(key,[person.firstName,person.lastName].filter(Boolean).join(' ')||person.displayName||person.name||person.company||key);}}singleField.querySelector('datalist').innerHTML=[...people].sort((a,b)=>a[1].localeCompare(b[1])).map(([email,name])=>'<option value="'+escapeHtml(email)+'" label="'+escapeHtml(name)+'"></option>').join('');hint.textContent='Eine Person auswählen. Es wird nur diese Person angeschrieben.';}catch(error){singleDirectoryLoaded=false;hint.textContent='Adressliste nicht geladen: '+notificationErrorText(error);}};
+
     const speakerSourceField = eventNotificationForm.querySelector("[data-notification-speaker-source-field]");
     const speakerSourceSelect = eventNotificationForm.querySelector("[data-notification-speaker-source]");
     const registrationStatusField = eventNotificationForm.querySelector("[data-notification-registration-status-field]");
@@ -17549,17 +17669,21 @@ function wireActions() {
       const isMemberMessage = kindSelect?.value === "member_message";
       if (isMemberMessage && recipientGroup?.value === "other_event_speakers") recipientGroup.value = "members_contacts";
       const isTestPerson = recipientGroup?.value === "test_person";
+      const isSinglePerson = recipientGroup?.value === "single_person";
+      if(singleField)singleField.hidden=!isSinglePerson;
+      if(singleInput){singleInput.required=isSinglePerson;singleInput.disabled=!isSinglePerson;}
+      if(isSinglePerson)loadSingleDirectory();
       const isOtherEventSpeakers = !isMemberMessage && recipientGroup?.value === "other_event_speakers";
       if (speakerSourceField) speakerSourceField.hidden = !isOtherEventSpeakers;
-      if (registrationStatusField) registrationStatusField.hidden = isOtherEventSpeakers;
+      if (registrationStatusField) registrationStatusField.hidden = isOtherEventSpeakers || isSinglePerson;
       if (speakerSourceSelect) {
         speakerSourceSelect.disabled = !isOtherEventSpeakers;
         speakerSourceSelect.required = isOtherEventSpeakers;
         Array.from(speakerSourceSelect.options).forEach((option) => { option.disabled = Boolean(option.value && option.value === eventSelect?.value); });
         if (speakerSourceSelect.value === eventSelect?.value) speakerSourceSelect.value = "";
       }
-      if (eventField) eventField.hidden = isMemberMessage;
-      if (textSourceField) textSourceField.hidden = isMemberMessage;
+      if (eventField) eventField.hidden = Boolean(eventNotificationForm.dataset.eventContext) || isMemberMessage;
+      if (textSourceField) textSourceField.hidden = Boolean(eventNotificationForm.dataset.eventContext) || isMemberMessage;
       if (eventSelect) eventSelect.required = !isMemberMessage;
       if (scheduledField) scheduledField.hidden = sendMode?.value !== "scheduled";
       if (offsetField) offsetField.hidden = isMemberMessage || sendMode?.value !== "auto_before_event";
@@ -17722,6 +17846,7 @@ function wireActions() {
       const eventId = eventSelect?.value || "";
       const group = recipientGroup?.value || "members_contacts";
       const sourceEventId = speakerSourceSelect?.value || "";
+      const singleRecipientEmail=singleInput?.value.trim()||"";
       const testRecipients = testField?.querySelector("[name='testRecipients']")?.value || "";
       const mailEnabled = !channelInputs.length || Array.from(channelInputs).some((input) => input.value === "mail" && input.checked);
       const showCountState = (message, state = "loading") => {
@@ -17731,6 +17856,7 @@ function wireActions() {
       if (!mailEnabled) return showCountState("0 E-Mails: E-Mail-Versand ist ausgeschaltet.", "ready");
       if (kind === "event" && !eventId) return showCountState("Bitte zuerst eine Veranstaltung auswählen.");
       if (group === "other_event_speakers" && (!sourceEventId || sourceEventId === eventId)) return showCountState("Bitte das Quell-Event der Referenten auswählen.");
+      if(group==="single_person"&&!singleInput?.validity.valid)return showCountState("Bitte genau eine Person auswählen.");
       if (group === "test_person" && !testRecipients.trim()) return showCountState("Bitte Test-Mailadressen eingeben.");
       if (group === "test_group" && document.querySelector("#notification-test-group-form")?.dataset.dirty === "true") return showCountState("Bitte die Testgruppe zuerst speichern.");
       showCountState("E-Mail-Anzahl wird ermittelt ...");
@@ -17740,6 +17866,7 @@ function wireActions() {
             notificationKind: kind,
             eventId,
             recipientGroup: group,
+            singleRecipientEmail,
             registrationStatus: eventNotificationForm.elements.registrationStatus?.value || "all",
             extraSpeakerEventId: sourceEventId,
             testRecipients,
@@ -17758,6 +17885,7 @@ function wireActions() {
       if (event.target.matches('[name="eventId"], [name="notificationKind"], [name="recipientGroup"], [name="registrationStatus"], [name="extraSpeakerEventId"], [data-notification-channel]')) scheduleNotificationMailCount();
     });
     testField?.querySelector("[name='testRecipients']")?.addEventListener("input", scheduleNotificationMailCount);
+    singleInput?.addEventListener("input",scheduleNotificationMailCount);
     document.querySelector("#notification-test-group-form")?.addEventListener("input", () => queueMicrotask(() => {
       if (recipientGroup?.value === "test_group") scheduleNotificationMailCount();
     }));
@@ -17766,12 +17894,16 @@ function wireActions() {
     });
     scheduleNotificationMailCount();
     let confirmedPayload = null;
+    let notificationSending = false;
     let notificationPreviewRevision = 0;
     const invalidateNotificationPreview = () => {
       notificationPreviewRevision++;
       confirmedPayload = null;
       if (notificationResult) notificationResult.innerHTML = "";
     };
+    invitationEditor?.addEventListener("input", () => { syncInvitationEditor(); invalidateNotificationPreview(); });
+    invitationEditor?.addEventListener("change", () => { syncInvitationEditor(); invalidateNotificationPreview(); });
+    syncInvitationEditor();
     eventNotificationForm.addEventListener("input", invalidateNotificationPreview);
     eventNotificationForm.addEventListener("change", invalidateNotificationPreview);
     document.querySelector("#notification-test-group-form")?.addEventListener("input", invalidateNotificationPreview);
@@ -17783,7 +17915,8 @@ function wireActions() {
         notificationResult.innerHTML = "";
         return;
       }
-      if (!sendButton || !confirmedPayload) return;
+      if (!sendButton || !confirmedPayload || notificationSending) return;
+      notificationSending = true;
       const submitButton = eventNotificationForm.querySelector("button[type='submit']");
       const originalLabel = submitButton?.textContent || "";
       try {
@@ -17822,6 +17955,7 @@ function wireActions() {
       } catch (error) {
         notificationResult.innerHTML = `<div class="alert alert--error">${escapeHtml(notificationErrorText(error))}</div>`;
       } finally {
+        notificationSending = false;
         if (submitButton) {
           submitButton.disabled = false;
           if (!submitButton.classList.contains("button--success")) submitButton.textContent = originalLabel;
@@ -17830,6 +17964,7 @@ function wireActions() {
     });
     eventNotificationForm.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (notificationSending) return;
       const button = eventNotificationForm.querySelector("button[type='submit']");
       const originalLabel = button?.textContent || "";
       try {
@@ -17837,7 +17972,12 @@ function wireActions() {
           button.disabled = true;
           button.textContent = "Bereite vor ...";
         }
+        syncInvitationEditor();
         const payload = formObject(eventNotificationForm);
+        if (eventNotificationForm.dataset.eventContext) {
+          delete payload.link;
+          payload.linkEnabled = true;
+        }
         payload.channels = channelInputs.length
           ? Array.from(channelInputs).filter((input) => input.checked).map((input) => input.value)
           : ["mail", "push"];
@@ -17858,6 +17998,7 @@ function wireActions() {
             if (!liveSurveyAnswers().length) throw new Error("Bitte mindestens eine Antwortmoeglichkeit eintragen.");
           }
         }
+        if(payload.recipientGroup==="single_person"){if(!singleInput?.validity.valid)throw new Error("Bitte genau eine Person auswählen.");payload.singleRecipientEmail=singleInput.value.trim().toLowerCase();payload.registrationStatus="all";}else delete payload.singleRecipientEmail;
         payload.testOnly = recipientGroup?.value === "test_person";
         if (payload.testOnly) payload.testRecipientMobiles = String(eventNotificationForm.querySelector("[name='testRecipientMobiles']")?.value || "").trim();
         if (payload.testOnly) rememberTestRecipients();
@@ -17865,31 +18006,38 @@ function wireActions() {
         const revision = notificationPreviewRevision;
         const previewResponse = await previewEventNotification(payload);
         if (revision !== notificationPreviewRevision) return;
-        if (["test_group", "other_event_speakers"].includes(payload.recipientGroup)) payload.expectedTestRecipients = previewResponse.recipientEmails;
+        if (["test_group", "other_event_speakers", "single_person"].includes(payload.recipientGroup)) payload.expectedTestRecipients = previewResponse.recipientEmails;
         if (payload.channels.includes("sms")) payload.smsCostEstimateId = previewResponse.smsCostEstimateId || "";
         confirmedPayload = payload;
-        const selectedSourceLabel = textSourceSelect?.selectedOptions?.[0]?.textContent || "Manueller Text";
-        const previewText = String(payload.shortText || "");
-        const previewExcerpt = previewText.length > 260 ?`${previewText.slice(0, 257)}...` : previewText;
         const channelSummary = [
           payload.channels.includes("mail") ? `${Number(previewResponse.mailCount || 0)} E-Mails` : "",
-          payload.channels.includes("push") ? `${Number(previewResponse.pushCount || 0)} Push` : "",
+          payload.channels.includes("push") ? `${Number(previewResponse.pushCount || 0)} Push-Mitteilungen` : "",
           payload.channels.includes("sms") ? `${Number(previewResponse.smsCount || 0)} SMS` : ""
         ].filter(Boolean).join(", ");
         const smsEstimate = previewResponse.smsCostEstimate;
         const smsCostFormatted = smsEstimate ? new Intl.NumberFormat("de-DE", { style: "currency", currency: smsEstimate.currency || "EUR" }).format(Number(smsEstimate.estimatedNetEur || 0)) : "";
-        const smsCostHtml = smsEstimate ? `<p style="margin:10px 0 0"><strong>Voraussichtliche SMS-Kosten:</strong> ca. ${escapeHtml(smsCostFormatted)} netto für ${Number(smsEstimate.messagePartCount || 0)} SMS-Teil(e) an ${Number(smsEstimate.recipientCount || 0)} Empfänger. Der tatsächliche Anbieterbetrag wird nach dem Versand gespeichert.</p>` : "";
-        const sourceEventHtml = payload.recipientGroup === "other_event_speakers"
-          ? `<p style="margin:10px 0 0"><strong>Einladung für:</strong> ${escapeHtml(eventSelect?.selectedOptions?.[0]?.dataset.eventTitle || "Event")}<br><strong>Referenten aus:</strong> ${escapeHtml(speakerSourceSelect?.selectedOptions?.[0]?.textContent || "Quell-Event")}</p>`
-          : "";
-        const sendLabel = smsEstimate ? `Senden · ca. ${smsCostFormatted}` : "Senden";
-        if (notificationResult) notificationResult.innerHTML = `<div class="alert alert--warning"><strong>${escapeHtml(channelSummary || "Keine Empfänger") } vorbereitet.</strong>${sourceEventHtml}${smsCostHtml}<p style="margin:10px 0 0"><strong>Textquelle:</strong> ${escapeHtml(selectedSourceLabel)}</p><p style="margin:8px 0 0">${escapeHtml(previewExcerpt)}</p><div class="actions" style="margin-top:12px"><button class="button button--primary button--small" type="button" data-confirm-notification-send>${escapeHtml(sendLabel)}</button><button class="button button--secondary button--small" type="button" data-cancel-notification-send>Abbrechen</button></div></div>`;
-        if (previewResponse.recipientEmails?.length) notificationResult?.querySelector(".alert")?.insertAdjacentHTML("afterbegin", `<p><strong>${payload.recipientGroup === "other_event_speakers" ? "Referenten" : "Testempfaenger"}:</strong> ${previewResponse.recipientEmails.map((email) => escapeHtml(email)).join(", ")}</p>`);
+        const confirmed = payload.channels.some(channel => ["mail", "sms"].includes(channel))
+          ? await confirmNotificationPreview({
+            preview: previewResponse.messagePreview,
+            summary: `${channelSummary || "Keine Empfänger"} vorbereitet.`,
+            costs: smsEstimate ? `Voraussichtliche SMS-Kosten: ca. ${smsCostFormatted} netto für ${Number(smsEstimate.messagePartCount || 0)} SMS-Teile.` : "",
+            recipients: previewResponse.recipientEmails?.length ? `Empfänger: ${previewResponse.recipientEmails.join(", ")}` : "",
+            sendLabel: smsEstimate ? `Senden · ca. ${smsCostFormatted}` : payload.sendMode === "now" ? "Senden" : "Versand planen"
+          })
+          : window.confirm(`${channelSummary} senden?`);
+        if (!confirmed || revision !== notificationPreviewRevision) { confirmedPayload = null; return; }
+        if (notificationResult) {
+          notificationResult.innerHTML = `<button type="button" hidden data-confirm-notification-send>Senden</button>`;
+          if (button) button.textContent = originalLabel;
+          notificationResult.querySelector("[data-confirm-notification-send]").click();
+          confirmedPayload = null;
+        }
+
       } catch (error) {
         confirmedPayload = null;
         if (notificationResult) notificationResult.innerHTML = `<div class="alert alert--error">${escapeHtml(notificationErrorText(error))}</div>`;
       } finally {
-        if (button) {
+        if (button && !notificationSending) {
           button.disabled = false;
           if (!button.classList.contains("button--success")) button.textContent = originalLabel;
         }
@@ -18087,6 +18235,30 @@ function wireActions() {
     }, 450);
   }
 
+  document.querySelector("[data-login-password-reset]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const form = button.closest("form");
+    const result = form.querySelector("#login-result");
+    const emailInput = form.elements.email;
+    const showNotice = (element, message, type = "") => {
+      if (!element) return;
+      element.innerHTML = `<div class="alert${type === "success" ? " alert--success" : type === "error" ? " alert--warning" : ""}">${escapeHtml(message)}</div>`;
+    };
+    emailInput.value = emailInput.value.trim();
+    if (!emailInput.reportValidity()) return;
+    if (form.dataset.pending === "1" || button.disabled) return;
+    button.disabled = true;
+    try {
+      showNotice(result, "Link wird angefordert ...");
+      await requestEventLivePasswordReset(emailInput.value);
+      showNotice(result, "Wenn für diese Adresse ein Konto besteht, wurde ein Link zum Zurücksetzen des Passworts gesendet. Bitte prüfen Sie auch den Spamordner.", "success");
+    } catch (error) {
+      showNotice(result, error.message || "Der Link konnte nicht angefordert werden.", "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   document.querySelector("#login-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -18104,7 +18276,8 @@ function wireActions() {
       const values = formObject(form);
       const user = await login(values.email, values.password, values.role);
       const returnTarget = loginReturnTarget();
-      go(returnTarget || postLoginRouteForUser(user));
+      if (route().path === "cms" && !canUseCms(user)) throw new Error("Dieses Konto hat keine Berechtigung für das Veranstaltungscockpit. Bitte mit einem Admin- oder Redaktionskonto anmelden.");
+      go(returnTarget || (route().path === "cms" ? (mobileCmsDisabled() ? "cms/live" : "cms") : postLoginRouteForUser(user)));
     } catch (error) {
       if (result) result.innerHTML = `<div class="alert alert--warning">${escapeHtml(error.message || "Login fehlgeschlagen.")}</div>`;
     } finally {
@@ -18458,6 +18631,7 @@ function wireActions() {
     } catch (error) {
       pendingWindow?.close();
       if (result) result.innerHTML = `<div class="alert alert--warning">${escapeHtml(error?.message || "Einlass-QR konnte nicht erstellt werden.")}</div>`;
+    } finally {
       button.disabled = false;
       button.textContent = originalLabel;
     }
@@ -18788,7 +18962,7 @@ function wireActions() {
       if (form.dataset.eventFormSection === "schedule") {
         const scheduleItems = syncEventScheduleHiddenFields(form);
         const scheduleText = eventScheduleRowsToText(scheduleItems);
-        await upsert("events", {
+        const updatedEvent = await upsert("events", {
           ...existing,
           moderatorName: String(values.moderatorName || "").trim().slice(0, 160),
           scheduleItems,
@@ -18798,6 +18972,7 @@ function wireActions() {
           talkDurationMinutes: Math.min(180, Math.max(5, Math.round(Number(values.talkDurationMinutes) || 30))),
           updatedAt: new Date().toISOString()
         });
+        queueEventTextUpdate(existing, updatedEvent);
         if (result && !silent) result.innerHTML = `<div class="alert alert--success">Ablaufplan wurde gespeichert.</div>`;
         form.dispatchEvent(new CustomEvent("cms-form-saved", { detail: { id: form.dataset.eventId, section: "schedule" } }));
         return true;
@@ -18921,6 +19096,7 @@ function wireActions() {
         values.archiveText = values.longDescription;
       }
       const savedEvent = await upsert("events", { ...existing, ...values });
+      queueEventTextUpdate(existing, savedEvent);
       if (!form.dataset.eventFormSection && savedEvent.date && (savedEvent.topicIds || []).length) {
         const allEvents = (await list("events").catch(() => [])).map((event) => event.id === savedEvent.id ? savedEvent : event);
         await Promise.all((savedEvent.topicIds || []).map(async (topicId) => {
@@ -19101,6 +19277,12 @@ function wireActions() {
   document.querySelectorAll("form[data-event-form-section='schedule']").forEach(wireEventScheduleEditor);
   document.querySelectorAll("form[data-event-form-section='survey']").forEach(wireEventSurveyEditor);
 
+  const speakerMailingData = document.querySelector("[data-speaker-mailing-data]");
+  if (speakerMailingData) {
+    const people = JSON.parse(speakerMailingData.textContent || "[]");
+    document.querySelectorAll("#event-topic-editor-form, #event-topic-speaker-form").forEach(form => mountSpeakerMailingPicker(form, people));
+  }
+
   document.querySelector("#event-speakers-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -19221,7 +19403,8 @@ function wireActions() {
       });
       speakerIds.push(id);
     }
-    await upsert("events", { ...existing, topicIds, speakerIds, updatedAt: new Date().toISOString() });
+    const updatedEvent = await upsert("events", { ...existing, topicIds, speakerIds, updatedAt: new Date().toISOString() });
+    queueEventTextUpdate(existing, updatedEvent);
     form.querySelector("#event-topic-assignment-result").innerHTML = `<div class="alert alert--success">Zuordnung wurde gespeichert.</div>`;
     await render();
   });
@@ -19241,15 +19424,17 @@ function wireActions() {
     if (result) result.innerHTML = `<div class="alert">Referent und Vortrag werden gespeichert ...</div>`;
     try {
       if (!ensureSimpleImageCropsApplied(form, "#event-topic-editor-result")) return;
-    const existingEvent = await getOne("events", form.dataset.eventId);
     const topicId = form.dataset.topicId || `topics-${crypto.randomUUID()}`;
-    const existingTopic = await getOne("topics", topicId).catch(() => null) || { id: topicId, status: "active", visibility: "public", createdAt: new Date().toISOString() };
+    const [existingEvent, storedTopic] = await Promise.all([
+      getOne("events", form.dataset.eventId),
+      form.dataset.topicMode === "new" ? Promise.resolve(null) : getOne("topics", topicId)
+    ]);
+    const existingTopic = storedTopic || { id: topicId, status: "active", visibility: "public", createdAt: new Date().toISOString() };
     const isNewTopicForEvent = !(existingEvent.topicIds || []).includes(topicId);
-    const existingTopicRecords = await list("topics");
-    const talkTopicCount = (existingEvent.topicIds || []).filter((id) => {
-      const topic = existingTopicRecords.find((item) => item.id === id);
-      return !isNeutralEventProgramItem(topic || {});
-    }).length;
+    const existingTopicRecords = isNewTopicForEvent && (existingEvent.topicIds || []).length >= 6
+      ? await Promise.all((existingEvent.topicIds || []).map(id => getOne("topics", id)))
+      : [];
+    const talkTopicCount = existingTopicRecords.filter(topic => !isNeutralEventProgramItem(topic || {})).length;
     if (isNewTopicForEvent && talkTopicCount >= 6 && !isNeutralEventProgramItem({ title: form.elements.title?.value || "" })) {
       form.querySelector("#event-topic-editor-result").innerHTML = `<div class="alert alert--error">Maximal 6 Vorträge pro Medienfrühstück sind möglich.</div>`;
       return;
@@ -19425,7 +19610,8 @@ function wireActions() {
     };
     await upsert("speakers", savedSpeaker);
     const scheduleUpdate = eventScheduleFieldsWithTopic(existingEvent, savedTopic, savedSpeaker);
-    await upsert("events", { ...existingEvent, topicIds, speakerIds: eventSpeakerIds, ...scheduleUpdate, updatedAt: new Date().toISOString() });
+    const updatedEvent = await upsert("events", { ...existingEvent, topicIds, speakerIds: eventSpeakerIds, ...scheduleUpdate, updatedAt: new Date().toISOString() });
+    queueEventTextUpdate(existingEvent, updatedEvent, Boolean(existingTopic.title && (existingTopic.title !== savedTopic.title || existingSpeaker?.name !== savedSpeaker.name)));
     form.dataset.speakerId = speakerId;
     if (result) result.innerHTML = `<div class="alert alert--success">Referent und Vortrag wurden gespeichert.</div>`;
     const imageStatus = form.querySelector("[data-image-status]");
@@ -19509,7 +19695,8 @@ function wireActions() {
       } else if (retrospective && plan.retrospectiveAction === "update") {
         await upsert("editorialContent", { ...retrospective, ...plan.retrospectivePatch, updatedAt: now });
       }
-      await upsert("events", { ...existingEvent, ...plan.eventPatch, updatedAt: now });
+      const updatedEvent = await upsert("events", { ...existingEvent, ...plan.eventPatch, updatedAt: now });
+      queueEventTextUpdate(existingEvent, updatedEvent, true);
       await render();
     } catch (error) {
       button.disabled = false;
@@ -19534,6 +19721,7 @@ function wireActions() {
     }
   });
 
+  mountEventSpeakerRemoval({render,updateTexts:(eventId,previousEvent)=>showEventTextUpdate({eventId,previousEvent,getOne,upsert,generate:callChatGptAction})});
   document.querySelectorAll("[data-remove-event-topic-speaker]").forEach((button) => button.addEventListener("click", async () => {
     const speaker = await getOne("speakers", button.dataset.removeEventTopicSpeaker);
     const existingEvent = await getOne("events", button.dataset.eventId);
@@ -20843,7 +21031,7 @@ function wireActions() {
     const button = form.querySelector('button[type="submit"]');
     if (button) button.disabled = true;
     try {
-      const { uploadPortalGalleryPhotos } = await import("./firebase/portalGalleryPhotoService.js?v=3");
+      const { uploadPortalGalleryPhotos } = await import("./firebase/portalGalleryPhotoService.js?v=5");
       await uploadPortalGalleryPhotos(files, form.elements.note?.value?.trim() || "", (progress) => {
         const bar = result.querySelector(".progress span");
         if (bar) bar.style.width = `${progress}%`;
@@ -21167,6 +21355,32 @@ function wireActions() {
     }
   }));
 
+  document.querySelectorAll("[data-event-agenda-toggle]").forEach((button) => button.addEventListener("change", async (event) => {
+    const target = event.currentTarget;
+    const eventId = target.dataset.eventAgendaToggle;
+    const showAgenda = target.checked;
+    const result = document.querySelector("#event-registration-toggle-result");
+    if (!eventId) return;
+    const originalChecked = !showAgenda;
+    target.disabled = true;
+    if (result) result.innerHTML = `<div class="alert">Öffentliche Agenda wird ${showAgenda ? "aktiviert" : "deaktiviert"} ...</div>`;
+    try {
+      const existing = await getOne("events", eventId);
+      if (!existing) throw new Error("Event wurde nicht gefunden.");
+      await upsert("events", {
+        ...existing,
+        showAgenda,
+        updatedAt: new Date().toISOString()
+      });
+      if (result) result.innerHTML = `<div class="alert alert--success">Öffentliche Agenda wurde ${showAgenda ? "aktiviert" : "deaktiviert"}.</div>`;
+      await render();
+    } catch (error) {
+      if (result) result.innerHTML = `<div class="alert alert--error">Öffentliche Agenda konnte nicht geaendert werden: ${escapeHtml(error.message || String(error))}</div>`;
+      target.checked = originalChecked;
+      target.disabled = false;
+    }
+  }));
+
   document.querySelectorAll("[data-event-mobile-ticket-toggle]").forEach((button) => button.addEventListener("change", async (event) => {
     const target = event.currentTarget;
     const eventId = target.dataset.eventMobileTicketToggle;
@@ -21195,16 +21409,58 @@ function wireActions() {
     }
   }));
 
+  wirePauseGong();
+  document.querySelectorAll("[data-event-moderator-assignment]").forEach(form => form.querySelector("[data-save-moderator-assignment]").addEventListener("click", async event => {
+    event.preventDefault();
+    const button = form.querySelector("[data-save-moderator-assignment]");
+    const result = form.querySelector("[data-moderator-assignment-result]");
+    button.disabled = true;
+    try {
+      const previousEvent = await getOne("events", form.dataset.eventModeratorAssignment);
+      const assignment = await callEventModerator("assignEventModerators", { eventId: form.dataset.eventModeratorAssignment, emails: Array.from(form.querySelectorAll("[data-moderator-email-selection]:checked"), input => input.value) });
+      const moderatorInput = document.querySelector('[name="moderatorName"]');
+      if (moderatorInput) {
+        moderatorInput.value = assignment.moderatorName || "";
+        moderatorInput.defaultValue = moderatorInput.value;
+      }
+      const updatedEvent = await getOne("events", form.dataset.eventModeratorAssignment);
+      queueEventTextUpdate(previousEvent, updatedEvent);
+      result.textContent = "Moderation gespeichert.";
+      const count = form.closest("details")?.querySelector("[data-moderator-assignment-count]");
+      if (count) count.textContent = assignment.moderatorName ? `${assignment.moderatorName} · Gespeichert` : "";
+      button.classList.add("moderator-access-saved");
+      button.textContent = "Gespeichert";
+      const disclosure = form.closest("details");
+      if (disclosure) disclosure.open = false;
+    } catch (error) { result.textContent = error.message || "Moderation konnte nicht gespeichert werden."; }
+    finally { button.disabled = false; }
+  }));
+
+  document.querySelectorAll("[data-event-moderator-assignment]").forEach(form => form.addEventListener("change", () => {
+    const button = form.querySelector("[data-save-moderator-assignment]");
+    button.classList.remove("moderator-access-saved");
+    button.textContent = "Moderation speichern";
+    form.querySelector("[data-moderator-assignment-result]").textContent = "";
+    const count = form.closest("details")?.querySelector("[data-moderator-assignment-count]");
+    if (count) {
+      const names = Array.from(form.querySelectorAll("[data-moderator-email-selection]:checked"), input => input.closest("label")?.querySelector("strong")?.textContent || "").filter(Boolean).join(", ");
+      count.textContent = names ? `${names} · Nicht gespeichert` : "";
+    }
+  }));
+
   document.querySelectorAll("[data-moderation-cards]").forEach((button) => button.addEventListener("click", async () => {
     const result = button.closest("[data-mobile-moderation-event-panel]")?.querySelector("[data-mobile-moderation-result]") || document.querySelector("#event-save-result") || document.querySelector("#registration-bulk-result");
     button.disabled = true;
     try {
-      const [event, topics, speakers, boardMembers] = await Promise.all([
-        getOne("events", button.dataset.eventId),
-        list("topics"),
-        list("speakers"),
-        list("boardMembers").catch(() => [])
-      ]);
+      const moderatorPortal = button.hasAttribute("data-moderator-portal");
+      let cardData = await callEventModerator("getModeratorCards", { eventId: button.dataset.eventId });
+      if (!moderatorPortal && cardData.cardOwners?.length) {
+        const ownerId = await chooseModeratorCards(cardData);
+        if (ownerId === null) return;
+        if (ownerId) cardData = await callEventModerator("getModeratorCards", { eventId: button.dataset.eventId, ownerId });
+      }
+      const { event, topics, speakers, boardMembers } = cardData;
+      event.cardOwnerName = cardData.cardOwnerName;
       if (!event) throw new Error("Event wurde nicht gefunden.");
       const service = await moderationCardPrintService();
       service.openModerationCardDialog({
@@ -21212,7 +21468,7 @@ function wireActions() {
         topics,
         speakers,
         boardMembers,
-        generateAiTexts: async (cards) => {
+        generateAiTexts: moderatorPortal ? null : async (cards) => {
           const response = await callChatGptAction("generateModerationCardText", {
             module: "event-admin",
             entityType: "moderationCards",
@@ -21245,13 +21501,7 @@ function wireActions() {
             description: String(card.description || ""),
             notes: String(card.notes || "")
           }));
-          await upsert("events", {
-            id: event.id,
-            moderationCards,
-            moderationCardRemovedIds: removedIds,
-            moderationCardOrientation: orientation === "landscape" ? "landscape" : "portrait",
-            moderationCardsUpdatedAt: new Date().toISOString()
-          });
+          await callEventModerator("saveModeratorCards", { eventId: event.id, ownerId: cardData.ownerId, cards: moderationCards, removedIds, orientation });
         }
       });
     } catch (error) {
@@ -21381,6 +21631,7 @@ function wireActions() {
       : "#/cms/registrations";
   });
 
+  mountRegistrationMailingPicker(document.querySelector("#admin-registration-form"));
   document.querySelector("#admin-registration-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -21530,11 +21781,11 @@ function wireActions() {
           updatedValues.linkedIn = optionalLinkedInUrl(updatedValues.linkedIn);
           const latest = await getOne("registrations", registrationId);
           if (!latest) throw new Error("Anmeldung wurde nicht gefunden.");
-          await upsert("registrations", registrationEditorPatch(latest, participantRole, updatedValues));
+          await callEventModerator("adminUpdateEventRegistration", { registrationId, participantRole, input: updatedValues });
           close();
           await render();
           const pageResult = document.querySelector("#registration-bulk-result");
-          if (pageResult) pageResult.innerHTML = '<div class="alert alert--success">Anmeldedaten wurden aktualisiert.</div>';
+          if (pageResult) pageResult.innerHTML = '<div class="alert alert--success">Anmeldedaten, Mailliste und zugehörige Mitgliedskontakte wurden aktualisiert.</div>';
         } catch (error) {
           submit.disabled = false;
           if (result) result.innerHTML = `<div class="alert alert--error">${escapeHtml(error.message || String(error))}</div>`;
@@ -21922,6 +22173,12 @@ async function offerOpenInvitationsForContact(contactId, email, { showEmpty = fa
   sendButton.focus();
 }
 
+function peopleEditReturnHash(email) {
+  const params = new URLSearchParams(location.hash.split("?")[1] || "");
+  params.set("email", email);
+  return `#/cms/people?${params}`;
+}
+
 async function savePeopleEditForm(form, { stayInPlace = false } = {}) {
   const existingContactId = form.dataset.contactId || "";
   const sourceCollection = form.dataset.sourceCollection || "contacts";
@@ -21944,7 +22201,7 @@ async function savePeopleEditForm(form, { stayInPlace = false } = {}) {
     if (stayInPlace) alert(message);
     else {
       peopleImportStoreMessage(message, true);
-      window.location.hash = `#/cms/people?email=${encodeURIComponent(email)}`;
+      window.location.hash = peopleEditReturnHash(email);
       await render();
     }
     return false;
@@ -21993,7 +22250,7 @@ async function savePeopleEditForm(form, { stayInPlace = false } = {}) {
     }
     peopleImportStoreMessage("Mailing-Adresse gespeichert.", true);
     if (!stayInPlace) {
-      window.location.hash = `#/cms/people?email=${encodeURIComponent(email)}`;
+      window.location.hash = peopleEditReturnHash(email);
     }
     await render();
     if (sourceCollection === "contacts" && newsletterAllowed && (!existingContactId || newsletterChanged)) {
@@ -22008,6 +22265,12 @@ async function savePeopleEditForm(form, { stayInPlace = false } = {}) {
 }
 
 function openPeopleEditLayer(button) {
+  const suggestedNames = namesFromEmail(button.dataset.email || "");
+  const missingFirst = !String(button.dataset.firstName || "").trim();
+  const missingLast = !String(button.dataset.lastName || "").trim();
+  const editorFirstName = button.dataset.firstName || suggestedNames?.firstName || "";
+  const editorLastName = button.dataset.lastName || suggestedNames?.lastName || "";
+
   const type = button.dataset.type === "member" ? "member" : "contact";
   const newsletterChecked = button.dataset.newsletterAllowed === "yes" ? "checked" : "";
   const consentSource = button.dataset.consentSource || "cms";
@@ -22024,9 +22287,10 @@ function openPeopleEditLayer(button) {
         <button class="button button--secondary button--small" type="button" data-people-edit-close>Schliessen</button>
       </div>
       <form class="people-edit-form" data-people-edit-form data-contact-id="${peopleEditEscapeHtml(button.dataset.contactId || "")}" data-source-collection="${peopleEditEscapeHtml(button.dataset.sourceCollection || "contacts")}" data-source-id="${peopleEditEscapeHtml(button.dataset.sourceId || button.dataset.contactId || "")}" data-source-member-id="${peopleEditEscapeHtml(button.dataset.sourceMemberId || "")}" data-source-email="${peopleEditEscapeHtml(button.dataset.sourceEmail || button.dataset.email || "")}" data-newsletter-allowed-before="${peopleEditEscapeHtml(button.dataset.newsletterAllowed || "no")}">
+        ${suggestedNames && (missingFirst || missingLast) ? `<p class="muted">Namensvorschlag aus der E-Mail-Adresse. Bitte vor dem Speichern prüfen.</p>` : ""}
         <div class="form-grid form-grid--two">
-          <div class="field"><label>Vorname</label><input name="firstName" value="${peopleEditEscapeHtml(button.dataset.firstName || "")}"></div>
-          <div class="field"><label>Nachname</label><input name="lastName" value="${peopleEditEscapeHtml(button.dataset.lastName || "")}"></div>
+          <div class="field"><label>Vorname</label><input name="firstName" value="${peopleEditEscapeHtml(editorFirstName)}"></div>
+          <div class="field"><label>Nachname</label><input name="lastName" value="${peopleEditEscapeHtml(editorLastName)}"></div>
           <div class="field"><label>Firma</label><input name="company" value="${peopleEditEscapeHtml(button.dataset.company || "")}"></div>
           <div class="field"><label>Position</label><input name="position" value="${peopleEditEscapeHtml(button.dataset.position || "")}"></div>
           <div class="field"><label>E-Mail</label><input name="email" type="email" value="${peopleEditEscapeHtml(button.dataset.email || "")}" required></div>
@@ -22079,11 +22343,26 @@ function openPeopleEditLayer(button) {
 function bindPeopleManagementControls() {
   const peopleSearch = document.querySelector("[data-people-search]");
   const peopleTypeFilter = document.querySelector("[data-people-type-filter]");
+  const peopleNameFilter = document.querySelector("[data-people-name-filter]");
   const peopleActiveFilter = document.querySelector("[data-people-active-filter]");
   const peoplePushFilter = document.querySelector("[data-people-push-filter]");
   const peopleMailFilter = document.querySelector("[data-people-mail-filter]");
-  if (peopleSearch || peopleTypeFilter || peopleActiveFilter || peoplePushFilter || peopleMailFilter) {
+  if (peopleSearch || peopleNameFilter || peopleTypeFilter || peopleActiveFilter || peoplePushFilter || peopleMailFilter) {
+    const filterControls = { search: peopleSearch, names: peopleNameFilter, type: peopleTypeFilter, active: peopleActiveFilter, push: peoplePushFilter, mail: peopleMailFilter };
+    let savedFilters = {};
+    try { savedFilters = JSON.parse(sessionStorage.getItem("pdtv-people-filters") || "{}"); } catch {}
+    const queryFilters = new URLSearchParams(location.hash.split("?")[1] || "");
+    for (const [key, control] of Object.entries(filterControls)) {
+      if (!control) continue;
+      const restored = key === "names" && queryFilters.has("names") ? queryFilters.get("names") : savedFilters[key];
+      if (restored == null || (key === "mail" && queryFilters.has("mail"))) continue;
+      if (control.tagName === "SELECT" && !Array.from(control.options).some(option => option.value === restored)) continue;
+      control.value = restored;
+    }
+
     const applyPeopleFilters = () => {
+      try { sessionStorage.setItem("pdtv-people-filters", JSON.stringify(Object.fromEntries(Object.entries(filterControls).map(([key, control]) => [key, control?.value || ""])))); } catch {}
+
       const term = String(peopleSearch?.value || "").trim().toLowerCase();
       const type = peopleTypeFilter?.value || "all";
       const active = peopleActiveFilter?.value || "all";
@@ -22098,15 +22377,25 @@ function bindPeopleManagementControls() {
         const activeMatch = active === "all" || row.dataset.active === active;
         const pushMatch = push === "all" || row.dataset.push === push;
         const mailMatch = mail === "all" || (mail === "spam" ? row.dataset.mailSpam === "yes" : row.dataset.mailError === mail);
-        const match = searchMatch && typeMatch && activeMatch && pushMatch && mailMatch;
+        const nameMatch = peopleNameFilter?.value !== "missing_both" || row.dataset.missingBothNames === "yes";
+        const match = searchMatch && nameMatch && typeMatch && activeMatch && pushMatch && mailMatch;
         row.hidden = !match;
         if (match) visibleCount += 1;
       });
+      const count = document.querySelector("[data-people-filter-count]");
+      if (count) count.textContent = `${visibleCount} von ${rows.length} Adressen angezeigt`;
       document.querySelectorAll("[data-people-empty]").forEach((empty) => {
         empty.hidden = visibleCount > 0;
       });
     };
     peopleSearch?.addEventListener("input", applyPeopleFilters);
+    peopleNameFilter?.addEventListener("change", () => {
+      const params = new URLSearchParams((location.hash.split("?")[1] || ""));
+      if (peopleNameFilter.value === "missing_both") params.set("names", "missing_both");
+      else params.delete("names");
+      history.replaceState(null, "", `${location.pathname}${location.search}#/cms/people${params.size ? `?${params}` : ""}`);
+      applyPeopleFilters();
+    });
     peopleTypeFilter?.addEventListener("change", applyPeopleFilters);
     peopleActiveFilter?.addEventListener("change", applyPeopleFilters);
     peoplePushFilter?.addEventListener("change", applyPeopleFilters);
@@ -22287,6 +22576,7 @@ if (!redirectFirebaseDefaultHostToPrimaryDomain()) {
     });
   });
 }
+
 
 
 

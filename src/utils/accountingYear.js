@@ -1,0 +1,5 @@
+import {escapeHtml} from './format.js?v=4';
+export function requestedAccountingYear(query=typeof location==='undefined'?'':location.hash.split('?')[1]||''){const value=Number(new URLSearchParams(query).get('year'));return Number.isInteger(value)&&value>=2000&&value<=2100?value:null;}
+export function accountingRecordYear(record){return Number(record.year||String(record.invoiceDate||record.paidDate||record.date||record.periodFrom||'').slice(0,4));}
+export function accountingYearSelect(attribute,records,selected=requestedAccountingYear()){const years=[...new Set(records.flatMap(r=>[accountingRecordYear(r),Number(String(r.periodTo||'').slice(0,4))]).filter(y=>Number.isInteger(y)&&y>=2000&&y<=2100))].sort((a,b)=>b-a);const current=new Date().getFullYear();selected??=years.includes(current)?current:years[0];return `<label>Jahr <select ${escapeHtml(attribute)}><option value="">Alle Jahre</option>${years.map(y=>`<option value="${y}" ${y===selected?'selected':''}>${y}</option>`).join('')}</select></label>`;}
+export function statementsForYear(statements,year){return !year?statements:statements.filter(s=>s.periodFrom<=`${year}-12-31`&&s.periodTo>=`${year}-01-01`);}

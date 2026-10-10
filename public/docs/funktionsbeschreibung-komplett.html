@@ -38,15 +38,18 @@
 <a href="#qualitaetssicherung-und-betrieb">20. Qualitätssicherung und Betrieb</a>
 <a href="#typische-arbeitsablaeufe">21. Typische Arbeitsabläufe</a>
 <a href="#wichtige-begriffe">22. Wichtige Begriffe</a>
-<a href="#administrative-abschlusskontrolle">23. Administrative Abschlusskontrolle</a></nav><article><h1 id="prodigitaltv-funktionsbeschreibung-von-website-und-cms">PROdigitalTV – Funktionsbeschreibung von Website und CMS</h1>
-<p>Stand: 1. Oktober 2026</p>
+<a href="#administrative-abschlusskontrolle">23. Administrative Abschlusskontrolle</a>
+<a href="#buchhaltung-und-mitgliedsbeitraege">24. Buchhaltung und Mitgliedsbeiträge</a></nav><article><h1 id="prodigitaltv-funktionsbeschreibung-von-website-und-cms">PROdigitalTV – Funktionsbeschreibung von Website und CMS</h1>
+<p>Stand: 8. Oktober 2026</p>
 <p>Diese Dokumentation beschreibt den aktuellen Funktionsumfang der PROdigitalTV-Plattform. Sie richtet sich an Vorstand, Administration, Redaktion und Veranstaltungsteam. Sie erklärt, wo Inhalte gepflegt werden, wie die einzelnen Bereiche zusammenarbeiten und welche Schritte bei wiederkehrenden Aufgaben zu beachten sind.</p>
 <h2 id="kurzueberblick">Kurzüberblick</h2>
-<p>PROdigitalTV verbindet eine öffentliche Website, eine installierbare Web-App, ein redaktionelles CMS und einen geschützten Eventbereich in einem System.</p>
+<p>PROdigitalTV verbindet eine öffentliche Website, eine installierbare Web-App, ein Content-Managementsystem (CMS), eine integrierte Buchhaltung und einen geschützten Eventbereich in einem System.</p>
 <ul>
 <li>Veranstaltungen werden von der Planung über Einladung, Anmeldung und Einlass bis zum Rückblick verwaltet.</li>
 <li>Teilnehmende melden sich online an und können ihr Smartphone als persönliches Ticket verwenden.</li>
-<li>Das CMS verwaltet Veranstaltungen, Referierende, Mitglieder, Redaktion, Medien, Mailings und Systemeinstellungen.</li>
+<li>Das CMS verwaltet Veranstaltungen, Referierende, Mitglieder, Redaktion, Medien, Mailings, Buchhaltung und Systemeinstellungen.</li>
+<li>Die Buchhaltung verbindet Mitgliedsbeiträge, Rechnungs-PDFs, Versand, Mahnungen, Kontoauszüge und Zahlungszuordnungen.</li>
+<li>Zugewiesene Moderatoren erhalten einen eigenen Eventzugang und bearbeiten getrennte persönliche Moderationskartensätze.</li>
 <li>Der Event-Chat verbindet ausschließlich Personen, die für das jeweilige Event eingecheckt wurden.</li>
 <li>Persönliche Chats, ein eventbezogener Gruppenchat, Kontaktanfragen und Kontaktkarten unterstützen das Networking.</li>
 <li>Event-Fotos können mobil hochgeladen, mit einer Fortschrittsanzeige verfolgt und als Thumbnails angesehen werden.</li>
@@ -72,7 +75,8 @@
 <li>Eventgäste erhalten nach Einladung, Anmeldung und Check-in Zugang zu den für sie freigegebenen Eventfunktionen.</li>
 <li>Mitglieder erhalten zusätzlich Zugriff auf den Mitgliederbereich und auf Mitgliederveranstaltungen.</li>
 <li>Redakteure pflegen Inhalte und Medien entsprechend ihrer Berechtigungen.</li>
-<li>Administratoren verwalten zusätzlich Benutzer, Systemeinstellungen, Löschvorgänge, Mailrückläufer und Event-Reset-Funktionen.</li>
+<li>Administratoren verwalten zusätzlich Benutzer, Systemeinstellungen, Löschvorgänge, Mailrückläufer, Event-Reset-Funktionen und die Buchhaltung.</li>
+<li>Zugewiesene Moderatoren mit aktivem Benutzerkonto erhalten Zugriff auf die Moderationskarten ihres Events. Die Zuweisung erteilt keine allgemeinen CMS- oder Buchhaltungsrechte.</li>
 </ul>
 <p>Der CMS-Link wird nur für berechtigte Rollen angezeigt. Schreibende und löschende Aktionen werden serverseitig erneut geprüft.</p>
 <h2 id="oeffentliche-website-und-web-app">2. Öffentliche Website und Web-App</h2>
@@ -98,7 +102,8 @@
 <p>Das CMS ist in folgende Hauptbereiche gegliedert:</p>
 <ul>
 <li>Dashboard</li>
-<li>Events</li>
+<li>Buchhaltung (nur Administration)</li>
+<li>Event Verwaltung</li>
 <li>Mitglieder</li>
 <li>Redaktion</li>
 <li>Medien</li>
@@ -108,7 +113,7 @@
 <li>System</li>
 </ul>
 <p>Aufklappbare Seitengruppen halten die Navigation kompakt. Der aktive Bereich bleibt sichtbar markiert.</p>
-<h3 id="events">Events</h3>
+<h3 id="event-verwaltung">Event Verwaltung</h3>
 <ul>
 <li>Events</li>
 <li>Veranstaltungs-Cockpit</li>
@@ -116,6 +121,26 @@
 <li>Referenten</li>
 <li>Gästebefragung</li>
 <li>Sponsoren und Gastgeber</li>
+</ul>
+<h3 id="buchhaltung">Buchhaltung</h3>
+<ul>
+<li>Ausgangsrechnungen</li>
+<li>Eingangsrechnungen</li>
+<li>Kontoauszüge / Zahlungsverkehr</li>
+<li>Kassen- &amp; Kontenübersicht</li>
+<li>Kreditoren / Debitoren</li>
+</ul>
+<p>Die Buchhaltung steht ausschließlich Administratoren zur Verfügung. Die ausführliche Beschreibung befindet sich in Kapitel 24.</p>
+<h3 id="ki-redaktion">KI-Redaktion</h3>
+<ul>
+<li>Themenliste</li>
+<li>News importieren</li>
+<li>Morgenbriefing</li>
+<li>Beiträge</li>
+<li>Quellen</li>
+<li>Prompts</li>
+<li>Automatisierung</li>
+<li>Logs</li>
 </ul>
 <h3 id="mitglieder">Mitglieder</h3>
 <ul>
@@ -162,7 +187,7 @@
 <li>System und Einrichtung</li>
 </ul>
 <h2 id="eventverwaltung">4. Eventverwaltung</h2>
-<p>Jedes Event besitzt eine eigene Verwaltungsseite mit den Reitern Stammdaten, Vorträge/Referenten, Einladung, Anmeldung, Ablauf, Event Chat, Live-Umfrage, Gästebefragung, Rückblick und Foto.</p>
+<p>Jedes Event besitzt eine eigene Verwaltungsseite mit den Reitern Stammdaten, Vorträge/Referenten, Einladungen, Anmeldung, Ablauf, Event Chat, Live-Umfrage, Gästebefragung, Rückblick und Foto.</p>
 <h3 id="stammdaten">Stammdaten</h3>
 <p>Hier werden die grundlegenden Angaben gepflegt:</p>
 <ul>
@@ -175,7 +200,7 @@
 <li>Darstellung auf der Startseite</li>
 <li>Eventbild, Gastgeber und Sponsoren</li>
 </ul>
-<p>Die Schalter <strong>„Aktiv“</strong> und <strong>„Startseite“</strong> haben unterschiedliche Aufgaben. <strong>„Aktiv“</strong> steuert die Nutzbarkeit des Events; <strong>„Startseite“</strong> steuert die prominente Platzierung.</p>
+<p>Die Schalter <strong>„Aktiv“</strong>, <strong>„Startseite“</strong>, <strong>„Agenda öffentlich“</strong> und <strong>„Handy-Ticket“</strong> haben unterschiedliche Aufgaben. Im Reiter <strong>„Anmeldung“</strong> öffnet <strong>„Aktiv“</strong> die Anmeldung; <strong>„Startseite“</strong> steuert die prominente Platzierung. <strong>„Agenda öffentlich“</strong> blendet das Programm im öffentlichen Veranstaltungsbereich ein oder aus. <strong>„Handy-Ticket“</strong> steuert die Ticket- und Einlass-QR-Funktion.</p>
 <h3 id="beitraege-und-mitwirkende">Beiträge und Mitwirkende</h3>
 <p>Beiträge werden dem Event als Referat, Diskussionsrunde oder Interview zugeordnet und in eine Reihenfolge gebracht. Referate besitzen Referierende. Bei Diskussionsrunden und Interviews werden Moderation und Teilnehmende getrennt erfasst.</p>
 <p>Alle Mitwirkenden werden als zentrale Personenprofile gespeichert. Ist eine Person bereits vorhanden, wird dasselbe Profil erneut ausgewählt und nur mit dem neuen Beitrag und ihrer Rolle verknüpft. So werden Person, Foto, Vita und Kontaktdaten nicht doppelt angelegt. Profile enthalten insbesondere:</p>
@@ -189,8 +214,9 @@
 <li>Vortragstitel und Beschreibung</li>
 </ul>
 <p>Referierende können Änderungs- oder Freigabelinks erhalten. Eingereichte Änderungen werden im CMS mit dem bisherigen Stand verglichen und anschließend übernommen oder verworfen.</p>
-<h3 id="einladung">Einladung</h3>
+<h3 id="einladungen">Einladungen</h3>
 <p>Der Einladungsbereich bündelt Eventbeschreibung, Einladungstext, Aktualisierungen, Mailtexte und Vorschau. Betreff und Mailinhalt werden getrennt gepflegt. Einladungen enthalten eine persönliche Anrede, wenn ein Personenname vorliegt.</p>
+<p>Nach Änderungen an Veranstaltungsdaten oder Moderation kann <strong>„Texte anpassen?“</strong> die vorhandenen Beschreibungen und Einladungstexte anhand der aktuellen Daten überarbeiten. Die Redaktion prüft und bearbeitet die KI-Vorschläge und übernimmt sie erst mit <strong>„Änderungen speichern“</strong>. <strong>„Später“</strong> schließt den Dialog ohne Übernahme.</p>
 <h3 id="rueckblick-und-foto">Rückblick und Foto</h3>
 <p>Nach dem Event werden Kurztext, Langtext, Rückblickstatus, Bilder, Downloads und Galeriezuordnung gepflegt. Die Rückblickfreigabe steuert, ob das Event als redaktioneller Nachbericht erscheint.</p>
 <h2 id="ablaufplan-und-veranstaltungsunterlagen">5. Ablaufplan und Veranstaltungsunterlagen</h2>
@@ -207,7 +233,10 @@
 <li>Kurzbeschreibung</li>
 <li>Fragen und Moderationshinweise</li>
 </ul>
-<p>Einzelne Karten können ausgewählt, sortiert und vor dem Ausdruck bearbeitet werden. Die Karten werden fortlaufend nummeriert. Vorschau, Druck und PDF können gemeinsam auf Hochkant oder Querformat eingestellt werden.</p>
+<p>Einzelne Karten können ausgewählt, sortiert und vor dem Ausdruck bearbeitet werden. Die Karten werden fortlaufend nummeriert. Vorschau, Druck und PDF können gemeinsam auf Hochkant oder Querformat eingestellt werden. Karten können auch einzeln entfernt und ihre Reihenfolge angepasst werden.</p>
+<h3 id="moderatorenzugang-und-persoenliche-kartensaetze">Moderatorenzugang und persönliche Kartensätze</h3>
+<p>Im Reiter <strong>„Anmeldung“</strong> wird unter <strong>„Moderation“</strong> eine oder werden mehrere Personen aus der Gästeliste ausgewählt. Nach <strong>„Moderation speichern“</strong> erhalten die ausgewählten Personen mit aktivem Benutzerkonto Zugriff auf die Karten des betreffenden Events. Eine leere Auswahl hebt die Zuweisung auf.</p>
+<p>Jeder Moderator speichert einen eigenen Kartensatz mit persönlichen Texten, Reihenfolge und entfernten Karten. Änderungen überschreiben nicht die Karten anderer Moderatoren. Berechtigte CMS-Nutzer können den Kartensatz einer zugewiesenen Person auswählen und verwalten. Der Zugang bleibt auf das zugewiesene Event begrenzt.</p>
 <h3 id="namensetiketten">Namensetiketten</h3>
 <p>Im Reiter <strong>„Anmeldung“</strong> steht oberhalb der Gästeliste die Funktion <strong>„Namensetiketten drucken“</strong>. Sie erzeugt Etiketten aus den aktuellen Teilnehmendendaten. Auswahl, Vorschau und Druck erfolgen vor der endgültigen Ausgabe.</p>
 <h2 id="anmeldung-und-gaesteliste">6. Anmeldung und Gästeliste</h2>
@@ -217,7 +246,7 @@
 <p>Datenschutz sowie Foto- und Videohinweis werden aktiv bestätigt. Das System prüft Pflichtfelder, Mobilnummern und mögliche Dubletten.</p>
 <p>Nach dem Absenden erhält die Person eine eindeutige Registrierung. Bestätigungs-, Wartelisten- und Stornierungsstatus bleiben eventbezogen.</p>
 <h3 id="manuelle-anmeldung">Manuelle Anmeldung</h3>
-<p>Administratoren können Personen direkt im CMS hinzufügen. Auch manuell hinzugefügte Personen können eine Bestätigung und später einen Eventzugang erhalten.</p>
+<p>Administratoren können Personen direkt im CMS hinzufügen. Eine Suche in den Mailingadressen übernimmt vorhandene Personen-, Unternehmens- und Kontaktdaten ins Anmeldeformular; die Angaben können vor dem Speichern bearbeitet werden. Auch manuell hinzugefügte Personen können eine Bestätigung und später einen Eventzugang erhalten.</p>
 <h3 id="gaesteliste-des-events">Gästeliste des Events</h3>
 <p>Die Liste zeigt Hauptpersonen und Begleitpersonen mit Unternehmen, E-Mail, Mobilnummer und Status. Verfügbare Aktionen umfassen:</p>
 <ul>
@@ -304,7 +333,7 @@
 <li>Gästebefragung</li>
 <li>Rückblick und Nachfassmail</li>
 </ul>
-<p>Empfängergruppen werden vor dem Versand ausgewählt und gezählt. Vorschau, Betreff, persönliche Anrede, Absender und Ziel-Link sollen vor der Freigabe kontrolliert werden.</p>
+<p>Empfängergruppen werden vor dem Versand ausgewählt und gezählt. Die Versandvorschau zeigt je nach Versandart die personalisierte E-Mail und SMS sowie Empfänger- und Kostenhinweise. Erst die ausdrückliche Versandfreigabe löst den Versand aus; <strong>„Zurück zur Bearbeitung“</strong> ermöglicht Korrekturen. Betreff, persönliche Anrede, Absender und Ziel-Link sollen vor der Freigabe kontrolliert werden.</p>
 <p>Der Begriff <strong>„Anmeldung“</strong> wird in Einladungsbetreffzeilen vermieden, wenn dadurch der Eindruck entstehen könnte, die Person sei bereits registriert.</p>
 <h2 id="mailingadressen-queue-und-ruecklaeufer">12. Mailingadressen, Queue und Rückläufer</h2>
 <h3 id="mailingadressen">Mailingadressen</h3>
@@ -349,6 +378,7 @@
 <p>Referierende werden zentral und im Eventkontext gepflegt. Mehrere Personen können demselben Vortrag zugeordnet werden.</p>
 <p>Das Freigabeverfahren ermöglicht externen Personen, ihre Angaben zu prüfen. Das CMS protokolliert Öffnung, Rückmeldung, Freigabe und Übernahme. Änderungen an Vita, Funktion, Unternehmen oder Vortrag können vor der Veröffentlichung verglichen werden.</p>
 <p>Ein Referierendenprofil sollte vor Veröffentlichung mindestens Namen, Funktion, Unternehmen, Foto, Vita und Eventzuordnung enthalten.</p>
+<p>Vorhandene Personen können aus den Mailingadressen übernommen werden. <strong>„Aus Vortrag entfernen“</strong> löst die Zuordnung zum einzelnen Beitrag. Das Entfernen aus einem Event löst die Verbindungen zu dessen Vorträgen und Moderationsrollen; das zentrale Personenprofil und Zuordnungen zu anderen Events bleiben erhalten. Bei veranstaltungsübergreifend verwendeten Beiträgen wird die Änderung auf das ausgewählte Event begrenzt. Anschließend können die betroffenen Beschreibungen und Einladungstexte zur Überarbeitung vorgeschlagen werden.</p>
 <h2 id="redaktion-und-ki-unterstuetzung">16. Redaktion und KI-Unterstützung</h2>
 <h3 id="redaktionelle-inhalte">Redaktionelle Inhalte</h3>
 <p>Presse, Themen, News, Rückblicke und Interna werden getrennt verwaltet. Status, Sichtbarkeit, Datum, Rubrik, Teaser, Langtext, Bild und Verknüpfungen steuern die Veröffentlichung.</p>
@@ -457,6 +487,18 @@
 <li>Löschung bestätigen.</li>
 <li>Erfolgsmeldung abwarten und Eventbereich neu laden.</li>
 </ol>
+<h3 id="buchhaltungsjahr-bearbeiten">Buchhaltungsjahr bearbeiten</h3>
+<ol>
+<li>Als Administrator <strong>„Buchhaltung“</strong> öffnen und das gewünschte Jahr wählen.</li>
+<li>Buchhaltungsordner zuweisen und den Zugriff auf diesem Gerät freigeben.</li>
+<li>Rechnungen und Kontoauszüge einlesen; erkannte Angaben mit den PDFs prüfen.</li>
+<li>Jahresbeiträge beziehungsweise Rechnungs-PDFs erzeugen und kontrollieren.</li>
+<li>Rechnungen auswählen, Versandvorschau prüfen und Versand freigeben.</li>
+<li>Bankbuchungen zuordnen, fehlende Belege und Gebühren prüfen.</li>
+<li>Offene Beiträge, Versandfehler und Mahnstufen kontrollieren.</li>
+<li>Kassen- &amp; Kontenübersicht zum gewünschten Stichtag prüfen und exportieren.</li>
+<li>Ein abgeschlossenes Vorjahr nach der Prüfung mit PIN sperren.</li>
+</ol>
 <h2 id="wichtige-begriffe">22. Wichtige Begriffe</h2>
 <ul>
 <li>Aktiv: Datensatz oder Funktion ist grundsätzlich nutzbar.</li>
@@ -490,7 +532,58 @@
 <li>Testmailing wurde zugestellt und Links wurden geöffnet.</li>
 <li>Rückläuferbereich und Mailing Queue sind erreichbar.</li>
 <li>Nach Änderungen an Cloud Functions wurde nicht nur Hosting, sondern auch die jeweilige Function veröffentlicht.</li>
+</ul>
+<h2 id="buchhaltung-und-mitgliedsbeitraege">24. Buchhaltung und Mitgliedsbeiträge</h2>
+<p>Die integrierte Buchhaltung bündelt Ausgangsrechnungen, Eingangsrechnungen, Kontoauszüge und die Kassen- &amp; Kontenübersicht. Kreditoren und Debitoren verbinden Geschäftspartner mit Rechnungen, Bankdaten und Buchungskonten. Der Bereich ist nur für Administratoren zugänglich.</p>
+<h3 id="ordnerzuordnung-und-belegbestand">Ordnerzuordnung und Belegbestand</h3>
+<p>Über <strong>„Ordner zuweisen“</strong> werden die Ablagen für Ausgangsrechnungen, Eingangsrechnungen und Kontoauszüge eingebunden. Die zentrale Zuordnung gilt für die beteiligten Rechner; der Browserzugriff muss auf jedem neuen Gerät einmal freigegeben werden. Alternativ können PDF-Dateien ausgewählt werden. Umfang und Dauer des Zugriffs richten sich nach der gewählten Freigabe.</p>
+<p>Der Belegbestand wird mit den gespeicherten Datensätzen abgeglichen. Umbenannte Dateien können über ihren Dateiinhalt wiedererkannt werden. Fehlt ein Rechnungs-PDF im zugeordneten Ordner, erscheint ein entsprechender Hinweis; ein bereits erfasster Zahlungseingang wird dadurch nicht aufgehoben. Eingangs-PDFs können zusätzlich als geprüfte Archivkopie bereitgestellt werden.</p>
+<h3 id="ausgangsrechnungen-und-jahresbeitraege">Ausgangsrechnungen und Jahresbeiträge</h3>
+<p>Die Ausgangsliste zeigt Buchungskonto, Datum, Mitglied beziehungsweise Ansprechpartner, Rechnungsnummer, Betrag, Zahlungsdatum sowie Rechnungs- und Mahnstatus. Nach Jahr, Suchtext, Zahlungsstatus und Rechnungsstatus kann gefiltert werden. Summen unterscheiden Beiträge, bezahlte und unbezahlte Beträge sowie Datensätze ohne erfassten Zahlungsstatus.</p>
+<ul>
+<li>Mitgliedsdatensätze können mit Beitragsrechnungen verknüpft werden. Zugeordnete Anschriften und Kontaktdaten kommen aus der Mitgliederdatenbank.</li>
+<li><strong>„Rechnungen erstellen“</strong> legt ohne Rechnungsauswahl Jahresbeiträge an. Bei ausgewählten Rechnungen werden die jeweiligen PDFs neu erzeugt.</li>
+<li>Rechnungs-PDFs lassen sich über Rechnungsnummer oder Betrag öffnen.</li>
+<li>Änderungen an Rechnungsdaten werden als Revision berücksichtigt. Der Status zeigt, wenn ein PDF neu erstellt oder eine geänderte Rechnung erneut versendet werden muss.</li>
+<li><strong>„Rechnungen senden“</strong> verarbeitet ausgewählte Rechnungen nach Vorbereitung und Freigabe. Erfolg, Warteschlange und Fehler bleiben nachvollziehbar.</li>
+<li>Die gefilterten Beitragsdaten können als CSV heruntergeladen werden.</li>
+</ul>
+<p><strong>„Bezahlt“</strong> setzt einen erfassten oder zugeordneten Zahlungsvorgang voraus. Eine leere Bestätigung aus einem historischen Import belegt keinen Zahlungseingang.</p>
+<h3 id="mahnungen-und-versandkontrolle">Mahnungen und Versandkontrolle</h3>
+<p>Über <strong>„Mahnungen senden“</strong> können ausgewählte offene Beitragsrechnungen bearbeitet werden. Mahntext, Zahlungsfrist, Rechnungs-PDF und Vorschau werden vor der Freigabe kontrolliert. Versandstatus und Öffnung beziehungsweise Klick bleiben getrennte Informationen: Eine geöffnete Nachricht bedeutet nicht, dass die Rechnung bezahlt wurde.</p>
+<p>Die automatische Mahnlogik prüft täglich um 08:00 Uhr:</p>
+<ul>
+<li>Erste Mahnung frühestens 90 Tage nach dem erfolgreichen Rechnungsversand.</li>
+<li>Weitere Mahnungen jeweils nach 30 Tagen bis Mahnstufe 4.</li>
+<li>Weitere 30 Tage nach der vierten Mahnung wird der Status <strong>„Vakant“</strong> gesetzt.</li>
+</ul>
+<p>Bezahlte, stornierte, archivierte, nicht fällige oder für ein abgeschlossenes Jahr gesperrte Datensätze werden nicht automatisch weitergemahnt. Ein ausstehender oder fehlgeschlagener früherer Versand sowie geänderte, noch nicht korrekt neu erzeugte oder versendete Rechnungen müssen geprüft werden, bevor die automatische Folge fortgesetzt wird. Die Durchführung setzt die veröffentlichte und aktive Serverfunktion voraus.</p>
+<h3 id="eingangsrechnungen">Eingangsrechnungen</h3>
+<p>Eingangs-PDFs können eingelesen und als Rechnungsdatensätze übernommen werden. Die Prüfansicht zeigt erkannte Angaben zur Kontrolle vor dem Speichern. Verwaltet werden unter anderem Lieferant, Rechnungsnummer, Rechnungsdatum, Betrag, IBAN, Fälligkeit, Beschreibung, Buchungskonto und Zahlungsstatus.</p>
+<p>Rechnungen lassen sich bearbeiten, als PDF öffnen, mit Bankbuchungen verbinden und als CSV exportieren. Hinweise unterscheiden ein fehlendes PDF, einen fehlenden Rechnungsbeleg, offene Beträge und bereits zugeordnete Zahlungen. Automatisch erkannte Angaben werden vor der Übernahme mit dem Original verglichen.</p>
+<h3 id="kontoauszuege-und-zahlungsverkehr">Kontoauszüge und Zahlungsverkehr</h3>
+<p>Kontoauszüge werden eingelesen und ihre Buchungen in einer gemeinsamen Übersicht dargestellt. Rechnungen und Bankbuchungen können einander zugeordnet werden. Zahlungsdatum, Zuordnungsstatus und offene Beträge werden dadurch im Zusammenhang sichtbar.</p>
+<p>Der Abgleich berücksichtigt Eingangs- und Ausgangsrechnungen sowie Geschäftspartnerdaten. Automatische Zuordnungen und verbleibende Unklarheiten können kontrolliert und korrigiert werden. Fehlende Belege bleiben erkennbar. Bankgebühren können getrennt vom Rechnungsbetrag behandelt und durch interne Gebührenbelege dokumentiert werden; Bruttobetrag, Gebühr und Nettogutschrift bleiben nachvollziehbar.</p>
+<h3 id="kassen-kontenuebersicht-und-exporte">Kassen- &amp; Kontenübersicht und Exporte</h3>
+<p>Jahr und Stichtag bestimmen den betrachteten Zeitraum. Die Übersicht bündelt Bankbestand, Buchungskonten, offene Rechnungen, noch nicht zugeordnete Buchungen und Planungswerte. Ein Konto kann geöffnet werden, um zugehörige Buchungen und Belege zu prüfen, PDFs aufzurufen und die Kontenzuordnung zu bearbeiten.</p>
+<p>Anlagevermögen und Abschreibungen werden für entsprechend erfasste Eingangsrechnungen berücksichtigt. Die derzeitige Webportal-Anlageberechnung verwendet eine Nutzungsdauer von 36 Monaten ab dem hinterlegten Startmonat.</p>
+<p>Die Kassen- &amp; Kontenübersicht kann als CSV oder stichtagsbezogenes PDF ausgegeben werden. Ein zusätzlicher Gesamt-PDF-Export bündelt die Buchhaltungsdaten.</p>
+<h3 id="kreditoren-und-debitoren">Kreditoren und Debitoren</h3>
+<p>Geschäftspartner werden mit Nummer, Art, Name, IBAN und Standardkonto geführt. Neue Rechnungen können das Standardkonto übernehmen; das Konto einer einzelnen Rechnung bleibt gesondert änderbar. Partnerbezogene Buchungen und offene Salden erleichtern die Kontrolle von Lieferantenrechnungen und Mitgliedsbeiträgen.</p>
+<h3 id="jahresabschluss-und-schutz-vor-aenderungen">Jahresabschluss und Schutz vor Änderungen</h3>
+<p>In der Kassen- &amp; Kontenübersicht kann ein geprüftes Vorjahr abgeschlossen werden. Das laufende Jahr kann noch nicht abgeschlossen werden. Beim ersten Abschluss wird eine sechsstellige PIN eingerichtet und bestätigt.</p>
+<p>Ein abgeschlossenes Jahr bleibt lesbar, während zugehörige schreibende Buchhaltungsvorgänge gesperrt werden. Der Schutz wird auch auf dem Server geprüft. Das Entsperren erfolgt mit PIN oder über den angebotenen SMS-Code an die hinterlegte berechtigte Mobilnummer. Der SMS-Code ist zeitlich begrenzt; eine Entsperrung hebt die Jahressperre erst nach erfolgreicher Prüfung auf.</p>
+<h3 id="abschlusskontrolle-der-buchhaltung">Abschlusskontrolle der Buchhaltung</h3>
+<ul>
+<li>Gewähltes Jahr, Stichtag und Ordnerzuordnung stimmen.</li>
+<li>Rechnungsangaben, Empfänger und PDFs sind geprüft.</li>
+<li>Geänderte Rechnungen wurden bei Bedarf neu erstellt und erneut versendet.</li>
+<li>Versandfehler und ausstehende Nachrichten wurden kontrolliert.</li>
+<li>Bankbuchungen sind zugeordnet; fehlende Belege und Gebühren sind geklärt.</li>
+<li>Offene Beiträge und Mahnstufen sind nachvollziehbar.</li>
+<li>Kontenzuordnungen, Anlagewerte und Abschreibungen wurden geprüft.</li>
+<li>Die Übersicht wurde vor der Sperre des Vorjahres exportiert und kontrolliert.</li>
 </ul></article></div>
-    <footer class="footer">PROdigitalTV · Funktionsbeschreibung · Stand 1. Oktober 2026</footer>
+    <footer class="footer">PROdigitalTV · Funktionsbeschreibung · Stand 8. Oktober 2026</footer>
   </body>
 </html>

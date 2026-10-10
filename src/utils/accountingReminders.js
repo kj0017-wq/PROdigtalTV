@@ -1,0 +1,22 @@
+import {callEventModerator} from '../firebase/eventModeratorService.js?v=1';
+import {escapeHtml} from './format.js?v=4';
+export function openAccountingReminder(invoiceId){
+ const dialog=document.createElement('dialog');
+ dialog.style.cssText='width:min(850px,94vw);max-height:90dvh;overflow:auto;border:1px solid #dce4ef;border-radius:8px;padding:24px';
+ dialog.innerHTML='<h2>Mahnung erstellen</h2><div data-reminder-content></div><p role="status" data-reminder-status>Rechnung wird geprueft ...</p><div class="actions"><button type="button" class="button button--secondary" data-reminder-close>Schliessen</button></div>';
+ document.body.append(dialog);dialog.showModal();dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+ const $=selector=>dialog.querySelector(selector);let plan,busy=false,saved=false;
+ $('[data-reminder-close]').onclick=()=>{if(!busy)dialog.close();};dialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();});
+ const controls=()=>{dialog.querySelectorAll('input,textarea,button').forEach(el=>el.disabled=busy);if($('[data-reminder-send]'))$('[data-reminder-send]').disabled=busy||!saved;};
+ const run=async work=>{if(busy)return;busy=true;controls();try{await work();}catch(error){$('[data-reminder-status]').textContent=error.message||'Mahnung konnte nicht verarbeitet werden.';}finally{busy=false;controls();}};
+ const render=()=>{
+  const draft=plan.draft||plan;saved=Boolean(plan.draft);
+  $('[data-reminder-content]').innerHTML=`<p>Rechnung <strong>${escapeHtml(plan.invoiceNumber)}</strong> · ${new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(plan.amountCents/100)}</p><div class="form-grid"><div class="field"><label>Empfaenger</label><input value="${escapeHtml(plan.to)}" readonly></div><div class="field"><label>Zahlungsfrist</label><input type="date" data-reminder-deadline value="${escapeHtml(draft.paymentDeadline)}"></div><div class="field"><label>Betreff</label><input data-reminder-subject maxlength="250" value="${escapeHtml(draft.subject)}"></div><div class="field"><label>Mailtext</label><textarea data-reminder-text rows="14">${escapeHtml(draft.text)}</textarea></div><div class="actions"><button type="button" class="button button--secondary" data-reminder-save>Entwurf speichern</button><button type="button" class="button button--primary" data-reminder-send>Mahnung per E-Mail versenden</button></div></div><h3>Bisherige Mahnungen</h3>${plan.history.map(item=>`<details><summary>${item.level}. Erinnerung · ${escapeHtml(item.queuedAt.slice(0,10).split('-').reverse().join('.'))} · ${escapeHtml(({queued:'In Versandwarteschlange',sent:'Versendet',failed:'Versand fehlgeschlagen',skipped:'Uebersprungen'})[item.status]||item.status)}</summary><p>${escapeHtml(item.to)} · ${escapeHtml(item.subject)}</p><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(item.text)}</pre></details>`).join('')||'<p>Noch keine Mahnung versendet.</p>'}`;
+  for(const field of ['deadline','subject','text'])$(`[data-reminder-${field}]`).oninput=()=>{saved=false;controls();};
+  let previousDeadline=draft.paymentDeadline;
+  $('[data-reminder-deadline]').oninput=()=>{const next=$('[data-reminder-deadline]').value;if(next&&previousDeadline)$('[data-reminder-text]').value=$('[data-reminder-text]').value.replaceAll(previousDeadline.split('-').reverse().join('.'),next.split('-').reverse().join('.'));previousDeadline=next;saved=false;controls();};
+  $('[data-reminder-save]').onclick=()=>run(async()=>{const result=await callEventModerator('accountingReminder',{invoiceId,action:'save',expectedFingerprint:plan.fingerprint,paymentDeadline:$('[data-reminder-deadline]').value,subject:$('[data-reminder-subject]').value,text:$('[data-reminder-text]').value});plan.draft=result.draft;saved=true;$('[data-reminder-status]').textContent='Entwurf gespeichert. Bereit zum Versand.';});
+  $('[data-reminder-send]').onclick=()=>run(async()=>{await callEventModerator('accountingReminder',{invoiceId,action:'send',expectedFingerprint:plan.fingerprint});plan=await callEventModerator('accountingReminder',{invoiceId,action:'preview'});render();$('[data-reminder-status]').textContent='Mahnung an den Mailversand uebergeben. Der Versandstatus steht in der Historie.';});
+ };
+ run(async()=>{plan=await callEventModerator('accountingReminder',{invoiceId,action:'preview'});if(!dialog.open)return;render();$('[data-reminder-status]').textContent='';});
+}

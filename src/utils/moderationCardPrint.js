@@ -324,7 +324,7 @@ function fitModerationCard(element) {
   if (!element) return;
   let scale = 1;
   element.style.setProperty("--moderation-scale", "1");
-  for (let attempt = 0; attempt < 28 && element.scrollHeight > element.clientHeight + 1; attempt += 1) {
+  for (let attempt = 0; attempt < 28 && (element.scrollHeight > element.clientHeight + 1 || element.scrollWidth > element.clientWidth + 1); attempt += 1) {
     scale *= 0.92;
     element.style.setProperty("--moderation-scale", String(Math.max(scale, 0.2)));
   }
@@ -502,6 +502,23 @@ function createManualModerationCard() {
   };
 }
 
+export function reorderModerationCards(cards, sourceId, targetId, after = false) {
+  if (sourceId === targetId || !cards.some(card => card.id === sourceId) || !cards.some(card => card.id === targetId)) return cards;
+  const source = cards.find(card => card.id === sourceId);
+  const remaining = cards.filter(card => card.id !== sourceId);
+  const targetIndex = remaining.findIndex(card => card.id === targetId);
+  remaining.splice(targetIndex + (after ? 1 : 0), 0, source);
+  return remaining;
+}
+
+export function removeSelectedModerationCards(cards, activeId) {
+  const removed = cards.filter(card => card.selected);
+  const remaining = cards.filter(card => !card.selected);
+  const activeIndex = cards.findIndex(card => card.id === activeId);
+  const nextActiveId = remaining.some(card => card.id === activeId) ? activeId : remaining[Math.min(Math.max(activeIndex, 0), remaining.length - 1)]?.id || "";
+  return { remaining, removedIds: removed.map(card => card.id), activeId: nextActiveId };
+}
+
 export function openModerationCardDialog({ event = {}, topics = [], speakers = [], boardMembers = [], generateAiTexts = null, saveCards = null } = {}) {
   if (document.querySelector("[data-moderation-card-dialog]")) return;
   const generatedCards = buildModerationCards({ event, topics, speakers, boardMembers });
@@ -514,13 +531,13 @@ export function openModerationCardDialog({ event = {}, topics = [], speakers = [
   const dialog = document.createElement("dialog");
   dialog.className = "moderation-card-dialog";
   dialog.dataset.moderationCardDialog = "";
-  dialog.innerHTML = `<form method="dialog" class="moderation-card-dialog__header"><div><p class="eyebrow">DIN A5 · eine Seite pro Karte</p><h2>Moderationskarten</h2><p>${escapeHtml(event.title || "Event")}</p></div><button class="button button--secondary" value="cancel">Abbrechen</button></form>
+  dialog.innerHTML = `<form method="dialog" class="moderation-card-dialog__header"><div><p class="eyebrow">DIN A5 · eine Seite pro Karte</p><h2>Moderationskarten</h2><p>${escapeHtml(event.title || "Event")}${event.cardOwnerName ? ` · ${escapeHtml(event.cardOwnerName)}` : ""}</p></div><button class="button button--secondary" value="cancel" data-moderation-close>Schließen</button></form>
     <div class="moderation-card-dialog__body">
       <aside class="moderation-card-controls">
         <fieldset class="moderation-card-orientation"><legend>Darstellung und Druck</legend><label><input type="radio" name="moderationOrientation" value="portrait" ${orientation === "portrait" ? "checked" : ""}> Hochkant</label><label><input type="radio" name="moderationOrientation" value="landscape" ${orientation === "landscape" ? "checked" : ""}> Querformat</label></fieldset>
         <label class="checkbox"><input type="checkbox" data-moderation-all checked> Alle Karten auswählen</label>
         <button class="button button--secondary button--small" type="button" data-moderation-add>Karte hinzufügen</button>
-        <button class="icon-button icon-button--danger" type="button" data-moderation-remove title="Karte löschen" aria-label="Karte löschen"><img src="/assets/cms-icons/trash.png" width="24" height="24" alt="" aria-hidden="true"></button>
+        <button class="icon-button icon-button--danger" type="button" data-moderation-remove title="Per Checkbox ausgewählte Karten löschen" aria-label="Ausgewählte Karten löschen"><img src="/assets/cms-icons/trash.png" width="24" height="24" alt="" aria-hidden="true"></button>
         <div class="moderation-card-list" data-moderation-list></div>
         <div class="actions"><button class="button button--secondary button--small" type="button" data-moderation-up>Nach oben</button><button class="button button--secondary button--small" type="button" data-moderation-down>Nach unten</button></div>
       </aside>
@@ -540,11 +557,62 @@ export function openModerationCardDialog({ event = {}, topics = [], speakers = [
         <div class="moderation-card-preview" data-moderation-preview></div>
       </main>
     </div>
-    <footer class="moderation-card-dialog__footer"><span data-moderation-status role="status" aria-live="polite"></span>${typeof generateAiTexts === "function" ? `<button class="button button--secondary" type="button" data-moderation-ai>KI-Text kurz und sachlich erstellen</button>` : ""}${typeof saveCards === "function" ? `<button class="button button--secondary" type="button" data-moderation-save>Speichern</button>` : ""}<button class="button button--primary" type="button" data-moderation-print>Drucken</button><button class="button button--secondary" type="button" data-moderation-pdf>PDF erzeugen</button><button class="button button--secondary" type="button" data-moderation-cancel>Abbrechen</button></footer>`;
+    <footer class="moderation-card-dialog__footer"><span data-moderation-status role="status" aria-live="polite"></span>${typeof generateAiTexts === "function" ? `<button class="button button--secondary" type="button" data-moderation-ai>KI-Text kurz und sachlich erstellen</button>` : ""}${typeof saveCards === "function" ? `<button class="button button--secondary" type="button" data-moderation-save>Speichern</button>` : ""}<button class="button button--primary" type="button" data-moderation-print>Drucken</button><button class="button button--secondary" type="button" data-moderation-pdf>PDF erzeugen</button><button class="button button--secondary" type="button" data-moderation-cancel>Schließen</button></footer>`;
   document.body.append(dialog);
   const list = dialog.querySelector("[data-moderation-list]");
   const editor = dialog.querySelector("[data-moderation-editor]");
   const preview = dialog.querySelector("[data-moderation-preview]");
+  const hintCanvas = document.createElement("canvas");
+  const hintContext = hintCanvas.getContext("2d");
+  const updateFieldHints = () => {
+    if (!dialog.open || !hintContext) return;
+    editor.querySelectorAll("input[name]").forEach(field => {
+      const style = getComputedStyle(field);
+      hintContext.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      const contentWidth = field.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const letterSpacing = parseFloat(style.letterSpacing) || 0;
+      const textWidth = hintContext.measureText(field.value).width + Math.max(0, field.value.length - 1) * letterSpacing;
+      let hint = field.parentElement.querySelector("[data-moderation-field-hint]");
+      if (!hint) {
+        hint = document.createElement("small");
+        hint.dataset.moderationFieldHint = "";
+        hint.className = "moderation-card-field-hint";
+        hint.id = `moderation-field-hint-${field.name}`;
+        field.setAttribute("aria-describedby", hint.id);
+        field.after(hint);
+      }
+      const text = field.value && textWidth > contentWidth + 1 ? field.value : "";
+      if (hint.textContent !== text) hint.textContent = text;
+      hint.hidden = !text;
+    });
+  };
+  const fitPreview = () => {
+    const card = preview.querySelector(".moderation-card");
+    if (!card || !dialog.open) return;
+    updateFieldHints();
+    fitModerationCard(card);
+    let sheet = preview.querySelector("[data-moderation-preview-sheet]");
+    if (!sheet) {
+      sheet = document.createElement("div");
+      sheet.dataset.moderationPreviewSheet = "";
+      card.before(sheet);
+      sheet.append(card);
+    }
+    const style = getComputedStyle(preview);
+    const availableWidth = Math.max(1, preview.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
+    const body = dialog.querySelector(".moderation-card-dialog__body");
+    const availableHeight = Math.max(240, body.clientHeight - 72);
+    const scale = Math.min(1, availableWidth / card.offsetWidth, availableHeight / card.offsetHeight);
+    sheet.style.width = `${card.offsetWidth * scale}px`;
+    sheet.style.height = `${card.offsetHeight * scale}px`;
+    card.style.transformOrigin = "top left";
+    card.style.transform = `scale(${scale})`;
+    card.style.margin = "0";
+  };
+  const previewObserver = new ResizeObserver(() => fitPreview());
+  previewObserver.observe(dialog.querySelector(".moderation-card-dialog__body"));
+  previewObserver.observe(dialog.querySelector(".moderation-card-workspace"));
+  previewObserver.observe(editor);
   const all = dialog.querySelector("[data-moderation-all]");
   const status = dialog.querySelector("[data-moderation-status]");
   const printButton = dialog.querySelector("[data-moderation-print]");
@@ -553,16 +621,23 @@ export function openModerationCardDialog({ event = {}, topics = [], speakers = [
   const active = () => cards.find(card => card.id === activeId) || cards[0];
   const cardPosition = card => Math.max(0, cards.indexOf(card)) + 1;
   const selected = () => cards.filter(card => card.selected);
+  const updateCloseButtons = () => {
+    dialog.querySelectorAll("[data-moderation-close], [data-moderation-cancel]").forEach(button => {
+      button.textContent = dirty ? "Abbrechen" : "Schließen";
+      button.title = dirty ? "Ungespeicherte Änderungen verwerfen und schließen." : "Die Moderationskarten schließen.";
+    });
+  };
   const updateStatus = () => {
+    updateCloseButtons();
     const count = selected().length;
-    dialog.querySelector("[data-moderation-remove]").disabled = !cards.length;
+    dialog.querySelector("[data-moderation-remove]").disabled = count === 0;
     all.checked = count === cards.length;
     all.indeterminate = count > 0 && count < cards.length;
     printButton.disabled = pdfButton.disabled = count === 0;
     status.textContent = dirty ? "Änderungen noch nicht gespeichert." : count ? `${count} von ${cards.length} Karten ausgewählt.` : "Bitte mindestens eine Karte auswählen.";
   };
   const drawList = () => {
-    list.innerHTML = cards.map((card, index) => `<div class="moderation-card-list__item${card.id === activeId ? " is-active" : ""}"><label><input type="checkbox" data-moderation-select="${escapeHtml(card.id)}" ${card.selected ? "checked" : ""}><button type="button" data-moderation-open="${escapeHtml(card.id)}"><strong>${escapeHtml(card.time || "--:--")} · ${escapeHtml(card.speakerName || card.title)}</strong><small>${escapeHtml(card.speakerName ? card.title : "Programmpunkt")}</small></button></label><span>${index + 1}</span></div>`).join("");
+    list.innerHTML = cards.map((card, index) => `<div class="moderation-card-list__item${card.id === activeId ? " is-active" : ""}" data-moderation-drag-id="${escapeHtml(card.id)}" draggable="true"><button type="button" class="moderation-card-drag-handle" data-moderation-drag-handle draggable="true" title="Karte ziehen und an der gewünschten Stelle ablegen" aria-label="Karte verschieben">⠿</button><label><input type="checkbox" data-moderation-select="${escapeHtml(card.id)}" ${card.selected ? "checked" : ""}><button type="button" data-moderation-open="${escapeHtml(card.id)}"><strong>${escapeHtml(card.time || "--:--")} · ${escapeHtml(card.speakerName || card.title)}</strong><small>${escapeHtml(card.speakerName ? card.title : "Programmpunkt")}</small></button></label><span>${index + 1}</span></div>`).join("");
     list.querySelectorAll("[data-moderation-open]").forEach(button => button.addEventListener("click", () => {
       activeId = button.dataset.moderationOpen;
       drawList();
@@ -574,6 +649,43 @@ export function openModerationCardDialog({ event = {}, topics = [], speakers = [
       updateStatus();
     }));
   };
+  let draggedCardId = "";
+  const clearDragMarkers = () => list.querySelectorAll(".is-drop-before, .is-drop-after, .is-dragging").forEach(row => row.classList.remove("is-drop-before", "is-drop-after", "is-dragging"));
+  list.addEventListener("dragstart", event => {
+    const row = event.target.closest("[data-moderation-drag-id]");
+    if (!row || (event.target.closest("input, button") && !event.target.closest("[data-moderation-drag-handle]"))) { event.preventDefault(); return; }
+    draggedCardId = row.dataset.moderationDragId;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", draggedCardId);
+    row.classList.add("is-dragging");
+  });
+  list.addEventListener("dragover", event => {
+    const row = event.target.closest("[data-moderation-drag-id]");
+    if (!draggedCardId || !row || row.dataset.moderationDragId === draggedCardId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    list.querySelectorAll(".is-drop-before, .is-drop-after").forEach(item => item.classList.remove("is-drop-before", "is-drop-after"));
+    const rect = row.getBoundingClientRect();
+    row.classList.add(event.clientY > rect.top + rect.height / 2 ? "is-drop-after" : "is-drop-before");
+  });
+  list.addEventListener("drop", event => {
+    const row = event.target.closest("[data-moderation-drag-id]");
+    if (!draggedCardId || !row) return;
+    event.preventDefault();
+    const rect = row.getBoundingClientRect();
+    const reordered = reorderModerationCards(cards, draggedCardId, row.dataset.moderationDragId, event.clientY > rect.top + rect.height / 2);
+    if (reordered !== cards) {
+      cards.splice(0, cards.length, ...reordered);
+      activeId = draggedCardId;
+      dirty = true;
+      drawList();
+      loadEditor();
+      updateStatus();
+    }
+    draggedCardId = "";
+    clearDragMarkers();
+  });
+  list.addEventListener("dragend", () => { draggedCardId = ""; clearDragMarkers(); });
   const loadEditor = () => {
     const card = active();
     [...editor.elements].forEach(field => { field.disabled = !card; });
@@ -584,7 +696,7 @@ export function openModerationCardDialog({ event = {}, topics = [], speakers = [
     }
     ["time", "speakerName", "position", "company", "title", "bio", "description", "notes"].forEach(name => { editor.elements[name].value = card[name] || ""; });
     preview.innerHTML = cardMarkup(card, { preview: true, number: cardPosition(card), total: cards.length, orientation });
-    fitModerationCard(preview.querySelector(".moderation-card"));
+    fitPreview();
   };
   editor.addEventListener("input", (event) => {
     const card = active();
@@ -592,7 +704,7 @@ export function openModerationCardDialog({ event = {}, topics = [], speakers = [
     card[event.target.name] = event.target.value;
     dirty = true;
     preview.innerHTML = cardMarkup(card, { preview: true, number: cardPosition(card), total: cards.length, orientation });
-    fitModerationCard(preview.querySelector(".moderation-card"));
+    fitPreview();
     drawList();
     updateStatus();
   });
@@ -626,6 +738,7 @@ export function openModerationCardDialog({ event = {}, topics = [], speakers = [
         if (clean(item.notes)) card.notes = essentialText(item.notes, 3);
       });
       dirty = true;
+      updateCloseButtons();
       drawList();
       loadEditor();
       status.textContent = "KI-Texte wurden übernommen. Bitte speichern.";
@@ -649,11 +762,14 @@ export function openModerationCardDialog({ event = {}, topics = [], speakers = [
     editor.elements.title.select();
   });
   dialog.querySelector("[data-moderation-remove]").addEventListener("click", () => {
-    const index = cards.findIndex(card => card.id === activeId);
-    if (index < 0) return;
-    removedIds.add(cards[index].id);
-    cards.splice(index, 1);
-    activeId = cards[Math.min(index, cards.length - 1)]?.id || "";
+    const marked = selected();
+    if (!marked.length) return;
+    const names = marked.slice(0, 3).map(card => [card.time, card.speakerName || card.title].filter(Boolean).join(" · ")).join("\n");
+    if (!window.confirm(`${marked.length === cards.length ? "Alle " : ""}${marked.length} ausgewählte ${marked.length === 1 ? "Karte" : "Karten"} löschen?\n\n${names}${marked.length > 3 ? "\n…" : ""}`)) return;
+    const deletion = removeSelectedModerationCards(cards, activeId);
+    deletion.removedIds.forEach(id => removedIds.add(id));
+    cards.splice(0, cards.length, ...deletion.remaining);
+    activeId = deletion.activeId;
     dirty = true;
     drawList();
     loadEditor();
@@ -676,6 +792,7 @@ export function openModerationCardDialog({ event = {}, topics = [], speakers = [
     try {
       await saveCards(cards.map(card => ({ ...card })), [...removedIds], orientation);
       dirty = false;
+      updateCloseButtons();
       status.textContent = "Moderationskarten gespeichert.";
     } catch (error) {
       status.textContent = error.message || "Moderationskarten konnten nicht gespeichert werden.";
@@ -685,7 +802,7 @@ export function openModerationCardDialog({ event = {}, topics = [], speakers = [
   });
   const close = () => dialog.close();
   dialog.querySelector("[data-moderation-cancel]").addEventListener("click", close);
-  dialog.addEventListener("close", () => dialog.remove(), { once: true });
+  dialog.addEventListener("close", () => { previewObserver.disconnect(); dialog.remove(); }, { once: true });
   printButton.addEventListener("click", () => {
     const printRoot = document.createElement("div");
     printRoot.id = "moderation-card-print-root";
@@ -718,4 +835,5 @@ export function openModerationCardDialog({ event = {}, topics = [], speakers = [
   loadEditor();
   updateStatus();
   dialog.showModal();
+  fitPreview();
 }

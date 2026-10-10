@@ -1,3 +1,11 @@
+const {createInvoiceRevisionTracker}=require('./accountingInvoiceRevision');
+const {createInvoicePdfGeneration}=require('./accountingInvoicePdfGeneration');
+const {createAutomaticAccountingReminders}=require('./automaticAccountingReminders');
+const { createAnnualContributions } = require("./annualContributions");
+const { createAccountingReminder } = require("./accountingReminders");
+const { createInvoiceDispatch, invoiceMailAttachment } = require("./accountingInvoiceDispatch");
+const { eventInvitationDetails } = require("./eventInvitationDetails");
+const { directorySyncPlan } = require("./registrationDirectorySync");
 const { createHash, randomBytes, randomInt } = require("node:crypto");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
@@ -536,6 +544,14 @@ function notificationRegisteredEmails(registrations = [], members = [], users = 
 async function eventNotificationTargets(eventId = "", options = {}) {
   const hasEvent = Boolean(clean(eventId));
   const recipientGroup = clean(options.recipientGroup || "");
+  if(recipientGroup==='single_person'){
+    const email=clean(options.singleRecipientEmail).toLowerCase();
+    if(!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(email))throw new HttpsError('invalid-argument','Bitte genau eine gültige E-Mail-Adresse auswählen.');
+    const candidates=await eventNotificationTargets(eventId,{recipientGroup:'members_contacts',includeMembers:true,includeContacts:true,includeRegistered:true,includeSpeakers:true,registrationStatus:'all'});
+    const targets=candidates.filter(target=>clean(target.email).toLowerCase()===email);
+    if(targets.length!==1)throw new HttpsError('failed-precondition','Diese Person ist nicht erreichbar oder vom Versand ausgeschlossen. Bitte die Adresse in der Adressliste prüfen.');
+    return targets;
+  }
   // Test recipients never pass through the member/contact recipient expansion.
   if (recipientGroup === "test_group") return notificationTestGroupTargets();
   const includeRegistered = ["event_registered", "event_registered_speakers"].includes(recipientGroup) || options.includeRegistered === true;
@@ -736,6 +752,7 @@ function smsEstimateFingerprint(input = {}) {
     smsLinkEnabled: input.smsLinkEnabled !== false && clean(input.smsLinkEnabled) !== "false",
     linkEnabled: input.linkEnabled !== false && clean(input.linkEnabled) !== "false",
     link: clean(input.link),
+    singleRecipientEmail: clean(input.singleRecipientEmail).toLowerCase(),
     testRecipients: clean(input.testRecipients),
     testRecipientMobiles: clean(input.testRecipientMobiles),
     extraSpeakerEventIds: notificationExtraSpeakerEventIds(input, clean(input.eventId)).sort()
@@ -839,7 +856,7 @@ async function queueEventNotificationDelivery(notification = {}, eventRecord = {
         eventTitle: eventRecord.title || ""
       },
       eventRecord,
-      variables: { eventLink: link, link, cancelLink: cancelUrl, cancelUrl }
+      variables: { eventLink: link, link, confirmationLink: link, confirmationUrl: link, cancelLink: cancelUrl, cancelUrl }
     });
     const renderedTitle = renderTemplateText(notification.title, {
       registration: {
@@ -1631,6 +1648,7 @@ function renderMail(mail, context = {}) {
     const destinationLink = mail.linkEnabled === false ? "" : clean(mail.link || eventUrl(mail.eventId || eventRecord.id || ""));
     const link = destinationLink && mail.id && !mail.surveyId ? eventMailClickTrackingUrl(mail.id) : destinationLink;
     const isSurveyMail = Boolean(clean(mail.surveyId));
+    const eventDetails = !isSurveyMail && (mail.eventId || eventRecord.id) ? eventInvitationDetails(eventRecord) : "";
     const cancelUrl = !isSurveyMail && mail.audienceType === "registered" ? clean(mail.cancelUrl) : "";
     const mailPerson = {
       firstName: mail.firstName || registration.firstName || "",
@@ -1642,12 +1660,12 @@ function renderMail(mail, context = {}) {
     const title = clean(renderTemplateText(mail.title || eventRecord.title || "PROdigitalTV Veranstaltung", {
       registration: mailPerson,
       eventRecord,
-      variables: { eventLink: link, link }
+      variables: { eventLink: link, link, confirmationLink: link, confirmationUrl: link }
     }));
     const body = clean(renderTemplateText(mail.shortText || mail.text || (isSurveyMail ? "Bitte nehmen Sie kurz an unserer Umfrage teil." : "Neue Informationen zu einer PROdigitalTV-Veranstaltung."), {
       registration: mailPerson,
       eventRecord,
-      variables: { eventLink: link, link }
+      variables: { eventLink: link, link, confirmationLink: link, confirmationUrl: link }
     }));
     const optOutUrl = notificationOptOutUrl(mail.to);
     const salutation = clean(mail.personName) ? `Guten Tag ${clean(mail.personName)},` : "Guten Tag,";
@@ -1663,6 +1681,8 @@ function renderMail(mail, context = {}) {
       intro,
       "",
       title,
+      eventDetails,
+      "",
       body,
       "",
       link ? `${linkLabel}: ${link}` : "",
@@ -1678,6 +1698,7 @@ function renderMail(mail, context = {}) {
       html: mailHtmlShell(title, [
         `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${salutation}</p>`,
         `<p style="font-size:17px;line-height:1.55;margin:0 0 14px">${intro}</p>`,
+        eventDetails ? textToHtml(escapeAttribute(eventDetails)) : "",
         `${textToHtml(body)}`,
         mailButton(linkLabel, link),
         cancelUrl ? `<p style="font-size:15px;line-height:1.5;color:#5f6b7c;margin:24px 0 8px">Falls Sie doch nicht teilnehmen koennen, geben Sie den Platz bitte fuer andere Interessierte frei.</p><p style="margin:0 0 24px"><a href="${escapeAttribute(cancelUrl)}" target="_blank" rel="noopener" style="display:inline-block;background:#ffffff;color:#b00020;text-decoration:none;font-weight:800;border:2px solid #b00020;border-radius:999px;padding:13px 22px">Teilnahme absagen</a></p>` : "",
@@ -1856,6 +1877,7 @@ function renderMail(mail, context = {}) {
     };
   }
 
+  if (["accounting_reminder", "accounting_invoice"].includes(mail.template)) return { subject: mail.subject, text: mail.text, html: mailHtmlShell(mail.subject, textToHtml(mail.text)) };
   return {
     subject: mail.subject || "Nachricht von PROdigitalTV",
     text: clean(mail.text || mail.body || "Neue Nachricht aus der Website.")
@@ -1890,6 +1912,7 @@ async function sendQueuedMail(mail) {
     replyTo: replyTo ? mailAddress(replyTo) : undefined,
     subject: stripTags(rendered.subject),
     text: rendered.text,
+    attachments: await invoiceMailAttachment(mail, getStorage().bucket(storageBucket)),
     html: appendMailTrackingPixel(rendered.html, mail.id)
   });
 }
@@ -2296,6 +2319,7 @@ exports.getEventLiveData = onCall({ region }, async (request) => {
   if (!ownProfile.photoUrl) ownProfile.photoUrl = eventLivePortrait(ownContact, registrations.find((item) => contactId(item.email) === viewer.contactId) || {}, portraitSources);
   return {
     event: { id: viewer.event.id, title: clean(viewer.event.title), date: clean(viewer.event.date), startTime: clean(viewer.event.startTime), endTime: clean(viewer.event.endTime),
+      moderatorName: (viewer.event.moderators || []).map(person => clean(person.name)).filter(Boolean).join(", ") || clean(viewer.event.moderatorName),
       agendaText: eventAgendaMailText(viewer.event),
       scheduleItems: eventAgendaItems(viewer.event, logoTopics.filter(topic => !["inactive", "archived", "draft", "deleted", "hidden", "invisible"].includes(String(topic.status || "").toLowerCase())), speakers.docs.map(doc => ({ ...doc.data(), id: doc.id }))) },
     role: viewer.role,
@@ -4340,7 +4364,9 @@ exports.adminCreateEventRegistration = onCall({ region }, async (request) => {
     createdAt: now,
     updatedAt: now
   };
+  const directoryPlans = await directorySyncPlan(db, input, input.email, contactId, now);
   await db.runTransaction(async (transaction) => {
+    const directorySnapshots = await Promise.all(directoryPlans.map(plan => transaction.get(plan.ref)));
     const lockSnapshot = await transaction.get(lockRef);
     const lock = lockSnapshot.exists ? lockSnapshot.data() : null;
     if (lock?.registrationId) {
@@ -4349,6 +4375,7 @@ exports.adminCreateEventRegistration = onCall({ region }, async (request) => {
         throw new HttpsError("already-exists", "Diese E-Mail-Adresse ist fuer dieses Event bereits angemeldet.");
       }
     }
+    directoryPlans.forEach((plan, index) => transaction.set(plan.ref, plan.patch(directorySnapshots[index].exists ? directorySnapshots[index].data() : null), { merge: true }));
     transaction.set(registrationRef, registration);
     transaction.set(lockRef, {
       id: lockRef.id,
@@ -4360,7 +4387,7 @@ exports.adminCreateEventRegistration = onCall({ region }, async (request) => {
       createdAt: lock?.createdAt || now
     }, { merge: true });
   });
-  const contactSync = await upsertContactFromRegistration(registration, eventRecord, now);
+  const contactSync = directoryPlans.length ? { created: false } : await upsertContactFromRegistration(registration, eventRecord, now);
   if (contactSync.created) await countNewMailingContactForEvent(eventRecord.id, "cms_admin_registration", contactSync, now);
   const companionContact = await upsertCompanionContact(registration, eventRecord, now);
   if (companionContact.created) await countNewMailingContactForEvent(eventRecord.id, "event_companion", companionContact, now);
@@ -4379,6 +4406,34 @@ exports.adminCreateEventRegistration = onCall({ region }, async (request) => {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
+});
+
+exports.adminUpdateEventRegistration = onCall({ region }, async request => {
+  await requireEditor(request);
+  const id = clean(request.data?.registrationId);
+  if (!id || id.includes("/")) throw new HttpsError("invalid-argument", "Anmeldung fehlt.");
+  const ref = db.collection("registrations").doc(id);
+  const snapshot = await ref.get();
+  if (!snapshot.exists) throw new HttpsError("not-found", "Anmeldung wurde nicht gefunden.");
+  const companion = request.data?.participantRole === "Begleitperson";
+  const before = companion ? snapshot.data().companion || {} : snapshot.data();
+  const input = request.data?.input || {};
+  const values = Object.fromEntries(["firstName", "lastName", "company", "position", "email", "phone", "linkedIn"].map(key => [key, clean(input[key])]));
+  values.email = values.email.toLowerCase();
+  if (!values.firstName || !values.lastName || !values.email.includes("@")) throw new HttpsError("invalid-argument", "Name und gültige E-Mail sind erforderlich.");
+  if (values.phone) values.phone = requiredRegistrationMobileNumber(values.phone);
+  const now = FieldValue.serverTimestamp();
+  const plans = await directorySyncPlan(db, values, before.email, contactId, now, true);
+  await db.runTransaction(async transaction => {
+    const current = await transaction.get(ref);
+    if (!current.exists) throw new HttpsError("not-found", "Anmeldung wurde gelöscht.");
+    const currentPerson = companion ? current.data().companion || {} : current.data();
+    if (clean(currentPerson.email).toLowerCase() !== clean(before.email).toLowerCase()) throw new HttpsError("aborted", "Anmeldung wurde inzwischen geändert. Bitte neu laden.");
+    const directory = await Promise.all(plans.map(plan => transaction.get(plan.ref)));
+    plans.forEach((plan, index) => transaction.set(plan.ref, plan.patch(directory[index].exists ? directory[index].data() : null), { merge: true }));
+    transaction.update(ref, { ...(companion ? { companion: { ...current.data().companion, ...values } } : values), adminEditedAt: now, updatedAt: now });
+  });
+  return { ok: true };
 });
 
 exports.prepareEventGuestAccounts = onCall({ region }, async (request) => {
@@ -4722,6 +4777,7 @@ exports.listPortalParticipantPhotos = onCall({ region }, async (request) => {
         id: doc.id, eventId: clean(medium.eventId),
         fileName: clean(medium.fileName), caption: clean(medium.caption || medium.note),
         uploadedByName: clean(medium.uploadedByName),
+        canDelete: medium.uploadedBy === request.auth.uid,
         unread: participantPhotoUnread(medium, doc.id, request.auth.uid, seenIds),
         uploadedAt: medium.uploadedAt?.toDate?.().toISOString() || clean(medium.uploadedAt)
       };
@@ -4739,6 +4795,28 @@ exports.listPortalParticipantPhotos = onCall({ region }, async (request) => {
   }));
   events.sort((a, b) => b.eventDate.localeCompare(a.eventDate));
   return { photos, events, unreadCount: photos.filter((photo) => photo.unread).length };
+});
+
+exports.deletePortalParticipantPhoto = onCall({ region }, async (request) => {
+  if (!request.auth?.uid || request.auth.token.email_verified !== true) throw new HttpsError("unauthenticated", "Bitte anmelden.");
+  const mediaId = clean(request.data?.mediaId);
+  const eventId = clean(request.data?.eventId);
+  if (!mediaId || mediaId.includes("/") || !eventId) throw new HttpsError("invalid-argument", "Foto und Veranstaltung fehlen.");
+  const ref = db.collection("eventMedia").doc(mediaId);
+  const snapshot = await ref.get();
+  const medium = snapshot.data() || {};
+  if (!snapshot.exists) throw new HttpsError("not-found", "Dieses Foto wurde bereits gelöscht.");
+  if (!participantPhotoRecord(medium) || medium.eventId !== eventId || medium.uploadedBy !== request.auth.uid) {
+    throw new HttpsError("permission-denied", "Sie können nur Ihre eigenen Fotos dieser Veranstaltung löschen.");
+  }
+  await requireParticipantPhotoAccess(request.auth, eventId, true);
+  const path = clean(medium.storagePath);
+  if (!/^(portal-gallery-photos|images\/events|images\/galleries)\//.test(path) || path.includes("..")) {
+    throw new HttpsError("failed-precondition", "Foto-Speicherort konnte nicht sicher zugeordnet werden.");
+  }
+  await getStorage().bucket(storageBucket).file(path).delete({ ignoreNotFound: true });
+  await ref.delete();
+  return { deleted: true, mediaId, eventId };
 });
 
 exports.markPortalParticipantPhotosSeen = onCall({ region }, async (request) => {
@@ -4863,19 +4941,28 @@ exports.createEventNotification = onCall({ region }, async (request) => {
   const shortText = stripTags(input.shortText) || `Informationen zu ${eventRecord.title || "dieser Veranstaltung"}.`;
   const smsText = stripTags(input.smsText || (notificationKind === "event" ? `Sie sind herzlich eingeladen: ${eventRecord.title || "PROdigitalTV"}. Details und Anmeldung finden Sie im Link.` : "Neue Informationen von PROdigitalTV.")).slice(0, 612);
   if (notificationKind === "event") await assertNoHiddenTalkMentions(eventRecord, { shortText, smsText });
+  if (notificationKind === "event" && (!Array.isArray(input.channels) || input.channels.includes("mail"))) {
+    try { eventInvitationDetails(eventRecord); }
+    catch (error) { throw new HttpsError("failed-precondition", error.message); }
+  }
   const testRecipients = clean(input.testRecipients)
     .split(/[\s,;]+/)
     .map((email) => mailAddress(email))
     .filter(Boolean)
     .filter((email, index, all) => all.indexOf(email) === index);
-  const testOnly = clean(input.recipientGroup) !== "test_group" && (clean(input.recipientGroup) === "test_person" || input.testOnly === true || input.testOnly === "true");
+  const testOnly = !["test_group","single_person"].includes(clean(input.recipientGroup)) && (clean(input.recipientGroup) === "test_person" || input.testOnly === true || input.testOnly === "true");
   if (testOnly && !testRecipients.length) throw new HttpsError("invalid-argument", "Bitte mindestens eine Testperson eintragen.");
-  const recipientGroup = ["members", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "other_event_speakers", "test_group", "test_person"].includes(clean(input.recipientGroup))
+  const recipientGroup = ["members", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "other_event_speakers", "test_group", "test_person", "single_person"].includes(clean(input.recipientGroup))
     ? clean(input.recipientGroup)
     : "members_contacts";
-  const includeEventSpeakers = notificationKind === "event" && !["test_group", "test_person"].includes(recipientGroup);
+  const includeEventSpeakers = notificationKind === "event" && !["test_group", "test_person", "single_person"].includes(recipientGroup);
   const extraSpeakerEventIds = includeEventSpeakers ? notificationExtraSpeakerEventIds(input, eventId) : [];
   await validateOtherEventSpeakerSource(recipientGroup, eventId, extraSpeakerEventIds, notificationKind);
+  if(recipientGroup==='single_person'){
+    const targets=await eventNotificationTargets(eventId,{recipientGroup,singleRecipientEmail:input.singleRecipientEmail});
+    const expected=Array.isArray(input.expectedTestRecipients)?input.expectedTestRecipients.map(email=>clean(email).toLowerCase()):[];
+    if(expected.length!==1||expected[0]!==targets[0].email)throw new HttpsError('failed-precondition','Bitte die Vorschau für diese Person erneut erstellen.');
+  }
   if (recipientGroup === "other_event_speakers") {
     const targets = await eventNotificationTargets(eventId, { recipientGroup, extraSpeakerEventIds });
     const recipientEmails = targets.map((target) => target.email).filter(Boolean).sort();
@@ -4991,6 +5078,7 @@ exports.createEventNotification = onCall({ region }, async (request) => {
     surveyAllowMultiple: liveSurvey?.allowMultiple || false,
     surveyQuestions: liveSurvey?.questions || [],
     testOnly,
+    singleRecipientEmail: recipientGroup==='single_person'?clean(input.singleRecipientEmail).toLowerCase():'',
     testRecipients: testOnly ? testRecipients : [],
     testRecipientMobiles: testOnly ? clean(input.testRecipientMobiles).split(/[\s,;]+/).map(phoneNumber).filter(Boolean) : [],
     recipientGroup,
@@ -5177,19 +5265,23 @@ exports.previewEventNotification = onCall({ region, secrets: smsSecrets, timeout
     if (!eventSnapshot.exists) throw new HttpsError("not-found", "Event wurde nicht gefunden.");
     eventRecord = { id: eventSnapshot.id, ...eventSnapshot.data() };
     await assertNoHiddenTalkMentions(eventRecord, input);
+    if (!Array.isArray(input.channels) || input.channels.includes("mail")) {
+      try { eventInvitationDetails(eventRecord); }
+      catch (error) { throw new HttpsError("failed-precondition", error.message); }
+    }
   }
   const testRecipients = clean(input.testRecipients)
     .split(/[\s,;]+/)
     .map((email) => mailAddress(email))
     .filter(Boolean)
     .filter((email, index, all) => all.indexOf(email) === index);
-  const testOnly = clean(input.recipientGroup) !== "test_group" && (clean(input.recipientGroup) === "test_person" || input.testOnly === true || input.testOnly === "true");
+  const testOnly = !["test_group","single_person"].includes(clean(input.recipientGroup)) && (clean(input.recipientGroup) === "test_person" || input.testOnly === true || input.testOnly === "true");
   if (testOnly && !testRecipients.length) throw new HttpsError("invalid-argument", "Bitte mindestens eine Testperson eintragen.");
-  const recipientGroup = ["members", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "other_event_speakers", "test_group", "test_person"].includes(clean(input.recipientGroup))
+  const recipientGroup = ["members", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "other_event_speakers", "test_group", "test_person", "single_person"].includes(clean(input.recipientGroup))
     ? clean(input.recipientGroup)
     : "members_contacts";
   const registrationStatus = ["all", "registered", "unregistered"].includes(clean(input.registrationStatus)) ? clean(input.registrationStatus) : "all";
-  const includeEventSpeakers = notificationKind === "event" && !["test_group", "test_person"].includes(recipientGroup);
+  const includeEventSpeakers = notificationKind === "event" && !["test_group", "test_person", "single_person"].includes(recipientGroup);
   const extraSpeakerEventIds = includeEventSpeakers ? notificationExtraSpeakerEventIds(input, eventId) : [];
   await validateOtherEventSpeakerSource(recipientGroup, eventId, extraSpeakerEventIds, notificationKind);
   const testRecipientMobiles = clean(input.testRecipientMobiles).split(/[\s,;]+/).map(phoneNumber).filter(Boolean);
@@ -5199,6 +5291,7 @@ exports.previewEventNotification = onCall({ region, secrets: smsSecrets, timeout
       ? await notificationTestPersonTargets(testRecipients, testRecipientMobiles)
       : await eventNotificationTargets(notificationKind === "event" ? eventId : "", {
         recipientGroup,
+        singleRecipientEmail: input.singleRecipientEmail,
         includeMembers: ["members", "members_contacts"].includes(recipientGroup),
         includeContacts: ["contacts", "members_contacts"].includes(recipientGroup),
         includeRegistered: ["event_registered", "event_registered_speakers"].includes(recipientGroup),
@@ -5270,14 +5363,49 @@ exports.previewEventNotification = onCall({ region, secrets: smsSecrets, timeout
       updatedAt: FieldValue.serverTimestamp()
     });
   }
+  const previewEmail = mailAddress(profile.email || request.auth.token?.email);
+  const [directoryPerson] = await notificationTestPersonTargets(previewEmail ? [previewEmail] : []);
+  const ownNames = notificationPersonNames(profile);
+  const previewPerson = {
+    ...directoryPerson,
+    ...(ownNames.displayName ? ownNames : {}),
+    email: previewEmail,
+    company: clean(profile.company || directoryPerson?.company),
+    audienceType: "test"
+  };
+  const previewLinkEnabled = input.linkEnabled !== false && clean(input.linkEnabled) !== "false";
+  const previewLink = previewLinkEnabled ? clean(input.link) || (notificationKind === "event" ? eventUrl(eventId) : publicHashUrl("members")) : "";
+  const sampleNotification = {
+    template: "event_notification",
+    eventId: notificationKind === "event" ? eventId : "",
+    title: stripTags(input.title) || eventRecord.title || "PROdigitalTV Veranstaltung",
+    shortText: stripTags(input.shortText) || `Informationen zu ${eventRecord.title || "dieser Veranstaltung"}.`,
+    smsText: stripTags(input.smsText || (notificationKind === "event" ? `Sie sind herzlich eingeladen: ${eventRecord.title || "PROdigitalTV"}. Details und Anmeldung finden Sie im Link.` : "Neue Informationen von PROdigitalTV.")).slice(0, 612),
+    smsLinkEnabled: input.smsLinkEnabled !== false && clean(input.smsLinkEnabled) !== "false",
+    linkEnabled: previewLinkEnabled,
+    link: previewLink,
+    to: previewEmail,
+    firstName: previewPerson.firstName || "",
+    lastName: previewPerson.lastName || "",
+    personName: previewPerson.displayName || clean(`${previewPerson.firstName || ""} ${previewPerson.lastName || ""}`),
+    company: previewPerson.company || "",
+    ...(clean(input.liveActionMode) === "survey" ? { surveyId: "preview" } : {})
+  };
+  const messagePreview = {
+    personName: sampleNotification.personName,
+    email: previewEmail,
+    mail: channels.includes("mail") ? renderMail(sampleNotification, { eventRecord }) : null,
+    sms: channels.includes("sms") ? eventNotificationSmsBody(sampleNotification, eventRecord, previewPerson) : null
+  };
   return {
+    messagePreview,
     targetCount: targets.length,
     mailCount: channels.includes("mail") ? targets.filter((target) => target.email).length : 0,
     smsCount: smsTargets.length,
     pushCount: channels.includes("push") ? targets.filter((target) => target.email).length : 0,
     smsCostEstimate,
     smsCostEstimateId,
-    recipientEmails: recipientGroup === "test_group" || recipientGroup === "other_event_speakers" || testOnly ? targets.map((target) => target.email).filter(Boolean) : [],
+    recipientEmails: recipientGroup === "test_group" || recipientGroup === "other_event_speakers" || recipientGroup === "single_person" || testOnly ? targets.map((target) => target.email).filter(Boolean) : [],
     testOnly,
     recipientGroup
   };
@@ -6029,6 +6157,20 @@ exports.sendQueuedMail = onDocumentCreated({ document: "mailQueue/{mailId}", reg
   if (mail.status !== "queued") return;
   let resolvedTo = "";
   try {
+    if (mail.template === "accounting_invoice") {
+      const invoice = (await db.collection("membershipContributions").doc(mail.contributionId).get()).data();
+      if (!invoice || invoice.invoiceNeedsRegeneration || Number(invoice.invoiceRevision||0)!==Number(mail.invoiceRevision||0) || invoice.archived || invoice.paymentStatus === "cancelled" || invoice.amountCents !== mail.invoiceAmountCents) {
+        await event.data.ref.update({ status: "skipped", skipReason: "Rechnung storniert oder geaendert", updatedAt: FieldValue.serverTimestamp() });
+        return;
+      }
+    }
+    if (mail.template === "accounting_reminder") {
+      const invoice = (await db.collection("membershipContributions").doc(mail.contributionId).get()).data();
+      if (!invoice || invoice.invoiceNeedsRegeneration || invoice.invoiceNeedsRedispatch || Number(invoice.invoiceRevision||0)!==Number(mail.invoiceRevision||0) || invoice.paymentStatus !== "outstanding" || invoice.archived || invoice.amountCents !== mail.invoiceAmountCents) {
+        await event.data.ref.update({ status: "skipped", skipReason: "Rechnung bezahlt, storniert oder geaendert", updatedAt: FieldValue.serverTimestamp() });
+        return;
+      }
+    }
     if (mail.template === "registration_confirmation_reminder") {
       const registrationSnapshot = await db.collection("registrations").doc(mail.registrationId).get();
       const registration = registrationSnapshot.data() || {};
@@ -7619,3 +7761,147 @@ exports.Morgenbriefing_Taeglich = onSchedule({ schedule: "every monday 06:15", r
  * "queued", deliver through Postmark/Brevo/SendGrid and then write "sent" or
  * "failed". Credentials belong in Firebase Secret Manager, never in source.
  */
+
+// Event-specific moderator access; no general CMS privileges are granted.
+const { canModerate, cardsPatch, moderatorCardOwner } = require("./eventModerator");
+async function moderatorProfile(request) {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "Bitte anmelden.");
+  const profile = (await db.collection("users").doc(request.auth.uid).get()).data();
+  if (!profile || profile.status === "inactive") throw new HttpsError("permission-denied", "Zugang nicht aktiv.");
+  return profile;
+}
+async function moderatorEvent(request) {
+  const profile = await moderatorProfile(request);
+  const eventId = clean(request.data?.eventId);
+  if (!eventId || eventId.includes("/")) throw new HttpsError("invalid-argument", "Veranstaltung fehlt.");
+  const ref = db.collection("events").doc(eventId);
+  const snapshot = await ref.get();
+  const event = snapshot.data() || {};
+  if (!snapshot.exists || (!["admin", "editor"].includes(profile.role) && !canModerate(event, request.auth.uid, profile))) throw new HttpsError("permission-denied", "Keine Moderatorberechtigung für diese Veranstaltung.");
+  let ownerId;
+  try { ownerId = moderatorCardOwner(event, request.auth.uid, profile, request.data?.ownerId); }
+  catch (error) { throw new HttpsError("permission-denied", error.message); }
+  return { ref, event: { ...event, id: snapshot.id }, profile, ownerId };
+}
+exports.assignEventModerators = onCall({ region }, async request => {
+  const editorProfile = await requireEditor(request);
+  if (editorProfile.status === "inactive") throw new HttpsError("permission-denied", "Zugang nicht aktiv.");
+  const eventId = clean(request.data?.eventId);
+  if (!eventId || eventId.includes("/")) throw new HttpsError("invalid-argument", "Veranstaltung fehlt.");
+  const emails = [...new Set((Array.isArray(request.data?.emails) ? request.data.emails : []).map(email => clean(email).toLowerCase()).filter(Boolean))];
+  if (emails.length > 10) throw new HttpsError("invalid-argument", "Maximal zehn Moderatoren.");
+  const guestList = await db.collection("registrations").where("eventId", "==", eventId).get();
+  const guestEmails = new Set(guestList.docs.flatMap(doc => {
+    const registration = doc.data() || {};
+    return [registration.email, registration.companion?.email].map(email => clean(email).toLowerCase()).filter(Boolean);
+  }));
+  if (emails.some(email => !guestEmails.has(email))) {
+    throw new HttpsError("failed-precondition", "Moderatoren müssen aus der Gästeliste dieses Events ausgewählt werden. Bitte die Liste neu laden.");
+  }
+  const users = [];
+  const moderators = [];
+  for (const email of emails) {
+    let user;
+    try { user = await getAuth().getUserByEmail(email); } catch { throw new HttpsError("not-found", `Kein Benutzerkonto für ${email}. Bitte zuerst ein Konto anlegen.`); }
+    const profile = (await db.collection("users").doc(user.uid).get()).data();
+    if (user.disabled || !profile || profile.status === "inactive") throw new HttpsError("failed-precondition", `Benutzerkonto für ${email} ist nicht aktiv.`);
+    users.push(user.uid);
+    const people = guestList.docs.flatMap(doc => { const person = doc.data(); return [person, person.companion].filter(Boolean); });
+    const person = people.find(person => clean(person.email).toLowerCase() === email) || {};
+    const name = [clean(person.firstName), clean(person.lastName)].filter(Boolean).join(" ") || clean(person.name) || clean(profile.displayName || profile.name) || email;
+    moderators.push({ uid: user.uid, email, name });
+  }
+  const moderatorName = moderators.map(person => person.name).join(", ");
+  await db.collection("events").doc(eventId).update({ moderatorUserIds: users, moderatorLoginEmails: emails, moderators, moderatorName, updatedAt: FieldValue.serverTimestamp() });
+  return { ok: true, moderatorName };
+});
+exports.listMyModeratorEvents = onCall({ region }, async request => {
+  await moderatorProfile(request);
+  const snapshot = await db.collection("events").where("moderatorUserIds", "array-contains", request.auth.uid).get();
+  return { events: snapshot.docs.map(doc => ({ id: doc.id, title: doc.data().title || "Veranstaltung", date: doc.data().date || "" })) };
+});
+exports.getModeratorCards = onCall({ region }, async request => {
+  const { ref, event, profile, ownerId } = await moderatorEvent(request);
+  const cardSets = ["admin", "editor"].includes(profile.role) ? await ref.collection("moderatorCards").get() : null;
+  const ownCards = ownerId ? (await ref.collection("moderatorCards").doc(ownerId).get()).data() || {} : event;
+  const owner = (event.moderators || []).find(person => person.uid === ownerId);
+  const cardEvent = { ...event, moderationCards: ownCards.moderationCards || [], moderationCardRemovedIds: ownCards.moderationCardRemovedIds || [], moderationCardOrientation: ownCards.moderationCardOrientation || "portrait" };
+  if (ownerId) cardEvent.moderatorName = owner?.name || clean(profile.name || profile.displayName) || "Moderation";
+  const [topics, speakers, board] = await Promise.all([db.collection("topics").get(), db.collection("speakers").get(), db.collection("boardMembers").get()]);
+  const pick = (data, fields) => Object.fromEntries(fields.filter(key => data[key] !== undefined).map(key => [key, data[key]]));
+  const topicFields = ["id", "title", "type", "shortDescription", "description", "longDescription", "speakerId", "speakerIds", "moderatorId", "moderatorIds", "speakerRoles", "speakerRoleById", "notes"];
+  const eventTopics = topics.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter(topic => (event.topicIds || []).includes(topic.id) || topic.eventId === event.id || (topic.eventIds || []).includes(event.id));
+  const profileFields = ["id", "name", "firstName", "lastName", "displayName", "title", "position", "role", "company", "organization", "shortBio", "bio", "longBio", "vita", "biography"];
+  return {
+    event: pick(cardEvent, ["id", "title", "date", "startTime", "endTime", "scheduleItems", "scheduleText", "agendaText", "moderatorName", "moderationCards", "moderationCardRemovedIds", "moderationCardOrientation"]),
+    ownerId,
+    cardOwnerName: ownerId ? cardEvent.moderatorName : "Allgemeine Karten",
+    ...(cardSets ? { cardOwners: [...new Set([...(event.moderatorUserIds || []), ...cardSets.docs.map(doc => doc.id)])].map(uid => ({ uid, name: (event.moderators || []).find(person => person.uid === uid)?.name || (event.moderatorLoginEmails || [])[ (event.moderatorUserIds || []).indexOf(uid)] || uid, count: (cardSets.docs.find(doc => doc.id === uid)?.data().moderationCards || []).length })) } : {}),
+    topics: eventTopics.map(topic => pick(topic, topicFields)),
+    speakers: speakers.docs.map(doc => pick({ ...doc.data(), id: doc.id }, profileFields)),
+    boardMembers: board.docs.map(doc => pick({ ...doc.data(), id: doc.id }, profileFields))
+  };
+});
+exports.saveModeratorCards = onCall({ region }, async request => {
+  const { ref, ownerId } = await moderatorEvent(request);
+  let patch;
+  try { patch = cardsPatch(request.data || {}); } catch (error) { throw new HttpsError("invalid-argument", error.message); }
+  // Recheck assignment inside the write transaction so revocation takes effect immediately.
+  await db.runTransaction(async transaction => {
+    const [eventSnapshot, profileSnapshot] = await Promise.all([transaction.get(ref), transaction.get(db.collection("users").doc(request.auth.uid))]);
+    try { moderatorCardOwner(eventSnapshot.data() || {}, request.auth.uid, profileSnapshot.data(), request.data?.ownerId); }
+    catch { throw new HttpsError("permission-denied", "Moderatorberechtigung wurde entzogen."); }
+    const saved = { ...patch, moderationCardsUpdatedAt: FieldValue.serverTimestamp() };
+    if (ownerId) transaction.set(ref.collection("moderatorCards").doc(ownerId), saved, { merge: true });
+    else transaction.update(ref, saved);
+  });
+  return { ok: true };
+});
+
+exports.generateAnnualContributions = onCall({ region }, createAnnualContributions({ db, requireAdmin, HttpsError }));
+exports.accountingReminder = onCall({ region }, createAccountingReminder({ db, bucket: getStorage().bucket(storageBucket), requireAdmin, HttpsError, FieldValue }));
+exports.accountingInvoiceDispatch = onCall({ region, timeoutSeconds: 120 }, createInvoiceDispatch({ db, bucket: getStorage().bucket(storageBucket), requireAdmin, HttpsError, FieldValue }));
+
+exports.sendAutomaticAccountingReminders = onSchedule({region,schedule:'every day 08:00',timeZone:'Europe/Berlin',timeoutSeconds:540,maxInstances:1},createAutomaticAccountingReminders({db,bucket:getStorage().bucket(storageBucket),HttpsError,FieldValue}));
+
+exports.generateAccountingInvoicePdf=onCall({region,timeoutSeconds:120},createInvoicePdfGeneration({db,bucket:getStorage().bucket(storageBucket),requireAdmin,HttpsError}));
+
+exports.trackAccountingInvoiceRevision=onDocumentWritten({document:'membershipContributions/{invoiceId}',region},createInvoiceRevisionTracker({db}));
+
+exports.exportAccountingPdf=onCall({region,timeoutSeconds:120,memory:'512MiB'},require('./accountingReportPdf').createAccountingPdfExport({db,requireAdmin}));
+
+exports.accountingIncomingPdf=onCall({region,timeoutSeconds:120,memory:'512MiB'},require('./accountingIncomingPdfArchive').createIncomingPdfArchive({db,bucket:getStorage().bucket(storageBucket),requireAdmin,HttpsError}));
+
+exports.reconcileAccountingBankFees=onCall({region,timeoutSeconds:120,memory:'512MiB'},require('./accountingBankFees').createBankFeeReconciliation({db,bucket:getStorage().bucket(storageBucket),requireAdmin,HttpsError}));
+
+exports.closeAccountingYear=onCall({region},require('./accountingYearClosure').createAccountingYearClosure({db,requireAdmin,HttpsError}));
+
+exports.accountingYearPinStatus=onCall({region},require('./accountingYearPin').createYearPinStatus({db,requireAdmin}));
+exports.unlockAccountingYear=onCall({region},require('./accountingYearPin').createAccountingYearUnlock({db,requireAdmin,HttpsError}));
+
+exports.setupAccountingYearPin=onCall({region},require('./accountingYearPin').createAccountingYearPinSetup({db,requireAdmin,HttpsError}));
+const accountingYearSms=require('./accountingYearSms').createAccountingYearSms({db,requireAdmin,HttpsError,sendSms:sendQueuedSms,resolvePhone:async uid=>{
+ const [primary,linked]=await Promise.all([db.collection('members').where('linkedUserId','==',uid).get(),db.collection('members').where('linkedUserIds','array-contains',uid).get()]);
+ const phones=new Set([...primary.docs,...linked.docs].map(d=>{const m=d.data();return phoneNumber(m.mobile||m.contactMobile||m.mobilePhone);}).filter(Boolean));
+ return phones.size===1?[...phones][0]:'';
+}});
+exports.requestAccountingYearSms=onCall({region,secrets:smsSecrets},accountingYearSms.requestCode);
+exports.unlockAccountingYearSms=onCall({region},accountingYearSms.unlock);
+
+exports.closeAccountingYearWithPin=onCall({region},require('./accountingYearPin').createAccountingYearUnlock({db,requireAdmin,HttpsError,closing:true}));
+
+const smsPasswordReset = require('./smsPasswordReset').createSmsPasswordReset({db,auth:getAuth(),HttpsError,sendSms:sendQueuedSms,resolvePhone:async uid=>{
+ const profile=(await db.collection('users').doc(uid).get()).data()||{};
+ if(profile.status&&profile.status!=='active')return '';
+ const [primary,linked]=await Promise.all([db.collection('members').where('linkedUserId','==',uid).get(),db.collection('members').where('linkedUserIds','array-contains',uid).get()]);
+ const records=[...primary.docs,...linked.docs];
+ if(profile.memberId){const member=await db.collection('members').doc(profile.memberId).get();if(member.exists)records.push(member);}
+ const phones=new Set(records.map(d=>{const m=d.data();return phoneNumber(m.mobile||m.contactMobile||m.mobilePhone);}).filter(Boolean));
+ const authPhone=(await getAuth().getUser(uid)).phoneNumber;if(authPhone)phones.add(phoneNumber(authPhone));
+ return phones.size===1?[...phones][0]:'';
+}});
+exports.requestLoginSmsPasswordReset=onCall({region,secrets:smsSecrets,maxInstances:5},smsPasswordReset.requestCode);
+exports.verifyLoginSmsPasswordReset=onCall({region,maxInstances:5},smsPasswordReset.verifyCode);
+exports.completeLoginSmsPasswordReset=onCall({region,maxInstances:5},smsPasswordReset.setPassword);
+
+exports.getSmsAccountBalance=onCall({region,secrets:[SMS_API_URL,SMS_API_TOKEN],maxInstances:3},require('./smsBalance').createSmsBalance({requireEditor,HttpsError,apiUrl:()=>SMS_API_URL.value(),apiToken:()=>SMS_API_TOKEN.value()}));

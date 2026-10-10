@@ -1,7 +1,8 @@
-import { agendaMarkup } from "../utils/eventArea.js?v=8";
+import { callEventModerator } from "../firebase/eventModeratorService.js?v=1";
+import { agendaMarkup } from "../utils/eventArea.js?v=9";
 import { eventAgendaItems } from "../utils/eventAgenda.js?v=2";
 import { list, listPublicEvents, listPublicContent, listMemberContent, listPublicEventMediaAssets, listPublicMediaAssets, getOne } from "../firebase/dataService.js?v=535";
-import { currentUser, canUseCms, isAdmin, isMember } from "../firebase/authService.js?v=477";
+import { currentUser, canUseCms, isAdmin, isMember } from "../firebase/authService.js?v=479";
 import { publicShell, logo } from "../components/layout.js?v=17";
 import { eventCard, topicCard, topicImageTransformStyle } from "../components/cards.js?v=25";
 import { pushControls } from "../components/pushControls.js?v=3";
@@ -994,6 +995,7 @@ function eventInvitationClosingText(event = {}, registrationAllowed = false) {
 }
 
 function eventScheduleMarkup(event = {}, topics = [], speakers = []) {
+  if (event.showAgenda === false) return "";
   const topicIds = new Set(event.topicIds || []);
   const eventTopics = topics.filter(topic => topicIds.has(topic.id) || topic.eventId === event.id || (topic.eventIds || []).includes(event.id));
   const visibleTopics = eventTopics.filter(isVisibleEventTalk);
@@ -1007,8 +1009,7 @@ function eventScheduleMarkup(event = {}, topics = [], speakers = []) {
   const moderatorName = String(event.moderatorName || "").trim();
   if (!items.length && !moderatorName) return "";
   return `<section class="event-schedule" aria-label="Agenda">
-    ${moderatorName ? `<p class="event-schedule__moderator">Durch das Programm führt Sie <strong>${escapeHtml(moderatorName)}</strong>.</p>` : ""}
-    ${agendaMarkup({ scheduleItems: items })}
+    ${agendaMarkup({ ...event, scheduleItems: items })}
   </section>`;
 }
 
@@ -3709,7 +3710,7 @@ export async function joinPage() {
 export async function loginPage() {
   const user = currentUser();
   const activeSession = user ? `<div class="alert" style="margin-bottom:18px">Aktuell angemeldet als ${escapeHtml(user.email || user.displayName || user.uid || "Benutzer")} mit Rolle ${escapeHtml(user.role || "guest")}.</div><button id="logout-button" class="button button--secondary" type="button">Abmelden / Session loeschen</button>` : "";
-  return publicShell("login", `<section class="login-wrap"><div class="container"><form id="login-form" class="form-card login-card">${logo()}<p class="eyebrow">Mitgliederbereich</p><h1 style="margin-bottom:10px">Anmelden</h1><p style="margin-bottom:25px">Zugriff auf exklusive Events, Downloads und CMS-Funktionen.</p>${activeSession}<div class="form-grid"><div class="field"><label>E-Mail</label><input name="email" type="email" value="" required></div><div class="field"><label>Passwort</label><input name="password" type="password" value="" required></div><button class="button button--primary">Einloggen</button><div id="login-result"></div></div></form></div></section>`);
+  return publicShell("login", `<section class="login-wrap"><div class="container"><form id="login-form" class="form-card login-card">${logo()}<p class="eyebrow">Mitgliederbereich</p><h1 style="margin-bottom:10px">Anmelden</h1><p style="margin-bottom:25px">Zugriff auf exklusive Events, Downloads und CMS-Funktionen.</p>${activeSession}<div class="form-grid"><div class="field"><label>E-Mail</label><input name="email" type="email" value="" required></div><div class="field"><label>Passwort</label><input name="password" type="password" value="" required></div><button type="submit" class="button button--primary">Einloggen</button><button type="button" class="button button--secondary" data-login-reset-choice>Passwort vergessen?</button><div data-login-reset-method hidden><p>Wie möchten Sie Ihr Passwort zurücksetzen?</p><div class="actions"><button type="button" class="button button--secondary" data-login-password-reset>Per E-Mail</button><button type="button" class="button button--secondary" data-login-sms-reset>Per SMS</button></div></div><div id="login-result" role="status" aria-live="polite"></div></div></form><section id="login-sms-reset" class="form-card login-card" hidden><h1>Passwort per SMS zurücksetzen</h1><p data-sms-email></p><div data-sms-stage="request"><p>Wir senden einen Code an Ihre hinterlegte Mobilnummer.</p><button type="button" class="button button--primary" data-sms-request>SMS-Code senden</button></div><div data-sms-stage="verify" hidden><div class="field"><label>SMS-Code<input name="smsCode" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label></div><button type="button" class="button button--primary" data-sms-verify>Code bestätigen</button></div><div data-sms-stage="password" hidden><div class="field"><label>Neues Passwort<input name="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></label></div><div class="field"><label>Passwort wiederholen<input name="repeatPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></label></div><p>Mindestens 12 Zeichen.</p><button type="button" class="button button--primary" data-sms-save>Neues Passwort speichern</button></div><p data-sms-result role="status" aria-live="polite"></p><button type="button" class="button button--secondary" data-sms-back>Zurück zur Anmeldung</button></section></div></section>`);
 }
 
 export async function userInvitationPage(invitationId = "", query = new URLSearchParams(), tokenFromPath = "") {
@@ -3730,17 +3731,30 @@ function participantPhotoBadge(count = 0, eventId = "") {
 
 async function myEventPhotosSection() {
   try {
-    const { listPortalParticipantPhotos } = await import("../firebase/portalGalleryPhotoService.js?v=3");
+    const { listPortalParticipantPhotos } = await import("../firebase/portalGalleryPhotoService.js?v=5");
     const { photos = [], events = [] } = await listPortalParticipantPhotos();
     const photoQuery = new URLSearchParams(window.location.hash.split("?")[1] || "");
     const guestPreviewQuery = photoQuery.get("preview") === "guest" && isAdmin(currentUser()) ? "&preview=guest" : "";
     const selectedId = photoQuery.get("eventId") || "";
     const selected = events.find((event) => event.eventId === selectedId);
-    const cards = events.map((event) => `<article class="card card__body"><p class="eyebrow">${escapeHtml(event.eventDate ? formatDate(event.eventDate) : "Veranstaltung")}</p><h3>${escapeHtml(event.eventTitle || "Meine Veranstaltung")}</h3><a class="button button--primary button--small" href="#/event-live/${encodeURIComponent(event.eventId)}">Veranstaltungsbereich öffnen</a><a class="button button--secondary button--small" href="#/portal?tab=my-events&eventId=${encodeURIComponent(event.eventId)}${guestPreviewQuery}">Teilnehmerfotos ${participantPhotoBadge(event.unreadCount, event.eventId)}</a><p class="muted">${event.photoCount} Fotos</p></article>`).join("");
+    const eventDetails = await Promise.all(events.map((event) => getPublicRouteEvent(event.eventId, true).catch(() => null)));
+    const cards = events.map((event, index) => {
+      const detail = eventDetails[index] || {};
+      const thumbnail = archiveEventImageUrl({ ...detail, imageUrl: detail.thumbnail_url || detail.thumbnailUrl || detail.imageUrl });
+      const title = event.eventTitle || "Meine Veranstaltung";
+      const href = `#/event-live/${encodeURIComponent(event.eventId)}`;
+      return `<article class="card my-event-card">
+        <a class="my-event-card__thumb" href="${href}" aria-label="${escapeHtml(title)} öffnen">${thumbnail ? `<img src="${escapeHtml(stableImageUrl(thumbnail, "event"))}" alt="${escapeHtml(title)}" loading="lazy" decoding="async" ${liveImageAttrs("event")}>` : `<span class="my-event-card__placeholder">PROdigitalTV</span>`}</a>
+        <div class="card__body my-event-card__body"><p class="eyebrow">${escapeHtml(event.eventDate ? formatDate(event.eventDate) : "Veranstaltung")}</p>
+          <div class="my-event-card__heading"><h3>${escapeHtml(title)}</h3><a class="my-event-card__open" href="${href}" aria-label="Veranstaltungsbereich ${escapeHtml(title)} öffnen" title="Veranstaltungsbereich öffnen"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div>
+          <a class="button button--secondary button--small" href="#/portal?tab=my-events&eventId=${encodeURIComponent(event.eventId)}${guestPreviewQuery}">Teilnehmerfotos ${participantPhotoBadge(event.unreadCount, event.eventId)}</a><p class="muted">${event.photoCount} Fotos</p>
+        </div>
+      </article>`;
+    }).join("");
     let gallery = "";
     if (selected) {
       const eventPhotos = photos.filter((photo) => photo.eventId === selectedId);
-      gallery = `<section class="member-portal-section"><div class="section-head"><div><h2>${escapeHtml(selected.eventTitle)} · Teilnehmerfotos</h2><p class="muted">Fotos dieser Veranstaltung sind für ihre Teilnehmer direkt sichtbar.</p></div></div><div class="participant-photo-grid" data-participant-photos data-event-id="${escapeHtml(selectedId)}">${eventPhotos.length ? eventPhotos.map((photo) => `<figure class="participant-photo-card" data-participant-photo="${escapeHtml(photo.id)}" data-photo-unread="${photo.unread ? "1" : "0"}"><button type="button" data-participant-photo-link aria-label="Foto vergrößern"><img data-participant-photo-image alt="${escapeHtml(photo.caption || photo.fileName || "Teilnehmerfoto")}" hidden><span data-participant-photo-status>Foto wird geladen …</span></button><figcaption>${photo.caption ? `<p>${escapeHtml(photo.caption)}</p>` : ""}<small>${escapeHtml(photo.uploadedByName || "Eventteilnehmer")}</small></figcaption></figure>`).join("") : `<div class="alert">Für diese Veranstaltung wurden noch keine Fotos hochgeladen.</div>`}</div></section><section class="member-portal-section member-portal-section--upload"><h2>Fotos für diese Veranstaltung hochladen</h2>${portalGalleryUploadForm(selectedId)}</section>`;
+      gallery = `<section class="member-portal-section"><div class="section-head"><div><h2>${escapeHtml(selected.eventTitle)} · Teilnehmerfotos</h2><p class="muted">Fotos dieser Veranstaltung sind für ihre Teilnehmer direkt sichtbar.</p></div></div><div class="participant-photo-grid" data-participant-photos data-event-id="${escapeHtml(selectedId)}">${eventPhotos.length ? eventPhotos.map((photo) => `<figure class="participant-photo-card" data-participant-photo="${escapeHtml(photo.id)}" data-photo-unread="${photo.unread ? "1" : "0"}" data-photo-can-delete="${photo.canDelete ? "1" : "0"}"><button type="button" data-participant-photo-link aria-label="Foto vergrößern"><img data-participant-photo-image alt="${escapeHtml(photo.caption || photo.fileName || "Teilnehmerfoto")}" hidden><span data-participant-photo-status>Foto wird geladen …</span></button><figcaption>${photo.caption ? `<p>${escapeHtml(photo.caption)}</p>` : ""}<small>${escapeHtml(photo.uploadedByName || "Eventteilnehmer")}</small></figcaption></figure>`).join("") : `<div class="alert">Für diese Veranstaltung wurden noch keine Fotos hochgeladen.</div>`}</div></section><section class="member-portal-section member-portal-section--upload"><h2>Fotos für diese Veranstaltung hochladen</h2>${portalGalleryUploadForm(selectedId)}</section>`;
     } else if (selectedId) {
       gallery = `<div class="alert alert--warning">Für diese Veranstaltung sind Sie nicht freigeschaltet.</div>`;
     }
@@ -3750,11 +3764,19 @@ async function myEventPhotosSection() {
   }
 }
 
+async function moderatorPortalSection() {
+  const { events = [] } = await callEventModerator("listMyModeratorEvents");
+  if (!events.length) return "";
+  return `<section class="member-portal-section"><div class="section-head"><h2>Meine Moderatorenkarten</h2></div><p class="muted">Moderatorenzugang: Bearbeiten Sie die Karten Ihrer zugewiesenen Veranstaltungen.</p><div class="card-grid card-grid--three">${events.map(event => `<article class="card card__body" data-mobile-moderation-event-panel><h3>${escapeHtml(event.title)}</h3><p>${escapeHtml(event.date)}</p><button class="button button--primary" data-moderation-cards data-moderator-portal data-event-id="${escapeHtml(event.id)}" type="button">Moderatorenkarten bearbeiten</button><div data-mobile-moderation-result role="status"></div></article>`).join("")}</div></section>`;
+}
+
 export async function portalPage({ guestPreview = false } = {}) {
   const user = currentUser();
   if (!user) return loginPage();
+  const moderatorSection = !guestPreview ? await moderatorPortalSection() : "";
+  if (moderatorSection && !isMember(user)) return publicShell("login", `${subhero("Moderatorenzugang", `Willkommen, ${escapeHtml(user.displayName || user.email)}.`, "Ihre Moderationskarten.")}<section class="section"><div class="container">${moderatorSection}<button type="button" class="button button--secondary" data-logout-button>Abmelden</button></div></section>`);
   if (!isMember(user) || (guestPreview && isAdmin(user))) {
-    const { listPortalParticipantPhotos } = await import("../firebase/portalGalleryPhotoService.js?v=3");
+    const { listPortalParticipantPhotos } = await import("../firebase/portalGalleryPhotoService.js?v=5");
     const query = new URLSearchParams(window.location.hash.split("?")[1] || "");
     let eventId = guestPreview ? query.get("eventId") : "";
     if (!eventId) {
@@ -3930,6 +3952,7 @@ export async function memberPortalPage() {
   if (!user) return loginPage();
   if (!isMember(user)) return portalPage();
   if (isAdmin(user) && new URLSearchParams(window.location.hash.split("?")[1] || "").get("preview") === "guest") return portalPage({ guestPreview: true });
+  const moderatorSection = await moderatorPortalSection();
   const leanPortal = mobileLeanStart();
   const activeTab = (() => {
     try {
@@ -4052,6 +4075,7 @@ export async function memberPortalPage() {
     <section class="section section--white member-portal-shell"><div class="container">
       ${tabNav}
       ${profileAccessNotice}
+      ${moderatorSection}
       ${content}
     </div></section>`);
 }

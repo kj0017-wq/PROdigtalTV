@@ -47,7 +47,7 @@ const fieldAllowList = {
     "registrationStatus", "registration_state", "registrationState", "allowPublicRegistration",
     "allowMemberRegistration", "showPublicTeaser", "publicTeaser", "description", "descriptionMode", "shortDescription",
     "teaserText", "subtitle", "introText", "longDescription", "bodyText", "articleText", "archiveText",
-    "scheduleText", "agendaText", "preStatus",
+    "scheduleText", "agendaText", "showAgenda", "preStatus",
     "postEventSummary", "postEventummary", "hostId", "sponsorIds", "topicIds", "speakerIds", "imageUrl",
     "thumbnail_url", "thumbnailUrl", "assetUrl", "mediaAssetId", "media_asset_id", "thumbnailMediaAssetId",
     "thumbnail_media_asset_id", "updatedAt", "updated_at", "validFrom"

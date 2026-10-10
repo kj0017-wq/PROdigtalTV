@@ -17,7 +17,10 @@ export function participantContactAction(data, person) {
 export function agendaMarkup(event = {}) {
   const items = Array.isArray(event.scheduleItems) ? event.scheduleItems : [];
   const text = event.agendaText || "";
-  return `<h2>Agenda</h2>${items.length ? `<ol class="event-area-agenda">${items.map((item, index) => {
+  const assignedNames = (Array.isArray(event.moderators) ? event.moderators : []).map(person => String(person.name || "").trim()).filter(Boolean);
+  const moderatorName = assignedNames.length ? [...new Set(assignedNames)].join(", ") : String(event.moderatorName || "").trim();
+  const moderation = moderatorName ? `<p class="event-schedule__moderator">Durch das Programm führt Sie: <strong>${escapeHtml(moderatorName)}</strong></p>` : "";
+  return `<h2>Agenda</h2>${moderation}${items.length ? `<ol class="event-area-agenda">${items.map((item, index) => {
     const personName = String(item.person || "").trim();
     const person = personName && !/^programmpunkt$/i.test(personName) ? `<p>${escapeHtml(personName)}</p>` : "";
     if (item.isTalk || item.description) {

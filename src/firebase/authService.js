@@ -216,6 +216,7 @@ export async function logout() {
   const firebase = await getFirebaseServices();
   if (firebase) await firebase.authLib.signOut(firebase.auth);
   clearStoredUser();
+  await import("../utils/participantPhotoCache.js?v=1").then(module => module.clearParticipantPhotoCache()).catch(() => {});
 }
 
 export function canUseCms(user = currentUser()) {

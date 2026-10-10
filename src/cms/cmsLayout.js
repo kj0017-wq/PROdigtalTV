@@ -1,13 +1,14 @@
 import { currentUser, isAdmin } from "../firebase/authService.js?v=477";
 import { logo } from "../components/layout.js";
 
-const adminOnlyRoutes = new Set(["cms/member-strategy-responses", "cms/setup", "cms/mail-bounces"]);
+const adminOnlyRoutes = new Set(["cms/member-strategy-responses", "cms/setup", "cms/mail-bounces", "cms/accounting"]);
 
 const sections = [
   ["cms", "Dashboard"],
+  ["cms/accounting", "Buchhaltung"],
   {
     route: "cms/events",
-    title: "Events",
+    title: "Event Verwaltung",
     children: [
       ["cms/events", "Events"],
       ["cms/live", "Veranstaltungs-Cockpit"],
@@ -116,7 +117,7 @@ export function cmsShell(active, content) {
       <div class="cms-side-sub">${visibleChildren.map(childLink).join("")}</div>
     </details>`;
   };
-  return `<div class="cms-shell"><header class="cms-header"><button type="button" class="cms-menu-toggle" data-cms-menu-toggle aria-label="CMS-Menue oeffnen" aria-controls="cms-side-nav" aria-expanded="false"><span></span><span></span><span></span></button>${logo()}<div class="actions"><span class="tag">${user?.role || "Gast"}</span><a href="#/home" class="button button--secondary button--small">Website</a><a class="mobile-qr mobile-qr--cms" href="#/home" data-mobile-qr-link target="_blank" rel="noreferrer" aria-label="Passende Mobilseite oeffnen"><img data-mobile-qr-code alt="QR-Code für die passende Mobilseite"></a></div></header>
+  return `<div class="cms-shell"><header class="cms-header"><button type="button" class="cms-menu-toggle" data-cms-menu-toggle aria-label="CMS-Menue oeffnen" aria-controls="cms-side-nav" aria-expanded="false"><span></span><span></span><span></span></button>${logo()}<div class="actions"><details class="cms-account-menu" style="position:relative"><summary class="tag" style="cursor:pointer;user-select:none" aria-label="Benutzermenü">${user?.role || "Gast"} ▾</summary><div style="position:absolute;right:0;top:calc(100% + 8px);z-index:1000;min-width:150px;padding:8px;background:var(--pdt-white);border:1px solid var(--pdt-line);border-radius:8px;box-shadow:0 8px 24px #0002"><button type="button" class="button button--secondary button--small" data-logout-button style="width:100%">Abmelden</button></div></details><a href="#/home" class="button button--secondary button--small">Website</a><a class="mobile-qr mobile-qr--cms" href="#/home" data-mobile-qr-link target="_blank" rel="noreferrer" aria-label="Passende Mobilseite oeffnen"><img data-mobile-qr-code alt="QR-Code für die passende Mobilseite"></a></div></header>
   <div class="cms-menu-backdrop" data-cms-menu-close></div>
   <div class="cms-layout"><nav class="cms-side" id="cms-side-nav" aria-label="CMS Navigation">${sections.map(navItem).join("")}</nav>
   <main class="cms-main">${content}</main></div></div>`;

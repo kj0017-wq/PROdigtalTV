@@ -1,0 +1,17 @@
+const {assertAccountingWritable,accountingClosedYears,updateOpenAccountingRecord}=require('./accountingYearClosure');
+const {createHash}=require('node:crypto');
+const sha=b=>createHash('sha256').update(b).digest('hex');
+function incomingPdfPath(hash){if(!/^[a-f0-9]{64}$/.test(hash||''))throw Error('Ungültiger Beleg-Hash.');return 'accounting/incoming/'+hash+'.pdf';}
+function verifiedIncomingPdf(base64,hash){const bytes=Buffer.from(base64||'','base64');if(bytes.length>20*1024*1024||bytes.length<5||bytes.subarray(0,5).toString()!=='%PDF-'||sha(bytes)!==hash)throw Error('Die PDF stimmt nicht mit dem gespeicherten Rechnungsbeleg überein.');return bytes;}
+function createIncomingPdfArchive({db,bucket,requireAdmin,HttpsError}){return async request=>{
+ await requireAdmin(request);const {invoiceId,action='read',base64}=request.data||{};if(typeof invoiceId!=='string'||!invoiceId||invoiceId.includes('/'))throw new HttpsError('invalid-argument','Rechnung fehlt.');
+ const ref=db.collection('accountingIncomingInvoices').doc(invoiceId),snapshot=await ref.get();if(!snapshot.exists)throw new HttpsError('not-found','Rechnung nicht vorhanden.');const record=snapshot.data();if(record.isInternalBookingReceipt){if(action!=='read')throw new HttpsError('failed-precondition','Interne Buchungsbelege werden aus den Kontobuchungen erzeugt.');const artifact=record.sourcePdfArtifact;if(!artifact||!/^accounting\/incoming\/[a-f0-9]{64}\.pdf$/.test(artifact.storagePath||''))throw new HttpsError('not-found','Interner Buchungsbeleg fehlt.');const [bytes]=await bucket.file(artifact.storagePath).download();if(sha(bytes)!==artifact.sha256)throw new HttpsError('data-loss','Buchungsbeleg konnte nicht verifiziert werden.');return {base64:bytes.toString('base64'),filename:record.sourceName,sha256:artifact.sha256};}const hash=record.sourceHash||invoiceId;let storagePath;try{storagePath=incomingPdfPath(hash);}catch(error){throw new HttpsError('failed-precondition',error.message);}const file=bucket.file(storagePath);
+ if(action==='save'){await assertAccountingWritable(db,[record],HttpsError);
+  let bytes;try{bytes=verifiedIncomingPdf(base64,hash);}catch(error){throw new HttpsError('invalid-argument',error.message);}
+  await file.save(bytes,{resumable:false,contentType:'application/pdf',metadata:{cacheControl:'private, no-store',metadata:{sha256:hash}}});
+  await db.runTransaction(async tx=>{const current=await tx.get(ref);if(!current.exists||(current.data().sourceHash||invoiceId)!==hash)throw new HttpsError('aborted','Der Rechnungsbeleg wurde inzwischen geändert.');await assertAccountingWritable(db,[current.data()],HttpsError,tx);tx.update(ref,{sourcePdfArtifact:{storagePath,sha256:hash,size:bytes.length,savedAt:new Date().toISOString()}});});return {saved:true,sha256:hash};
+ }
+ if(action!=='read')throw new HttpsError('invalid-argument','Ungültige Aktion.');if(!(await file.exists())[0])throw new HttpsError('not-found','Diese Original-PDF ist noch nicht zentral gespeichert. Einmal den Buchhaltungsordner freigeben und einlesen.');
+ const [bytes]=await file.download();if(sha(bytes)!==hash)throw new HttpsError('data-loss','Die gespeicherte PDF konnte nicht verifiziert werden.');return {base64:bytes.toString('base64'),filename:record.sourceFileName||record.sourceName||'Rechnung.pdf',sha256:hash};
+};}
+module.exports={createIncomingPdfArchive,incomingPdfPath,verifiedIncomingPdf};

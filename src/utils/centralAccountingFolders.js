@@ -1,0 +1,7 @@
+import {getFirebaseServices} from '../firebase/firebaseClient.js?v=3';
+const categories=['outgoing','incoming','statements'];
+async function services(){const firebase=await getFirebaseServices();if(!firebase)throw new Error('Zentrale Ordnerzuordnung ist nicht erreichbar.');return firebase;}
+export const centralAccountingFolders={
+ async read(category){if(!categories.includes(category))throw new Error('Ungültiger Bereich.');const f=await services();const doc=await f.firestore.getDoc(f.firestore.doc(f.db,'accountingFolders',category));return doc.exists()?doc.data():null;},
+ async save(category,folderName,{expectedId=null,replace=false,path=folderName}={}){if(!categories.includes(category)||!folderName)throw new Error('Ungültige Ordnerzuordnung.');const f=await services();const ref=f.firestore.doc(f.db,'accountingFolders',category);const next={category,folderName,path,assignmentId:crypto.randomUUID(),updatedAt:new Date().toISOString(),updatedBy:f.auth.currentUser?.uid||''};return f.firestore.runTransaction(f.db,async transaction=>{const snapshot=await transaction.get(ref);const existing=snapshot.exists()?snapshot.data():null;if(existing&&(!replace||(existing.path===path&&existing.folderName===folderName)))return existing;if(replace&&existing?.assignmentId!==expectedId)throw new Error('Die zentrale Ordnerzuordnung wurde inzwischen geändert. Bitte den Bereich neu laden.');transaction.set(ref,next);return next;});}
+};

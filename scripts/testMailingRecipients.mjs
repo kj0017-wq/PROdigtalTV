@@ -18,7 +18,7 @@ function load(source, names) {
 }
 load(backend, ["mailingExcludedEmails", "mailingEmailIsExcluded", "notificationRegisteredEmails", "notificationPersonNames", "assertNotificationRecipientNames", "normalizedMemberPhones", "normalizedMemberEmails", "memberCanMatchRegistration", "memberIsNotificationTestGroup", "memberIsMailingEligible", "notificationTestGroupTargets", "eventNotificationTargets"]);
 context.phoneNumber = (value = "") => String(value || "").trim();
-load(cms, ["userIsActive", "peopleContactType", "peopleMailingDisabled", "peopleMemberEmails", "peopleMemberIsActive", "peopleMemberContactRows", "peopleUserContactRows", "mergePeopleContactsAndMembers"]);
+load(cms, ["userIsActive", "peopleContactType", "peopleMailingDisabled", "peopleMemberEmails", "peopleMemberIsActive", "peopleExistingNames", "peopleMemberContactRows", "peopleUserContactRows", "mergePeopleContactsAndMembers"]);
 const members = [
   { id: "one", email: "one@example.com", firstName: "Jürgen", lastName: "Sewczyk", notificationTestGroup: true },
   { id: "two", email: "two@example.com", notificationTestGroup: true },
@@ -113,3 +113,13 @@ assert.deepEqual(emails(invitationTargets), ["anna@company.example"], "Checked-i
 const participantTargets = await context.eventNotificationTargets("heuking", { recipientGroup: "contacts", registrationStatus: "registered" });
 assert.deepEqual(emails(participantTargets), ["dirk@company.example"], "Participant information must still reach registered aliases");
 console.log("Mailing recipient regression checks passed; no network calls or messages.");
+
+const single = await context.eventNotificationTargets('heuking',{recipientGroup:'single_person',singleRecipientEmail:' ANNA@company.example ',includeMembers:true,includeSpeakers:true});
+assert.deepEqual(emails(single),['anna@company.example'],'Single selection must never expand to members or speakers');
+assert.deepEqual(emails(await context.eventNotificationTargets('heuking',{recipientGroup:'single_person',singleRecipientEmail:'dirk@company.example'})),['dirk@company.example'],'Registered person can be selected individually');
+await assert.rejects(()=>context.eventNotificationTargets('heuking',{recipientGroup:'single_person',singleRecipientEmail:'anna@company.example,dirk@company.example'}),/genau eine/);
+await assert.rejects(()=>context.eventNotificationTargets('heuking',{recipientGroup:'single_person',singleRecipientEmail:''}),/genau eine/);
+await assert.rejects(()=>context.eventNotificationTargets('heuking',{recipientGroup:'single_person',singleRecipientEmail:'unknown@example.com'}),/nicht erreichbar/);
+aliasData.contacts.push({id:'blocked',email:'blocked@example.com',notificationOptOut:true,firstName:'Blocked',lastName:'Contact'});
+await assert.rejects(()=>context.eventNotificationTargets('heuking',{recipientGroup:'single_person',singleRecipientEmail:'blocked@example.com'}),/nicht erreichbar/);
+console.log('Single-recipient targeting tests passed.');

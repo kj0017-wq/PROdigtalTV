@@ -1,4 +1,5 @@
-import { formatDateTime, slugify } from "./format.js";
+import {csvTextCell,germanCsvDate} from './csvText.js?v=2';
+import { slugify } from "./format.js";
 import { registrationParticipants } from "./registrationParticipants.js";
 import { membershipInterestLabels } from "./feedbackAcquisition.js";
 
@@ -15,19 +16,16 @@ const columns = [
 ];
 
 function printable(key, value) {
-  if (["createdAt", "updatedAt", "confirmedAt"].includes(key)) return formatDateTime(value);
+  if (key === 'eventDate') return germanCsvDate(value);
+  if (["createdAt", "updatedAt", "confirmedAt"].includes(key)) return germanCsvDate(value,{withTime:true});
   if (typeof value === "boolean") return value ? "ja" : "nein";
-  return value || "";
+  return value ?? "";
 }
 
-function csvCell(value, { forceText = false } = {}) {
-  const text = String(value ?? "");
-  const serialized = forceText && text ? `="${text.replaceAll('"', '""')}"` : text;
-  return `"${serialized.replaceAll('"', '""')}"`;
-}
+const csvCell=csvTextCell;
 
 export function registrationsCsv(event, registrations) {
-  const rows = registrationParticipants(registrations).map((registration) => columns.map(([key]) => csvCell(printable(key, registration[key]), { forceText: key === "phone" })).join(";"));
+  const rows = registrationParticipants(registrations).map((registration) => columns.map(([key]) => csvCell(printable(key, key==='eventDate'?(registration[key]||event.date):registration[key]), { forceText: key === "phone" })).join(";"));
   return `\uFEFF${columns.map(([, label]) => csvCell(label)).join(";")}\r\n${rows.join("\r\n")}`;
 }
 
@@ -52,8 +50,8 @@ const feedbackColumns = [
 function feedbackPrintable(feedback = {}, eventsById = new Map(), key = "") {
   const event = eventsById.get(feedback.eventId) || {};
   if (key === "eventTitle") return event.title || feedback.eventTitle || feedback.eventId || "";
-  if (key === "eventDate") return event.date || feedback.eventDate || "";
-  if (key === "submittedAt") return formatDateTime(feedback.submittedAt);
+  if (key === "eventDate") return germanCsvDate(event.date || feedback.eventDate || "");
+  if (key === "submittedAt") return germanCsvDate(feedback.submittedAt,{withTime:true});
   if (key === "relevance") return feedback.answers?.relevance || "";
   if (key === "benefit") return Array.isArray(feedback.answers?.benefit) ? feedback.answers.benefit.join(", ") : feedback.answers?.benefit || "";
   if (key === "industry_fit") return feedback.answers?.industry_fit || "";
@@ -82,7 +80,7 @@ export function acquisitionCsv(events = [], feedbackRecords = []) {
     ["manualStatus", "Bearbeitungsstatus"], ["eventTitle", "Veranstaltung"], ["submittedAt", "Antwortdatum"]
   ];
   // Prevent spreadsheet formulas in user-supplied names, comments and addresses.
-  const cell = (value) => csvCell(/^[\s]*[=+@-]/.test(String(value)) ? `'${value}` : value);
+  const cell = csvCell;
   const rows = feedbackRecords.map((item) => fields.map(([key]) => {
     const value = key === "followUpStatus" ? membershipInterestLabels[item.followUpStatus] || item.followUpStatus
       : key === "manualStatus" ? item.manualStatus || "offen"
