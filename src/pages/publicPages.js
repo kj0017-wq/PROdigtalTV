@@ -1,4 +1,4 @@
-import {presentationCta,presentationAttachments} from '../utils/presentationMedia.js?v=9';
+import {presentationCta,presentationAttachments} from '../utils/presentationMedia.js?v=10';
 import { callEventModerator } from "../firebase/eventModeratorService.js?v=1";
 import { agendaMarkup } from "../utils/eventArea.js?v=9";
 import { eventAgendaItems } from "../utils/eventAgenda.js?v=2";

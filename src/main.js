@@ -1399,7 +1399,7 @@ async function viewForRoute(current) {
       }
       return html;
     }
-    if (current.id === "presentations") return (await import("./cms/cockpitPresentationPage.js?v=7")).cockpitPresentationPage();
+    if (current.id === "presentations") return (await import("./cms/cockpitPresentationPage.js?v=8")).cockpitPresentationPage();
     if (current.id === "mail-schedule") return (await import("./cms/mailSchedulePage.js?v=18")).mailSchedulePage();
     if (current.id === "event-feedback") return eventFeedbackAdminPage(current.query);
     if (current.id === "audio") return audioAdminPage();
@@ -8897,7 +8897,7 @@ function wireGalleryEditor() {
 }
 
 function openGalleryPlayer(gallery) {
-  if(gallery?.type === "presentation")return import("./utils/presentationMedia.js?v=9").then(module=>module.openPresentationOverlay(gallery)).catch(error=>console.error("Präsentation konnte nicht geöffnet werden",error));
+  if(gallery?.type === "presentation")return import("./utils/presentationMedia.js?v=10").then(module=>module.openPresentationOverlay(gallery)).catch(error=>console.error("Präsentation konnte nicht geöffnet werden",error));
   const images = Array.isArray(gallery?.images) ? gallery.images.filter((image) => image.url) : [];
   if (!images.length) return;
   let index = 0;
@@ -13990,9 +13990,9 @@ function wireEventLiveActions() {
 }
 
 function wireActions() {
-  if(canUseCms(currentUser()) && document.querySelector("[data-media-upload-form],#content-edit-form,#event-edit-form,[data-presentation-editor]")) import("./utils/presentationMedia.js?v=9").then(module=>module.mountPresentationCMS()).catch(console.error);
+  if(canUseCms(currentUser()) && document.querySelector("[data-media-upload-form],#content-edit-form,#event-edit-form,[data-presentation-editor]")) import("./utils/presentationMedia.js?v=10").then(module=>module.mountPresentationCMS()).catch(console.error);
   if (document.querySelector("[data-event-decline]")) import("./pages/eventInvitationDeclinePage.js?v=1").then(module => module.mountEventInvitationDecline()).catch(console.error);
-  if (document.querySelector("[data-cockpit-presentations]")) import("./cms/cockpitPresentationPage.js?v=7").then(module => module.mountCockpitPresentations()).catch(console.error);
+  if (document.querySelector("[data-cockpit-presentations]")) import("./cms/cockpitPresentationPage.js?v=8").then(module => module.mountCockpitPresentations()).catch(console.error);
   if (document.querySelector("[data-mail-schedule]")) import("./cms/mailSchedulePage.js?v=18").then(module => module.mountMailSchedule()).catch(console.error);
   if (document.querySelector(".pdtv-home")) import("./firebase/currentLiveEventButton.js?v=1").then(module => module.mountCurrentLiveEventButton()).catch(console.error);
   if (document.querySelector("[data-ticket-event-access]")) import("./firebase/eventTicketLogin.js?v=3").then(module => module.mountEventTicketLogin()).catch(console.error);

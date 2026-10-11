@@ -1,4 +1,4 @@
-import {presentationPayload,presentationAssetEditor} from '../utils/presentationMedia.js?v=9';
+import {presentationPayload,presentationAssetEditor} from '../utils/presentationMedia.js?v=10';
 import {speakerEventsForRemoval} from '../utils/eventSpeakerRemoval.js?v=1';
 import { eventInvitationDefaults } from "../utils/eventInvitationDefaults.js?v=1";
 import { cmsShell, cmsTitle } from "./cmsLayout.js?v=485";

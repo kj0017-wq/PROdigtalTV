@@ -1,4 +1,4 @@
-import {presentationAssetEditor} from '../utils/presentationMedia.js?v=9';
+import {presentationAssetEditor} from '../utils/presentationMedia.js?v=10';
 import { cmsShell, cmsTitle } from "./cmsLayout.js?v=485";
 import { list, getOne } from "../firebase/dataService.js?v=488";
 import { currentUser, canUseCms, waitForAuthReady } from "../firebase/authService.js?v=477";
