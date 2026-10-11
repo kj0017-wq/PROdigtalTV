@@ -3,7 +3,7 @@ import {currentUser,refreshAuthToken,isMember,canUseCms} from './authService.js?
 import {readStoredTicket} from './registrationService.js';
 export async function openEventWithTicket(eventId){
  const user=currentUser();if(user&&(isMember(user)||canUseCms(user))){location.hash=`#/event-live/${encodeURIComponent(eventId)}`;return;}
- const ticket=readStoredTicket(eventId);if(!ticket?.ticketToken){location.hash=`#/event-live/${encodeURIComponent(eventId)}`;return;}
+ const ticket=readStoredTicket(eventId);if(!ticket?.ticketToken){const form=document.querySelector('[data-live-code-login]');if(form){form.scrollIntoView({behavior:'smooth',block:'start'});form.elements.email.focus({preventScroll:true});return;}location.hash=`#/event-live/${encodeURIComponent(eventId)}`;return;}
  const f=await getFirebaseServices();if(!f)throw new Error('Der Eventzugang ist gerade nicht erreichbar. Bitte erneut versuchen.');
  const call=f.functionsLib.httpsCallable(f.functions,'loginEventByCheckedInTicket');const input={eventId,ticketToken:ticket.ticketToken};let response=(await call(input)).data;
  if(response.requiresAccountSwitch){if(!window.confirm(`Zum Event als ${response.displayName||'ausgewählter Gast'} wechseln? Der aktuelle Zugang wird auf diesem Gerät ersetzt.`))return;response=(await call({...input,confirmAccountSwitch:true})).data;}
@@ -11,7 +11,7 @@ export async function openEventWithTicket(eventId){
  if(!response.customToken)throw new Error('Der Zugang konnte nicht bestätigt werden. Bitte den Welcome-Code verwenden.');
  await f.authLib.setPersistence(f.auth,f.authLib.browserLocalPersistence);await f.authLib.signInWithCustomToken(f.auth,response.customToken);await refreshAuthToken(true);
  try{localStorage.setItem('pdtv-event-login-email',response.email);}catch{}
- location.hash=`#/event-live/${encodeURIComponent(eventId)}`;
+ const destination=`#/event-live/${encodeURIComponent(eventId)}`;if(location.hash===destination)location.reload();else location.hash=destination;
 }
 export function mountEventTicketLogin(){
  for(const button of document.querySelectorAll('[data-ticket-event-access]')){

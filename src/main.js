@@ -130,9 +130,9 @@ function askInitialPushPreference() {
 
 const lazy = {};
 const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=900");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=888");
-const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=505");
-const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=121");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=889");
+const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=506");
+const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=122");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=30");
 const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=12");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=13");
@@ -360,13 +360,16 @@ async function mobileQualityPage() {
   return `<main class="cms-app"><section class="cms-main"><div class="cms-title"><div><a class="button button--secondary button--small mobile-cockpit-back" data-cockpit-back href="#/cms/live">← Zurück zum Event-Cockpit</a><p class="eyebrow">Mobile Schnellansicht</p><h1>Qualitaetspruefung</h1><p>Schnelle mobile Auswertung ohne externe Netzwerkpruefung.</p></div></div><section class="panel"><div class="setup-steps"><div class="setup-step"><span>Fehler</span><strong>${issues.filter((issue) => issue.severity === "error").length}</strong></div><div class="setup-step"><span>Warnungen</span><strong>${issues.filter((issue) => issue.severity !== "error").length}</strong></div><div class="setup-step"><span>Collections</span><strong>${names.length}</strong></div><div class="setup-step"><span>Alt-Texte</span><strong><button class="link-button" type="button" data-quality-fill-alt-texts>fehlende ergaenzen</button></strong><small id="quality-alt-text-result"></small></div></div></section><section class="panel"><div class="table-wrap"><table class="table"><thead><tr><th>Bereich</th><th>Typ</th><th>Titel</th><th>Fehler</th><th>Beschreibung</th><th>Pfad</th><th>Einstufung</th></tr></thead><tbody>${rows || `<tr><td colspan="7">Keine Fehler oder Warnungen gefunden.</td></tr>`}</tbody></table></div></section></section></main>`;
 }
 
-function mobileLiveEventIsRelevant(event = {}, registrations = []) {
-  const statusValue = String(event.status || "").toLowerCase();
-  if (["archived", "deleted", "inactive", "draft"].includes(statusValue)) return false;
-  if (registrations.some((registration) => registration.eventId === event.id)) return true;
-  const dateValue = event.date || event.startDate || event.eventDate || "";
-  const parsed = Date.parse(`${dateValue}T${event.time || event.startTime || "23:59"}`);
-  return Number.isFinite(parsed) ? parsed >= Date.now() - 12 * 60 * 60 * 1000 : true;
+function currentOrFutureEvent(event = {}, now = new Date()) {
+  const date = String(event.endDate || event.date || event.startDate || event.eventDate || '').slice(0, 10);
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && date >= today;
+}
+
+function mobileLiveEventIsRelevant(event = {}) {
+  const statusValue = String(event.status || '').toLowerCase();
+  if (['archived', 'deleted', 'inactive', 'draft', 'cancelled', 'canceled', 'hidden'].includes(statusValue)) return false;
+  return currentOrFutureEvent(event);
 }
 
 function mobileEventSpeakerCount(event = {}, speakers = [], topics = []) {
@@ -849,6 +852,12 @@ function syncMobileEventChatLinks(eventId) {
     if (eventId) link.setAttribute("href", "/#/event-live/" + encodeURIComponent(eventId));
     else link.removeAttribute("href");
   });
+  document.querySelectorAll("[data-mobile-presentation-link]").forEach(link => {link.hidden=!eventId;if(eventId)link.setAttribute("href","#/cms/presentations?eventId="+encodeURIComponent(eventId));else link.removeAttribute("href");});
+  document.querySelectorAll("[data-mobile-mail-schedule-link]").forEach(link => {
+    link.hidden = !eventId;
+    if (eventId) link.setAttribute("href", "#/cms/mail-schedule?eventId=" + encodeURIComponent(eventId) + "&from=cockpit");
+    else link.removeAttribute("href");
+  });
 }
 
 function mobileCmsLauncherIcon(name = "grid") {
@@ -1134,6 +1143,8 @@ async function mobileLiveAdminPage(section = "") {
         <a href="#/cms/live/checkin">Check-in</a>
         <a href="#/cms/live/guests">Gästeliste</a>
         <a data-mobile-event-chat-link href="/#/event-live/${escapeHtml(encodeURIComponent(event.id))}">Event Chat</a>
+<a href="#/cms/presentations?eventId=${escapeHtml(encodeURIComponent(event.id))}">PowerPoint</a>
+<a href="#/cms/mail-schedule?eventId=${escapeHtml(encodeURIComponent(event.id))}&amp;from=cockpit">Geplante Mails</a>
         <a href="#/cms/live/feedback">Gästebefragung</a>
       </nav>
     </section>`;
@@ -1155,6 +1166,8 @@ async function mobileLiveAdminPage(section = "") {
         <a href="#/cms/live-results">${mobileCmsLauncherIcon("results")}<span>Auswertung</span></a>
         <a href="#/cms/live/guests">${mobileCmsLauncherIcon("guests")}<span>Gästeliste</span></a>
         <button type="button" data-pause-gong aria-pressed="false" title="Pausengong mit anschließender Ansage abspielen; erneut drücken zum Stoppen"><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v2m-5 14h10M5 17h14l-2-3V9a5 5 0 0 0-10 0v5l-2 3Zm5 4h4"/></svg></span><span data-gong-label>Pausengong</span></button>
+        <a data-mobile-presentation-link ${firstEvent.id ? `href="#/cms/presentations?eventId=${escapeHtml(encodeURIComponent(firstEvent.id))}"` : "hidden"}><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3h18v13H3zM12 16v5M7 21h10m-1-15 5 3-5 3Z"/></svg></span><span>PowerPoint</span></a>
+        <a data-mobile-mail-schedule-link ${firstEvent.id ? `href="#/cms/mail-schedule?eventId=${escapeHtml(encodeURIComponent(firstEvent.id))}&amp;from=cockpit"` : "hidden"}><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 5h18v14H3zM3 5l9 7 9-7"/></svg></span><span>Geplante Mails</span></a>
         <a href="#/cms/live/feedback">${mobileCmsLauncherIcon("feedback")}<span>Gästebefragung</span></a>
         <a href="/website.html?v=1020#/home" data-mobile-cms-website-link>${mobileCmsLauncherIcon("website")}<span>Website</span></a>
       </nav>
@@ -1311,12 +1324,12 @@ async function viewForRoute(current) {
   if (current.path === "cms" && mobileCmsDisabled() && current.id === "live") return mobileLiveAdminPage(current.section || "");
   if (current.path === "cms" && mobileCmsDisabled() && current.id === "live-moderation") return mobileModerationCardsPage();
   if (current.path === "cms" && mobileCmsDisabled() && current.id === "live-results") return mobileLiveResultsPage();
-  if (current.path === "cms" && mobileCmsDisabled() && !["quality", "help"].includes(current.id)) return mobileCmsPlaceholder();
+  if (current.path === "cms" && mobileCmsDisabled() && !["quality", "help", "mail-schedule", "event-notifications", "presentations"].includes(current.id)) return mobileCmsPlaceholder();
   if (current.path === "cms" && current.id === "quality" && mobileCmsDisabled()) return mobileQualityPage();
   if (current.path === "cms" && current.id === "live") return mobileLiveAdminPage(current.section || "");
   if (current.path === "cms" && current.id === "live-moderation") return mobileModerationCardsPage();
   if (current.path === "cms" && current.id === "live-results") return mobileLiveResultsPage();
-  if (current.path === "cms" && current.id === "accounting") return (await import("./cms/accounting.js?v=105")).accountingPage(current.query);
+  if (current.path === "cms" && current.id === "accounting") return (await import("./cms/accounting.js?v=106")).accountingPage(current.query);
   if (current.path === "cms" && current.id === "media") {
     const { mediaPage } = await mediaPages();
     return mediaPage(current.section || "library", current.query);
@@ -1372,7 +1385,22 @@ async function viewForRoute(current) {
     }
     if (current.id === "mail") return moduleListPage("mailQueue", "all", current.query);
     if (current.id === "mail-bounces") return bounceOverviewPage(current.query);
-    if (current.id === "event-notifications") return eventNotificationsPage();
+    if (current.id === "event-notifications") {
+      const html=await eventNotificationsPage();
+      if(current.query.get("from")==="mailplan"){
+        const page=new DOMParser().parseFromString(html,"text/html"),content=page.querySelector(".cms-main");
+        if(!content)return html;
+        const back="#/cms/mail-schedule?from=cockpit"+(current.query.get("eventId")?"&eventId="+encodeURIComponent(current.query.get("eventId")):"");
+        const cancel='<a class="button button--secondary" data-notification-cancel href="'+escapeHtml(back)+'">Abbrechen</a>';
+        const actions=content.querySelector('#event-notification-form button[type="submit"]')?.parentElement;
+        actions?.insertAdjacentHTML('beforeend',cancel);
+        if(mobileCmsDisabled())return '<main class="cms-app"><section class="cms-main"><div class="actions" style="margin-bottom:20px"><a class="button mobile-cockpit-back" data-cockpit-back href="'+escapeHtml(back)+'" aria-label="Zurück zum Mailplan" title="Zurück zum Mailplan">Zurück zum Mailplan</a>'+cancel+'</div>'+content.innerHTML+'</section></main>';
+        return page.body.innerHTML;
+      }
+      return html;
+    }
+    if (current.id === "presentations") return (await import("./cms/cockpitPresentationPage.js?v=7")).cockpitPresentationPage();
+    if (current.id === "mail-schedule") return (await import("./cms/mailSchedulePage.js?v=18")).mailSchedulePage();
     if (current.id === "event-feedback") return eventFeedbackAdminPage(current.query);
     if (current.id === "audio") return audioAdminPage();
     if (current.id === "mail-admin") return mailAdminPage();
@@ -1382,6 +1410,7 @@ async function viewForRoute(current) {
     if (current.id === "edit") return contentEditPage(current.query.get("module"), current.query.get("id"), current.query);
     if (current.id === "setup") return setupPage();
   }
+  if (current.path === "event-decline") return (await import("./pages/eventInvitationDeclinePage.js?v=1")).eventInvitationDeclinePage(current.id);
   const {
     homePage, eventsPage, eventDetailPage, registrationPage, topicsPage, topicDetailPage,
     newsPage, newsDetailPage, aboutPage, internalDetailPage, membersPage, boardPage, archivePage,
@@ -1414,7 +1443,7 @@ async function viewForRoute(current) {
   if (current.path === "speaker") return speakerDetailPage(current.id);
   if (current.path === "speaker-approval" || current.path === "referentenfreigabe") return speakerApprovalPage(current.id, current.query);
   if (current.path === "feedback" && current.id === "event") return eventFeedbackPage(current.query);
-  if (current.path === "event-live") return (await import("./pages/eventLivePage.js?v=37")).eventLivePage(current.id || "");
+  if (current.path === "event-live") return (await import("./pages/eventLivePage.js?v=39")).eventLivePage(current.id || "");
   if (current.path === "members") return membersPage();
   if (current.path === "join" && current.id) return internalDetailPage("mitglied_werden", current.id);
   if (current.path === "mitglied-werden" && current.id) return internalDetailPage("mitglied_werden", current.id);
@@ -8868,6 +8897,7 @@ function wireGalleryEditor() {
 }
 
 function openGalleryPlayer(gallery) {
+  if(gallery?.type === "presentation")return import("./utils/presentationMedia.js?v=9").then(module=>module.openPresentationOverlay(gallery)).catch(error=>console.error("Präsentation konnte nicht geöffnet werden",error));
   const images = Array.isArray(gallery?.images) ? gallery.images.filter((image) => image.url) : [];
   if (!images.length) return;
   let index = 0;
@@ -13503,7 +13533,7 @@ function wireEventLiveActions() {
       const data = await service.getEventLiveData(currentRoot.dataset.eventId);
       if (liveRoot() !== currentRoot) return;
       currentRoot.querySelector("[data-event-live-data]").dataset.eventLiveData = JSON.stringify(data);
-      const page = await import("./pages/eventLivePage.js?v=37");
+      const page = await import("./pages/eventLivePage.js?v=39");
       if (liveRoot() !== currentRoot) return;
       const roster = currentRoot.querySelector(".event-live-roster");
       const markup = page.participantList(data);
@@ -13960,8 +13990,13 @@ function wireEventLiveActions() {
 }
 
 function wireActions() {
-  if (document.querySelector("[data-ticket-event-access]")) import("./firebase/eventTicketLogin.js?v=1").then(module => module.mountEventTicketLogin()).catch(console.error);
-  if (document.querySelector("[data-live-code-login]")) import("./firebase/eventWelcomeLogin.js?v=1").then(module => module.mountEventWelcomeLogin()).catch(console.error);
+  if(canUseCms(currentUser()) && document.querySelector("[data-media-upload-form],#content-edit-form,#event-edit-form,[data-presentation-editor]")) import("./utils/presentationMedia.js?v=9").then(module=>module.mountPresentationCMS()).catch(console.error);
+  if (document.querySelector("[data-event-decline]")) import("./pages/eventInvitationDeclinePage.js?v=1").then(module => module.mountEventInvitationDecline()).catch(console.error);
+  if (document.querySelector("[data-cockpit-presentations]")) import("./cms/cockpitPresentationPage.js?v=7").then(module => module.mountCockpitPresentations()).catch(console.error);
+  if (document.querySelector("[data-mail-schedule]")) import("./cms/mailSchedulePage.js?v=18").then(module => module.mountMailSchedule()).catch(console.error);
+  if (document.querySelector(".pdtv-home")) import("./firebase/currentLiveEventButton.js?v=1").then(module => module.mountCurrentLiveEventButton()).catch(console.error);
+  if (document.querySelector("[data-ticket-event-access]")) import("./firebase/eventTicketLogin.js?v=3").then(module => module.mountEventTicketLogin()).catch(console.error);
+  if (document.querySelector("[data-live-code-login]")) import("./firebase/eventWelcomeLogin.js?v=2").then(module => module.mountEventWelcomeLogin()).catch(console.error);
   if (document.querySelector("[data-sms-balance]")) import("./firebase/smsBalance.js?v=1").then(module => module.mountSmsBalance()).catch(console.error);
   if (document.querySelector("[data-login-sms-reset]")) import("./firebase/smsPasswordReset.js?v=1").then(module => module.mountSmsPasswordReset()).catch(console.error);
   const photoGallery = document.querySelector("[data-participant-photos]");
@@ -14271,7 +14306,7 @@ function wireActions() {
   wireEditorialToolJumps();
   wireEditorialFormatting();
   wireCmsMenu();
-  if (document.querySelector("[data-accounting-records]")) import("./cms/accounting.js?v=105").then(module => module.mountAccounting()).catch(error => console.error("Buchhaltung konnte nicht gestartet werden", error));
+  if (document.querySelector("[data-accounting-records]")) import("./cms/accounting.js?v=106").then(module => module.mountAccounting()).catch(error => console.error("Buchhaltung konnte nicht gestartet werden", error));
   wireImageDropzones();
   wireGalleryEditor();
   wireGalleryPlayers();
@@ -17477,11 +17512,17 @@ function wireActions() {
   if (eventNotificationForm) {
     const sendMode = eventNotificationForm.querySelector("[data-notification-send-mode]");
     const scheduledField = eventNotificationForm.querySelector("[data-notification-scheduled-field]");
+    if (sendMode && route().query.get("sendMode") === "scheduled" && !eventNotificationForm.dataset.eventContext) {
+      sendMode.value = "scheduled";
+      eventNotificationForm.querySelectorAll("[data-notification-channel]").forEach(input => { input.checked = input.value === "mail"; });
+    }
     const offsetField = eventNotificationForm.querySelector("[data-notification-offset-field]");
     const preview = eventNotificationForm.querySelector("[data-notification-preview]");
     const kindSelect = eventNotificationForm.querySelector("[data-notification-kind]");
     const eventField = eventNotificationForm.querySelector("[data-notification-event-field]");
     const eventSelect = eventNotificationForm.querySelector("[data-notification-event-select]");
+    const plannedEventId = route().query.get("eventId");
+    if (plannedEventId && eventSelect && !eventNotificationForm.dataset.eventContext && Array.from(eventSelect.options).some(option => option.value === plannedEventId)) eventSelect.value = plannedEventId;
     const titleInput = eventNotificationForm.querySelector("[data-notification-title]");
     const textInput = eventNotificationForm.querySelector("[data-notification-shorttext]");
     const smsTextInput = eventNotificationForm.querySelector("[data-notification-sms-text]");
@@ -17688,7 +17729,7 @@ function wireActions() {
       if (eventField) eventField.hidden = Boolean(eventNotificationForm.dataset.eventContext) || isMemberMessage;
       if (textSourceField) textSourceField.hidden = Boolean(eventNotificationForm.dataset.eventContext) || isMemberMessage;
       if (eventSelect) eventSelect.required = !isMemberMessage;
-      if (scheduledField) scheduledField.hidden = sendMode?.value !== "scheduled";
+      if (scheduledField) { scheduledField.hidden = sendMode?.value !== "scheduled"; const input = scheduledField.querySelector("input"); if (input) input.required = sendMode?.value === "scheduled"; }
       if (offsetField) offsetField.hidden = isMemberMessage || sendMode?.value !== "auto_before_event";
       if (sendMode?.value === "auto_before_event" && isMemberMessage) sendMode.value = "now";
       if (testField) testField.hidden = !isTestPerson;
@@ -17931,7 +17972,7 @@ function wireActions() {
         const response = await createEventNotification(confirmedPayload);
         const surveyHint = response.surveyId ? `<p style="margin:10px 0 0">Umfrage wurde angelegt. Die Auswertung erscheint im Mobile CMS nach dem Neuladen dieses Bereichs.</p>` : "";
         if (response.scheduled) {
-          notificationResult.innerHTML = `<div class="alert alert--success">Benachrichtigung wurde geplant.</div>`;
+          notificationResult.innerHTML = `<div class="alert alert--success">Benachrichtigung wurde geplant. <a href="#/cms/mail-schedule">Im Mailplan ansehen</a></div>`;
         } else {
           notificationResult.innerHTML = `<div class="alert">Versand wurde fuer ${Number(response.targetCount || 0)} Empfaenger gestartet. Mailserver wird geprueft ...</div>`;
           const delivery = await waitForEventMailDelivery(response.mailQueueIds || []);
@@ -18942,6 +18983,7 @@ function wireActions() {
     try {
       const existing = (await getOne("events", form.dataset.eventId)) || { id: form.dataset.eventId, topicIds: [], speakerIds: [], sponsorIds: [], status: "draft" };
       const values = formObject(form);
+      if(form.querySelector("[data-presentations-select]"))values.presentationIds=Array.from(form.querySelector("[data-presentations-select]").selectedOptions).map(o=>o.value);
       const formVideoAttachments = form.dataset.eventFormSection === "post" && form.querySelector("[data-video-attachments]")
         ? collectVideoAttachments(form, values)
         : null;
@@ -19997,6 +20039,7 @@ function wireActions() {
     try {
       const existing = (await getOne(form.dataset.module, form.dataset.id)) || { id: form.dataset.id, createdAt: new Date().toISOString() };
       let values = formObject(form);
+      if(form.querySelector("[data-presentations-select]"))values.presentationIds=Array.from(form.querySelector("[data-presentations-select]").selectedOptions).map(o=>o.value);
       if (form.dataset.module === "users" && Object.prototype.hasOwnProperty.call(values, "statusActive")) {
         values.status = values.statusActive ? "active" : "inactive";
         delete values.statusActive;

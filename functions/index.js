@@ -36,6 +36,10 @@ const { createEventChatNotifications, online: eventChatOnline } = require("./eve
 initializeApp();
 const db = getFirestore();
 const welcomeSchedule = createWelcomeSchedule({ db, FieldValue, Timestamp });
+const eventMailDefaults = require('./eventMailDefaults').createEventMailDefaults({ db, FieldValue, Timestamp });
+const eventInvitationDecline = require('./eventInvitationDecline').createEventInvitationDecline({ db, FieldValue, Timestamp, HttpsError });
+const { createMailSchedule } = require('./mailSchedule');
+const mailSchedule = createMailSchedule({ db, FieldValue, Timestamp, HttpsError, requireEditor, assertNoHiddenTalkMentions, expectedCounts: expectedMailScheduleCounts });
 const eventWelcomeLogin = require("./eventWelcomeLogin").createEventWelcomeLogin({ db, auth: getAuth(), FieldValue, Timestamp, HttpsError });
 const pushService = createPushService({ db, messaging: getMessaging(), FieldValue, HttpsError });
 const eventChatNotifications = createEventChatNotifications({ db, pushService, FieldValue, Timestamp, contactId, HttpsError });
@@ -596,6 +600,7 @@ async function eventNotificationTargets(eventId = "", options = {}) {
     if (mailingEmailIsExcluded(user, email) || mailingEmailIsExcluded(linkedMember, email)) return;
     officialMemberEmails.add(email);
   });
+  const declinedEmailHashes = hasEvent ? await eventInvitationDecline.declinedHashes(eventId) : new Set();
   const people = new Map();
   const addPerson = (email, person = {}, source = "contact", phones = []) => {
     const normalizedEmail = clean(email).toLowerCase();
@@ -604,6 +609,7 @@ async function eventNotificationTargets(eventId = "", options = {}) {
     const personKey = normalizedEmail || `phone:${normalizedPhones[0]}`;
     if (hasEvent && normalizedEmail && options.registrationStatus === "registered" && !registeredEmails.has(normalizedEmail)) return;
     if (hasEvent && normalizedEmail && options.registrationStatus === "unregistered" && registeredEmails.has(normalizedEmail)) return;
+    if (hasEvent && normalizedEmail && !registeredEmails.has(normalizedEmail) && declinedEmailHashes.has(hashToken(normalizedEmail))) return;
     const existing = people.get(personKey) || {};
     // Empty login fields must never erase an existing contact's name.
     const populatedPerson = Object.fromEntries(Object.entries(person).filter(([, value]) => value !== "" && value != null));
@@ -808,6 +814,7 @@ async function queueEventNotificationDelivery(notification = {}, eventRecord = {
     : ["mail", "push"];
   let smsQueued = 0;
   for (const target of targets) {
+    const declineUrl = target.audienceType === "unregistered" && !notification.surveyId && channels.includes("mail") && eventRecord.id ? await eventInvitationDecline.issue(eventRecord, target.email) : "";
     let cancelUrl = "";
     if (notification.allowRegistrationCancellation === true && target.audienceType === "registered" && target.registrationId) {
       const cancelToken = randomBytes(32).toString("hex");
@@ -899,7 +906,8 @@ async function queueEventNotificationDelivery(notification = {}, eventRecord = {
       lastName: target.lastName || "",
       company: target.company || "",
       registrationId: target.registrationId || "",
-      cancelUrl
+      cancelUrl,
+      declineUrl
       });
       mailQueueIds.push(mailRef.id);
       queued += 1;
@@ -938,6 +946,18 @@ async function queueEventNotificationDelivery(notification = {}, eventRecord = {
     updatedAt: FieldValue.serverTimestamp()
   }, { merge: true });
   return { targetCount: targets.length, queuedMailCount: queued, mailQueueIds: mailQueueIds.slice(0, 100), queuedSmsCount: smsQueued, smsQueueIds: smsQueueIds.slice(0, 100), pushedCount: pushed, pushFailedCount: pushFailed };
+}
+
+async function expectedMailScheduleCounts(data,event,cache=new Map()) {
+ const cached=async(key,fn)=>{if(!cache.has(key))cache.set(key,fn());return cache.get(key);};
+ if(data.kind==='welcome_rule'){const jobs=await cached('welcome:'+event.id,async()=> (await db.collection('checkinWelcomeJobs').where('eventId','==',event.id).get()).docs.map(d=>d.data()));return {mail:jobs.filter(j=>['pending','paused'].includes(j.status)&&j.to).length,push:0,pushPeople:0,sms:0,smsParts:0,smsCostEur:0};}
+ if(data.kind==='welcome'){const reg=await db.collection('registrations').doc(data.registrationId).get();return {mail:reg.exists&&reg.data().status==='checked_in'&&reg.data().email?1:0,push:0,pushPeople:0,sms:0,smsParts:0,smsCostEur:0};}
+ if(data.kind==='feedback'){const regs=await cached('registrations:'+event.id,async()=> (await db.collection('registrations').where('eventId','==',event.id).get()).docs.map(d=>d.data()));return {mail:regs.filter(r=>clean(r.email).includes('@')&&(['confirmed','checked_in','attended'].includes(clean(r.status).toLowerCase())||r.emailConfirmed===true)&&!['cancelled','expired','deleted'].includes(clean(r.status).toLowerCase())).length,push:0,pushPeople:0,sms:0,smsParts:0,smsCostEur:0};}
+ const targets=data.recipientGroup==='test_group'?await notificationTestGroupTargets():data.testRecipients?.length?await notificationTestPersonTargets(data.testRecipients,data.testRecipientMobiles||[]):await eventNotificationTargets(event.id||'',data);
+ const tokens=await cached('pushTokens',async()=> (await db.collection('notificationTokens').where('status','==','active').get()).docs.map(d=>d.data()).filter(d=>d.token&&d.verified===true));
+ const pushTargets=targets.filter(t=>t.email&&tokens.some(d=>clean(d.email).toLowerCase()===clean(t.email).toLowerCase()));const pushDevices=pushTargets.reduce((sum,t)=>sum+tokens.filter(d=>clean(d.email).toLowerCase()===clean(t.email).toLowerCase()).length,0);
+ const smsTargets=targets.filter(t=>t.phone);const smsParts=smsTargets.reduce((sum,t)=>sum+smsMessagePartCount(eventNotificationSmsBody(data,event,t)),0);
+ return {mail:targets.filter(t=>t.email).length,push:pushDevices,pushPeople:pushTargets.length,sms:smsTargets.length,smsParts,smsCostEur:Math.round(smsParts*7)/100};
 }
 
 function notificationConsentId(email = "") {
@@ -1655,6 +1675,7 @@ function renderMail(mail, context = {}) {
     const isSurveyMail = Boolean(clean(mail.surveyId));
     const eventDetails = !isSurveyMail && (mail.eventId || eventRecord.id) ? eventInvitationDetails(eventRecord) : "";
     const cancelUrl = !isSurveyMail && mail.audienceType === "registered" ? clean(mail.cancelUrl) : "";
+    const declineUrl = !isSurveyMail && mail.audienceType === "unregistered" ? clean(mail.declineUrl) : "";
     const mailPerson = {
       firstName: mail.firstName || registration.firstName || "",
       lastName: mail.lastName || registration.lastName || "",
@@ -1692,6 +1713,7 @@ function renderMail(mail, context = {}) {
       "",
       link ? `${linkLabel}: ${link}` : "",
       cancelUrl ? `Falls Sie doch nicht teilnehmen koennen: ${cancelUrl}` : "",
+      declineUrl ? `Ich kann leider nicht teilnehmen: ${declineUrl}` : "",
       optOutUrl ? `Umfrage- und Veranstaltungshinweise abbestellen: ${optOutUrl}` : "",
       "",
       "Viele Gruesse",
@@ -1707,6 +1729,7 @@ function renderMail(mail, context = {}) {
         `${textToHtml(body)}`,
         mailButton(linkLabel, link),
         cancelUrl ? `<p style="font-size:15px;line-height:1.5;color:#5f6b7c;margin:24px 0 8px">Falls Sie doch nicht teilnehmen koennen, geben Sie den Platz bitte fuer andere Interessierte frei.</p><p style="margin:0 0 24px"><a href="${escapeAttribute(cancelUrl)}" target="_blank" rel="noopener" style="display:inline-block;background:#ffffff;color:#b00020;text-decoration:none;font-weight:800;border:2px solid #b00020;border-radius:999px;padding:13px 22px">Teilnahme absagen</a></p>` : "",
+        declineUrl ? `<p style="margin:18px 0 24px"><a href="${escapeAttribute(declineUrl)}" target="_blank" rel="noopener" style="display:inline-block;background:#fff;color:#b00020;text-decoration:none;font-weight:800;border:2px solid #b00020;border-radius:999px;padding:13px 22px">Ich kann leider nicht teilnehmen</a></p>` : "",
         optOutUrl ? `<p style="font-size:12px;line-height:1.5;color:#7a8493;margin:24px 0 0;border-top:1px solid #dbe4f1;padding-top:14px">Sie erhalten diese Nachricht, weil Sie PROdigitalTV-Veranstaltungs- und Umfragehinweise aktiviert haben. <a href="${optOutUrl}" style="color:#5f6b7c">Umfrage- und Veranstaltungshinweise abbestellen</a>.</p>` : ""
       ].filter(Boolean).join(""))
     };
@@ -1891,6 +1914,7 @@ function renderMail(mail, context = {}) {
 
 async function sendQueuedMail(mail) {
   const context = await mailContext(mail);
+  if (mail.template === "event_notification" && mail.audienceType === "unregistered" && !mail.surveyId && !mail.declineUrl) mail = { ...mail, declineUrl: await eventInvitationDecline.issue(context.eventRecord || {}, mail.to) };
   if (mail.template === "checkin_agenda") {
     const email = mailAddress(mail.to || context.registration?.email);
     const eventId = mail.eventId || context.registration?.eventId;
@@ -2229,6 +2253,19 @@ exports.setEventLiveSettings = onCall({ region }, async (request) => {
   }, { merge: true });
   await batch.commit();
   return { enabled, invitedCount: invitedEmails.length };
+});
+
+exports.listCurrentPublicLiveEvents = onCall({ region, invoker: "public" }, async () => {
+  const snapshot = await db.collection("eventLiveAccess").where("enabled", "==", true).limit(150).get();
+  const events = await Promise.all(snapshot.docs.map(async (access) => {
+    const document = await db.collection("events").doc(access.id).get();
+    const event = document.data() || {};
+    if (!document.exists || event.eventLiveEnabled !== true || !guestEventLiveIsOpen(event)
+      || ["inactive", "cancelled", "deleted", "archived", "draft", "hidden"].includes(clean(event.status).toLowerCase())
+      || ["private", "internal", "hidden"].includes(clean(event.visibility).toLowerCase())) return null;
+    return { id: document.id, title: clean(event.title), date: clean(event.date), startTime: clean(event.startTime) };
+  }));
+  return { events: events.filter(Boolean).sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime)) };
 });
 
 exports.listEventLiveEvents = onCall({ region }, async (request) => {
@@ -4925,6 +4962,25 @@ exports.saveNotificationTestGroup = onCall({ region }, async (request) => {
   return { emails, count: emails.length };
 });
 
+exports.listMailSchedule = onCall({ region }, mailSchedule.list);
+exports.manageMailSchedule = onCall({ region }, mailSchedule.manage);
+exports.viewMailSchedule = onCall({ region, invoker: "public" }, async request => {
+ await requireEditor(request);const input=request.data||{},kind=clean(input.kind),id=clean(input.id);
+ if(!['notification','welcome','welcome_rule','feedback'].includes(kind)||!id||id.includes('/'))throw new HttpsError('invalid-argument','Ungültiger Versandauftrag.');
+ const snapshot=await db.collection(kind==='notification'?'eventNotifications':kind==='welcome'?'checkinWelcomeJobs':'events').doc(id).get();
+ if(!snapshot.exists)throw new HttpsError('not-found','Versandauftrag nicht gefunden.');
+ const data=snapshot.data(),eventId=['welcome_rule','feedback'].includes(kind)?id:clean(data.eventId);
+ const context=await mailContext({eventId});const event=context.eventRecord||{};
+ const person={firstName:'Max',lastName:'Mustermann',email:'beispiel@example.invalid',eventId,eventTitle:event.title||''};context.registration=person;
+ let mail={eventId,to:person.email,firstName:person.firstName,lastName:person.lastName,personName:'Max Mustermann'};
+ const example='https://prodigitaltv.de/#/mail-preview';
+ if(kind==='notification'){const audience=data.registrationStatus==='registered'||data.recipientGroup==='event_registered'?'registered':'unregistered';mail={...mail,template:'event_notification',title:data.title,shortText:audience==='registered'?(data.registeredText||data.shortText):(data.invitationText||data.shortText),link:data.link,linkEnabled:data.linkEnabled,audienceType:audience,surveyId:data.surveyId||'',...(audience==='unregistered'&&!data.surveyId?{declineUrl:example}:{}),...(audience==='registered'&&data.allowRegistrationCancellation&&!data.surveyId?{cancelUrl:example}:{})};}
+ else if(kind==='feedback')mail={...mail,template:'event_feedback_invitation',feedbackUrl:example};
+ else mail={...mail,template:'checkin_agenda',welcomeLoginCode:'000000',eventAccessLink:'https://prodigitaltv.de/#/event-live/'+encodeURIComponent(eventId)+'?email='+encodeURIComponent(person.email)};
+ const rendered=renderMail(mail,context);return {mail:rendered,sample:true,note:'Vorschau mit Beispielnamen. Persönliche Links und der Code 000000 sind nicht gültig. Es wird keine Mail versendet.'};
+});
+exports.previewMailSchedule = onCall({ region }, mailSchedule.preview);
+
 exports.createEventNotification = onCall({ region }, async (request) => {
   const profile = await requireEditor(request);
   const input = request.data?.input || {};
@@ -4985,9 +5041,11 @@ exports.createEventNotification = onCall({ region }, async (request) => {
     }
   }
   let scheduledAt = null;
-  if (sendMode === "scheduled" && clean(input.scheduledAt)) {
-    const parsed = Date.parse(clean(input.scheduledAt));
-    if (Number.isFinite(parsed)) scheduledAt = Timestamp.fromMillis(parsed);
+  if (sendMode === "scheduled") {
+    const value = clean(input.scheduledAt);
+    const parsed = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) ? mailSchedule.parseTime(value) : Date.parse(value);
+    if (!value || !Number.isFinite(parsed) || parsed <= Date.now()) throw new HttpsError("invalid-argument", "Bitte einen zukünftigen Versandtermin wählen. Uhrzeiten gelten für Deutschland.");
+    scheduledAt = Timestamp.fromMillis(parsed);
   }
   if (sendMode === "auto_before_event" && notificationKind !== "event") throw new HttpsError("invalid-argument", "Automatische Erinnerung ist nur fuer Veranstaltungen moeglich.");
   if (sendMode === "auto_before_event" && offsetMinutes > 0) {
@@ -5191,6 +5249,7 @@ async function openInvitationCampaignsForContact(contactId) {
   });
   const campaigns = [];
   for (const candidate of latestByEvent.values()) {
+    if (await eventInvitationDecline.isBlocked(candidate.event.id, email)) continue;
     const registrations = await db.collection("registrations").where("eventId", "==", candidate.event.id).get();
     if (registrations.docs.some((snapshot) => registrationIsActive(snapshot.data()) && mailAddress(snapshot.data().email).toLowerCase() === email)) continue;
     campaigns.push(candidate);
@@ -5927,24 +5986,10 @@ exports.publishEndedEventRetrospectives = onSchedule({ region, schedule: "every 
 });
 
 async function processAutomaticEventFeedback(eventDocument, eventRecord) {
-  if (eventRecord.feedbackAutoSendEnabled !== true || eventRecord.feedbackAutoSentAt) return;
-  const dueAt = new Date(clean(eventRecord.feedbackAutoSendAt)).getTime();
-  if (!Number.isFinite(dueAt) || dueAt > Date.now()) return;
-  const jobRef = db.collection("eventNotifications").doc(`event-feedback-auto-${eventRecord.id}`);
-  const existingJob = await jobRef.get().catch(() => null);
-  const existingStatus = clean(existingJob?.data()?.status).toLowerCase();
-  if (["processing", "sent"].includes(existingStatus)) return;
-  await jobRef.set({
-    id: jobRef.id,
-    eventId: eventRecord.id,
-    notificationKind: "event_feedback",
-    title: `Gästebefragung: ${eventRecord.title || "PROdigitalTV Veranstaltung"}`,
-    status: "processing",
-    scheduledAt: eventRecord.feedbackAutoSendAt,
-    createdBy: "system",
-    createdAt: existingJob?.exists ? existingJob.data()?.createdAt || FieldValue.serverTimestamp() : FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp()
-  }, { merge: true });
+  const claimed = await mailSchedule.claimFeedback(eventDocument.ref);
+  if (!claimed) return;
+  const jobRef = claimed.jobRef;
+  eventRecord = claimed.eventRecord;
   try {
     const result = await queueEventFeedbackInvitationsForEvent({
       eventId: eventRecord.id,
@@ -5982,18 +6027,14 @@ exports.processEventNotifications = onSchedule({ region, schedule: "every 15 min
     .limit(20)
     .get();
   for (const document of due.docs) {
-    const notification = { id: document.id, ...document.data() };
+    let claimed = null;
     try {
-      let eventRecord = {};
-      if (notification.notificationKind !== "member_message") {
-        const eventSnapshot = await db.collection("events").doc(notification.eventId).get();
-        if (!eventSnapshot.exists) throw new Error("Event wurde nicht gefunden.");
-        eventRecord = { id: eventSnapshot.id, ...eventSnapshot.data() };
-      }
-      await document.ref.set({ status: "processing", updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-      await queueEventNotificationDelivery(notification, eventRecord);
+      claimed = await mailSchedule.claimNotification(document.ref);
+      if (!claimed) continue;
+      await queueEventNotificationDelivery(claimed.notification, claimed.eventRecord);
     } catch (error) {
-      await document.ref.set({ status: "failed", error: String(error.message || "Versand fehlgeschlagen"), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      if (claimed) await document.ref.set({ status: "failed", error: String(error.message || "Versand fehlgeschlagen"), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      else console.error("Geplanten Versand nicht übernommen:", error);
     }
   }
   const eventSnapshot = await db.collection("events").get();
@@ -6004,14 +6045,17 @@ exports.processEventNotifications = onSchedule({ region, schedule: "every 15 min
     ["reminder1d", 1440, "1 Tag"],
     ["reminder2h", 120, "2 Stunden"]
   ];
+  const defaultSettings = (await db.collection("settings").doc("eventMailDefaults").get()).data() || {};
   for (const eventDocument of eventSnapshot.docs) {
     const eventRecord = { id: eventDocument.id, ...eventDocument.data() };
     if (["archived", "deleted"].includes(clean(eventRecord.status).toLowerCase())) continue;
-    await processAutomaticEventFeedback(eventDocument, eventRecord);
+    await eventMailDefaults.ensure(eventDocument.ref, defaultSettings);
+    const refreshedEvent = await eventDocument.ref.get();
+    await processAutomaticEventFeedback(eventDocument, { id: eventDocument.id, ...refreshedEvent.data() });
     const startMs = eventDateTimeMillis(eventRecord);
     if (!startMs || startMs < Date.now()) continue;
     for (const [field, minutes, label] of reminders) {
-      if (!eventRecord[field]) continue;
+      if (!eventRecord[field] || (field === "reminder7d" && defaultSettings.enabled === true)) continue;
       const dueMs = startMs - minutes * 60 * 1000;
       if (dueMs > Date.now() || dueMs < Date.now() - 45 * 60 * 1000) continue;
       const notificationId = `event-reminder-${eventRecord.id}-${field}`;
@@ -6186,6 +6230,10 @@ exports.sendQueuedMail = onDocumentCreated({ document: "mailQueue/{mailId}", reg
         await event.data.ref.update({ status: "skipped", skipReason: "Anmeldung bereits bestätigt oder Link erneuert", updatedAt: FieldValue.serverTimestamp() });
         return;
       }
+    }
+    if (mail.eventId && mail.to && !mail.testOnly && ["event_notification", "event_feedback_invitation", "checkin_agenda"].includes(mail.template) && await eventInvitationDecline.isBlocked(mail.eventId, mail.to)) {
+      await event.data.ref.update({ status: "skipped", skipReason: "Einladung zu diesem Event abgesagt", updatedAt: FieldValue.serverTimestamp() });
+      return;
     }
     resolvedTo = mailAddress(mail.to || MAIL_TO.value());
     const result = await sendQueuedMail({ id: event.params.mailId, ...mail });
@@ -7916,3 +7964,8 @@ exports.requestEventWelcomeLoginCode = onCall({ region, invoker: "public" }, req
 exports.verifyEventWelcomeLoginCode = onCall({ region, invoker: "public" }, request => eventWelcomeLogin.verify(request));
 
 exports.loginEventByCheckedInTicket = onCall({ region, invoker: "public" }, require("./eventTicketLogin").createEventTicketLogin({ db, auth: getAuth(), FieldValue, HttpsError, isMemberEmail: async email => (await findPersonByEmail(email)).isMember === true }));
+
+exports.applyEventMailDefaults = onDocumentWritten({ document: "events/{eventId}", region }, async event => { if (event.data?.after?.exists) await eventMailDefaults.ensure(event.data.after.ref); });
+
+exports.getEventInvitationDecline = onCall({ region, invoker: "public", maxInstances: 5 }, request => eventInvitationDecline.view(request));
+exports.declineEventInvitation = onCall({ region, invoker: "public", maxInstances: 5 }, request => eventInvitationDecline.decline(request));

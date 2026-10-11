@@ -1,3 +1,4 @@
+import {presentationCta,presentationAttachments} from '../utils/presentationMedia.js?v=9';
 import { callEventModerator } from "../firebase/eventModeratorService.js?v=1";
 import { agendaMarkup } from "../utils/eventArea.js?v=9";
 import { eventAgendaItems } from "../utils/eventAgenda.js?v=2";
@@ -1682,6 +1683,7 @@ function ttsReader({ rubric = "Audio", title = "", label = title || "Vorlesen", 
   </div>`;
 }
 function galleryPlayCta(gallery, images) {
+  if(gallery?.type==='presentation')return presentationCta(gallery);
   if (!gallery || !images.length) return "";
   const payload = escapeHtml(JSON.stringify({
     title: gallery.title || "Bildergalerie",
@@ -2908,7 +2910,7 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
         ${retrospectiveText ? `<h2>Rückblick</h2><div class="editorial-text">${articleParagraphs(retrospectiveText)}</div>` : ""}
         ${event.lunchNote ? `<div class="alert">${escapeHtml(event.lunchNote)}</div>` : ""}
         ${restricted ? "" : `<section class="venue-stage venue-stage--event-detail"><div class="venue-stage__identity"><p class="eyebrow">${event.isVirtualEvent ? "Online-Teilnahme" : "Veranstaltungsort"}</p>${!event.isVirtualEvent && coHost && coHostLogo ? `<img class="venue-stage__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : ""}${event.isVirtualEvent ? eventLocationDetailMarkup(event) : `<h2>${escapeHtml(coHost?.name || event.locationName || "Ort wird bekanntgegeben")}</h2>${eventAddressMarkup(event) ? `<p>${eventAddressMarkup(event)}</p>` : ""}`}</div>${suppressCoHost ? "" : `<div class="venue-stage__description"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : `<p>${escapeHtml(coHost.name)} begleitet dieses PROdigitalTV Event als Co-Gastgeber.</p>`}` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div>`}</section>`}
-        ${assignedGalleryImages.length ? galleryPlayCta(assignedGallery, assignedGalleryImages) : ""}
+        ${assignedGalleryImages.length ? galleryPlayCta(assignedGallery, assignedGalleryImages) : ""}${restricted?"":presentationAttachments(event,galleries)}
       </article>
       <aside class="detail-aside">
         <div class="event-host-card">
@@ -3083,7 +3085,7 @@ export async function newsPage(query = new URLSearchParams()) {
   if (cachedNews) return publicShell("news", cachedNews);
   const [editorialContent, mediaAssets] = await Promise.all([listPublicContent("editorialContent"), listPublicMediaAssets().catch(() => [])]);
   const cmsNews = publicNewsItems(editorialContent);
-  const galleries = cmsNews.some((item) => [item.galleryId, item.gallery_id, item.galleryIa, item.linkedGalleryId, item.linkeaGalleryIa, item.gallery].some(Boolean))
+  const galleries = cmsNews.some((item) => (item.presentationIds || []).length || [item.galleryId, item.gallery_id, item.galleryIa, item.linkedGalleryId, item.linkeaGalleryIa, item.gallery].some(Boolean))
     ? await listPublicContent("galleries").catch(() => [])
     : [];
   const news = cmsNews.sort(newestContentFirst);
@@ -3168,7 +3170,7 @@ export async function newsPage(query = new URLSearchParams()) {
       <h2>${escapeHtml(title)}</h2>${item.subtitle ? `<p class="news-flip__reader-subtitle">${escapeHtml(item.subtitle)}</p>` : ""}
       ${ttsReader({ rubric: newsCategories(item)[0] || "News", title, label: "Vorlesen", text: [item.subtitle, body].filter(Boolean).join("\n\n"), inlineOffsetText: item.subtitle || "", ...newsAudioOptions(item) })}
       <div class="editorial-text">${articleParagraphs(body)}</div>
-      ${galleryPlayCta(gallery, galleryImages)}</template>`;
+      ${galleryPlayCta(gallery, galleryImages)}${presentationAttachments(item,galleries)}</template>`;
   };
   const newsContent = `${subhero("News", "Aktuelles von PROdigitalTV.", "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.")}
     <section class="section"><div class="container">${news.length ? `
@@ -3216,7 +3218,7 @@ export async function newsDetailPage(id) {
   const attachedGalleryImages = Array.isArray(selectedGallery?.images)
     ? [...selectedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 12)
     : [];
-  const leadMedia = attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "";
+  const leadMedia = (attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "") + presentationAttachments(item,galleries);
   const detailSection = isRetrospective ? "archive" : "news";
   const detailTitle = isRetrospective ? "Rückblick" : "News";
   const detailIntro = isRetrospective ? "Nachbericht, Bilder und Dokumentation vergangener PROdigitalTV-Veranstaltungen." : "Meldungen, Hinweise und Neuigkeiten aus dem Verein und der digitalen Medienwirtschaft.";
@@ -3306,7 +3308,7 @@ export async function topicDetailPage(id, query = new URLSearchParams()) {
   const attachedGalleryImages = Array.isArray(selectedGallery?.images)
     ? [...selectedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 12)
     : [];
-  const leadMedia = attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "";
+  const leadMedia = (attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "") + presentationAttachments(topic,galleries);
   const editorialBlock = topicText
     ? `<section class="section section--white"><div class="container topic-article">${ttsReader({ rubric: "Thema", title: topic.title || "", text: topicAudioText || topicText, inlineOffsetText: topic.subtitle || "", audio: topic.audio || {}, audioProvider: topic.audioProvider || "", audioUrl: topic.audioUrl || "", audioAccessibleUrl: topic.audioAccessibleUrl || "", audioNaturalUrl: topic.audioNaturalUrl || "", timingUrl: topic.timingUrl || "", audioStatus: topic.audioStatus || "", audioAccessibleStatus: topic.audioAccessibleStatus || "", audioNaturalStatus: topic.audioNaturalStatus || "" })}${topicVisibleText}${aiDisclosureNote(topic)}</div></section>`
     : "";
@@ -4107,7 +4109,7 @@ export async function memberArticleDetailPage(id) {
         ${memberArticleAssetBar(item, galleries)}
         ${ttsReader({ rubric: item.category || "Member Info", title: item.title || "", text: [item.subtitle, richTextPlainText(text)].filter(Boolean).join("\n\n"), inlineOffsetText: item.subtitle || "", audio: item.audio || {}, audioProvider: item.audioProvider || item.auaioProvider || "", audioUrl: item.audioUrl || item.auaioUrl || "", audioAccessibleUrl: item.audioAccessibleUrl || item.auaioAccessibleUrl || "", audioNaturalUrl: item.audioNaturalUrl || item.auaioNaturalUrl || "", timingUrl: item.timingUrl || "", audioStatus: item.audioStatus || item.auaioStatus || "", audioAccessibleStatus: item.audioAccessibleStatus || item.auaioAccessibleStatus || "", audioNaturalStatus: item.audioNaturalStatus || item.auaioNaturalStatus || "" })}
         <div class="editorial-text">${articleParagraphs(text)}</div>
-        ${galleryImages.length ? galleryPlayCta(selectedGallery, galleryImages) : ""}
+        ${galleryImages.length ? galleryPlayCta(selectedGallery, galleryImages) : ""}${presentationAttachments(item,galleries)}
         ${articlePdfBlock(item)}
       </article>
     </div></section>`);

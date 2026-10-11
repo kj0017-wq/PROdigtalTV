@@ -27,7 +27,7 @@ import {openAccountingBatchDispatch,selectedOutgoing} from '../utils/accountingB
 import {accountingFoldersMarkup,mountAccountingFolders} from "../utils/accountingFolders.js?v=17";
 import {currentUser,isAdmin} from '../firebase/authService.js?v=477';
 import {list,getOne,upsert} from '../firebase/dataService.js?v=535';
-import {cmsShell,cmsTitle} from './cmsLayout.js?v=484';
+import {cmsShell,cmsTitle} from './cmsLayout.js?v=485';
 import {escapeHtml} from '../utils/format.js?v=4';
 const money=value=>new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(Number(value||0)/100);
 export function formatAccountingDate(value){const match=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);return match?`${match[3]}.${match[2]}.${match[1].slice(-2)}`:String(value||'');}

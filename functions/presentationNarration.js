@@ -1,0 +1,29 @@
+const {createHash,randomUUID}=require('node:crypto');
+const hash=text=>createHash('sha256').update(text,'utf8').digest('hex');
+function eligible(slide){return !(slide.audioTracks||[]).length&&Boolean(String(slide.notes||slide.transcriptStoragePath||'').trim());}
+function chunks(text,size=5500){const result=[];while(text.length){let end=Math.min(size,text.length);if(end<text.length){const space=text.lastIndexOf(' ',end);if(space>size/2)end=space;}result.push(text.slice(0,end));text=text.slice(end).trimStart();}return result;}
+function createPresentationNarration({db,bucket,HttpsError,FieldValue,providers,now=Date.now}){
+return async request=>{
+ if(!request.auth)throw new HttpsError('unauthenticated','Bitte im CMS anmelden.');
+ const profile=(await db.collection('users').doc(request.auth.uid).get()).data();if(!['admin','editor'].includes(profile?.role)||profile.status==='inactive')throw new HttpsError('permission-denied','Keine Redaktionsberechtigung.');
+ const {presentationId:id,provider,voiceId,confirmed}=request.data||{};
+ if(confirmed!==true)throw new HttpsError('failed-precondition','Die Vertonung muss zuerst bestätigt werden.');
+ if(!/^presentation-[a-zA-Z0-9_-]{1,85}$/.test(id||'')||!providers[provider]||! /^[a-zA-Z0-9_-]{1,100}$/.test(voiceId||''))throw new HttpsError('invalid-argument','Bitte Präsentation, KI und Stimme auswählen.');
+ const adapter=providers[provider],config=await adapter.config();if(!config.enabled)throw new HttpsError('failed-precondition','Der KI-Anbieter ist noch nicht aktiviert.');
+ const ref=db.collection('galleries').doc(id),run=randomUUID();let data;
+ await db.runTransaction(async tx=>{const snap=await tx.get(ref);data=snap.data();if(!data||data.type!=='presentation'||data.processingStatus!=='ready')throw new HttpsError('failed-precondition','Die Präsentation ist noch nicht bereit.');if(data.narrationStatus==='processing'&&now()-(data.narrationStartedAt?.toMillis?.()||data.narrationStartedAt||0)<15*60*1000)throw new HttpsError('already-exists','Die Vertonung läuft bereits.');if(!(data.slides||[]).some(eligible))throw new HttpsError('failed-precondition','Keine Folien mit Sprechertext ohne Audio vorhanden.');tx.update(ref,{narrationStatus:'processing',narrationRunId:run,narrationStartedAt:now(),narrationProvider:provider,narrationVoiceId:voiceId,narrationError:'',updatedAt:FieldValue.serverTimestamp()});});
+ let completed=0;const deadline=now()+360000;
+ try{
+  const pending=[];let total=0;
+  for(const slide of data.slides.filter(eligible)){let text=slide.notes||'';if(slide.transcriptStoragePath){if(!slide.transcriptStoragePath.startsWith('presentations/'+id+'/'))throw new HttpsError('invalid-argument','Ungültiger Sprechertext.');const [buffer]=await bucket.file(slide.transcriptStoragePath).download();text=buffer.toString('utf8');}text=text.replace(/\s+/g,' ').trim();if(text){total+=text.length;pending.push({slide,text});}}
+  if(total>200000)throw new HttpsError('invalid-argument','Die Sprechertexte sind für einen Vertonungslauf zu umfangreich.');
+  for(const {slide,text} of pending){const tracks=[];let order=0;for(const part of chunks(text)){if(now()>deadline)throw new HttpsError('deadline-exceeded','Bitte die Vertonung für die verbleibenden Folien erneut starten. Bereits gespeichertes Audio bleibt erhalten.');const fingerprint=hash(JSON.stringify({part,provider,voiceId,model:config.modelId}));const path='presentations/'+id+'/narration/'+fingerprint+'.mp3',file=bucket.file(path);let duration;
+   if((await file.exists())[0]){const [metadata]=await file.getMetadata();duration=Number(metadata.metadata?.durationSeconds||0);}else{const audio=await adapter.generate({text:part,config:{...config,voiceId}});duration=audio.durationSeconds||0;await file.save(audio.audioBuffer,{resumable:false,contentType:'audio/mpeg',metadata:{cacheControl:'private,max-age=3600',metadata:{durationSeconds:String(duration),provider,voiceId,textHash:hash(part)}}});}
+   tracks.push({storagePath:path,durationSeconds:duration,order:order++,source:'tts',provider,voiceId,textHash:hash(part)});
+  }
+  await db.runTransaction(async tx=>{const current=(await tx.get(ref)).data();if(current.narrationRunId!==run||current.processingRunId!==data.processingRunId)throw new HttpsError('aborted','Die Präsentation wurde inzwischen neu verarbeitet. Gespeichertes Audio bleibt erhalten.');const slides=current.slides.map(s=>s.id===slide.id&&eligible(s)?{...s,audioTracks:tracks,durationSeconds:tracks.reduce((sum,t)=>sum+t.durationSeconds,0)||s.durationSeconds}:s);tx.update(ref,{slides,narrationCompleted:++completed,updatedAt:FieldValue.serverTimestamp()});});
+ }
+ let audioCount,durationSeconds;await db.runTransaction(async tx=>{const current=(await tx.get(ref)).data();if(current.narrationRunId!==run||current.processingRunId!==data.processingRunId)throw new HttpsError('aborted','Die Präsentation wurde inzwischen neu verarbeitet.');audioCount=current.slides.reduce((n,s)=>n+(s.audioTracks||[]).length,0);durationSeconds=current.slides.reduce((n,s)=>n+Number(s.durationSeconds||0),0);tx.update(ref,{narrationStatus:'ready',narrationError:'',audioCount,durationSeconds,updatedAt:FieldValue.serverTimestamp()});});await db.collection('media_assets').doc(id).set({audioCount,durationSeconds,narrationStatus:'ready',updatedAt:FieldValue.serverTimestamp()},{merge:true});return {ok:true,completed,audioCount,durationSeconds};
+ }catch(error){const current=(await ref.get()).data();if(current.narrationRunId===run)await ref.update({narrationStatus:'error',narrationError:error instanceof HttpsError?error.message:'Vertonung unterbrochen. Bereits gespeicherte Audiospuren bleiben erhalten.'});throw error instanceof HttpsError?error:new HttpsError('internal','Vertonung fehlgeschlagen. Bereits gespeichertes Audio bleibt erhalten. Bitte erneut versuchen.');}
+};}
+module.exports={createPresentationNarration,eligible,chunks};

@@ -1,0 +1,18 @@
+const test=require('node:test'),assert=require('node:assert/strict');const {createEventInvitationDecline,emailHash,responseId}=require('./eventInvitationDecline');
+class ErrorType extends Error{constructor(code,message){super(message);this.code=code;}}
+function fixture(){
+ let clock=Date.parse('2026-10-10T10:00:00Z');
+ const records=new Map([['events/one',{title:'Event eins',date:'2026-10-23',startTime:'09:30',endTime:'15:00',status:'active'}],['events/two',{title:'Event zwei',date:'2026-10-24',startTime:'09:30',endTime:'15:00',status:'active'}]]);
+ const snapshot=r=>({id:r.id,exists:records.has(r.path),data:()=>records.get(r.path)});
+ const ref=(name,id)=>({id,path:name+'/'+id,get:async function(){return snapshot(this)},set:async function(data){records.set(this.path,data)}});
+ const db={
+  collection(name){return {doc:id=>ref(name,id),where(field,op,value){return {async get(){return {docs:[...records].filter(([path,data])=>path.startsWith(name+'/')&&data[field]===value).map(([path])=>snapshot(ref(name,path.split('/')[1])))};}};}};},
+  async runTransaction(fn){return fn({get:r=>r.get(),set:(r,data,options)=>records.set(r.path,options?.merge?{...records.get(r.path),...data}:data)});}
+ };
+ const service=createEventInvitationDecline({db,FieldValue:{serverTimestamp:()=>({toMillis:()=>clock})},Timestamp:{fromMillis:ms=>({toMillis:()=>ms})},HttpsError:ErrorType,now:()=>clock});
+ const issue=async(eventId='one',email='guest@example.invalid')=>(await service.issue({id:eventId,...records.get('events/'+eventId)},email)).split('/').pop();
+ return {records,service,issue,setTime:v=>{clock=Date.parse(v)}};
+}
+test('link opening has no side effects; token records contain hashes only',async()=>{const f=fixture(),token=await f.issue();assert.equal(token.length,64);const record=f.records.get('eventInvitationDeclineTokens/'+emailHash(token));assert.equal(record.emailHash,emailHash('guest@example.invalid'));assert(!record.email&&!record.token);const details=await f.service.view({data:{token}});assert.equal(details.eventTitle,'Event eins');assert(!details.alreadyDeclined);assert(![...f.records.keys()].some(k=>k.startsWith('eventInvitationResponses/')));});
+test('confirmed decline is idempotent, event scoped, and a subsequent booking overrides it',async()=>{const f=fixture(),token=await f.issue();await f.service.decline({data:{token}});await f.service.decline({data:{token}});assert.equal([...f.records.keys()].filter(k=>k.startsWith('eventInvitationResponses/')).length,1);assert(await f.service.isBlocked('one','guest@example.invalid'));assert(!await f.service.isBlocked('two','guest@example.invalid'));assert((await f.service.declinedHashes('one')).has(emailHash('guest@example.invalid')));f.records.set('registrations/booking',{eventId:'one',email:'guest@example.invalid',status:'confirmed'});assert(!await f.service.isBlocked('one','guest@example.invalid'));assert((await f.service.view({data:{token}})).alreadyRegistered);await assert.rejects(f.service.decline({data:{token}}),{code:'failed-precondition'});});
+test('invalid, expired, closed-event and registered-person links cannot record a decline',async()=>{const f=fixture();await assert.rejects(f.service.decline({data:{token:'bad'}}),{code:'invalid-argument'});await assert.rejects(f.service.view({data:{token:'a'.repeat(64)}}),{code:'not-found'});const token=await f.issue();f.records.get('events/one').status='cancelled';await assert.rejects(f.service.decline({data:{token}}),{code:'failed-precondition'});f.records.get('events/one').status='active';f.setTime('2026-10-23T14:00:00Z');await assert.rejects(f.service.decline({data:{token}}),{code:'failed-precondition'});assert.equal([...f.records.keys()].filter(k=>k.startsWith('eventInvitationResponses/')).length,0);});

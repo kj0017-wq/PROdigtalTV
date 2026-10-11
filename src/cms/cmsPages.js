@@ -1,6 +1,7 @@
+import {presentationPayload,presentationAssetEditor} from '../utils/presentationMedia.js?v=9';
 import {speakerEventsForRemoval} from '../utils/eventSpeakerRemoval.js?v=1';
 import { eventInvitationDefaults } from "../utils/eventInvitationDefaults.js?v=1";
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=484";
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=485";
 import { filterFeedback, feedbackFilterOptions, isAcquisitionFilter } from "../utils/feedbackAcquisition.js";
 import { list, getOne } from "../firebase/dataService.js?v=504";
 import { currentUser, canUseCms, isAdmin } from "../firebase/authService.js?v=477";
@@ -481,6 +482,7 @@ function memberActionButtons(item, section) {
 }
 
 function galleryPlayerButton(gallery, label = "Galerie abspielen") {
+  if(gallery.type==='presentation')return `<button class="gallery-play-button" type="button" data-gallery-play data-gallery-payload="${escapeHtml(JSON.stringify(presentationPayload(gallery)))}" title="Präsentation ansehen" aria-label="Präsentation ansehen"><span aria-hidden="true"></span></button>`;
   const images = Array.isArray(gallery.images)
     ?gallery.images.filter((image) => image.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
     : [];
@@ -506,6 +508,7 @@ function galleryActionButtons(item, section) {
 }
 
 function galleryPayloadAttribute(gallery) {
+  if(gallery.type==='presentation')return escapeHtml(JSON.stringify(presentationPayload(gallery)));
   const images = Array.isArray(gallery.images)
     ?gallery.images.filter((image) => image.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0))
     : [];
@@ -3327,6 +3330,7 @@ export async function eventNotificationsPage({ eventRecord = null, embedded = fa
   }).join("");
   const historyError = historyErrors.length ? `<div class="alert alert--warning">Versandprotokoll konnte nicht vollständig geladen werden: ${escapeHtml(historyErrors.join(" · "))}</div>` : "";
   const pageContent = `${embedded ? `<h2>Einladungen versenden</h2><p class="muted">${escapeHtml(firstEvent.title || "")} · ${escapeHtml(firstEvent.eventType || "Event")} · ${formatDate(firstEvent.date)} · ${escapeHtml(firstEvent.startTime || "")}–${escapeHtml(firstEvent.endTime || "")} Uhr</p><p class="muted">Event, Mailing-Art und Empfänger sind aus dem Veranstaltungsworkflow vorbelegt. Bereits angemeldete Personen werden ausgeschlossen. Der ausgewählte Einladungstext im Editor wird für Vorschau und Versand verwendet.</p>` : cmsTitle("Kommunikation", "Event Versand")}
+<p><a class="button button--secondary" href="#/cms/mail-schedule">Geplante Mails steuern</a></p>
 <section class="panel" data-sms-balance><div class="section-head"><div><h2>SMS-Guthaben</h2><p><strong data-sms-balance-value>–</strong></p><p class="muted" data-sms-balance-status role="status" aria-live="polite">Guthaben wird geladen ...</p></div><button type="button" class="button button--secondary button--small" data-sms-balance-refresh>Guthaben aktualisieren</button></div></section>
     <section class="panel">
       <form id="event-notification-form" class="form-grid" ${embedded ? `data-event-context="${escapeHtml(firstEvent.id)}"` : ""}>
@@ -5996,6 +6000,7 @@ export async function contentEditPage(module, id, query = new URLSearchParams())
       .filter((member) => (member.status || "active") === "active")
       .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
     : [];
+  if (module === "galleries" && item.type === "presentation") return protect(cmsShell("cms/galleries",cmsTitle("Medien","Präsentation")+presentationAssetEditor({...item,presentationId:item.id})));
   if (module === "galleries") {
     const [events, media] = await Promise.all([list("events"), list("eventMedia")]);
     const images = Array.isArray(item.images) ?item.images.slice().sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)) : [];

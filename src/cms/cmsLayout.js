@@ -72,6 +72,7 @@ const sections = [
     title: "Kommunikation",
     children: [
       ["cms/event-notifications", "Event Versand"],
+      ["cms/mail-schedule", "Geplante Mails"],
       ["cms/people", "Mailingadressen"],
       ["cms/mail", "Mailing Queue"],
       ["cms/mail-bounces", "Rückläufer"],

@@ -153,6 +153,7 @@ async function saveProviderStatus(update = {}) {
 async function fetchElevenLabs(path, options = {}) {
   const response = await fetch(`https://api.elevenlabs.io/v1${path}`, {
     ...options,
+    signal: options.signal || AbortSignal.timeout(90000),
     headers: {
       "xi-api-key": elevenLabsKey(),
       "Content-Type": "application/json",
@@ -428,3 +429,12 @@ exports.getAudioStatus = onCall({ region }, async (request) => {
   const status = audio.audioUrl && audio.textHash === hash && audio.speechTextHash === speechHash ? "ready" : audio.audioUrl ? "outdated" : "missing";
   return { status, textHash: hash, speechTextHash: speechHash, audio };
 });
+
+// Präsentationen nutzen dieselbe ElevenLabs-Konfiguration, aber dauerhaft private Folien-Audios.
+const {createPresentationNarration}=require('./presentationNarration');
+const presentationProviders={elevenlabs:{name:'ElevenLabs',config:async()=>safeElevenLabsConfig((await providerDoc()).elevenlabs||{}),generate:async input=>{const result=await createElevenLabsAudio(input);return {...result,durationSeconds:Math.max(0,...(result.timing?.character_end_times_seconds||[]))};}}};
+exports.getPresentationNarrationOptions=onCall({region,invoker:'public',secrets:[elevenLabsApiKey],timeoutSeconds:120},async request=>{
+ const profile=await requireEditor(request);if(profile.status==='inactive')throw new HttpsError('permission-denied','Zugang deaktiviert.');
+ const result=[];for(const [id,adapter]of Object.entries(presentationProviders)){const config=await adapter.config();let voices=[];if(config.enabled){const settings=await providerDoc();voices=settings.elevenlabs?.voices||[];if(!voices.length){const data=await fetchElevenLabs('/voices',{method:'GET'});voices=(data.voices||[]).map(v=>({voiceId:v.voice_id,voiceName:v.name}));}}result.push({id,name:adapter.name,enabled:config.enabled,voiceId:config.voiceId,voices:voices.map(v=>({voiceId:v.voiceId,voiceName:v.voiceName})).filter(v=>v.voiceId)});}return {providers:result};
+});
+exports.generatePresentationNarration=onCall({region,invoker:'public',secrets:[elevenLabsApiKey],timeoutSeconds:540,memory:'1GiB',maxInstances:2},createPresentationNarration({db,bucket:getStorage().bucket('prodigitaltv-da47b-presentations'),HttpsError,FieldValue,providers:presentationProviders}));

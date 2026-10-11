@@ -1,4 +1,5 @@
-import { cmsShell, cmsTitle } from "./cmsLayout.js?v=484";
+import {presentationAssetEditor} from '../utils/presentationMedia.js?v=9';
+import { cmsShell, cmsTitle } from "./cmsLayout.js?v=485";
 import { list, getOne } from "../firebase/dataService.js?v=488";
 import { currentUser, canUseCms, waitForAuthReady } from "../firebase/authService.js?v=477";
 import { escapeHtml } from "../utils/format.js";
@@ -9,6 +10,7 @@ const mediaSections = [
 ];
 
 const mediaTypeLabels = {
+  presentation: "Präsentation / PowerPoint",
   upload: "Upload",
   ai: "KI-Grafik",
   news: "News",
@@ -252,6 +254,7 @@ function mediaTabs(active) {
 }
 
 function mediaThumb(asset = {}) {
+  if(asset.media_type === "presentation")return `<span aria-label="PowerPoint-Präsentation" style="font-size:30px">▤</span>`;
   const url = mediaUrl(asset);
   return url
     ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(asset.alt_text || asset.title || "Medienbild")}">`
@@ -740,7 +743,7 @@ function mediaVariantChooser(asset = {}, variants = [], assets = []) {
 }
 
 function mediaTypeOptions(selected = "upload") {
-  return Object.entries(mediaTypeLabels).map(([key, label]) => `<option value="${key}" ${selected === key ? "selected" : ""}>${label}</option>`).join("");
+  return Object.entries(mediaTypeLabels).filter(([key])=>key!=='presentation').map(([key, label]) => `<option value="${key}" ${selected === key ? "selected" : ""}>${label}</option>`).join("");
 }
 
 function mediaCreateChoice(active = "upload") {
@@ -1465,6 +1468,7 @@ function aiPage(query = new URLSearchParams(), targetRecord = null) {
 }
 
 function editPage(asset = null, query = new URLSearchParams(), variants = [], assets = [], inferredTarget = null, events = []) {
+  if(asset?.media_type==='presentation')return presentationAssetEditor(asset);
   const contextQuery = asset ? inferredMediaContext(asset, query, inferredTarget) : query;
   const hasTarget = Boolean(contextQuery.get("targetCollection") && contextQuery.get("targetId"));
   const selectedEventTargetId = contextQuery.get("targetCollection") === "events" ? contextQuery.get("targetId") : "";
