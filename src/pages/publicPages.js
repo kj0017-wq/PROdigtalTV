@@ -1,4 +1,8 @@
-import {presentationCta,presentationAttachments} from '../utils/presentationMedia.js?v=10';
+import {memberPortalTiles,compactMemberPortalHeader} from '../utils/memberPortalTiles.js?v=2';
+import {profileDocumentsSection} from './mailboxPage.js?v=fastopen20261015';
+import {mailboxBadge} from '../utils/documentMailbox.js?v=no-cockpit-icon20261015';
+import {uploadedVideoPlayer} from '../utils/uploadedVideo.js?v=2';
+import {presentationCta,presentationAttachments} from '../utils/presentationMedia.js?v=13';
 import { callEventModerator } from "../firebase/eventModeratorService.js?v=1";
 import { agendaMarkup } from "../utils/eventArea.js?v=9";
 import { eventAgendaItems } from "../utils/eventAgenda.js?v=2";
@@ -1721,7 +1725,7 @@ function articleVideoAttachments(item = {}) {
       status: video.status || "ready",
       sortOrder: Number(video.sortOrder ?? index + 1)
     }))
-    .filter((video) => video && video.youtubeVideoId && !["hidden", "error", "deleted"].includes(video.status || "ready"))
+    .filter((video) => video && (video.youtubeVideoId || (video.sourceType==='upload'&&video.mediaVideoId)) && !["hidden", "error", "deleted"].includes(video.status || "ready"))
     .filter((video) => ["public", "members", ""].includes(video.visibility || ""))
     .sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0));
 }
@@ -1814,6 +1818,7 @@ function articleVideosBlock(item = {}) {
   const videos = articleVideoAttachments(item);
   if (!videos.length) return "";
   return `<section class="article-videos" aria-label="Videoanhaenge">${videos.map((video) => {
+    if(video.sourceType==='upload')return `<article class="article-video-card">${uploadedVideoPlayer(video)}${video.title?'<h3>'+escapeHtml(video.title)+'</h3>':''}${video.caption?'<p>'+escapeHtml(video.caption)+'</p>':''}</article>`;
     const poster = video.posterImageUrl || video.youtubeThumbnailUrl || `https://img.youtube.com/vi/${escapeHtml(video.youtubeVideoId)}/hqdefault.jpg`;
     const title = video.title || video.caption || "Video abspielen";
     return `<article class="article-video-card">
@@ -1832,6 +1837,7 @@ function articleVideosBlock(item = {}) {
 function articleVideoHero(item = {}) {
   const [video] = articleVideoAttachments(item);
   if (!video) return "";
+  if(video.sourceType==='upload')return uploadedVideoPlayer(video,true);
   const poster = video.posterImageUrl || video.youtubeThumbnailUrl || `https://img.youtube.com/vi/${escapeHtml(video.youtubeVideoId)}/hqdefault.jpg`;
   const title = video.title || video.caption || item.title || "Video abspielen";
   return `<div class="article-video-poster member-article-card__hero" data-youtube-video="${escapeHtml(video.youtubeVideoId)}" data-youtube-title="${escapeHtml(title)}" role="button" tabindex="0" aria-label="${escapeHtml(`${title} abspielen`)}">
@@ -2910,7 +2916,7 @@ export async function eventDetailPage(id, query = new URLSearchParams()) {
         ${retrospectiveText ? `<h2>Rückblick</h2><div class="editorial-text">${articleParagraphs(retrospectiveText)}</div>` : ""}
         ${event.lunchNote ? `<div class="alert">${escapeHtml(event.lunchNote)}</div>` : ""}
         ${restricted ? "" : `<section class="venue-stage venue-stage--event-detail"><div class="venue-stage__identity"><p class="eyebrow">${event.isVirtualEvent ? "Online-Teilnahme" : "Veranstaltungsort"}</p>${!event.isVirtualEvent && coHost && coHostLogo ? `<img class="venue-stage__logo" src="${escapeHtml(coHostLogo)}" alt="Logo ${escapeHtml(coHost.name || "")}" ${liveImageAttrs("sponsor")}>` : ""}${event.isVirtualEvent ? eventLocationDetailMarkup(event) : `<h2>${escapeHtml(coHost?.name || event.locationName || "Ort wird bekanntgegeben")}</h2>${eventAddressMarkup(event) ? `<p>${eventAddressMarkup(event)}</p>` : ""}`}</div>${suppressCoHost ? "" : `<div class="venue-stage__description"><p class="eyebrow">Co-Gastgeber</p>${coHost ? `${coHost.description ? `<p>${escapeHtml(coHost.description)}</p>` : `<p>${escapeHtml(coHost.name)} begleitet dieses PROdigitalTV Event als Co-Gastgeber.</p>`}` : `<p>Co-Gastgeber wird bei Bekanntgabe ergaenzt.</p>`}</div>`}</section>`}
-        ${assignedGalleryImages.length ? galleryPlayCta(assignedGallery, assignedGalleryImages) : ""}${restricted?"":presentationAttachments(event,galleries)}
+        ${assignedGalleryImages.length ? galleryPlayCta(assignedGallery, assignedGalleryImages) : ""}${restricted?"":presentationAttachments(event,galleries)+articleVideosBlock(event)}${!restricted&&event.eventLiveEnabled?`<a class="button button--secondary" href="#/event-gallery/${encodeURIComponent(event.id||id)}">Galerie · Bilder und Videos</a>`:""}
       </article>
       <aside class="detail-aside">
         <div class="event-host-card">
@@ -3308,7 +3314,7 @@ export async function topicDetailPage(id, query = new URLSearchParams()) {
   const attachedGalleryImages = Array.isArray(selectedGallery?.images)
     ? [...selectedGallery.images].filter((entry) => entry.url).sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0)).slice(0, 12)
     : [];
-  const leadMedia = (attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "") + presentationAttachments(topic,galleries);
+  const leadMedia = (attachedGalleryImages.length ? galleryPlayCta(selectedGallery, attachedGalleryImages) : "") + presentationAttachments(topic,galleries)+articleVideosBlock(topic);
   const editorialBlock = topicText
     ? `<section class="section section--white"><div class="container topic-article">${ttsReader({ rubric: "Thema", title: topic.title || "", text: topicAudioText || topicText, inlineOffsetText: topic.subtitle || "", audio: topic.audio || {}, audioProvider: topic.audioProvider || "", audioUrl: topic.audioUrl || "", audioAccessibleUrl: topic.audioAccessibleUrl || "", audioNaturalUrl: topic.audioNaturalUrl || "", timingUrl: topic.timingUrl || "", audioStatus: topic.audioStatus || "", audioAccessibleStatus: topic.audioAccessibleStatus || "", audioNaturalStatus: topic.audioNaturalStatus || "" })}${topicVisibleText}${aiDisclosureNote(topic)}</div></section>`
     : "";
@@ -3954,6 +3960,9 @@ export async function memberPortalPage() {
   if (!user) return loginPage();
   if (!isMember(user)) return portalPage();
   if (isAdmin(user) && new URLSearchParams(window.location.hash.split("?")[1] || "").get("preview") === "guest") return portalPage({ guestPreview: true });
+  if (new URLSearchParams(window.location.hash.split("?")[1] || "").get("tab") === "my-documents") {
+    return publicShell("login", `<section class="section section--white member-portal-shell member-portal-shell--compact"><div class="container">${compactMemberPortalHeader({title:"Meine Dokumente"})}${await profileDocumentsSection()}</div></section>`);
+  }
   const moderatorSection = await moderatorPortalSection();
   const leanPortal = mobileLeanStart();
   const activeTab = (() => {
@@ -4037,12 +4046,13 @@ export async function memberPortalPage() {
     ["my-events", "Meine Veranstaltungen"],
     ["strategy", "Zukunftsstrategie"],
     ["profile", "Mein Profil"],
+    ["my-documents", "Meine Dokumente"],
     ["directory", "Mitgliederliste"],
     ["documents", "Member Infos"],
     ["events", "Events"]
   ];
-  const mobileTabNav = `<div class="member-portal-mobile-nav"><label><span>Bereich auswählen ${participantPhotoBadge()}</span><select class="member-portal-select" data-member-portal-select aria-label="Bereich im Mitgliederportal auswählen">${tabs.map(([key, label]) => `<option value="#/portal?tab=${key}" ${activeTab === key ? "selected" : ""}>${label}</option>`).join("")}</select></label><button class="member-portal-logout-tab" type="button" data-logout-button>Abmelden</button></div>`;
-  const tabNav = `${mobileTabNav}<nav class="member-portal-tabs" aria-label="Mitgliederbereich">${tabs.map(([key, label]) => `<a href="#/portal?tab=${key}" class="${activeTab === key ? "active" : ""}">${label}${key === "my-events" ? participantPhotoBadge() : ""}</a>`).join("")}<button class="member-portal-logout-tab" type="button" data-logout-button>Abmelden</button></nav>`;
+  const mobileTabNav = `<div class="member-portal-mobile-nav"><label><span>Bereich auswählen ${participantPhotoBadge()}</span><select class="member-portal-select" data-member-portal-select aria-label="Bereich im Mitgliederportal auswählen">${tabs.map(([key, label]) => `<option value="#/portal?tab=${key}" ${key === "my-documents" ? "data-mailbox-option" : ""} ${activeTab === key ? "selected" : ""}>${label}</option>`).join("")}</select></label><a class="member-portal-mailbox-link" href="#/portal?tab=my-documents">Meine Dokumente ${mailboxBadge()}</a><button class="member-portal-logout-tab" type="button" data-logout-button>Abmelden</button></div>`;
+  const tabNav = `${mobileTabNav}<nav class="member-portal-tabs" aria-label="Mitgliederbereich">${tabs.map(([key, label]) => `<a href="#/portal?tab=${key}" class="${activeTab === key ? "active" : ""}">${label}${key === "my-events" ? participantPhotoBadge() : key === "my-documents" ? mailboxBadge() : ""}</a>`).join("")}<button class="member-portal-logout-tab" type="button" data-logout-button>Abmelden</button></nav>`;
   const documentsSection = `<section class="member-portal-section member-portal-section--documents"><div class="section-head"><div><h2>Mitglieder-Dokumente</h2><p class="muted">Freigegebene Unterlagen und Anlagen für Mitglieder.</p></div></div><div class="card-grid card-grid--three">${visibleDocuments.length ? visibleDocuments.map(documentCard).join("") : `<div class="alert">Noch keine freigegebenen Mitgliederdokumente.</div>`}</div></section>`;
   const memberInfosSection = `<section class="member-portal-section member-portal-section--infos"><div class="section-head"><h2>Member Infos</h2></div><div class="member-article-list">${visibleMemberArticles.length ? visibleMemberArticles.map((article) => memberArticleCard(article, galleries)).join("") : `<div class="alert">Noch keine Mitgliederbeitr&auml;ge sichtbar.</div>`}</div></section>`;
   const strategyFrameSrcdoc = (html = "") => {
@@ -4056,7 +4066,7 @@ export async function memberPortalPage() {
       ? `<div class="member-strategy-frame-wrap"><iframe class="member-strategy-frame" data-member-strategy-frame title="PROdigitalTV Zukunftsstrategie 2027 bis 2030" sandbox="allow-scripts" scrolling="no" srcdoc="${escapeHtml(strategyFrameSrcdoc(strategyDocument.htmlContent))}"></iframe></div>`
       : `<div class="alert alert--warning">Die Zukunftsstrategie ist derzeit nicht verfügbar. Bitte versuchen Sie es später erneut.</div>`}
   </section>`;
-  const profileSection = `<section class="member-portal-section"><div class="section-head"><h2>Mein Profil</h2></div>${memberProfileForm(ownMember, user, { adminMode: false })}${pushControls()}</section>`;
+  const profileSection = `<section class="member-portal-section"><div class="section-head"><h2>Mein Profil</h2><a class="button button--secondary" href="#/portal?tab=my-documents">Meine Dokumente ${mailboxBadge()}</a></div>${memberProfileForm(ownMember, user, { adminMode: false })}${pushControls()}</section>`;
   const renderedDirectorySection = `<section class="member-portal-section"><div class="section-head"><h2>Mitgliederverzeichnis</h2></div><div class="card-grid card-grid--three member-directory-grid">${visibleMembers.length ? visibleMembers.map(memberDirectoryCard).join("") : `<div class="alert">Noch keine freigegebenen Mitglieder.</div>`}</div></section>`;
   if (!cachedDirectorySection && activeTab === "directory" && visibleMembers.length) {
     writePageContentCache("member-portal-directory", "members", renderedDirectorySection);
@@ -4065,17 +4075,19 @@ export async function memberPortalPage() {
   const eventsSection = `<section class="member-portal-section"><div class="section-head"><h2>Mitglieder-Events</h2></div><div class="card-grid card-grid--three">${events.length ? events.map((event) => eventCard(event, false, sponsors)).join("") : `<div class="alert">Aktuell keine Mitglieder-Events.</div>`}</div></section>`;
   const myEventsSection = activeTab === "my-events" ? await myEventPhotosSection() : "";
   const directoryCount = needsMembers ? visibleMembers.length : ">";
-  const overviewSection = `<section class="member-portal-section"><div class="member-portal-overview"><article class="member-portal-card member-portal-card--event-live"><span>EVENTS</span><h3>MEINE VERANSTALTUNGEN ${participantPhotoBadge()}</h3><p>Agenda, Teilnehmer und Gespräche.</p><a href="#/portal?tab=my-events">Öffnen</a></article><article class="member-portal-card member-portal-card--strategy"><span>2030</span><h3>Zukunftsstrategie</h3><p>Strategie, Fahrplan und Mitgliederfragen gemeinsam bearbeiten.</p><a href="#/portal?tab=strategy">Öffnen</a></article><article class="member-portal-card member-portal-card--infos"><span>${visibleMemberArticles.length}</span><h3>Member Infos</h3><p>Mitgliederbeiträge, Dokumente und Anlagen abrufen.</p><a href="#/portal?tab=documents">Öffnen</a></article><article class="member-portal-card member-portal-card--directory"><span>${escapeHtml(String(directoryCount))}</span><h3>Mitgliederliste</h3><p>Aktuelle Mitglieder und freigegebene Kontaktdaten.</p><a href="#/portal?tab=directory">Öffnen</a></article><article class="member-portal-card member-portal-card--profile"><span>1</span><h3>Mein Profil</h3><p>Eigene Mitgliedsdaten pflegen.</p><a href="#/portal?tab=profile">Bearbeiten</a></article></div></section>`;
-  const content = activeTab === "my-events" ? myEventsSection
+  const overviewSection = memberPortalTiles({documentsBadge:mailboxBadge(),eventsBadge:participantPhotoBadge()});
+  const personalDocumentsSection = activeTab === "my-documents" ? await profileDocumentsSection() : "";
+  const content = activeTab === "my-documents" ? personalDocumentsSection
+    : activeTab === "my-events" ? myEventsSection
     : activeTab === "profile" ? profileSection
     : activeTab === "directory" ? directorySection
     : activeTab === "documents" ? memberInfosSection
     : activeTab === "strategy" ? strategySection
     : activeTab === "events" ? eventsSection
     : overviewSection;
-  return publicShell("login", `${subhero("Mitgliederbereich", `Willkommen, ${escapeHtml(user.displayName)}.`, "Dokumente, Mitgliederverzeichnis und eigenes Profil.")}
-    <section class="section section--white member-portal-shell"><div class="container">
-      ${tabNav}
+  return publicShell("login", `
+    <section class="section section--white member-portal-shell member-portal-shell--compact ${activeTab === "overview" ? "member-portal-shell--overview" : ""}"><div class="container">
+      ${compactMemberPortalHeader({title:activeTab === "overview" ? "Übersicht" : (tabs.find(([key])=>key===activeTab)?.[1] || "Mitgliederbereich"),overview:activeTab === "overview",name:user.displayName})}
       ${profileAccessNotice}
       ${moderatorSection}
       ${content}

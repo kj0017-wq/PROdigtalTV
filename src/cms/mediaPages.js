@@ -1,4 +1,5 @@
-import {presentationAssetEditor} from '../utils/presentationMedia.js?v=10';
+import {videoUploadOptions,uploadedVideoPlayer} from '../utils/uploadedVideo.js?v=2';
+import {presentationAssetEditor} from '../utils/presentationMedia.js?v=13';
 import { cmsShell, cmsTitle } from "./cmsLayout.js?v=485";
 import { list, getOne } from "../firebase/dataService.js?v=488";
 import { currentUser, canUseCms, waitForAuthReady } from "../firebase/authService.js?v=477";
@@ -1596,6 +1597,7 @@ function normalizedVideoAttachments(item = {}) {
       const youtubeVideoId = video.youtubeVideoId || video.youtube_id || youtubeVideoIdFromValue(video.youtubeUrl || video.url || video.embedUrl || "");
       const youtubeUrl = video.youtubeUrl || video.url || (youtubeVideoId ? `https://www.youtube.com/watch?v=${youtubeVideoId}` : "");
       return {
+        ...video,
         id: video.id || `video-${index + 1}`,
         youtubeVideoId,
         youtubeUrl,
@@ -1625,7 +1627,7 @@ function videoAreaLabel(item = {}) {
 function videoAttachmentRow(video = {}, index = 0) {
   return `<fieldset class="video-attachment-row" data-video-attachment-row>
     <legend>Video ${index + 1}</legend>
-    <input type="hidden" name="videoId${index}" value="${escapeHtml(video.id || `video-${index + 1}`)}">
+    <input type="hidden" name="videoId${index}" value="${escapeHtml(video.id || `video-${index + 1}`)}"><input type="hidden" name="videoMediaVideoId${index}" value="${escapeHtml(video.mediaVideoId||'')}"><input type="hidden" name="videoVisibility${index}" value="${escapeHtml(video.visibility||'public')}">
     <div class="form-grid form-grid--video-attachment">
       <div class="field"><label>YouTube-URL oder ID</label><input name="videoYoutubeUrl${index}" value="${escapeHtml(video.youtubeUrl || video.youtubeVideoId || "")}" placeholder="https://www.youtube.com/watch?v=..."></div>
       <div class="field"><label>Titel</label><input name="videoTitle${index}" value="${escapeHtml(video.title || "")}"></div>
@@ -1724,11 +1726,12 @@ function videoFormPage(video = {}, query = new URLSearchParams()) {
   const id = normalized.id || `media-video-${crypto.randomUUID()}`;
   return `<section class="panel media-video-editor">
     <div class="media-video-editor__head">
-      <div><p class="eyebrow">Videothek</p><h2>${video.id ? "Video bearbeiten" : "Video anlegen"}</h2><p class="muted">Minimaler Workflow: YouTube-Link eintragen, Metadaten laden, speichern.</p></div>
+      <div><p class="eyebrow">Videothek</p><h2>${video.id ? "Video bearbeiten" : "Video anlegen"}</h2><p class="muted">YouTube-Link eintragen oder eine Videodatei hochladen und automatisch platzsparend konvertieren.</p></div>
       <a class="button button--secondary button--small" href="#/cms/media/videos">Zur Videothek</a>
     </div>
-    <form id="media-video-library-form" data-video-id="${escapeHtml(id)}" data-target-collection="${escapeHtml(query.get("targetCollection") || "")}" data-target-id="${escapeHtml(query.get("targetId") || "")}" data-return-to="${escapeHtml(query.get("returnTo") || "#/cms/media/videos")}">
+    <form data-existing-upload="${video.sourceType==='upload'?'1':''}" id="media-video-library-form" data-video-id="${escapeHtml(id)}" data-target-collection="${escapeHtml(query.get("targetCollection") || "")}" data-target-id="${escapeHtml(query.get("targetId") || "")}" data-return-to="${escapeHtml(query.get("returnTo") || "#/cms/media/videos")}">
       <div class="form-grid form-grid--two">
+        ${videoUploadOptions(normalized)}
         <div class="field"><label>YouTube-URL oder ID</label><input name="youtubeUrl" value="${escapeHtml(normalized.youtubeUrl || "")}" placeholder="https://www.youtube.com/watch?v=..." required></div>
         <div class="field"><label>Titel</label><input name="title" value="${escapeHtml(normalized.title || "")}" required></div>
         <div class="field"><label>Beschreibung</label><input name="description" value="${escapeHtml(normalized.description || normalized.caption || "")}" placeholder="wird soweit moeglich aus YouTube uebernommen"></div>
@@ -1737,7 +1740,7 @@ function videoFormPage(video = {}, query = new URLSearchParams()) {
         <div class="field"><label>Alt-Text Cover</label><input name="posterImageAlt" value="${escapeHtml(normalized.posterImageAlt || "")}"></div>
       </div>
       <div class="actions"><button class="button button--secondary button--small" type="button" data-video-oembed>Aus YouTube laden</button></div>
-      <div class="media-video-preview" data-video-preview>${normalized.youtubeVideoId ? `<iframe src="https://www.youtube.com/embed/${escapeHtml(normalized.youtubeVideoId)}" title="${escapeHtml(normalized.title || "Video Vorschau")}" loading="lazy" allowfullscreen></iframe>` : `<span>Nach Eingabe einer YouTube-URL erscheint hier die Vorschau.</span>`}</div>
+      <div class="media-video-preview" data-video-preview>${normalized.sourceType==='upload'&&normalized.processingStatus==='ready'?uploadedVideoPlayer(normalized):normalized.youtubeVideoId ? `<iframe src="https://www.youtube.com/embed/${escapeHtml(normalized.youtubeVideoId)}" title="${escapeHtml(normalized.title || "Video Vorschau")}" loading="lazy" allowfullscreen></iframe>` : `<span>Nach dem Upload und der Konvertierung erscheint hier die Vorschau.</span>`}</div>
       <div class="sticky-actions sticky-actions--member"><button class="button button--primary" type="submit">${query.get("targetId") ? "Speichern und zuordnen" : "Video speichern"}</button><div id="media-video-library-result"></div></div>
     </form>
   </section>`;
@@ -1761,11 +1764,11 @@ function videosPage(videoLibrary = [], query = new URLSearchParams()) {
       const title = video.title || video.youtubeVideoId || "Video";
       return `<tr>
         <td>${video.posterImageUrl ? `<img class="media-video-table-thumb" src="${escapeHtml(video.posterImageUrl)}" alt="${escapeHtml(video.posterImageAlt || title)}">` : `<span class="media-video-table-thumb media-video-table-thumb--empty">Video</span>`}</td>
-        <td><strong>${escapeHtml(title)}</strong><br><small>${escapeHtml(video.youtubeUrl || "")}</small></td>
+        <td><strong>${escapeHtml(title)}</strong><br><small>${escapeHtml(video.sourceType==='upload'?'Videodatei · '+(video.processingStatus==='ready'?'Bereit':video.processingStatus==='processing'?'Konvertierung läuft':video.processingStatus==='error'?'Verarbeitung fehlgeschlagen':'Upload ausstehend'):video.youtubeUrl || "")}</small></td>
         <td><span class="media-video-status ${isVisible ? "is-visible" : "is-hidden"}">${isVisible ? "sichtbar" : "ausgeblendet"}</span></td>
         <td class="actions media-video-actions">
-          ${video.youtubeVideoId ? `<a class="media-video-icon-button media-video-icon-button--preview" href="https://www.youtube.com/watch?v=${encodeURIComponent(video.youtubeVideoId)}" target="_blank" rel="noopener" title="Vorschau" aria-label="Vorschau">${mediaPlayIcon()}</a>` : ""}
-          ${targetCollection && targetId ? `<button class="button button--primary button--small" type="button" data-assign-video="${escapeHtml(video.id)}" data-target-collection="${escapeHtml(targetCollection)}" data-target-id="${escapeHtml(targetId)}" data-return-to="${escapeHtml(returnTo)}">Zuordnen</button>` : ""}
+          ${video.sourceType==='upload'?`<a class="media-video-icon-button media-video-icon-button--preview" href="#/cms/media/videos?id=${encodeURIComponent(video.id)}" title="Vorschau" aria-label="Vorschau">${mediaPlayIcon()}</a>`:''}${video.youtubeVideoId ? `<a class="media-video-icon-button media-video-icon-button--preview" href="https://www.youtube.com/watch?v=${encodeURIComponent(video.youtubeVideoId)}" target="_blank" rel="noopener" title="Vorschau" aria-label="Vorschau">${mediaPlayIcon()}</a>` : ""}
+          ${targetCollection && targetId && (video.sourceType!=='upload'||video.processingStatus==='ready') ? `<button class="button button--primary button--small" type="button" data-assign-video="${escapeHtml(video.id)}" data-target-collection="${escapeHtml(targetCollection)}" data-target-id="${escapeHtml(targetId)}" data-return-to="${escapeHtml(returnTo)}">Zuordnen</button>` : ""}
           <a class="media-video-icon-button media-video-icon-button--edit" href="#/cms/media/videos?id=${encodeURIComponent(video.id)}${targetQuery}" title="Video bearbeiten" aria-label="Video bearbeiten">${mediaEditIcon()}</a>
           <button class="media-video-icon-button ${isVisible ? "media-video-icon-button--visible" : "media-video-icon-button--hidden"}" type="button" data-video-visible-toggle="${escapeHtml(video.id)}" data-next-visible="${isVisible ? "false" : "true"}" title="${isVisible ? "Video ausblenden" : "Video sichtbar schalten"}" aria-label="${isVisible ? "Video ausblenden" : "Video sichtbar schalten"}">${isVisible ? mediaEyeIcon() : mediaEyeOffIcon()}</button>
           <button class="media-video-icon-button media-video-icon-button--danger" type="button" data-video-trash="${escapeHtml(video.id)}" data-video-title="${escapeHtml(title)}" title="In den Papierkorb verschieben" aria-label="Video in den Papierkorb verschieben">${mediaTrashIcon()}</button>

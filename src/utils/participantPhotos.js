@@ -36,8 +36,8 @@ export function mountParticipantPhotos(root) {
     button.type = "button";
     button.className = "participant-photo-delete";
     button.dataset.participantPhotoDelete = "1";
-    button.title = "Eigenes Foto löschen";
-    button.setAttribute("aria-label", "Eigenes Foto löschen");
+    button.title = "Foto löschen";
+    button.setAttribute("aria-label", "Foto löschen");
     button.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg>';
     card.querySelector("figcaption")?.append(button);
   });
@@ -46,7 +46,7 @@ export function mountParticipantPhotos(root) {
     const button = event.target.closest("[data-participant-photo-delete]");
     if (!button || !root.contains(button) || button.disabled) return;
     const card = button.closest("[data-participant-photo]");
-    if (!window.confirm("Ihr Foto endgültig für alle Eventteilnehmer löschen?")) return;
+    if (!window.confirm("Dieses Foto endgültig für alle Eventteilnehmer löschen?")) return;
     button.disabled = true;
     try {
       await deletePortalParticipantPhoto(root.dataset.eventId, card.dataset.participantPhoto);

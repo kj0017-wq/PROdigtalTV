@@ -1,0 +1,11 @@
+'use strict';
+const {randomUUID}=require('node:crypto');
+class FakeFirestore{
+ constructor(){this.docs=new Map();this.queue=Promise.resolve();}
+ collection(path){return new Query(this,path);}
+ async runTransaction(fn){let release;const pending=new Promise(r=>release=r),previous=this.queue;this.queue=pending;await previous;const writes=[];let writing=false;const tx={get:async ref=>{if(writing)throw Error('Read after write');return ref.get();},create:(ref,data)=>{writing=true;if(this.docs.has(ref.path)||writes.some(w=>w[0]===ref.path))throw Error('duplicate create');writes.push([ref.path,structuredClone(data)]);},set:(ref,data)=>{writing=true;writes.push([ref.path,structuredClone(data)]);},update:(ref,data)=>{writing=true;writes.push([ref.path,{...this.docs.get(ref.path),...structuredClone(data)}]);}};try{const result=await fn(tx);for(const [path,data]of writes)this.docs.set(path,data);return result;}finally{release();}}
+ async recursiveDelete(ref){for(const path of [...this.docs.keys()])if(path===ref.path||path.startsWith(ref.path+'/'))this.docs.delete(path);}
+}
+class Ref{constructor(db,path){this.db=db;this.path=path;this.id=path.split('/').pop();}collection(name){return new Query(this.db,this.path+'/'+name);}async get(){const data=this.db.docs.get(this.path);return {id:this.id,ref:this,exists:data!==undefined,data:()=>structuredClone(data)};}async set(data){this.db.docs.set(this.path,structuredClone(data));}async delete(){this.db.docs.delete(this.path);}}
+class Query{constructor(db,path,filters=[],max=Infinity){Object.assign(this,{db,path,filters,max});}doc(id=randomUUID()){return new Ref(this.db,this.path+'/'+id);}where(key,op,value){return new Query(this.db,this.path,[...this.filters,[key,op,value]],this.max);}limit(max){return new Query(this.db,this.path,this.filters,max);}async get(){const docs=[];for(const [path,data]of this.db.docs){if(!path.startsWith(this.path+'/')||path.slice(this.path.length+1).includes('/'))continue;if(!this.filters.every(([key,op,v])=>op==='array-contains'?data[key]?.includes(v):data[key]===v))continue;docs.push(await new Ref(this.db,path).get());}return {docs:docs.slice(0,this.max),empty:docs.length===0};}}
+module.exports={FakeFirestore};

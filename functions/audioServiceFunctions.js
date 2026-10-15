@@ -438,3 +438,14 @@ exports.getPresentationNarrationOptions=onCall({region,invoker:'public',secrets:
  const result=[];for(const [id,adapter]of Object.entries(presentationProviders)){const config=await adapter.config();let voices=[];if(config.enabled){const settings=await providerDoc();voices=settings.elevenlabs?.voices||[];if(!voices.length){const data=await fetchElevenLabs('/voices',{method:'GET'});voices=(data.voices||[]).map(v=>({voiceId:v.voice_id,voiceName:v.name}));}}result.push({id,name:adapter.name,enabled:config.enabled,voiceId:config.voiceId,voices:voices.map(v=>({voiceId:v.voiceId,voiceName:v.voiceName})).filter(v=>v.voiceId)});}return {providers:result};
 });
 exports.generatePresentationNarration=onCall({region,invoker:'public',secrets:[elevenLabsApiKey],timeoutSeconds:540,memory:'1GiB',maxInstances:2},createPresentationNarration({db,bucket:getStorage().bucket('prodigitaltv-da47b-presentations'),HttpsError,FieldValue,providers:presentationProviders}));
+
+exports.getMailboxAnnouncement=onCall({region,secrets:[elevenLabsApiKey],timeoutSeconds:120,memory:'512MiB',maxInstances:2,concurrency:1},async request=>{
+ if(!request.auth?.uid)throw new HttpsError('unauthenticated','Bitte anmelden.');
+ const profile=(await db.collection('users').doc(request.auth.uid).get()).data();
+ if(!profile||['inactive','disabled','deleted','archived'].includes(String(profile.status).toLowerCase())||profile.guestPasswordTemporary)throw new HttpsError('permission-denied','Kein aktiver Zugang.');
+ const config=safeElevenLabsConfig((await providerDoc()).elevenlabs||{});if(!config.enabled)return {available:false};
+ const key=createHash('sha256').update(JSON.stringify(['Sie haben Post!',config.voiceId,config.modelId,serviceVersion])).digest('hex');
+ const file=getStorage().bucket(storageBucket).file('system-audio/mailbox-'+key+'.mp3');let buffer;
+ try{[buffer]=await file.download();}catch(e){if(Number(e.code)!==404)throw e;const speech=await createElevenLabsAudio({text:'Sie haben Post!',config});buffer=speech.audioBuffer;try{await file.save(buffer,{resumable:false,preconditionOpts:{ifGenerationMatch:0},metadata:{contentType:'audio/mpeg',cacheControl:'private, no-store'}});}catch(writeError){if(Number(writeError.code)!==412)throw writeError;}}
+ return {available:true,base64:buffer.toString('base64')};
+});

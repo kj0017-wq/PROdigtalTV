@@ -84,5 +84,18 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "mailboxNotificationDays",
+      "fieldPath": "deleteAfter",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "mailboxFetchReceipts",
+      "fieldPath": "deleteAfter",
+      "ttl": true,
+      "indexes": []
+    }
+  ]
 }

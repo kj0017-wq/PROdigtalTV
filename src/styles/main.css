@@ -16714,6 +16714,14 @@ form.is-saved [data-image-crop] {
   cursor:pointer;
 }
 
+.mobile-cms-launcher > a > span:not(.mobile-cms-launcher__icon),
+.mobile-cms-launcher > button > span:not(.mobile-cms-launcher__icon) {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  hyphens: manual;
+}
+
 .mobile-cms-launcher__icon {
   width:50px;
   height:50px;
@@ -22306,3 +22314,268 @@ body.theme-night .invitation-talk-hints p,
 .moderation-card-list__item.is-dragging { opacity: .45; }
 .moderation-card-list__item.is-drop-before { border-top: 3px solid var(--pdt-red); }
 .moderation-card-list__item.is-drop-after { border-bottom: 3px solid var(--pdt-red); }
+
+.cockpit-checkin-group { margin:20px 0 8px; font-size:16px; color:#153852; }
+.cockpit-checkin-swipe.is-checked .cockpit-checkin-row { background:#edf8ef; border-left:4px solid #18864b; padding-left:12px; }
+.cockpit-checkin-person .cockpit-checkin-done { display:inline-flex; margin-top:7px; padding:5px 10px; border-radius:999px; background:#d4efdc; color:#116735; font-size:14px; font-weight:700; }
+.cockpit-checkin-overview .cockpit-checkin-confirmed-count { color:#116735; font-weight:700; }
+
+/* Compact event video selection and gallery thumbnails. */
+.event-video-upload-form { display:grid; gap:10px; }
+.event-video-upload-form .field { display:grid; gap:4px; margin:0; min-width:0; font-size:14px; }
+.event-video-upload-form input:not([type=checkbox]),.event-video-upload-form textarea { width:100%; min-width:0; padding:8px 10px; font-size:16px; min-height:40px; }
+.event-video-upload-form input[type=file] { font-size:12px; padding:7px; }
+.event-video-upload-form input[type=file]::file-selector-button { padding:6px 9px; border:0; border-radius:8px; margin-right:8px; }
+.event-video-upload-form [data-event-video-camera] { justify-self:start; padding:7px 12px; min-height:36px; font-size:14px; }
+.event-video-upload-form .muted { font-size:12px; margin:0; }
+.event-video-upload-form .checkbox-line { font-size:13px; }
+.event-video-progress { display:grid; gap:6px; font-size:14px; }
+.event-video-progress progress { width:100%; height:12px; accent-color:#153b5b; }
+.event-video-thumb { min-width:0; }
+.event-video-thumb:not(.is-playing) [data-uploaded-video-start] { position:relative; height:108px; }
+.event-video-thumb:not(.is-playing) [data-uploaded-video-start] img { width:100%; height:108px!important; object-fit:cover!important; }
+.event-video-thumb:not(.is-playing) [data-uploaded-video-start] span { position:absolute; inset:0; display:grid!important; place-items:center; padding:0!important; font-size:0!important; }
+.event-video-thumb:not(.is-playing) [data-uploaded-video-start] span::after { content:'▶'; font-size:26px; background:#071a33b8; color:white; border-radius:50%; width:44px; height:44px; display:grid; place-items:center; }
+.event-video-thumb figcaption strong { font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.event-video-thumb > button { font-size:12px; padding:6px 9px; min-height:30px; }
+.event-video-thumb.is-playing { grid-column:1/-1; }
+@media(max-width:600px) { .event-video-thumb:not(.is-playing) [data-uploaded-video-start],.event-video-thumb:not(.is-playing) [data-uploaded-video-start] img { height:92px!important; } }
+
+/* Video upload follows the existing photo upload layout. */
+.event-photo-upload-form.event-video-upload-form { grid-template-columns:minmax(220px,1.1fr) minmax(180px,1fr) auto; gap:10px 12px; }
+.event-video-upload-form .event-video-file { grid-column:1; grid-row:1; }
+.event-video-upload-form .event-video-title { grid-column:2; grid-row:1; }
+.event-video-upload-form .event-video-note { grid-column:2; grid-row:2; }
+.event-video-upload-form [data-event-video-camera] { grid-column:1; grid-row:2; align-self:start; min-height:48px; padding:8px 16px; font-size:13px; }
+.event-photo-upload-form.event-video-upload-form input[type=file] { min-height:48px; padding:4px; font-size:13px; background:#fff; border:1px solid #cbd5e1; border-radius:10px; }
+.event-photo-upload-form.event-video-upload-form input[type=file]::file-selector-button { min-height:38px; margin-right:10px; padding:8px 16px; background:var(--pdt-navy); color:#fff; font-weight:800; }
+.event-photo-upload-form.event-video-upload-form .field { font-size:13px; }
+.event-video-upload-form .event-video-actions { grid-column:3; grid-row:1/4; display:grid; gap:8px; align-self:end; margin:0; }
+.event-video-upload-form .event-video-actions .button { min-height:48px; margin:0; align-self:stretch; }
+.event-video-upload-form .muted,.event-video-upload-form .event-video-progress,.event-video-upload-form [data-event-video-status] { grid-column:1/-1; }
+@media(max-width:600px) {
+.event-photo-upload-form.event-video-upload-form { grid-template-columns:minmax(0,1fr); }
+.event-video-upload-form .event-video-file,.event-video-upload-form .event-video-title,.event-video-upload-form .event-video-note,.event-video-upload-form [data-event-video-camera],.event-video-upload-form .event-video-actions { grid-column:1; grid-row:auto; }
+.event-video-upload-form .event-video-actions { grid-template-columns:1fr 1fr; }
+.event-video-upload-form [data-event-video-camera] { justify-self:stretch; }
+}
+
+
+/* Shared cockpit event picker */
+.cockpit-event-picker {
+  display: block;
+  box-sizing: border-box;
+  min-width: 0;
+  margin: 16px 0;
+  padding: 20px;
+  border: 2px solid #2b5d86;
+  border-radius: 18px;
+  background: #dbeaf9;
+  box-shadow: 0 5px 14px rgba(7, 26, 51, .07);
+}
+.cockpit-event-picker .field { gap: 14px; }
+.cockpit-event-picker > label,
+.cockpit-event-picker .field > label {
+  display: block;
+  min-width: 0;
+  color: #153e5d;
+  font-size: 18px;
+  font-weight: 750;
+  line-height: 1.3;
+}
+.cockpit-event-picker.cockpit-event-picker select {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 54px;
+  margin: 0;
+  padding: 12px 44px 12px 14px;
+  border: 2px solid #2b5d86;
+  border-radius: 12px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230b1728' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 9 5-5 5 5m-10 6 5 5 5-5'/%3E%3C/svg%3E") right 13px center / 20px 20px no-repeat;
+  color: #0b1728;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.cockpit-event-picker > label > select { margin-top: 14px; }
+.cockpit-event-picker select:focus-visible { outline: 3px solid #397cc0; outline-offset: 3px; }
+.cockpit-event-picker select:disabled { opacity: .6; cursor: default; }
+@media (max-width: 380px) {
+  .cockpit-event-picker { padding: 16px; }
+  .cockpit-event-picker > label,
+  .cockpit-event-picker .field > label,
+  .cockpit-event-picker.cockpit-event-picker select { font-size: 16px; }
+}
+
+/* Clear Excel download action and actual export stages. */
+[data-accounting-excel-panel] .accounting-excel-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 15px 20px;
+  border: 2px solid #c90010;
+  border-radius: 12px;
+  background: #e30613;
+  color: #fff;
+  box-shadow: 0 5px 12px rgba(180, 0, 14, .2);
+  font-weight: 750;
+  line-height: 1.3;
+  text-align: center;
+}
+[data-accounting-excel-panel] .accounting-excel-download:hover:not(:disabled) { background: #c90010; }
+[data-accounting-excel-panel] .accounting-excel-download:focus-visible { outline: 3px solid #245a8d; outline-offset: 3px; }
+[data-accounting-excel-panel] .accounting-excel-download:disabled { opacity: .75; cursor: not-allowed; }
+[data-accounting-excel-panel] .accounting-excel-download[aria-busy="true"] { cursor: wait; }
+[data-accounting-excel-panel] [data-accounting-excel-download-icon] { flex: 0 0 auto; font-size: 28px; line-height: 1; }
+[data-accounting-excel-panel] .accounting-excel-spinner { flex: 0 0 20px; width: 20px; height: 20px; box-sizing: border-box; border: 3px solid #ffffff66; border-top-color: #fff; border-radius: 50%; animation: accounting-excel-spin .8s linear infinite; }
+[data-accounting-excel-panel] .accounting-excel-progress { margin-top: 18px; padding: 14px; border-radius: 10px; background: #eef4fb; color: #153e5d; }
+[data-accounting-excel-panel] .accounting-excel-progress p { margin: 0 0 10px; font-weight: 700; line-height: 1.4; }
+[data-accounting-excel-panel] progress { display: block; width: 100%; height: 12px; accent-color: #e30613; }
+[data-accounting-excel-panel] [data-accounting-excel-status] { overflow-wrap: anywhere; }
+[data-accounting-excel-panel] [data-accounting-excel-status].is-error { color: #a8000d; }
+[data-accounting-excel-panel] [hidden] { display: none !important; }
+@keyframes accounting-excel-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  [data-accounting-excel-panel] .accounting-excel-spinner { animation: none; border-top-color: #fff; }
+}
+/* Personal document mailboxes */
+.mailbox-header-link{position:relative;display:inline-flex!important;align-items:center;justify-content:center;flex:0 0 42px;width:42px;height:42px;border:1px solid var(--pdt-line,#ccd4de);border-radius:12px;color:var(--pdt-navy,#143656);background:var(--pdt-white,#fff);text-decoration:none}
+.mailbox-header-link svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.8}
+.mailbox-badge{position:absolute;right:-7px;top:-7px;min-width:21px;height:21px;line-height:21px;padding:0 5px;border-radius:20px;background:#df0024;color:#fff;font-size:12px;font-weight:800;text-align:center;box-shadow:0 0 0 2px var(--pdt-white,#fff)}
+.mailbox-badge[hidden],.mailbox-page [hidden]{display:none!important}
+.mailbox-login-notice{position:relative;z-index:1;display:block;width:calc(100% - 32px);max-width:1168px;margin:16px auto;padding:16px 24px;border-radius:14px;background:#143656;color:#fff;font-size:20px;font-weight:700;box-shadow:0 6px 24px #0003;text-decoration:none;border:2px solid #fff}
+.mailbox-page{max-width:1200px}.mailbox-page label{display:grid;gap:7px;margin:12px 0}.mailbox-page input:not([type="checkbox"]),.mailbox-page select,.mailbox-page textarea{width:100%;max-width:100%;padding:11px;border:1px solid var(--pdt-line,#ccd4de);border-radius:8px;background:var(--pdt-white,#fff);color:inherit}
+.mailbox-tabs,.mailbox-filters{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-bottom:20px}.mailbox-filters label{flex:1 1 170px}.mailbox-tabs a{white-space:normal}.mailbox-table-wrap{overflow-x:auto;width:100%}.mailbox-table{border-collapse:collapse;width:100%;text-align:left}.mailbox-table th,.mailbox-table td{padding:14px 10px;border-bottom:1px solid var(--pdt-line,#ccd4de);vertical-align:top}.mailbox-table small{display:block;margin-top:6px;overflow-wrap:anywhere;color:var(--pdt-muted,#596777)}.mailbox-table .actions{display:flex;gap:8px;flex-wrap:wrap}.mailbox-new{background:rgba(40,128,210,.09)}.mailbox-new strong{color:var(--pdt-navy,#143656)}.mailbox-recipients{max-height:280px;overflow:auto;border:1px solid var(--pdt-line,#ccd4de);padding:8px 14px;border-radius:8px}.mailbox-page label.mailbox-check{display:flex;gap:10px;align-items:center}.mailbox-check input{width:20px;height:20px;flex-shrink:0}.mailbox-page progress{display:block;width:100%;height:20px;margin-top:15px;accent-color:#143656}.mailbox-pending{display:flex;gap:12px;justify-content:space-between;align-items:center;padding:12px;background:#f0f5fa;border-radius:8px;margin:10px 0}.mailbox-page fieldset{border:1px solid var(--pdt-line,#ccd4de);border-radius:10px;margin:15px 0;padding:12px}
+@media(max-width:700px){.mailbox-login-notice{text-align:center}.mailbox-table th,.mailbox-table td{padding:10px 7px;font-size:14px}.mailbox-table .button{padding:9px 11px}.mailbox-tabs{gap:8px}.mailbox-tabs .button{flex:1 1 130px}.mailbox-page{padding:15px}.mailbox-pending{flex-wrap:wrap}.topbar__inner>.actions:has(.mailbox-header-link){display:flex!important}.topbar .actions .mailbox-header-link{width:36px;height:36px;flex-basis:36px}}
+@media(max-width:700px){.mailbox-documents-table,.mailbox-documents-table tbody{display:block}.mailbox-documents-table thead{display:none}.mailbox-documents-table tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);margin:12px 0;padding:12px;border:1px solid var(--pdt-line,#ccd4de);border-radius:12px}.mailbox-documents-table td{display:block;border:0;padding:8px;min-width:0;overflow-wrap:anywhere}.mailbox-documents-table td:first-child,.mailbox-documents-table td:last-child{grid-column:1/-1}.mailbox-documents-table td[data-label]::before{content:attr(data-label);display:block;font-size:12px;font-weight:700;color:var(--pdt-muted,#596777);margin-bottom:6px}.mailbox-documents-table td:last-child::before{display:none}.mailbox-documents-table .actions>.button{flex:1;min-width:110px}.mailbox-documents-table small{font-size:13px}}
+
+/* Shared unread count in the member profile navigation. */
+.mailbox-badge.mailbox-badge--inline{position:static;display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-left:7px;box-shadow:none;flex-shrink:0}
+.member-portal-mailbox-link{display:flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;border:1px solid var(--pdt-line,#ccd4de);border-radius:12px;color:var(--pdt-blue,#143656);background:var(--pdt-white,#fff);font-weight:700;text-decoration:none}
+.member-portal-tabs a:has(.mailbox-badge--inline){display:inline-flex;align-items:center}
+@media(max-width:760px){.member-portal-mobile-nav{flex-wrap:wrap}.member-portal-mobile-nav .member-portal-mailbox-link{grid-column:1/-1;flex:1 1 100%;order:3;min-height:44px}.member-portal-shell .mailbox-page{padding:0}}
+
+/* Clearly visible mailbox actions on touchscreens and desktop. */
+.mailbox-page .button,.mailbox-page .mailbox-table a[href^="#/mailbox"]{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:12px 18px;border:2px solid #143656;border-radius:12px;background:#143656;color:#fff;font-weight:750;text-decoration:none;box-shadow:0 3px 8px #102c481f;cursor:pointer}
+.mailbox-page .button--secondary{background:#fff;color:#143656;border-color:#143656}
+.mailbox-page .button--primary,.mailbox-tabs .button:not(.button--secondary){background:#c90027;border-color:#c90027;color:#fff;box-shadow:0 4px 12px #c9002726}
+.mailbox-page .button:hover,.mailbox-page .mailbox-table a[href^="#/mailbox"]:hover{filter:brightness(.92)}
+.mailbox-page .button:focus-visible,.mailbox-page .mailbox-table a[href^="#/mailbox"]:focus-visible{outline:3px solid #267cc0;outline-offset:4px}
+.mailbox-page .button:disabled{opacity:.55;cursor:wait;box-shadow:none}
+.mailbox-tabs .button{flex:1 1 160px;min-height:54px;font-size:16px;text-align:center}
+
+/* Visible actions inside the mobile mailbox administration. */
+@media(max-width:700px){
+.mailbox-page .mailbox-tabs{display:grid;grid-template-columns:1fr;gap:10px}
+.mailbox-page .mailbox-tabs .button{width:100%;min-height:56px;font-size:17px;padding:14px 18px;border-width:2px}
+.mailbox-page .mailbox-filters>.button,.mailbox-page [data-mailbox-send]>button,.mailbox-page [data-mailbox-withdraw]>button{width:100%;min-height:52px;font-size:16px;margin-top:8px}
+.mailbox-page .mailbox-table a[href^="#/mailbox"]{min-height:48px;padding:12px 16px;white-space:nowrap}
+}
+
+/* Keep mailbox download labels readable on small phones. */
+.mailbox-page h1,.mailbox-page h2{overflow-wrap:anywhere}
+@media(max-width:480px){.mailbox-documents-table .actions{display:grid;grid-template-columns:minmax(0,1fr);width:100%;gap:10px}.mailbox-documents-table .actions>.button{width:100%;min-width:0;min-height:50px;white-space:nowrap;word-break:normal;overflow-wrap:normal;padding:12px 14px}}
+
+/* Compact guest-list controls and prominent board CSV action. */
+@media(max-width:920px){
+.mobile-live-admin[data-cockpit-page="guests"]{gap:8px}
+.mobile-live-admin[data-cockpit-page="guests"] .cockpit-event-picker{margin:4px 0 8px;padding:12px;border-radius:14px}
+.mobile-live-admin[data-cockpit-page="guests"] .cockpit-event-picker .field{gap:6px}
+.mobile-live-admin[data-cockpit-page="guests"] .cockpit-event-picker .field>label{font-size:14px;line-height:1.2}
+.mobile-live-admin[data-cockpit-page="guests"] .cockpit-event-picker.cockpit-event-picker select{min-height:44px;padding:8px 38px 8px 10px;font-size:15px;border-radius:10px}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-live-hero{display:grid;grid-template-columns:44px 44px minmax(0,1fr);gap:6px 8px;margin:0 0 8px;padding:0;align-items:center}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-live-hero>.mailbox-header-link{width:44px;height:44px;flex-basis:44px;margin:0}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-live-hero>.mobile-cockpit-back{width:44px!important;height:44px!important;min-width:44px!important;min-height:44px!important;flex-basis:44px!important;margin:0}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-live-hero>div{grid-column:1/-1}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-live-hero h1{font-size:27px;margin:2px 0 4px}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-live-hero p:not(.eyebrow){font-size:12px}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-live-hero .eyebrow{font-size:10px;margin:0}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-guest-list{margin:0;border-radius:14px;padding:0 0 10px}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-guest-list>.muted{margin-top:10px;margin-bottom:6px;font-size:12px}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-guest-list>.field{margin-top:0;margin-bottom:6px;font-size:12px;gap:4px}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-guest-list>.field input{min-height:44px;padding:9px 10px;font-size:15px}
+.mobile-live-admin[data-cockpit-page="guests"] [data-cockpit-checkin-refresh]{min-height:44px;padding:8px 14px;margin-bottom:6px;font-size:13px;border:1px solid #7894ae;background:#fff;color:#143656}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-guest-list>.actions{display:block;margin-top:0;margin-bottom:8px}
+.mobile-live-admin[data-cockpit-page="guests"] [data-send-board-guest-list]{display:block;box-sizing:border-box;width:100%;min-height:50px;padding:12px 14px;border:2px solid #c90027!important;border-radius:12px;background:#c90027!important;color:#fff!important;font-size:15px;font-weight:800;line-height:1.3;text-align:center;white-space:normal;box-shadow:0 4px 10px #c9002726}
+.mobile-live-admin[data-cockpit-page="guests"] [data-send-board-guest-list]:hover{background:#a90021!important;border-color:#a90021!important}
+.mobile-live-admin[data-cockpit-page="guests"] [data-send-board-guest-list]:focus-visible{outline:3px solid #397cc0;outline-offset:3px}
+.mobile-live-admin[data-cockpit-page="guests"] [data-send-board-guest-list]:disabled{opacity:.6;cursor:wait}
+.mobile-live-admin[data-cockpit-page="guests"] [data-board-guest-list-status]:empty,.mobile-live-admin[data-cockpit-page="guests"] [data-cockpit-checkin-status]:empty{display:none}
+.mobile-live-admin[data-cockpit-page="guests"] .cockpit-checkin-overview{padding:10px 12px;gap:4px;margin-top:8px}
+.mobile-live-admin[data-cockpit-page="guests"] .cockpit-checkin-overview strong{font-size:16px}
+.mobile-live-admin[data-cockpit-page="guests"] .cockpit-checkin-overview span{font-size:13px}
+}
+
+/* Search pictogram for the cockpit guest list. */
+.cockpit-guest-search{position:relative;display:block;width:100%;min-width:0}
+.cockpit-guest-search>svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:20px;height:20px;fill:none;stroke:#305e85;stroke-width:2;stroke-linecap:round;pointer-events:none}
+.cockpit-guest-search>input[data-cockpit-checkin-search]{width:100%;box-sizing:border-box;padding-left:40px!important}
+
+/* Compact personal document cards with accessible icon actions. */
+.mailbox-page .mailbox-documents-table .actions{display:flex;flex-wrap:nowrap;justify-content:flex-start;gap:10px}
+.mailbox-page .mailbox-documents-table .actions .mailbox-icon-button{display:inline-flex;flex:0 0 44px;width:44px;min-width:44px;max-width:44px;height:44px;min-height:44px;padding:10px!important;border-radius:11px;line-height:1}
+.mailbox-icon-button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.mailbox-action-spinner{animation:mailbox-action-spin 1s linear infinite}
+@keyframes mailbox-action-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.mailbox-action-spinner{animation:none}}
+@media(max-width:700px){.mailbox-documents-table tr{margin:8px 0;padding:8px;gap:0}.mailbox-documents-table td{padding:6px}.mailbox-documents-table td:first-child strong{font-size:15px;line-height:1.3}.mailbox-documents-table td:first-child p{margin:5px 0;font-size:13px;line-height:1.4}.mailbox-documents-table small{font-size:12px;margin-top:4px}.mailbox-documents-table td[data-label]::before{font-size:11px;margin-bottom:4px}.mailbox-documents-table .tag{padding:4px 8px;font-size:11px}.mailbox-page .mailbox-documents-table .actions{display:flex;margin-top:2px}}
+
+/* Two-line document summaries with expandable details. */
+.mailbox-page .mailbox-documents-table thead{display:none}
+.mailbox-page .mailbox-documents-table .mailbox-fold-row{display:block;grid-template-columns:none;margin:8px 0;padding:0;border:1px solid #d6e0eb;border-radius:12px;overflow:hidden}
+.mailbox-page .mailbox-documents-table .mailbox-fold-row>td{display:block;width:100%;padding:0;border:0}
+.mailbox-document-fold>summary{display:grid;grid-template-columns:minmax(0,1fr) auto 18px;align-items:center;gap:8px;min-height:52px;padding:10px 12px;cursor:pointer;list-style:none}
+.mailbox-document-fold>summary::-webkit-details-marker{display:none}
+.mailbox-document-fold>summary>strong{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:14px;line-height:1.35}
+.mailbox-document-fold>summary>.tag{font-size:10px;padding:4px 7px;white-space:nowrap}
+.mailbox-document-fold>summary>svg{width:18px;height:18px;fill:none;stroke:#143656;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.mailbox-document-fold[open]>summary>svg{transform:rotate(180deg)}
+.mailbox-document-fold>summary:focus-visible{outline:3px solid #397cc0;outline-offset:-3px}
+.mailbox-fold-body{padding:0 12px 12px;border-top:1px solid #d6e0eb}
+.mailbox-fold-body>p{margin:10px 0;font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+.mailbox-fold-meta{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0;font-size:12px}
+.mailbox-fold-meta span{display:block;font-size:11px;font-weight:700;color:#596777;margin-bottom:3px}
+.mailbox-fold-meta time{overflow-wrap:anywhere}
+
+/* Shared compact heading for cockpit functions. */
+.cockpit-heading{display:grid;grid-template-columns:44px minmax(0,1fr);gap:6px 12px;align-items:center;width:100%;min-width:0;margin:0 0 12px;grid-column:1/-1}
+.cockpit-heading__titles{min-width:0}
+.cockpit-heading .mobile-cockpit-back{grid-column:1;grid-row:1;width:44px!important;height:44px!important;min-width:44px!important;min-height:44px!important;flex-basis:44px!important;margin:0!important;align-self:center}
+.cockpit-heading .cockpit-heading__titles h1,.cockpit-heading .cockpit-heading__titles h2{font-size:clamp(21px,5.7vw,29px);line-height:1.15;margin:0;overflow-wrap:anywhere}
+.cockpit-heading .cockpit-heading__titles .eyebrow{font-size:10px;line-height:1.2;margin:0 0 3px}
+.cockpit-heading>.cockpit-heading__description{grid-column:1/-1;margin:0!important;font-size:12px!important;line-height:1.4}
+.mobile-live-admin[data-cockpit-page="guests"] .mobile-live-hero>.cockpit-heading{grid-column:1/-1;margin:0}
+.mobile-live-hero>.cockpit-heading{flex-basis:100%}
+
+/* One event-picker layout across cockpit event functions. */
+.cockpit-event-layout .cockpit-event-picker.cockpit-unified-picker{display:block!important;box-sizing:border-box!important;width:100%!important;max-width:none!important;min-width:0!important;margin:0 0 12px!important;padding:12px!important;border:2px solid #2b5d86!important;border-radius:14px!important;background:#dbeaf9!important;box-shadow:0 4px 12px #14365612!important}
+.cockpit-event-layout .cockpit-unified-picker .field{display:grid!important;gap:6px!important;margin:0!important}
+.cockpit-event-layout .cockpit-unified-picker>label,.cockpit-event-layout .cockpit-unified-picker .field>label{display:block!important;font-size:14px!important;line-height:18px!important;font-weight:750!important;color:#153e5d!important;margin:0!important}
+.cockpit-event-layout .cockpit-event-picker.cockpit-unified-picker select{display:block!important;box-sizing:border-box!important;width:100%!important;min-width:0!important;max-width:100%!important;height:46px!important;min-height:46px!important;margin:0!important;padding:10px 40px 10px 10px!important;border:2px solid #2b5d86!important;border-radius:10px!important;font-size:15px!important;line-height:22px!important;font-weight:700!important;color:#0b1728!important}
+.cockpit-event-layout .cockpit-event-picker.cockpit-unified-picker>label>select{margin-top:6px!important}
+@media(max-width:920px){.cockpit-event-layout{box-sizing:border-box;padding-left:14px!important;padding-right:14px!important}}
+
+/* Presentation selector styled like the cockpit event picker. */
+[data-cockpit-presentations] label:has(>[data-cockpit-presentation-select]){display:grid;box-sizing:border-box;width:100%;min-width:0;gap:6px;margin:0 0 12px;padding:12px;border:2px solid #2b5d86;border-radius:14px;background:#dbeaf9;box-shadow:0 4px 12px #14365612;color:#153e5d;font-size:14px;font-weight:750;line-height:18px}
+[data-cockpit-presentations] select[data-cockpit-presentation-select]{display:block;box-sizing:border-box;width:100%;max-width:100%;min-width:0;height:46px;min-height:46px;margin:0;padding:10px 40px 10px 10px;border:2px solid #2b5d86;border-radius:10px;appearance:none;-webkit-appearance:none;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230b1728' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 9 5-5 5 5m-10 6 5 5 5-5'/%3E%3C/svg%3E") right 13px center/20px 20px no-repeat;color:#0b1728;font-size:15px;font-weight:700;line-height:22px;text-overflow:ellipsis;cursor:pointer}
+[data-cockpit-presentations] select[data-cockpit-presentation-select]:focus-visible{outline:3px solid #397cc0;outline-offset:3px}
+[data-cockpit-presentations] select[data-cockpit-presentation-select]:disabled{opacity:.6;cursor:default}
+
+/* Stable moderation entry while cards load. */
+.mobile-moderation-page{overflow-anchor:none}
+.mobile-moderation-page progress{display:block;width:100%;height:8px;accent-color:#143656}
+
+/* Keep mail-plan entry and async summary from shifting the viewport. */
+[data-mail-schedule]{overflow-anchor:none}
+[data-mail-schedule] [data-schedule-summary]{min-height:22px}
+.cockpit-mail-loading-progress{display:block;width:100%;height:8px;accent-color:#143656}

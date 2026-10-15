@@ -1,4 +1,5 @@
-import {presentationPayload,presentationAssetEditor} from '../utils/presentationMedia.js?v=10';
+import {withHomescreenUsage,homescreenBadge} from '../firebase/homescreenUsage.js?v=3';
+import {presentationPayload,presentationAssetEditor} from '../utils/presentationMedia.js?v=13';
 import {speakerEventsForRemoval} from '../utils/eventSpeakerRemoval.js?v=1';
 import { eventInvitationDefaults } from "../utils/eventInvitationDefaults.js?v=1";
 import { cmsShell, cmsTitle } from "./cmsLayout.js?v=485";
@@ -3056,7 +3057,7 @@ export async function eventEditPage(id, tab = "base", query = new URLSearchParam
     const [mailingContacts, mailingUsers] = await Promise.all([list("contacts"), list("users")]);
     const mailingChoices = mergePeopleContactsAndMembers(mailingContacts, members, mailingUsers).map(person => Object.fromEntries(["name", "firstName", "lastName", "company", "position", "email", "mobile", "phone", "linkedIn"].map(field => [field, person[field] || ""])));
     const adminAddRegistrationPanel = `<details class="panel cms-disclosure-panel" style="background:var(--pdt-bg)" open><summary><strong>Person manuell hinzufuegen</strong><span>Admin-Anmeldung</span></summary><form id="admin-registration-form" data-event-id="${event.id}" class="form-grid form-grid--compact"><div hidden data-registration-mailing-data>${escapeHtml(JSON.stringify(mailingChoices))}</div><div class="field"><label for="registration-mailing-search">Aus Mailliste übernehmen</label><input id="registration-mailing-search" type="search" data-registration-mailing-search placeholder="Name, Firma oder E-Mail suchen" autocomplete="off"><div data-registration-mailing-results class="registration-mailing-results" aria-live="polite"></div><small class="muted">Person auswählen, Daten prüfen und anschließend hinzufügen.</small></div><div class="form-grid--two"><div class="field"><label>Vorname *</label><input name="firstName" autocomplete="given-name" required></div><div class="field"><label>Nachname *</label><input name="lastName" autocomplete="family-name" required></div></div><div class="form-grid--two"><div class="field"><label>Unternehmen</label><input name="company" autocomplete="organization"></div><div class="field"><label>Position / Funktion</label><input name="position" autocomplete="organization-title"></div></div><div class="field"><label>LinkedIn-Profil (optional)</label><input name="linkedIn" type="url" autocomplete="url" placeholder="https://www.linkedin.com/in/..."></div><div class="form-grid--two"><div class="field"><label>E-Mail *</label><input name="email" type="email" autocomplete="email" required></div><div class="field"><label>Mobilnummer mit Landesvorwahl *</label><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+49 170 1234567" required></div></div><label class="checkbox checkbox--required"><input type="checkbox" name="privacyAccepted" required> Einwilligung / Datenschutz liegt vor *</label><div class="actions"><button class="button button--primary button--small" type="submit">Person hinzufuegen</button><div id="admin-registration-result"></div></div></form></details>`;
-    const registrationsToolbar = `<div class="registration-toolbar"><div class="registration-toolbar__heading"><h2>Anmeldungen</h2><span class="muted">${assignedPeopleCount} Personen · ${assigned.length} Buchungen</span></div><div class="actions registration-toolbar__actions"><button class="button button--primary button--small" type="button" data-print-name-badges data-event-date="${escapeHtml(event.date || "")}" data-event-id="${escapeHtml(event.id)}" data-event-title="${escapeHtml(event.title || "Event")}">Namensetiketten drucken</button><button class="button button--secondary button--small" type="button" data-prepare-guest-accounts data-event-id="${escapeHtml(event.id)}">Gastkonten vorbereiten</button><button class="button button--secondary button--small" data-export-event="${event.id}">CSV herunterladen</button><button type="button" class="button button--secondary button--small" data-checkin-selected-registrations data-event-id="${escapeHtml(event.id)}" disabled>Ausgewählte einchecken</button><button class="button button--danger button--small" data-delete-selected-registrations data-event-id="${event.id}" disabled>Ausgewählte löschen</button></div></div>`;
+    const registrationsToolbar = `<div class="registration-toolbar"><div class="registration-toolbar__heading"><h2>Anmeldungen</h2><span class="muted">${assignedPeopleCount} Personen · ${assigned.length} Buchungen</span></div><div class="actions registration-toolbar__actions"><button class="button button--primary button--small" type="button" data-print-name-badges data-event-date="${escapeHtml(event.date || "")}" data-event-id="${escapeHtml(event.id)}" data-event-title="${escapeHtml(event.title || "Event")}">Namensetiketten drucken</button><button class="button button--secondary button--small" type="button" data-prepare-guest-accounts data-event-id="${escapeHtml(event.id)}">Gastkonten vorbereiten</button><button class="button button--secondary button--small" data-export-event="${event.id}">CSV herunterladen</button><button type="button" class="button button--secondary button--small" data-send-board-guest-list data-event-id="${escapeHtml(event.id)}">Gästeliste an Vorstand senden</button><p role="status" aria-live="polite" data-board-guest-list-status></p><button type="button" class="button button--secondary button--small" data-checkin-selected-registrations data-event-id="${escapeHtml(event.id)}" disabled>Ausgewählte einchecken</button><button class="button button--danger button--small" data-delete-selected-registrations data-event-id="${event.id}" disabled>Ausgewählte löschen</button></div></div>`;
     const registrationsTable = `<div id="registration-bulk-result"></div><div class="table-wrap"><table class="table"><thead><tr><th><input type="checkbox" data-registration-select-all aria-label="Alle Anmeldungen auswaehlen"></th><th>Teilnehmer</th><th>Unternehmen</th><th>E-Mail</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>${registrationParticipants(assigned).map((participant) => eventRegistrationParticipantRow(participant, event.id)).join("")}</tbody></table></div>`;
     const checkinPanel = cmsEventHandyTicketEnabled(event)
       ? `<div class="actions"><button class="button button--primary button--small" type="button" data-open-event-checkin-screen="new" data-event-id="${escapeHtml(event.id)}" title="Geschützten Einlass-QR für dieses Event öffnen">Einlass-QR öffnen</button></div><div id="event-checkin-access-result" role="status"></div>`
@@ -3236,9 +3237,9 @@ export async function registrationsPage(query = new URLSearchParams()) {
   const requestedEventId = query?.get?.("eventId") || "";
   const selectedEvent = selectableEvents.find((event) => event.id === requestedEventId) || selectableEvents[0] || null;
   const selectedEventId = selectedEvent?.id || "";
-  const visibleRegistrations = selectedEventId
+  const visibleRegistrations = await withHomescreenUsage(selectedEventId
     ?registrations.filter((record) => record.eventId === selectedEventId)
-    : [];
+    : [],selectedEventId);
   const eventOptions = selectableEvents.map((event) => {
     const countLabel = event.registrationCount ?` · ${event.registrationCount} Anmeldung${event.registrationCount === 1 ? "" : "en"}` : " · erwartet";
     return `<option value="${escapeHtml(event.id)}" ${event.id === selectedEventId ?"selected" : ""}>${escapeHtml([event.date ?formatDate(event.date) : "", event.title || event.id].filter(Boolean).join(" · ")).replace(/&amp;middot;/g, "&middot;")}${escapeHtml(countLabel)}</option>`;
@@ -3248,13 +3249,13 @@ export async function registrationsPage(query = new URLSearchParams()) {
       <td>${escapeHtml([record.firstName, record.lastName].filter(Boolean).join(" ") || record.email || "-")}</td>
       <td>${escapeHtml(record.eventTitle || selectedEvent?.title || "-")}</td>
       <td>${status(record.status)}</td>
-      <td>${status(record.mailStatus)}</td>
+      <td>${status(record.mailStatus)}</td><td>${homescreenBadge(record)}</td>
     </tr>`).join("")
-    : `<tr><td colspan="4">${selectedEvent ? "Noch keine Anmeldungen fuer dieses Event." : "Keine relevanten Events fuer Anmeldungen vorhanden."}</td></tr>`;
+    : `<tr><td colspan="5">${selectedEvent ? "Noch keine Anmeldungen fuer dieses Event." : "Keine relevanten Events fuer Anmeldungen vorhanden."}</td></tr>`;
   const chooser = selectableEvents.length
     ?`<div class="field" style="max-width:560px;margin-bottom:18px"><label>Event auswaehlen</label><select data-registration-event-filter>${eventOptions}</select><p class="muted">Angezeigt werden nur Events mit vorhandenen Anmeldungen oder zukuenftige/offene Events, bei denen Anmeldungen zu erwarten sind.</p></div>`
     : `<div class="alert">Aktuell gibt es keine Events mit Anmeldedaten und keine zukuenftigen/offenen Events fuer Anmeldungen.</div>`;
-  return protect(cmsShell("cms/registrations", `${cmsTitle("Teilnehmermanagement", "Anmeldungen")}<section class="panel">${chooser}<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Event</th><th>Bestaetigung</th><th>Mailstatus</th></tr></thead><tbody>${rows}</tbody></table></div></section>`));
+  return protect(cmsShell("cms/registrations", `${cmsTitle("Teilnehmermanagement", "Anmeldungen")}<section class="panel">${chooser}<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Event</th><th>Bestaetigung</th><th>Mailstatus</th><th>Homescreen</th></tr></thead><tbody>${rows}</tbody></table></div></section>`));
 }
 
 export async function eventNotificationsPage({ eventRecord = null, embedded = false, editorContent = "" } = {}) {
@@ -5769,6 +5770,7 @@ function articleVideoAttachments(item = {}) {
       : [];
   return raw
     .map((video, index) => ({
+      ...video,
       id: video.id || `video-${index + 1}`,
       youtubeVideoId: youtubeVideoIdFromValue(video.youtubeVideoId || video.youtubeUrl || video.url || video.embedUrl || ""),
       youtubeUrl: video.youtubeUrl || video.url || "",
@@ -5791,7 +5793,7 @@ function articleVideoAttachmentRow(video = {}, index = 0) {
   const url = video.youtubeUrl || (video.youtubeVideoId ?`https://www.youtube.com/watch?v=${video.youtubeVideoId}` : "");
   return `<fieldset class="video-attachment-row" data-video-attachment-row>
     <legend>Video ${index + 1}</legend>
-    <input type="hidden" name="videoId${index}" value="${escapeHtml(id)}">
+    <input type="hidden" name="videoId${index}" value="${escapeHtml(id)}"><input type="hidden" name="videoMediaVideoId${index}" value="${escapeHtml(video.mediaVideoId||'')}"><input type="hidden" name="videoVisibility${index}" value="${escapeHtml(video.visibility||'public')}">
     <div class="form-grid form-grid--video-attachment">
       <div class="field"><label>YouTube-URL oder ID</label><input name="videoYoutubeUrl${index}" value="${escapeHtml(url)}" placeholder="https://www.youtube.com/watch?v=..."></div>
       <div class="field"><label>Titel</label><input name="videoTitle${index}" value="${escapeHtml(video.title || "")}"></div>
@@ -5838,7 +5840,7 @@ function videoLibraryOptionPayload(video = {}) {
 function usableCentralVideos(videoLibrary = []) {
   return (Array.isArray(videoLibrary) ?videoLibrary : [])
     .map((video, index) => videoLibrarySnapshot(video, index))
-    .filter((video) => video.youtubeVideoId || video.youtubeUrl)
+    .filter((video) => video.youtubeVideoId || video.youtubeUrl || (video.sourceType==='upload'&&video.processingStatus==='ready'))
     .filter((video) => !["archived", "deleted", "hidden", "error"].includes(String(video.status || "ready").toLowerCase()))
     .filter((video) => String(video.trash_status || video.trashStatus || "").toLowerCase() !== "paperkorb")
     .sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
@@ -5849,6 +5851,7 @@ function articleVideoAssignmentRow(video = {}, index = 0) {
   return `<div class="video-assignment-row" data-video-attachment-row>
     <input type="hidden" name="videoId${index}" value="${escapeHtml(item.id)}">
     <input type="hidden" name="videoYoutubeUrl${index}" value="${escapeHtml(item.youtubeUrl || item.youtubeVideoId || "")}">
+    <input type="hidden" name="videoMediaVideoId${index}" value="${escapeHtml(item.mediaVideoId||'')}"><input type="hidden" name="videoVisibility${index}" value="${escapeHtml(item.visibility||'public')}">
     <input type="hidden" name="videoTitle${index}" value="${escapeHtml(item.title || "")}">
     <input type="hidden" name="videoCaption${index}" value="${escapeHtml(item.caption || "")}">
     <input type="hidden" name="videoPosterImageUrl${index}" value="${escapeHtml(item.posterImageUrl || "")}">
@@ -6994,17 +6997,14 @@ export async function peoplePage(query = new URLSearchParams()) {
   let mailLoadError = "";
   let loadError = "";
   try {
-    [contacts, members, users, testGroup, mails] = await Promise.all([
+    [contacts, members, users, testGroup] = await Promise.all([
       list("contacts").catch((error) => {
         loadError = error?.message || String(error);
         return [];
       }),
       list("members").catch(() => []),
       list("users").catch(() => []),
-      getOne("settings", "notificationTestGroup").catch(() => null),
-      list("mailQueue").catch((error) => { mailLoadError = error?.message || String(error); return []; }),
-      list("events").catch(() => []),
-      list("registrations").catch(() => [])
+      getOne("settings", "notificationTestGroup").catch(() => null)
     ]);
   } catch (error) {
     loadError = error?.message || String(error);
@@ -7034,6 +7034,7 @@ export async function peoplePage(query = new URLSearchParams()) {
   const memberCount = sortedPeople.filter((item) => peopleContactType(item) === "member").length;
   const pushCount = sortedPeople.filter((item) => peopleContactPushState(item) === "yes").length;
   const rows = sortedPeople.map((item) => peopleContactRow(item, membersByEmail, highlightEmail, mailDelivery, eventById)).join("");
+  peopleMailStatusContext = { sortedPeople, membersByEmail, highlightEmail, eventById };
   const mailIssueCount = currentMailIssueEmails(sortedPeople, mailDelivery).size;
   const spamSuspectedCount = sortedPeople.filter((item) => item.mailSpamSuspected && String(item.mailSpamSuspectedEmail || "").trim().toLowerCase() === String(item.email || item.contactEmail || item.primaryEmail || "").trim().toLowerCase()).length;
   const selectedTestEmails = new Set((testGroup ? testGroup.emails || [] : members
@@ -7070,7 +7071,7 @@ export async function peoplePage(query = new URLSearchParams()) {
         <div class="setup-step"><span>Adressen</span><strong>${sortedPeople.length}</strong></div>
         <div class="setup-step"><span>Aktiv</span><strong>${activeCount}</strong></div>
         <div class="setup-step"><span>Mitglieder</span><strong>${memberCount}</strong></div>
-        <div class="setup-step"><span>Mailfehler</span><strong>${mailIssueCount}</strong></div>
+        <div class="setup-step"><span>Mailfehler</span><strong data-people-mail-issue-count>…</strong></div>
         <div class="setup-step"><span>Spamverdacht</span><strong>${spamSuspectedCount}</strong></div>
         <div class="setup-step"><span>Push registriert</span><strong data-people-push-count>...</strong></div>
       </div>
@@ -7133,12 +7134,48 @@ export async function peoplePage(query = new URLSearchParams()) {
         <div class="field"><label>Push</label><select data-people-push-filter><option value="all">Alle</option><option value="yes">Push vorhanden</option><option value="no">Ohne Push</option></select></div>
         <div class="field"><label>Mailstatus</label><select data-people-mail-filter><option value="all">Alle</option><option value="yes" ${query.get("mail") === "error" ? "selected" : ""}>Mailfehler</option><option value="no">Ohne Mailfehler</option><option value="spam" ${query.get("mail") === "spam" ? "selected" : ""}>Spamverdacht</option></select></div>
       </div>
+      <p role="status" aria-live="polite" data-people-mail-status>Mailstatus wird im Hintergrund geladen …</p>
       <p class="muted" data-people-filter-count aria-live="polite"></p>
       <div class="table-wrap"><table class="table table--people"><thead><tr><th>Name</th><th>E-Mail</th><th>Funktion</th><th>Typ</th><th>Push</th><th>Status</th><th>Aktionen</th></tr></thead><tbody>
         ${rows || `<tr data-people-empty><td colspan="7">Noch keine Mailingadressen vorhanden.</td></tr>`}
         <tr data-people-empty hidden><td colspan="7">Keine Adressen fuer diesen Filter gefunden.</td></tr>
       </tbody></table></div>
     </section>`));
+}
+
+let peopleMailStatusContext = null;
+export async function hydratePeopleMailStatus(root = document) {
+  const table = root.querySelector('.table--people');
+  const context = peopleMailStatusContext;
+  if (!table || !context || table.dataset.mailHydrating) return;
+  table.dataset.mailHydrating = '1';
+  const status = root.querySelector('[data-people-mail-status]');
+  const rows = [...table.querySelectorAll('[data-people-row]')];
+  rows.forEach(row => { row.dataset.mailError = 'unknown'; });
+  const mailFilter = root.querySelector('[data-people-mail-filter]');
+  if (mailFilter) mailFilter.disabled = true;
+  try {
+    const mails = await list('mailQueue');
+    if (!table.isConnected) return;
+    const delivery = peopleMailDeliveryByEmail(mails);
+    const people = new Map(context.sortedPeople.map(person => [String(person.email || person.contactEmail || person.primaryEmail || '').trim().toLowerCase(),person]));
+    for (const row of rows) {
+      const person = people.get(row.dataset.email); if (!person) continue;
+      const template = document.createElement('template');
+      template.innerHTML = peopleContactRow(person,context.membersByEmail,context.highlightEmail,delivery,context.eventById);
+      const updated = template.content.querySelector('tr');
+      if (!updated || !row.cells[5]) continue;
+      row.dataset.mailError = updated.dataset.mailError;
+      row.cells[5].innerHTML = updated.cells[5].innerHTML;
+    }
+    const count = root.querySelector('[data-people-mail-issue-count]');
+    if(count)count.textContent=String(currentMailIssueEmails(context.sortedPeople,delivery).size);
+    if(status)status.textContent='';
+  } catch(error) {
+    if(table.isConnected && status) status.textContent='Kontakte geladen. Mailstatus konnte nicht geladen werden.';
+  } finally {
+    if(table.isConnected && mailFilter){mailFilter.disabled=false;mailFilter.dispatchEvent(new Event('change',{bubbles:true}));}
+  }
 }
 
 export async function setupPage() {

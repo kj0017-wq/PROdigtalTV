@@ -40,6 +40,9 @@ service firebase.storage {
       );
     }
 
+    // Transfer exclusively via authenticated Functions; no public download tokens.
+    match /mailbox-private/{path=**} { allow read, write: if false; }
+    match /system-audio/{path=**} { allow read, write: if false; }
     match /events/{eventId}/{mediaId}/{fileName} {
       allow write: if editor() && request.resource.size < 30 * 1024 * 1024;
       allow read: if editor()
@@ -152,6 +155,8 @@ service firebase.storage {
         );
       allow write: if editor() && request.resource.size < 30 * 1024 * 1024;
     }
+
+    match /assembly-private/{allPaths=**} { allow read, write: if false; }
 
     match /{allPaths=**} {
       allow read, write: if false;

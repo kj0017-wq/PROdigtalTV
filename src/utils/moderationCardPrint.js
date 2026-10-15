@@ -520,7 +520,9 @@ export function removeSelectedModerationCards(cards, activeId) {
 }
 
 export function openModerationCardDialog({ event = {}, topics = [], speakers = [], boardMembers = [], generateAiTexts = null, saveCards = null } = {}) {
-  if (document.querySelector("[data-moderation-card-dialog]")) return;
+  const existingDialog=document.querySelector('[data-moderation-card-dialog]');
+  if(existingDialog?.open){existingDialog.focus();return;}
+  if(existingDialog)existingDialog.remove();
   const generatedCards = buildModerationCards({ event, topics, speakers, boardMembers });
   const removedIds = new Set(Array.isArray(event.moderationCardRemovedIds) ? event.moderationCardRemovedIds : []);
   const cards = mergeSavedModerationCards(generatedCards, event.moderationCards, [...removedIds]);

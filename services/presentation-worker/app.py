@@ -194,3 +194,6 @@ def settings(id):
     asset_patch={key:patch[key] for key in ('title','visibility') if key in patch}
     if asset_patch:db.collection('media_assets').document(id).set(asset_patch,merge=True)
     return jsonify(ok=True)
+
+from video_routes import register_video_routes
+register_video_routes(app,db,bucket,editor,viewer,signed)

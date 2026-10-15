@@ -1,3 +1,12 @@
+import {groupCockpitTiles} from './utils/cockpitTileGroups.js?v=1';
+import {mountMobileMailingList,returnToMailingList} from './utils/mobileMailingList.js?v=4';
+import {mountEventInvitationGuests} from './utils/eventInvitationGuests.js?v=2';
+import {mountCockpitHeading} from './utils/cockpitHeading.js?v=3';
+import {mountDocumentMailbox} from './utils/documentMailbox.js?v=no-cockpit-icon20261015';
+import {mountMailboxPage} from './pages/mailboxPage.js?v=fastopen20261015';
+import {mountEventGuestListSender} from './utils/eventGuestListSender.js?v=1';
+import {wireUploadedVideos,uploadedVideoSnapshot,uploadedVideoPlayer} from './utils/uploadedVideo.js?v=2';
+import {mountHomescreenUsage,withHomescreenUsage} from './firebase/homescreenUsage.js?v=3';
 import {mountEventSpeakerRemoval} from './utils/eventSpeakerRemoval.js?v=1';
 import { eventTextsChanged, showEventTextUpdate } from "./utils/eventTextUpdateDialog.js?v=1";
 import { mountSpeakerMailingPicker } from "./utils/speakerMailingPicker.js?v=1";
@@ -10,7 +19,7 @@ import { mountCmsButtonHelp } from "./utils/cmsButtonHelp.js?v=1";
 import { wirePauseGong, stopPauseGong } from "./utils/pauseGong.js?v=5";
 import { callEventModerator } from "./firebase/eventModeratorService.js?v=1";
 import { route, onRouteChange, go } from "./utils/router.js?v=4";
-import { mountEventArea } from "./utils/eventArea.js?v=9";
+import { mountEventArea } from "./utils/eventArea.js?v=10";
 import { completeEventEmailLogin } from "./utils/eventEmailLogin.js";
 import { filterFeedback, feedbackFilterOptions, isAcquisitionFilter } from "./utils/feedbackAcquisition.js";
 import { currentUser, canUseCms, isAdmin, login, logout, refreshAuthToken, waitForAuthReady, resendEventLiveVerification, setEventGuestPassword, changeEventLivePassword, requestEventLivePasswordReset } from "./firebase/authService.js?v=479";
@@ -20,7 +29,7 @@ import { linkedInFromForm } from "./utils/linkedin.js";
 import { eventLiveRequestMeta, eventLiveConnection, eventLiveInboxMarkup } from "./utils/eventLiveRequests.js?v=5";
 import { mountEventLiveChat } from "./utils/eventLiveChat.js?v=21";
 import { mountEventLivePersonTabs } from "./utils/eventLivePersonTabs.js?v=6";
-import { wireCockpitCheckin } from "./utils/cockpitCheckin.js?v=6";
+import { wireCockpitCheckin } from "./utils/cockpitCheckin.js?v=13";
 import { confirmChatReset } from "./utils/confirmChatReset.js?v=2";
 import { eventAvatarMarkup } from "./utils/eventLiveAvatar.js?v=1";
 import { resetEventChatData } from "./utils/resetEventChatData.js?v=2";
@@ -129,18 +138,18 @@ function askInitialPushPreference() {
 }
 
 const lazy = {};
-const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=900");
-const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=889");
+const publicPages = () => lazy.publicPages ||= import("./pages/publicPages.js?v=fastmailbox20261015");
+const cmsPages = () => lazy.cmsPages ||= import("./cms/cmsPages.js?v=peoplefast20261015");
 const aiEditorialPages = () => lazy.aiEditorialPages ||= import("./cms/aiEditorialPages.js?v=506");
-const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=122");
+const mediaPages = () => lazy.mediaPages ||= import("./cms/mediaPages.js?v=directvideo20261011");
 const registrationService = () => lazy.registrationService ||= import("./firebase/registrationService.js?v=30");
 const notificationService = () => lazy.notificationService ||= import("./firebase/notificationService.js?v=12");
 const storageService = () => lazy.storageService ||= import("./firebase/storageService.js?v=13");
 const firebaseClientService = () => lazy.firebaseClientService ||= import("./firebase/firebaseClient.js?v=1");
 const setupService = () => lazy.setupService ||= import("./firebase/setupService.js");
 const csvService = () => lazy.csvService ||= import("./utils/csv.js?v=7");
-const nameBadgePrintService = () => lazy.nameBadgePrint ||= import("./utils/nameBadgePrint.js?v=4");
-const moderationCardPrintService = () => lazy.moderationCardPrint ||= import("./utils/moderationCardPrint.js?v=16");
+const nameBadgePrintService = () => lazy.nameBadgePrint ||= import("./utils/nameBadgePrint.js?v=6");
+const moderationCardPrintService = () => lazy.moderationCardPrint ||= import("./utils/moderationCardPrint.js?v=17");
 const openaiService = () => lazy.openaiService ||= import("./ai/openaiService.js?v=331");
 const eventLiveService = () => lazy.eventLiveService ||= import("./firebase/eventLiveService.js?v=8");
 
@@ -353,7 +362,7 @@ async function mobileQualityPage() {
     if (!url) push("Downloads", "Download", item.title || item.fileName, "Download-Datei fehlt", "Download-Datensatz hat keine Datei-URL.", "error");
   });
   (data.videos || []).forEach((item) => {
-    if (!(item.youtubeVideoId || item.youtubeUrl || item.url || item.videoId)) push("Medien", "Video", item.title, "Video-ID fehlt", "Videoeintrag hat keine YouTube-ID oder URL.", "error");
+    if (!(item.youtubeVideoId || item.youtubeUrl || item.url || item.videoId || item.mediaVideoId)) push("Medien", "Video", item.title, "Video-ID fehlt", "Videoeintrag hat keine YouTube-ID oder URL.", "error");
     if ((item.youtubeVideoId || item.youtubeUrl || item.url) && !(item.posterImageUrl || item.thumbnailUrl || item.youtubeThumbnailUrl)) push("Medien", "Video", item.title, "Videostartbild fehlt", "Videoeintrag hat kein gespeichertes Startbild.", "warning");
   });
   const rows = issues.sort((a, b) => a.severity === b.severity ? String(a.area).localeCompare(String(b.area), "de") : a.severity === "error" ? -1 : 1).map((issue) => `<tr><td>${escapeHtml(issue.area)}</td><td>${escapeHtml(issue.type)}</td><td>${escapeHtml(issue.title)}</td><td>${escapeHtml(issue.fault)}</td><td>${escapeHtml(issue.description)}</td><td>${escapeHtml(issue.href || "-")}</td><td>${issue.severity === "error" ? "Fehler" : "Warnung"}</td></tr>`).join("");
@@ -852,6 +861,7 @@ function syncMobileEventChatLinks(eventId) {
     if (eventId) link.setAttribute("href", "/#/event-live/" + encodeURIComponent(eventId));
     else link.removeAttribute("href");
   });
+  document.querySelectorAll("[data-mobile-gallery-link]").forEach(link=>{link.hidden=!eventId;if(eventId)link.href='#/event-gallery/'+encodeURIComponent(eventId)+'?from=cockpit';});
   document.querySelectorAll("[data-mobile-presentation-link]").forEach(link => {link.hidden=!eventId;if(eventId)link.setAttribute("href","#/cms/presentations?eventId="+encodeURIComponent(eventId));else link.removeAttribute("href");});
   document.querySelectorAll("[data-mobile-mail-schedule-link]").forEach(link => {
     link.hidden = !eventId;
@@ -976,15 +986,16 @@ async function mobileModerationCardsPage() {
     </div>`;
   }).join("");
   return `<main class="mobile-live-admin mobile-moderation-page">
+    <section class="panel mobile-live-event-context cockpit-event-picker">
+      <div class="field"><label for="mobile-live-event">Veranstaltung auswählen</label><select id="mobile-live-event" data-mobile-live-event ${eventRows.length ? "" : "disabled"}>${eventOptions}</select>${eventRows.length ? "" : `<p class="muted">Keine aktive Veranstaltung mit Moderationskarten gefunden.</p>`}</div>
+    </section>
     <section class="mobile-live-hero">
       <a class="button button--secondary button--small mobile-cockpit-back" data-cockpit-back href="#/cms/live">← Zurück zum Event-Cockpit</a>
       <p class="eyebrow">Mobile CMS</p>
       <h1>Moderationskarten</h1>
       <p>Ablauf, Moderationstexte und Hinweise für die ausgewählte Veranstaltung.</p>
     </section>
-    <section class="panel mobile-live-event-context">
-      <div class="field"><label>Veranstaltung</label><select data-mobile-live-event ${eventRows.length ? "" : "disabled"}>${eventOptions}</select>${eventRows.length ? "" : `<p class="muted">Keine aktive Veranstaltung mit Moderationskarten gefunden.</p>`}</div>
-    </section>
+
     <section class="panel mobile-live-panel mobile-moderation-cards" id="mobile-cms-moderation-cards">
       <div class="mobile-moderation-cards__content">${moderationCardPanels || `<p class="muted">Keine Veranstaltung für Moderationskarten ausgewählt.</p>`}</div>
     </section>
@@ -1073,8 +1084,10 @@ async function mobileLiveAdminPage(section = "") {
     const checkinPeople = splitEventCheckinPeople(mobileEventCheckinSpeakers(event, speakers), boardMembers);
     return `<div data-group-checkin-event-panel="${escapeHtml(event.id)}" ${event.id === firstEvent.id ? "" : "hidden"}>${mobileGroupCheckinForm(event, "board", checkinPeople.boardMembers)}${mobileGroupCheckinForm(event, "speakers", checkinPeople.speakers)}</div>`;
   }).join("");
-  const cockpitPage = ["dashboard", "qr", "checkin", "guests", "survey", "feedback"].includes(section) ? section : "";
+  const cockpitPage = ["dashboard", "qr", "checkin", "guests", "survey", "feedback", "labels", "invitations"].includes(section) ? section : "";
   const cockpitPageMeta = {
+    invitations: ["Einladungsliste", "Zusätzliche Gäste aus der Gesamtmailliste für dieses Event auswählen"],
+    labels: ["Namensetiketten", "Gäste auswählen, Etiketten drucken oder als CSV und PDF teilen"],
     dashboard: ["Event-Dashboard", "Status und Schnellzugriffe zur ausgewählten Veranstaltung"],
     qr: ["Einlass-QR", "QR-Code für Empfang und Check-in"],
     checkin: ["Check-in", "Referenten und Vorstandsmitglieder einchecken"],
@@ -1143,35 +1156,45 @@ async function mobileLiveAdminPage(section = "") {
         <a href="#/cms/live/checkin">Check-in</a>
         <a href="#/cms/live/guests">Gästeliste</a>
         <a data-mobile-event-chat-link href="/#/event-live/${escapeHtml(encodeURIComponent(event.id))}">Event Chat</a>
-<a href="#/cms/presentations?eventId=${escapeHtml(encodeURIComponent(event.id))}">PowerPoint</a>
+<a href="#/event-gallery/${escapeHtml(encodeURIComponent(event.id))}?from=cockpit">Galerie</a><a href="#/cms/presentations?eventId=${escapeHtml(encodeURIComponent(event.id))}">PowerPoint</a>
 <a href="#/cms/mail-schedule?eventId=${escapeHtml(encodeURIComponent(event.id))}&amp;from=cockpit">Geplante Mails</a>
         <a href="#/cms/live/feedback">Gästebefragung</a>
       </nav>
     </section>`;
   }).join("");
   return `<main class="mobile-live-admin" data-cockpit-page="${escapeHtml(cockpitPage || "home")}">
-    <section class="panel mobile-live-event-context">
-      <div class="field"><label>Veranstaltung</label><select data-mobile-live-event ${eventRows.length ? "" : "disabled"}>${eventOptions}</select>${eventRows.length ? "" : `<p class="muted">Keine aktive Veranstaltung mit Live-Daten gefunden.</p>`}</div>
+    <section class="panel mobile-live-event-context cockpit-event-picker">
+      <div class="field"><label for="mobile-live-event">Veranstaltung auswählen</label><select id="mobile-live-event" data-mobile-live-event ${eventRows.length ? "" : "disabled"}>${eventOptions}</select>${eventRows.length ? "" : `<p class="muted">Keine aktive Veranstaltung mit Live-Daten gefunden.</p>`}</div>
     </section>
     <section class="mobile-live-hero">
       <a class="button button--secondary button--small mobile-cockpit-back" data-cockpit-back href="${cockpitPage ? "#/cms/live" : "#/cms"}">← ${cockpitPage ? "Zurück zum Event-Cockpit" : "Zurück zur CMS-Übersicht"}</a>
-      <div><p class="eyebrow">Mobile CMS</p><h1>${escapeHtml(cockpitPageMeta[0])}</h1><p>${escapeHtml(cockpitPageMeta[1])}</p></div>
+      ${cockpitPage === "qr" ? "" : `<div><p class="eyebrow">Mobile CMS</p><h1>${escapeHtml(cockpitPageMeta[0])}</h1><p>${escapeHtml(cockpitPageMeta[1])}</p></div>`}
       <nav class="mobile-cms-launcher" aria-label="Mobile CMS Funktionen" ${cockpitPage ? "hidden" : ""}>
+        ${isAdmin(currentUser()) ? `<a href="#/cms/accounting-excel" data-mobile-accounting-excel-link><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 3h16v18H4zM4 9h16M10 9v12M4 15h16"/></svg></span><span>Buchhaltung / Excel</span></a>` : ""}
+        ${isAdmin(currentUser()) ? `<a href="#/cms/mailboxes" data-cockpit-mailbox-admin><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7"/></svg></span><span>Postfach&shy;verwaltung</span></a>` : ""}
+        <a href="#/cms/people" data-cockpit-mailing-list><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m3 5 9 7 9-7M7 16h4M15 16h2"/></svg></span><span>Gesamte Mailliste bearbeiten</span></a>
+        <a href="/docs/funktionsbeschreibung.html?v=elevenlabs20261015" data-cockpit-project-description><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span><span>Projektbeschreibung</span></a>
+        <a href="#/cms/assemblies"><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 4h18v16H3zM7 1v6M17 1v6M3 9h18m-14 5 3 3 7-6"/></svg></span><span>Jahres&shy;haupt&shy;versammlung</span></a>
         <a href="#/cms/live/dashboard">${mobileCmsLauncherIcon("dashboard")}<span>Event-Dashboard</span></a>
         <a href="#/cms/live/qr">${mobileCmsLauncherIcon("qr")}<span>Einlass-QR</span></a>
         <a href="#/cms/live/checkin">${mobileCmsLauncherIcon("checkin")}<span>Check-in</span></a>
         <a data-mobile-event-chat-link ${firstEvent.id ? `href="/#/event-live/${escapeHtml(encodeURIComponent(firstEvent.id))}"` : "hidden"}>${mobileCmsLauncherIcon("chat")}<span>Event Chat</span></a>
+        <a href="#/cms/live/invitations"><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7M8 16h8"/></svg></span><span>Einladungsliste</span></a>
+        <a href="#/cms/live/labels"><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8" cy="10" r="2"/><path d="M5 16c0-4 6-4 6 0M14 10h4M14 14h4"/></svg></span><span>Namensetiketten</span></a>
         <a href="#/cms/live-moderation">${mobileCmsLauncherIcon("cards")}<span>Moderationskarten</span></a>
         <a href="#/cms/live/survey">${mobileCmsLauncherIcon("survey")}<span>Umfrage</span></a>
         <a href="#/cms/live-results">${mobileCmsLauncherIcon("results")}<span>Auswertung</span></a>
         <a href="#/cms/live/guests">${mobileCmsLauncherIcon("guests")}<span>Gästeliste</span></a>
         <button type="button" data-pause-gong aria-pressed="false" title="Pausengong mit anschließender Ansage abspielen; erneut drücken zum Stoppen"><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v2m-5 14h10M5 17h14l-2-3V9a5 5 0 0 0-10 0v5l-2 3Zm5 4h4"/></svg></span><span data-gong-label>Pausengong</span></button>
+        <a data-mobile-gallery-link ${firstEvent.id ? `href="#/event-gallery/${escapeHtml(encodeURIComponent(firstEvent.id))}?from=cockpit"` : "hidden"}><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3h18v18H3zM3 16l6-6 5 5 3-3 4 4M16 7h.01"/></svg></span><span>Galerie</span></a>
         <a data-mobile-presentation-link ${firstEvent.id ? `href="#/cms/presentations?eventId=${escapeHtml(encodeURIComponent(firstEvent.id))}"` : "hidden"}><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3h18v13H3zM12 16v5M7 21h10m-1-15 5 3-5 3Z"/></svg></span><span>PowerPoint</span></a>
         <a data-mobile-mail-schedule-link ${firstEvent.id ? `href="#/cms/mail-schedule?eventId=${escapeHtml(encodeURIComponent(firstEvent.id))}&amp;from=cockpit"` : "hidden"}><span class="mobile-cms-launcher__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 5h18v14H3zM3 5l9 7 9-7"/></svg></span><span>Geplante Mails</span></a>
         <a href="#/cms/live/feedback">${mobileCmsLauncherIcon("feedback")}<span>Gästebefragung</span></a>
         <a href="/website.html?v=1020#/home" data-mobile-cms-website-link>${mobileCmsLauncherIcon("website")}<span>Website</span></a>
       </nav>
     </section>
+    ${cockpitPage === "invitations" ? `<form data-event-invitation-list><div class="field" hidden><select data-notification-recipient-group><option value="members_event_guests" selected>Mitglieder und ausgewählte Gäste</option><option value="members">Nur Mitglieder</option></select></div></form>` : ""}
+    ${cockpitPage === "labels" ? `<section data-cockpit-name-badges-inline><p role="status">Gäste werden geladen …</p></section>` : ""}
     <section class="panel mobile-live-panel mobile-dashboard-page" id="mobile-cms-dashboard" ${cockpitPage === "dashboard" ? "" : "hidden"}>
       ${dashboardPanels || `<p class="muted">Keine aktive Veranstaltung für das Event-Dashboard gefunden.</p>`}
     </section>
@@ -1199,8 +1222,9 @@ async function mobileLiveAdminPage(section = "") {
     <details class="panel mobile-live-panel mobile-live-collapsible mobile-guest-list" id="mobile-cms-person-checkin" ${cockpitPage === "guests" ? "open" : "hidden"}>
       <summary><span>Gästeliste des Events</span></summary>
       <p class="muted">Aktive Anmeldungen – noch nicht eingecheckte Gäste zuerst.</p>
-      <label class="field">Gast suchen<input type="search" data-cockpit-checkin-search placeholder="Name, Firma oder E-Mail" autocomplete="off"></label>
-      <button type="button" class="button button--secondary" data-cockpit-checkin-refresh>Aktualisieren</button>
+      <label class="field">Gast suchen<span class="cockpit-guest-search"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input type="search" data-cockpit-checkin-search placeholder="Name, Firma oder E-Mail" autocomplete="off"></span></label>
+
+      <div class="actions"><button type="button" class="button button--secondary" data-send-board-guest-list>Gästeliste als CSV an Vorstand senden</button><p role="status" aria-live="polite" data-board-guest-list-status></p></div>
       <p role="status" aria-live="polite" data-cockpit-checkin-status></p>
       <div data-cockpit-checkin-list></div>
     </details>
@@ -1318,18 +1342,26 @@ async function liveSurveyPage(surveyId = "") {
   }
 }
 async function viewForRoute(current) {
+  if(current.path === "mailbox") return (await import('./pages/mailboxPage.js?v=fastopen20261015')).personalMailboxPage(current.query);
+  if(current.path === "cms" && current.id === "mailboxes") return (await import('./pages/mailboxPage.js?v=fastopen20261015')).adminMailboxPage();
   window.__pdtCmsStage = `route:${current.path}/${current.id || ""}`;
+  if (current.path === "assembly-vote") return (await import("./cms/assemblyPages.js?v=1")).assemblyVotePage(current.id);
+  if (current.path === "assembly-screen") return (await import("./cms/assemblyPages.js?v=1")).assemblyScreenPage(current.id,current.query);
+  if (current.path === "cms" && current.id === "assemblies") return (await import("./cms/assemblyPages.js?v=1")).assemblyPage(current.query);
+  if (current.path === "cms" && current.id === "assembly-moderation") return (await import("./cms/assemblyPages.js?v=1")).assemblyModerationPage(current.query);
   if (current.path === "cms" && current.id === "login") return (await publicPages()).loginPage();
   if (current.path === "survey") return liveSurveyPage(current.id);
+  if(current.path==='event-gallery')return (await import('./pages/eventGalleryPage.js?v=1')).eventGalleryPage(current.id,current.query);
+  if (current.path === "cms" && (current.id === "accounting-excel" || (current.id === "accounting" && mobileCmsDisabled()))) return (await import("./cms/mobileAccountingExcelPage.js?v=1")).mobileAccountingExcelPage(current.query);
   if (current.path === "cms" && mobileCmsDisabled() && current.id === "live") return mobileLiveAdminPage(current.section || "");
   if (current.path === "cms" && mobileCmsDisabled() && current.id === "live-moderation") return mobileModerationCardsPage();
   if (current.path === "cms" && mobileCmsDisabled() && current.id === "live-results") return mobileLiveResultsPage();
-  if (current.path === "cms" && mobileCmsDisabled() && !["quality", "help", "mail-schedule", "event-notifications", "presentations"].includes(current.id)) return mobileCmsPlaceholder();
+  if (current.path === "cms" && mobileCmsDisabled() && !["quality", "help", "mail-schedule", "event-notifications", "presentations", "people"].includes(current.id)) return mobileCmsPlaceholder();
   if (current.path === "cms" && current.id === "quality" && mobileCmsDisabled()) return mobileQualityPage();
   if (current.path === "cms" && current.id === "live") return mobileLiveAdminPage(current.section || "");
   if (current.path === "cms" && current.id === "live-moderation") return mobileModerationCardsPage();
   if (current.path === "cms" && current.id === "live-results") return mobileLiveResultsPage();
-  if (current.path === "cms" && current.id === "accounting") return (await import("./cms/accounting.js?v=106")).accountingPage(current.query);
+  if (current.path === "cms" && current.id === "accounting") return (await import("./cms/accounting.js?v=107")).accountingPage(current.query);
   if (current.path === "cms" && current.id === "media") {
     const { mediaPage } = await mediaPages();
     return mediaPage(current.section || "library", current.query);
@@ -1399,8 +1431,8 @@ async function viewForRoute(current) {
       }
       return html;
     }
-    if (current.id === "presentations") return (await import("./cms/cockpitPresentationPage.js?v=8")).cockpitPresentationPage();
-    if (current.id === "mail-schedule") return (await import("./cms/mailSchedulePage.js?v=18")).mailSchedulePage();
+    if (current.id === "presentations") return (await import("./cms/cockpitPresentationPage.js?v=11")).cockpitPresentationPage();
+    if (current.id === "mail-schedule") return (await import("./cms/mailSchedulePage.js?v=20")).mailSchedulePage();
     if (current.id === "event-feedback") return eventFeedbackAdminPage(current.query);
     if (current.id === "audio") return audioAdminPage();
     if (current.id === "mail-admin") return mailAdminPage();
@@ -1541,6 +1573,17 @@ function markAlreadyBrokenImages(scope = document) {
   });
 }
 
+document.addEventListener("click", (event) => {
+  const link = event.target.closest?.("[data-cockpit-mailing-list]");
+  if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+  if (link.getAttribute("aria-busy") === "true") {
+    event.preventDefault(); event.stopImmediatePropagation(); return;
+  }
+  link.setAttribute("aria-busy", "true"); link.setAttribute("aria-disabled", "true");
+  const label = link.querySelector(":scope > span:last-child");
+  if (label) label.textContent = "Mailliste wird geladen …";
+}, true);
+
 async function render() {
   const generation = ++renderGeneration;
   const routeHashAtStart = window.location.hash || "#/home";
@@ -1556,6 +1599,43 @@ async function render() {
     warmMemberProfileCache(currentUser());
     if (redirectPublicRouteOutOfCms(currentRoute)) return;
     const isCmsRoute = currentRoute?.path === "cms";
+    const isAccountingExcelRoute = isCmsRoute && (currentRoute.id === "accounting-excel"
+      || (currentRoute.id === "accounting" && mobileCmsDisabled()));
+    if (root && isCmsRoute && currentRoute.id === "people") {
+      const pending = document.createElement('div');
+      pending.innerHTML = `<main class="cms-app"><section class="cms-main"><div class="cms-title"><div><p class="eyebrow">Kommunikation</p><h1>Gesamte Mailliste</h1></div></div><section class="panel" aria-busy="true"><p data-cms-route-loading role="status" aria-live="polite">Mailliste wird geladen …</p><progress style="width:100%;height:8px" aria-label="Mailliste wird geladen"></progress></section></section></main>`;
+      mountCockpitHeading(pending,currentRoute);
+      root.replaceChildren(...pending.childNodes);
+      window.scrollTo({top:0,behavior:'instant'});
+    }
+    if (root && isCmsRoute && currentRoute.id === "live-moderation") {
+      const previousSelect=root.querySelector('[data-mobile-live-event]');
+      const options=previousSelect?.innerHTML||'<option>Veranstaltungen werden geladen …</option>';
+      const selected=previousSelect?.value||'';
+      const pending=document.createElement('div');
+      pending.innerHTML=`<main class="mobile-live-admin mobile-moderation-page"><section class="panel mobile-live-event-context cockpit-event-picker"><div class="field"><label for="moderation-pending-event">Veranstaltung auswählen</label><select id="moderation-pending-event" disabled>${options}</select></div></section><section class="mobile-live-hero"><a class="button mobile-cockpit-back" data-cockpit-back href="#/cms/live">Zurück zum Event-Cockpit</a><p class="eyebrow">Mobile CMS</p><h1>Moderationskarten</h1><p>Ablauf, Moderationstexte und Hinweise für die ausgewählte Veranstaltung.</p></section><section class="panel mobile-live-panel mobile-moderation-cards"><p data-cms-route-loading role="status">Moderationskarten werden geladen …</p><progress aria-label="Moderationskarten werden geladen"></progress></section></main>`;
+      if(selected)pending.querySelector('select').value=selected;
+      mountCockpitHeading(pending,currentRoute);
+      root.replaceChildren(...pending.childNodes);
+      window.scrollTo({top:0,behavior:'instant'});
+    }
+    if (root && isCmsRoute && currentRoute.id === "mail-schedule") {
+      const previousSelect=root.querySelector('[data-schedule-event],[data-mobile-live-event]');
+      const options=previousSelect?.innerHTML||'<option value="">Alle Events</option>';
+      const selected=currentRoute.query.get('eventId')||previousSelect?.value||'';
+      const pending=document.createElement('div');
+      pending.innerHTML=`<main class="cms-app"><section class="cms-main"><div class="cockpit-event-picker"><label>Veranstaltung auswählen<select disabled>${options}</select></label></div><div class="cms-title"><div><p class="eyebrow">Kommunikation</p><h1>Geplante Mails</h1></div></div><p data-cms-route-loading role="status">Versandplan wird geladen …</p><progress class="cockpit-mail-loading-progress" aria-label="Geplante Mails werden geladen"></progress></section></main>`;
+      if(selected)pending.querySelector('select').value=selected;
+      mountCockpitHeading(pending,currentRoute);
+      root.replaceChildren(...pending.childNodes);
+      window.scrollTo({top:0,behavior:'instant'});
+    }
+    if (root && isAccountingExcelRoute) {
+      root.innerHTML = `<main class="mobile-live-admin" data-mobile-accounting-loading><section class="panel"><a class="button button--small mobile-cockpit-back" data-cockpit-back href="#/cms/live">← Zurück zum Event-Cockpit</a><p class="eyebrow">Mobile CMS</p><h1>Buchhaltung / Excel</h1><p data-cms-route-loading role="status">Buchhaltung wird geladen …</p></section></main>`;
+    }
+    if (root && (currentRoute.path === "mailbox" || (currentRoute.path === "portal" && currentRoute.query.get("tab") === "my-documents") || (isCmsRoute && currentRoute.id === "mailboxes"))) {
+      root.innerHTML = `<main class="mobile-live-admin"><section class="panel mailbox-page" aria-busy="true"><h1>${isCmsRoute ? "Postfachverwaltung" : "Dokumentenpostfach"}</h1><p role="status">Postfach wird geöffnet …</p><progress aria-label="Postfach wird geladen"></progress></section></main>`;
+    }
     if (root && !root.innerHTML) {
       const loadingEyebrow = isCmsRoute ? "CMS" : "PROdigitalTV";
       const loadingTitle = isCmsRoute ? "Lade Inhalte ..." : "Website laedt ...";
@@ -1595,7 +1675,7 @@ async function render() {
     ]);
     if (loadingTimer) window.clearTimeout(loadingTimer);
     if (generation !== renderGeneration) return;
-    if (!isCmsRoute && (window.location.hash || "#/home") !== routeHashAtStart) {
+    if ((window.location.hash || "#/home") !== routeHashAtStart) {
       render();
       return;
     }
@@ -1611,13 +1691,29 @@ async function render() {
         }
       }
     }
-    root.innerHTML = viewHtml;
+    const preparedView=document.createElement('div');
+    preparedView.innerHTML=viewHtml;
+    groupCockpitTiles(preparedView);
+    mountCockpitHeading(preparedView,currentRoute);
+    root.replaceChildren(...preparedView.childNodes);
+  wireCockpitCheckin(document.querySelector("#mobile-cms-person-checkin"), {
+    eventSelect: document.querySelector("[data-mobile-live-event]"),
+    load: () => list("registrations"),
+    enrich: (records,eventId) => withHomescreenUsage(records,eventId),
+    checkIn: async (eventId, ids) => (await registrationService()).checkInAdminRegistrations(eventId, ids),
+    remove: async (registrationId) => (await registrationService()).deleteAdminRegistration(registrationId),
+    onChanged: () => refreshMobileCheckinStats({ silent: false })
+  });
     mountCmsButtonHelp(isCmsRoute);
     applyEntrancePresentation(root);
     if (!currentUser()) wireEntranceScanner(root);
     markAlreadyBrokenImages(root);
     window.setTimeout(() => markAlreadyBrokenImages(root), 1600);
     wireActions();
+    mountDocumentMailbox(root,{audioMuted:()=>Boolean(activePublicTts?.audio?.muted || activePublicTts?.audio?.volume===0)});
+    mountMailboxPage(root);
+    mountEventGuestListSender(root);
+    mountEventInvitationGuests(root);
     wireEventLiveActions();
     wirePushControls();
     document.querySelector("[data-live-gate-retry]")?.addEventListener("click", () => render());
@@ -1639,7 +1735,7 @@ async function render() {
         document.getElementById(scrollAfterRender)?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 60);
     } else {
-      window.scrollTo({ top: 0 });
+      window.scrollTo({ top: 0, behavior: isCmsRoute ? "instant" : "auto" });
     }
     if (startMobileLiveAfterRender) {
       const button = document.querySelector("[data-mobile-live-results-toggle]");
@@ -2011,6 +2107,7 @@ function stopAllAudioPlayback() {
     audio.removeAttribute("src");
     audio.load?.();
   });
+  document.querySelectorAll("[data-uploaded-video] video").forEach(video=>video.pause());
   document.querySelectorAll("[data-youtube-video].is-playing").forEach((box) => {
     const iframe = box.querySelector("iframe");
     try {
@@ -2302,6 +2399,11 @@ document.addEventListener("touchstart", (event) => {
   if (!link || !link.matches?.('a[href^="#/"]')) return;
   preloadPublicRouteFromLink(link);
 }, { capture: true, passive: true });
+
+document.addEventListener("click", (event) => {
+  if(!event.target.closest?.('[data-cockpit-help]'))return;
+  import('./utils/cockpitHelp.js?v=7').then(module=>module.openCockpitHelp()).catch(()=>alert('Die Funktionsbeschreibung konnte nicht geladen werden. Bitte erneut versuchen.'));
+});
 
 document.addEventListener("click", (event) => {
   const stopButton = event.target.closest?.("[data-tts-stop]");
@@ -2813,6 +2915,8 @@ function youtubeVideoIdFromValue(value = "") {
 function collectVideoAttachments(form, values = {}) {
   const rows = Array.from(form.querySelectorAll("[data-video-attachment-row]"));
   const videos = rows.map((row, index) => {
+    const uploadedId=values[`videoMediaVideoId${index}`];
+    if(uploadedId)return {id:uploadedId,mediaVideoId:uploadedId,sourceType:"upload",title:values[`videoTitle${index}`]||"Video",caption:values[`videoCaption${index}`]||"",description:values[`videoDescription${index}`]||"",posterImageUrl:values[`videoPosterImageUrl${index}`]||"",visibility:values[`videoVisibility${index}`]||"public",status:values[`videoStatus${index}`]||"ready",processingStatus:"ready",sortOrder:index+1};
     const url = String(values[`videoYoutubeUrl${index}`] || "").trim();
     const youtubeVideoId = youtubeVideoIdFromValue(url);
     const poster = String(values[`videoPosterImageUrl${index}`] || "").trim()
@@ -2845,7 +2949,7 @@ function collectVideoAttachments(form, values = {}) {
     };
   }).filter(Boolean);
   Object.keys(values).forEach((key) => {
-    if (/^video(?:Id|YoutubeUrl|Title|Caption|Description|PosterImageUrl|PosterImageAlt|PosterImageCaption|SortOrder|PrivacyStatus|Visibility|Status)\d+$/.test(key)) {
+    if (/^video(?:Id|MediaVideoId|YoutubeUrl|Title|Caption|Description|PosterImageUrl|PosterImageAlt|PosterImageCaption|SortOrder|PrivacyStatus|Visibility|Status)\d+$/.test(key)) {
       delete values[key];
     }
   });
@@ -8897,7 +9001,7 @@ function wireGalleryEditor() {
 }
 
 function openGalleryPlayer(gallery) {
-  if(gallery?.type === "presentation")return import("./utils/presentationMedia.js?v=10").then(module=>module.openPresentationOverlay(gallery)).catch(error=>console.error("Präsentation konnte nicht geöffnet werden",error));
+  if(gallery?.type === "presentation")return import("./utils/presentationMedia.js?v=13").then(module=>module.openPresentationOverlay(gallery)).catch(error=>console.error("Präsentation konnte nicht geöffnet werden",error));
   const images = Array.isArray(gallery?.images) ? gallery.images.filter((image) => image.url) : [];
   if (!images.length) return;
   let index = 0;
@@ -9054,6 +9158,7 @@ function videoAttachmentRowTemplate(index = 0) {
 }
 
 function normalizedVideoLibraryPayload(video = {}, index = 0) {
+  if(video.sourceType === "upload") return {...uploadedVideoSnapshot(video),sortOrder:index+1};
   const youtubeVideoId = video.youtubeVideoId || youtubeVideoIdFromValue(video.youtubeUrl || video.url || video.embedUrl || "");
   const youtubeUrl = video.youtubeUrl || video.url || (youtubeVideoId ? `https://www.youtube.com/watch?v=${youtubeVideoId}` : "");
   const posterImageUrl = video.posterImageUrl || video.thumbnailUrl || video.youtubeThumbnailUrl || (youtubeVideoId ? `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg` : "");
@@ -9077,7 +9182,8 @@ function videoAssignmentRowTemplate(video = {}, index = 0) {
   const item = normalizedVideoLibraryPayload(video, index);
   return `<div class="video-assignment-row" data-video-attachment-row>
     <input type="hidden" name="videoId${index}" value="${escapeHtml(item.id)}">
-    <input type="hidden" name="videoYoutubeUrl${index}" value="${escapeHtml(item.youtubeUrl)}">
+    <input type="hidden" name="videoYoutubeUrl${index}" value="${escapeHtml(item.youtubeUrl||'')}">
+    <input type="hidden" name="videoMediaVideoId${index}" value="${escapeHtml(item.mediaVideoId||'')}"><input type="hidden" name="videoVisibility${index}" value="${escapeHtml(item.visibility||'public')}">
     <input type="hidden" name="videoTitle${index}" value="${escapeHtml(item.title)}">
     <input type="hidden" name="videoCaption${index}" value="${escapeHtml(item.caption)}">
     <input type="hidden" name="videoPosterImageUrl${index}" value="${escapeHtml(item.posterImageUrl)}">
@@ -9103,6 +9209,7 @@ function renumberVideoAttachmentRows(container) {
 }
 
 function wireVideoAttachmentEditor() {
+  wireUploadedVideos();
   document.querySelectorAll("[data-video-attachments]").forEach((box) => {
     if (box.dataset.videoAttachmentsWired === "1") return;
     box.dataset.videoAttachmentsWired = "1";
@@ -9167,6 +9274,7 @@ async function requestVideoFullscreen(element) {
 }
 
 function wireArticleVideos() {
+  wireUploadedVideos();
   document.querySelectorAll("[data-youtube-video]").forEach((box) => {
     if (box.dataset.youtubeVideoWired === "1") return;
     box.dataset.youtubeVideoWired = "1";
@@ -12243,15 +12351,17 @@ function editorialPreviewVideos(form) {
   const rows = Array.from(form.querySelectorAll("[data-video-attachment-row]"));
   const videos = rows.map((row, index) => {
     const get = (prefix) => row.querySelector(`[name="${prefix}${index}"]`)?.value || "";
+    const uploadedId=get("videoMediaVideoId");if(uploadedId)return {sourceType:"upload",mediaVideoId:uploadedId,title:get("videoTitle")||"Video",posterImageUrl:get("videoPosterImageUrl")};
     const youtubeValue = get("videoYoutubeUrl");
     const youtubeVideoId = editorialPreviewVideoId(youtubeValue);
     const title = get("videoTitle") || "Video";
     const poster = get("videoPosterImageUrl") || (youtubeVideoId ? `https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg` : "");
     return { youtubeVideoId, youtubeValue, title, poster };
-  }).filter((video) => video.youtubeVideoId || video.youtubeValue || video.title !== "Video");
+  }).filter((video) => video.mediaVideoId || video.youtubeVideoId || video.youtubeValue || video.title !== "Video");
   if (!videos.length) return "";
   return `<section class="editorial-preview-video-hero" aria-label="Video">${videos.slice(0, 1).map((video) => {
     const title = video.title || "Video abspielen";
+    if(video.sourceType==='upload')return uploadedVideoPlayer(video);
     const iframe = video.youtubeVideoId ? `<iframe src="https://www.youtube.com/embed/${encodeURIComponent(video.youtubeVideoId)}?enablejsapi=1&rel=0&fs=1" title="${escapeHtml(title)}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" allowfullscreen tabindex="-1"></iframe>` : "";
     return `<div class="article-video-poster editorial-preview-video-poster" data-youtube-video="${escapeHtml(video.youtubeVideoId)}" data-youtube-title="${escapeHtml(title)}" role="button" tabindex="0" aria-label="${escapeHtml(`${title} abspielen`)}">${video.poster ? `<img src="${escapeHtml(video.poster)}" alt="${escapeHtml(title)}">` : ""}${iframe}<span class="article-video-play" aria-hidden="true"></span><small>Mit Klick wird das Video gestartet.</small></div><h3>${escapeHtml(title)}</h3>`;
   }).join("")}</section>`;
@@ -13589,7 +13699,7 @@ function wireEventLiveActions() {
   });
   if (rootNode) {
     mountEventArea(rootNode, liveData());
-    import("./utils/eventPhotos.js?v=9").then(({ mountEventPhotos }) => mountEventPhotos(rootNode));
+    import("./utils/eventPhotos.js?v=10").then(({ mountEventPhotos }) => mountEventPhotos(rootNode));
   }
   const linkedPeer = new URLSearchParams(location.hash.split("?")[1] || "").get("peer");
   if (rootNode && linkedPeer && !rootNode.dataset.linkedPeerOpened
@@ -13990,10 +14100,12 @@ function wireEventLiveActions() {
 }
 
 function wireActions() {
-  if(canUseCms(currentUser()) && document.querySelector("[data-media-upload-form],#content-edit-form,#event-edit-form,[data-presentation-editor]")) import("./utils/presentationMedia.js?v=10").then(module=>module.mountPresentationCMS()).catch(console.error);
+  if(document.querySelector('[data-event-gallery-page]'))import('./pages/eventGalleryPage.js?v=1').then(m=>m.mountEventGalleryPage()).catch(console.error);
+  mountHomescreenUsage();
+  if(canUseCms(currentUser()) && document.querySelector("[data-media-upload-form],#content-edit-form,#event-edit-form,[data-presentation-editor]")) import("./utils/presentationMedia.js?v=13").then(module=>module.mountPresentationCMS()).catch(console.error);
   if (document.querySelector("[data-event-decline]")) import("./pages/eventInvitationDeclinePage.js?v=1").then(module => module.mountEventInvitationDecline()).catch(console.error);
-  if (document.querySelector("[data-cockpit-presentations]")) import("./cms/cockpitPresentationPage.js?v=8").then(module => module.mountCockpitPresentations()).catch(console.error);
-  if (document.querySelector("[data-mail-schedule]")) import("./cms/mailSchedulePage.js?v=18").then(module => module.mountMailSchedule()).catch(console.error);
+  if (document.querySelector("[data-cockpit-presentations]")) import("./cms/cockpitPresentationPage.js?v=11").then(module => module.mountCockpitPresentations()).catch(console.error);
+  if (document.querySelector("[data-mail-schedule]")) import("./cms/mailSchedulePage.js?v=20").then(module => module.mountMailSchedule()).catch(console.error);
   if (document.querySelector(".pdtv-home")) import("./firebase/currentLiveEventButton.js?v=1").then(module => module.mountCurrentLiveEventButton()).catch(console.error);
   if (document.querySelector("[data-ticket-event-access]")) import("./firebase/eventTicketLogin.js?v=3").then(module => module.mountEventTicketLogin()).catch(console.error);
   if (document.querySelector("[data-live-code-login]")) import("./firebase/eventWelcomeLogin.js?v=2").then(module => module.mountEventWelcomeLogin()).catch(console.error);
@@ -14179,13 +14291,7 @@ function wireActions() {
       }
     }
   });
-  wireCockpitCheckin(document.querySelector("#mobile-cms-person-checkin"), {
-    eventSelect: document.querySelector("[data-mobile-live-event]"),
-    load: () => list("registrations"),
-    checkIn: async (eventId, ids) => (await registrationService()).checkInAdminRegistrations(eventId, ids),
-    remove: async (registrationId) => (await registrationService()).deleteAdminRegistration(registrationId),
-    onChanged: () => refreshMobileCheckinStats({ silent: false })
-  });
+
   syncMobileEventChatLinks(document.querySelector("[data-mobile-live-event]")?.value || "");
   document.querySelector("[data-mobile-live-event]")?.addEventListener("change", (event) => {
     const eventId = event.currentTarget.value || "";
@@ -14306,7 +14412,9 @@ function wireActions() {
   wireEditorialToolJumps();
   wireEditorialFormatting();
   wireCmsMenu();
-  if (document.querySelector("[data-accounting-records]")) import("./cms/accounting.js?v=106").then(module => module.mountAccounting()).catch(error => console.error("Buchhaltung konnte nicht gestartet werden", error));
+  if (document.querySelector("[data-mobile-accounting-excel]")) import("./cms/mobileAccountingExcelPage.js?v=1").then(module => module.mountMobileAccountingExcel()).catch(console.error);
+  if (document.querySelector("[data-assembly-admin],[data-assembly-vote],[data-assembly-screen],[data-assembly-moderation]")) import("./cms/assemblyPages.js?v=1").then(m=>{m.mountAssemblyAdmin();m.mountAssemblyVote();m.mountAssemblyScreen();m.mountAssemblyModeration();}).catch(console.error);
+  if (document.querySelector("[data-accounting-records]")) import("./cms/accounting.js?v=107").then(module => module.mountAccounting()).catch(error => console.error("Buchhaltung konnte nicht gestartet werden", error));
   wireImageDropzones();
   wireGalleryEditor();
   wireGalleryPlayers();
@@ -21557,6 +21665,29 @@ function wireActions() {
     }
   }));
 
+  {
+    const host = document.querySelector("[data-cockpit-name-badges-inline]");
+    const select = document.querySelector("[data-mobile-live-event]");
+    if (host && select) {
+      let generation = 0;
+      const loadBadges = async () => {
+        const version = ++generation;
+        const eventId = select.value;
+        const option = select.selectedOptions[0];
+        host.innerHTML = '<p role="status">Gäste und Etiketten werden geladen …</p>';
+        if (!eventId) { host.textContent = "Bitte eine Veranstaltung auswählen."; return; }
+        try {
+          const [records, participants, service] = await Promise.all([list("registrations"), import("./utils/registrationParticipants.js?v=2"), nameBadgePrintService()]);
+          if (!host.isConnected || version !== generation) return;
+          const active = records.filter(item => item.eventId === eventId && !["cancelled", "canceled", "deleted", "expired", "archived", "rejected"].includes(String(item.status || "").toLowerCase()));
+          const people = participants.registrationParticipants(active).map(person => ({ id: person.id, name: [person.firstName, person.lastName].filter(Boolean).join(" ") || person.displayName || "", company: person.company || "" }));
+          service.openNameBadgePrintDialog({ people, eventTitle: option.dataset.eventTitle || option.textContent, eventDate: option.dataset.eventDate || "", container: host });
+        } catch (error) { if (host.isConnected && version === generation) host.textContent = error.message || "Etiketten konnten nicht geladen werden."; }
+      };
+      select.addEventListener("change", loadBadges);
+      loadBadges();
+    }
+  }
   document.querySelectorAll("[data-print-name-badges]").forEach((button) => button.addEventListener("click", async () => {
     const result = document.querySelector("#registration-bulk-result");
     try {
@@ -22287,7 +22418,8 @@ async function savePeopleEditForm(form, { stayInPlace = false } = {}) {
     if (newsletterAllowed) payload.notificationOptOutAt = "";
   }
   const button = form.querySelector("button[type='submit']");
-  if (button) button.disabled = true;
+  const originalButtonText = button?.textContent;
+  if (button) { button.disabled = true; button.textContent = "Wird gespeichert …"; }
   try {
     const sourceAddressUnchanged = ["members", "users"].includes(sourceCollection) && sourceEmail === email;
     if (!sourceAddressUnchanged) await upsert("contacts", payload);
@@ -22304,7 +22436,7 @@ async function savePeopleEditForm(form, { stayInPlace = false } = {}) {
     }
     return true;
   } catch (error) {
-    if (button) button.disabled = false;
+    if (button) { button.disabled = false; button.textContent = originalButtonText; }
     alert(`Mailing-Adresse konnte nicht gespeichert werden: ${error.message || String(error)}`);
     return false;
   }
@@ -22364,7 +22496,11 @@ function openPeopleEditLayer(button) {
   layer.querySelector("[data-people-edit-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const saved = await savePeopleEditForm(event.currentTarget, { stayInPlace: true });
-    if (saved) closeLayer();
+    if (saved) {
+      const email = layer.querySelector("[name=email]")?.value;
+      closeLayer();
+      returnToMailingList(email);
+    }
   });
   layer.querySelector("[data-people-check-invitations]")?.addEventListener("click", async (event) => {
     const currentPermission = Boolean(layer.querySelector("[name='newsletterAllowed']")?.checked);
@@ -22387,6 +22523,8 @@ function openPeopleEditLayer(button) {
 }
 
 function bindPeopleManagementControls() {
+  mountMobileMailingList();
+  if (document.querySelector(".table--people")) cmsPages().then(module => module.hydratePeopleMailStatus(document)).catch(() => {});
   const peopleSearch = document.querySelector("[data-people-search]");
   const peopleTypeFilter = document.querySelector("[data-people-type-filter]");
   const peopleNameFilter = document.querySelector("[data-people-name-filter]");
@@ -22607,6 +22745,9 @@ async function refreshInstalledAppShellIfNeeded() {
   }
   return false;
 }
+
+// Check new post at startup, independently of route loading and the mailbox button.
+mountDocumentMailbox(document,{audioMuted:()=>Boolean(activePublicTts?.audio?.muted || activePublicTts?.audio?.volume===0)});
 
 if (!redirectFirebaseDefaultHostToPrimaryDomain()) {
   resetInstalledAppCachesIfRequested().then((didReset) => {

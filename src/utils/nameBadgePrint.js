@@ -226,11 +226,16 @@ function safeFilename(value = "Event") {
   return clean(value).replace(/[^a-z0-9äöüß_-]+/gi, "-").replace(/^-+|-+$/g, "") || "Event";
 }
 
-export function openNameBadgePrintDialog({ people = [], eventTitle = "Event", eventDate = "" } = {}) {
-  if (document.querySelector("[data-name-badge-dialog]")) return;
+export function buildNameBadgeCsv(people = []) {
+  const cell = value => '"' + (/^[=+@-]/.test(clean(value)) ? "'" : "") + clean(value).replace(/"/g, '""') + '"';
+  return "\uFEFF" + [["Name", "Unternehmen"], ...people.map(person => [person.name, person.company])].map(row => row.map(cell).join(";")).join("\r\n");
+}
+
+export function openNameBadgePrintDialog({ people = [], eventTitle = "Event", eventDate = "", container = null } = {}) {
+  if (!container && document.querySelector("[data-name-badge-dialog]")) return;
   const normalized = people.map((person, index) => ({ id: person.id || `person-${index}`, name: clean(person.name), company: clean(person.company) })).filter(person => person.name);
   if (!normalized.length) throw new Error("Für dieses Event sind keine druckbaren Teilnehmer vorhanden.");
-  const dialog = document.createElement("dialog");
+  const dialog = document.createElement(container ? "section" : "dialog");
   dialog.className = "name-badge-dialog";
   dialog.dataset.nameBadgeDialog = "";
   dialog.innerHTML = `<form method="dialog" class="name-badge-dialog__header"><div><p class="eyebrow">Avery Zweckform L4785-20</p><h2>Namensetiketten drucken</h2><p>${escapeHtml(eventTitle)} · 80 × 50 mm · 10 Etiketten pro A4-Bogen</p></div><button class="button button--secondary" value="cancel">Abbrechen</button></form>
@@ -245,8 +250,23 @@ export function openNameBadgePrintDialog({ people = [], eventTitle = "Event", ev
       </aside>
       <main class="name-badge-preview"><div data-name-badge-preview></div></main>
     </div>
-    <footer class="name-badge-dialog__footer"><button class="button button--primary" type="button" data-name-badge-print>Drucken</button><button class="button button--secondary" type="button" data-name-badge-pdf>PDF erzeugen</button><button class="button button--secondary" type="button" data-name-badge-cancel>Abbrechen</button></footer>`;
-  document.body.append(dialog);
+    <footer class="name-badge-dialog__footer"><button class="button button--primary" type="button" data-name-badge-print>Drucken</button><button class="button button--secondary" type="button" data-name-badge-pdf>PDF herunterladen</button><button class="button button--secondary" type="button" data-name-badge-csv>CSV herunterladen</button><button class="button button--primary" type="button" data-name-badge-share>CSV + PDF teilen</button><button class="button button--secondary" type="button" data-name-badge-cancel>Abbrechen</button></footer>`;
+  if (container) {
+    dialog.classList.add("name-badge-inline");
+    dialog.style.cssText = "display:block;width:100%;height:auto;max-width:100%;box-shadow:none;border:1px solid #dce4ee;border-radius:16px;overflow:hidden";
+    dialog.querySelector(".name-badge-dialog__header").remove();
+    dialog.querySelector("[data-name-badge-cancel]").remove();
+    dialog.querySelector(".name-badge-dialog__body").style.height = "auto";
+    const previewPanel = dialog.querySelector(".name-badge-preview");
+    const fold = document.createElement("details");
+    const summary = document.createElement("summary"); summary.textContent = "Etikettenvorschau";
+    fold.append(summary, previewPanel);
+    previewPanel.style.cssText = "min-height:0;max-height:480px";
+    dialog.querySelector(".name-badge-dialog__body").append(fold);
+    const footer = dialog.querySelector(".name-badge-dialog__footer");
+    footer.style.cssText = "position:static;flex-wrap:wrap;justify-content:flex-start;padding:12px";
+    container.replaceChildren(dialog);
+  } else document.body.append(dialog);
   const preview = dialog.querySelector("[data-name-badge-preview]");
   const all = dialog.querySelector("[data-name-badge-all]");
   const checks = [...dialog.querySelectorAll("[data-name-badge-person]")];
@@ -255,13 +275,17 @@ export function openNameBadgePrintDialog({ people = [], eventTitle = "Event", ev
   const status = dialog.querySelector(".name-badge-dialog__status");
   const printButton = dialog.querySelector("[data-name-badge-print]");
   const pdfButton = dialog.querySelector("[data-name-badge-pdf]");
+  const csvButton = dialog.querySelector("[data-name-badge-csv]");
+  const shareButton = dialog.querySelector("[data-name-badge-share]");
+  const actions = [printButton, pdfButton, csvButton, shareButton];
+  let busy = false;
   const selected = () => checks.filter(check => check.checked).map(check => normalized.find(person => person.id === check.value)).filter(Boolean);
   const pages = () => buildNameBadgePages(selected(), start.value);
   const update = () => {
     const chosen = selected();
     all.checked = chosen.length === normalized.length;
     all.indeterminate = chosen.length > 0 && chosen.length < normalized.length;
-    printButton.disabled = pdfButton.disabled = chosen.length === 0;
+    actions.forEach(button => { button.disabled = busy || chosen.length === 0; });
     preview.innerHTML = pages().map(page => sheetMarkup(page, { guides: guides.checked, preview: true, eventTitle, eventDate })).join("");
     status.textContent = chosen.length ? `${chosen.length} Etikett${chosen.length === 1 ? "" : "en"} auf ${pages().length} A4-Bogen${pages().length === 1 ? "" : "en"}.` : "Bitte mindestens eine Person auswählen.";
   };
@@ -270,7 +294,7 @@ export function openNameBadgePrintDialog({ people = [], eventTitle = "Event", ev
   start.addEventListener("change", update);
   guides.addEventListener("change", update);
   const close = () => dialog.close();
-  dialog.querySelector("[data-name-badge-cancel]").addEventListener("click", close);
+  dialog.querySelector("[data-name-badge-cancel]")?.addEventListener("click", close);
   dialog.addEventListener("close", () => dialog.remove(), { once: true });
   printButton.addEventListener("click", async () => {
     const printRoot = document.createElement("div");
@@ -286,17 +310,55 @@ export function openNameBadgePrintDialog({ people = [], eventTitle = "Event", ev
     status.textContent = "Druckdialog geöffnet.";
     window.setTimeout(() => { if (printRoot.isConnected) cleanup(); }, 60000);
   });
-  pdfButton.addEventListener("click", async () => {
-    printButton.disabled = pdfButton.disabled = true;
-    status.textContent = "PDF wird erzeugt …";
-    try {
-      const images = [];
-      for (const page of pages()) images.push(await renderPageJpeg(page, { eventTitle, eventDate }));
-      downloadBlob(pdfFromImages(images), `Namensetiketten-${safeFilename(eventTitle)}.pdf`);
-      status.textContent = "PDF wurde erzeugt.";
-    } catch (error) { status.textContent = error.message || "PDF konnte nicht erzeugt werden."; }
-    finally { printButton.disabled = pdfButton.disabled = selected().length === 0; }
+  const filename = `Namensetiketten-${safeFilename(eventTitle)}`;
+  const csvFile = () => new File([buildNameBadgeCsv(selected())], `${filename}.csv`, { type: "text/csv;charset=utf-8" });
+  let prepared = null;
+  const invalidate = () => { prepared = null; shareButton.textContent = "CSV + PDF teilen"; };
+  dialog.addEventListener("change", invalidate);
+  const prepareFiles = async () => {
+    const chosenPages = pages();
+    const csv = csvFile();
+    const images = [];
+    for (const [index, page] of chosenPages.entries()) {
+      status.textContent = `PDF wird erzeugt … ${index + 1} / ${chosenPages.length} Bogen`;
+      images.push(await renderPageJpeg(page, { eventTitle, eventDate }));
+    }
+    return [csv, new File([pdfFromImages(images)], `${filename}.pdf`, { type: "application/pdf" })];
+  };
+  csvButton.addEventListener("click", () => {
+    downloadBlob(csvFile(), `${filename}.csv`);
+    status.textContent = "CSV mit Namen und Unternehmen der ausgewählten Gäste heruntergeladen.";
   });
+  const run = async action => {
+    busy = true;
+    actions.forEach(button => { button.disabled = true; });
+    dialog.setAttribute("aria-busy", "true");
+    try { await action(); }
+    catch (error) { status.textContent = error.name === "AbortError" ? "Teilen abgebrochen. Die Dateien bleiben vorbereitet." : error.message || "Export fehlgeschlagen. Bitte erneut versuchen."; }
+    finally { busy = false; dialog.removeAttribute("aria-busy"); actions.forEach(button => { button.disabled = selected().length === 0; }); }
+  };
+  pdfButton.addEventListener("click", () => run(async () => {
+    prepared = await prepareFiles();
+    downloadBlob(prepared[1], prepared[1].name);
+    shareButton.textContent = "CSV + PDF jetzt teilen";
+    status.textContent = "PDF erzeugt. Zum Drucken A4 und 100 % Maßstab verwenden.";
+  }));
+  shareButton.addEventListener("click", () => run(async () => {
+    // A separate click preserves the browser user activation required for file sharing.
+    if (!prepared) {
+      prepared = await prepareFiles();
+      shareButton.textContent = "CSV + PDF jetzt teilen";
+      status.textContent = "Dateien bereit. Zum Versenden bitte CSV + PDF jetzt teilen antippen.";
+      return;
+    }
+    if (navigator.canShare?.({ files: prepared }) && navigator.share) {
+      await navigator.share({ files: prepared, title: `Namensetiketten · ${eventTitle}` });
+      status.textContent = "Dateien an die ausgewählte App übergeben.";
+    } else {
+      prepared.forEach(file => downloadBlob(file, file.name));
+      status.textContent = "CSV und PDF heruntergeladen. Bitte beide Dateien in Ihrer Mail-App anhängen.";
+    }
+  }));
   update();
-  dialog.showModal();
+  if (!container) dialog.showModal();
 }

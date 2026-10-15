@@ -1,16 +1,30 @@
 # PROdigitalTV – Funktionsbeschreibung von Website und CMS
 
-Stand: 1. Oktober 2026
+Stand: 14. Oktober 2026
 
 Diese Dokumentation beschreibt den aktuellen Funktionsumfang der PROdigitalTV-Plattform. Sie richtet sich an Vorstand, Administration, Redaktion und Veranstaltungsteam. Sie erklärt, wo Inhalte gepflegt werden, wie die einzelnen Bereiche zusammenarbeiten und welche Schritte bei wiederkehrenden Aufgaben zu beachten sind.
 
+## Zum Gesamtprojekt
+
+PROdigitalTV bringt Menschen, Unternehmen und Themen der digitalen Medienbranche zusammen. Die digitale Plattform unterstützt diesen Austausch und bündelt Verbandsarbeit, Mitgliederbetreuung und Veranstaltungsorganisation an einem zentralen Ort.
+
+Mitglieder finden hier Veranstaltungen, Brancheninformationen und persönliche Dokumente. Für die Geschäftsstelle und berechtigte Verantwortliche bietet das CMS die passenden Werkzeuge: von der Mitgliederverwaltung über Kommunikation und Buchhaltung bis zur Planung und Begleitung von Events.
+
+Das Cockpit macht wichtige Funktionen auch unterwegs zugänglich. Gästelisten, Check-in, Präsentationen, Umfragen und geplante Nachrichten stehen im jeweiligen Veranstaltungskontext bereit. Persönliche Dokumentenpostfächer ermöglichen darüber hinaus eine gezielte, geschützte Zustellung mit nachvollziehbarem Zustellungs- und Abrufstatus.
+
+Das Gesamtprojekt wird schrittweise entlang der praktischen Anforderungen von PROdigitalTV weiterentwickelt. Im Mittelpunkt stehen einfache Bedienung, klare Berechtigungen und verlässliche Abläufe – damit mehr Zeit für die Menschen, Inhalte und gemeinsamen Ziele des Verbands bleibt.
+
+Diese Gesamtbeschreibung ergänzt die ursprüngliche Dokumentation. Die ausführliche Cockpit-Bedienungsanleitung bleibt separat über Funktionsbeschreibung im Cockpit erreichbar.
+
 ## Kurzüberblick
 
-PROdigitalTV verbindet eine öffentliche Website, eine installierbare Web-App, ein redaktionelles CMS und einen geschützten Eventbereich in einem System.
+PROdigitalTV verbindet eine öffentliche Website, eine installierbare Web-App, ein Content-Managementsystem (CMS), eine integrierte Buchhaltung und einen geschützten Eventbereich in einem System.
 
 - Veranstaltungen werden von der Planung über Einladung, Anmeldung und Einlass bis zum Rückblick verwaltet.
 - Teilnehmende melden sich online an und können ihr Smartphone als persönliches Ticket verwenden.
-- Das CMS verwaltet Veranstaltungen, Referierende, Mitglieder, Redaktion, Medien, Mailings und Systemeinstellungen.
+- Das CMS verwaltet Veranstaltungen, Referierende, Mitglieder, Redaktion, Medien, Mailings, Buchhaltung und Systemeinstellungen.
+- Die Buchhaltung verbindet Mitgliedsbeiträge, Rechnungs-PDFs, Versand, Mahnungen, Kontoauszüge und Zahlungszuordnungen.
+- Zugewiesene Moderatoren erhalten einen eigenen Eventzugang und bearbeiten getrennte persönliche Moderationskartensätze.
 - Der Event-Chat verbindet ausschließlich Personen, die für das jeweilige Event eingecheckt wurden.
 - Persönliche Chats, ein eventbezogener Gruppenchat, Kontaktanfragen und Kontaktkarten unterstützen das Networking.
 - Event-Fotos können mobil hochgeladen, mit einer Fortschrittsanzeige verfolgt und als Thumbnails angesehen werden.
@@ -38,7 +52,8 @@ Die Website und die Web-App sind mobile-first aufgebaut. Das CMS ist auch mobil 
 - Eventgäste erhalten nach Einladung, Anmeldung und Check-in Zugang zu den für sie freigegebenen Eventfunktionen.
 - Mitglieder erhalten zusätzlich Zugriff auf den Mitgliederbereich und auf Mitgliederveranstaltungen.
 - Redakteure pflegen Inhalte und Medien entsprechend ihrer Berechtigungen.
-- Administratoren verwalten zusätzlich Benutzer, Systemeinstellungen, Löschvorgänge, Mailrückläufer und Event-Reset-Funktionen.
+- Administratoren verwalten zusätzlich Benutzer, Systemeinstellungen, Löschvorgänge, Mailrückläufer, Event-Reset-Funktionen und die Buchhaltung.
+- Zugewiesene Moderatoren mit aktivem Benutzerkonto erhalten Zugriff auf die Moderationskarten ihres Events. Die Zuweisung erteilt keine allgemeinen CMS- oder Buchhaltungsrechte.
 
 Der CMS-Link wird nur für berechtigte Rollen angezeigt. Schreibende und löschende Aktionen werden serverseitig erneut geprüft.
 
@@ -75,7 +90,8 @@ Die Oberfläche besitzt eine Desktop- und eine mobile Navigation. Tag- und Nacht
 Das CMS ist in folgende Hauptbereiche gegliedert:
 
 - Dashboard
-- Events
+- Buchhaltung (nur Administration)
+- Event Verwaltung
 - Mitglieder
 - Redaktion
 - Medien
@@ -86,7 +102,7 @@ Das CMS ist in folgende Hauptbereiche gegliedert:
 
 Aufklappbare Seitengruppen halten die Navigation kompakt. Der aktive Bereich bleibt sichtbar markiert.
 
-### Events
+### Event Verwaltung
 
 - Events
 - Veranstaltungs-Cockpit
@@ -94,6 +110,27 @@ Aufklappbare Seitengruppen halten die Navigation kompakt. Der aktive Bereich ble
 - Referenten
 - Gästebefragung
 - Sponsoren und Gastgeber
+
+### Buchhaltung
+
+- Ausgangsrechnungen
+- Eingangsrechnungen
+- Kontoauszüge / Zahlungsverkehr
+- Kassen- & Kontenübersicht
+- Kreditoren / Debitoren
+
+Die Buchhaltung steht ausschließlich Administratoren zur Verfügung. Die ausführliche Beschreibung befindet sich in Kapitel 24.
+
+### KI-Redaktion
+
+- Themenliste
+- News importieren
+- Morgenbriefing
+- Beiträge
+- Quellen
+- Prompts
+- Automatisierung
+- Logs
 
 ### Mitglieder
 
@@ -141,7 +178,7 @@ Aufklappbare Seitengruppen halten die Navigation kompakt. Der aktive Bereich ble
 
 ## 4. Eventverwaltung
 
-Jedes Event besitzt eine eigene Verwaltungsseite mit den Reitern Stammdaten, Vorträge/Referenten, Einladung, Anmeldung, Ablauf, Event Chat, Live-Umfrage, Gästebefragung, Rückblick und Foto.
+Jedes Event besitzt eine eigene Verwaltungsseite mit den Reitern Stammdaten, Vorträge/Referenten, Einladungen, Anmeldung, Ablauf, Event Chat, Live-Umfrage, Gästebefragung, Rückblick und Foto.
 
 ### Stammdaten
 
@@ -156,7 +193,7 @@ Hier werden die grundlegenden Angaben gepflegt:
 - Darstellung auf der Startseite
 - Eventbild, Gastgeber und Sponsoren
 
-Die Schalter „Aktiv“ und „Startseite“ haben unterschiedliche Aufgaben. „Aktiv“ steuert die Nutzbarkeit des Events; „Startseite“ steuert die prominente Platzierung.
+Die Schalter „Aktiv“, „Startseite“, „Agenda öffentlich“ und „Handy-Ticket“ haben unterschiedliche Aufgaben. Im Reiter „Anmeldung“ öffnet „Aktiv“ die Anmeldung; „Startseite“ steuert die prominente Platzierung. „Agenda öffentlich“ blendet das Programm im öffentlichen Veranstaltungsbereich ein oder aus. „Handy-Ticket“ steuert die Ticket- und Einlass-QR-Funktion.
 
 ### Beiträge und Mitwirkende
 
@@ -174,9 +211,11 @@ Alle Mitwirkenden werden als zentrale Personenprofile gespeichert. Ist eine Pers
 
 Referierende können Änderungs- oder Freigabelinks erhalten. Eingereichte Änderungen werden im CMS mit dem bisherigen Stand verglichen und anschließend übernommen oder verworfen.
 
-### Einladung
+### Einladungen
 
 Der Einladungsbereich bündelt Eventbeschreibung, Einladungstext, Aktualisierungen, Mailtexte und Vorschau. Betreff und Mailinhalt werden getrennt gepflegt. Einladungen enthalten eine persönliche Anrede, wenn ein Personenname vorliegt.
+
+Nach Änderungen an Veranstaltungsdaten oder Moderation kann „Texte anpassen?“ die vorhandenen Beschreibungen und Einladungstexte anhand der aktuellen Daten überarbeiten. Die Redaktion prüft und bearbeitet die KI-Vorschläge und übernimmt sie erst mit „Änderungen speichern“. „Später“ schließt den Dialog ohne Übernahme.
 
 ### Rückblick und Foto
 
@@ -201,7 +240,13 @@ Die Karten übernehmen, soweit vorhanden:
 - Kurzbeschreibung
 - Fragen und Moderationshinweise
 
-Einzelne Karten können ausgewählt, sortiert und vor dem Ausdruck bearbeitet werden. Die Karten werden fortlaufend nummeriert. Vorschau, Druck und PDF können gemeinsam auf Hochkant oder Querformat eingestellt werden.
+Einzelne Karten können ausgewählt, sortiert und vor dem Ausdruck bearbeitet werden. Die Karten werden fortlaufend nummeriert. Vorschau, Druck und PDF können gemeinsam auf Hochkant oder Querformat eingestellt werden. Karten können auch einzeln entfernt und ihre Reihenfolge angepasst werden.
+
+### Moderatorenzugang und persönliche Kartensätze
+
+Im Reiter „Anmeldung“ wird unter „Moderation“ eine oder werden mehrere Personen aus der Gästeliste ausgewählt. Nach „Moderation speichern“ erhalten die ausgewählten Personen mit aktivem Benutzerkonto Zugriff auf die Karten des betreffenden Events. Eine leere Auswahl hebt die Zuweisung auf.
+
+Jeder Moderator speichert einen eigenen Kartensatz mit persönlichen Texten, Reihenfolge und entfernten Karten. Änderungen überschreiben nicht die Karten anderer Moderatoren. Berechtigte CMS-Nutzer können den Kartensatz einer zugewiesenen Person auswählen und verwalten. Der Zugang bleibt auf das zugewiesene Event begrenzt.
 
 ### Namensetiketten
 
@@ -221,7 +266,7 @@ Nach dem Absenden erhält die Person eine eindeutige Registrierung. Bestätigung
 
 ### Manuelle Anmeldung
 
-Administratoren können Personen direkt im CMS hinzufügen. Auch manuell hinzugefügte Personen können eine Bestätigung und später einen Eventzugang erhalten.
+Administratoren können Personen direkt im CMS hinzufügen. Eine Suche in den Mailingadressen übernimmt vorhandene Personen-, Unternehmens- und Kontaktdaten ins Anmeldeformular; die Angaben können vor dem Speichern bearbeitet werden. Auch manuell hinzugefügte Personen können eine Bestätigung und später einen Eventzugang erhalten.
 
 ### Gästeliste des Events
 
@@ -343,7 +388,7 @@ Der Bereich „Event-Versand“ bündelt geplante Kommunikation zu Veranstaltung
 - Gästebefragung
 - Rückblick und Nachfassmail
 
-Empfängergruppen werden vor dem Versand ausgewählt und gezählt. Vorschau, Betreff, persönliche Anrede, Absender und Ziel-Link sollen vor der Freigabe kontrolliert werden.
+Empfängergruppen werden vor dem Versand ausgewählt und gezählt. Die Versandvorschau zeigt je nach Versandart die personalisierte E-Mail und SMS sowie Empfänger- und Kostenhinweise. Erst die ausdrückliche Versandfreigabe löst den Versand aus; „Zurück zur Bearbeitung“ ermöglicht Korrekturen. Betreff, persönliche Anrede, Absender und Ziel-Link sollen vor der Freigabe kontrolliert werden.
 
 Der Begriff „Anmeldung“ wird in Einladungsbetreffzeilen vermieden, wenn dadurch der Eindruck entstehen könnte, die Person sei bereits registriert.
 
@@ -414,6 +459,8 @@ Referierende werden zentral und im Eventkontext gepflegt. Mehrere Personen könn
 Das Freigabeverfahren ermöglicht externen Personen, ihre Angaben zu prüfen. Das CMS protokolliert Öffnung, Rückmeldung, Freigabe und Übernahme. Änderungen an Vita, Funktion, Unternehmen oder Vortrag können vor der Veröffentlichung verglichen werden.
 
 Ein Referierendenprofil sollte vor Veröffentlichung mindestens Namen, Funktion, Unternehmen, Foto, Vita und Eventzuordnung enthalten.
+
+Vorhandene Personen können aus den Mailingadressen übernommen werden. „Aus Vortrag entfernen“ löst die Zuordnung zum einzelnen Beitrag. Das Entfernen aus einem Event löst die Verbindungen zu dessen Vorträgen und Moderationsrollen; das zentrale Personenprofil und Zuordnungen zu anderen Events bleiben erhalten. Bei veranstaltungsübergreifend verwendeten Beiträgen wird die Änderung auf das ausgewählte Event begrenzt. Anschließend können die betroffenen Beschreibungen und Einladungstexte zur Überarbeitung vorgeschlagen werden.
 
 ## 16. Redaktion und KI-Unterstützung
 
@@ -548,6 +595,18 @@ Ein Hosting-Deployment veröffentlicht keine Cloud Functions. Werden Serverfunkt
 5. Löschung bestätigen.
 6. Erfolgsmeldung abwarten und Eventbereich neu laden.
 
+### Buchhaltungsjahr bearbeiten
+
+1. Als Administrator „Buchhaltung“ öffnen und das gewünschte Jahr wählen.
+2. Buchhaltungsordner zuweisen und den Zugriff auf diesem Gerät freigeben.
+3. Rechnungen und Kontoauszüge einlesen; erkannte Angaben mit den PDFs prüfen.
+4. Jahresbeiträge beziehungsweise Rechnungs-PDFs erzeugen und kontrollieren.
+5. Rechnungen auswählen, Versandvorschau prüfen und Versand freigeben.
+6. Bankbuchungen zuordnen, fehlende Belege und Gebühren prüfen.
+7. Offene Beiträge, Versandfehler und Mahnstufen kontrollieren.
+8. Kassen- & Kontenübersicht zum gewünschten Stichtag prüfen und exportieren.
+9. Ein abgeschlossenes Vorjahr nach der Prüfung mit PIN sperren.
+
 ## 22. Wichtige Begriffe
 
 - Aktiv: Datensatz oder Funktion ist grundsätzlich nutzbar.
@@ -582,3 +641,142 @@ Vor einem größeren Versand oder Eventstart sollten folgende Punkte geprüft we
 - Testmailing wurde zugestellt und Links wurden geöffnet.
 - Rückläuferbereich und Mailing Queue sind erreichbar.
 - Nach Änderungen an Cloud Functions wurde nicht nur Hosting, sondern auch die jeweilige Function veröffentlicht.
+
+## 24. Buchhaltung und Mitgliedsbeiträge
+
+Die integrierte Buchhaltung bündelt Ausgangsrechnungen, Eingangsrechnungen, Kontoauszüge und die Kassen- & Kontenübersicht. Kreditoren und Debitoren verbinden Geschäftspartner mit Rechnungen, Bankdaten und Buchungskonten. Der Bereich ist nur für Administratoren zugänglich.
+
+### Ordnerzuordnung und Belegbestand
+
+Über „Ordner zuweisen“ werden die Ablagen für Ausgangsrechnungen, Eingangsrechnungen und Kontoauszüge eingebunden. Die zentrale Zuordnung gilt für die beteiligten Rechner; der Browserzugriff muss auf jedem neuen Gerät einmal freigegeben werden. Alternativ können PDF-Dateien ausgewählt werden. Umfang und Dauer des Zugriffs richten sich nach der gewählten Freigabe.
+
+Der Belegbestand wird mit den gespeicherten Datensätzen abgeglichen. Umbenannte Dateien können über ihren Dateiinhalt wiedererkannt werden. Fehlt ein Rechnungs-PDF im zugeordneten Ordner, erscheint ein entsprechender Hinweis; ein bereits erfasster Zahlungseingang wird dadurch nicht aufgehoben. Eingangs-PDFs können zusätzlich als geprüfte Archivkopie bereitgestellt werden.
+
+### Ausgangsrechnungen und Jahresbeiträge
+
+Die Ausgangsliste zeigt Buchungskonto, Datum, Mitglied beziehungsweise Ansprechpartner, Rechnungsnummer, Betrag, Zahlungsdatum sowie Rechnungs- und Mahnstatus. Nach Jahr, Suchtext, Zahlungsstatus und Rechnungsstatus kann gefiltert werden. Summen unterscheiden Beiträge, bezahlte und unbezahlte Beträge sowie Datensätze ohne erfassten Zahlungsstatus.
+
+- Mitgliedsdatensätze können mit Beitragsrechnungen verknüpft werden. Zugeordnete Anschriften und Kontaktdaten kommen aus der Mitgliederdatenbank.
+- „Rechnungen erstellen“ legt ohne Rechnungsauswahl Jahresbeiträge an. Bei ausgewählten Rechnungen werden die jeweiligen PDFs neu erzeugt.
+- Rechnungs-PDFs lassen sich über Rechnungsnummer oder Betrag öffnen.
+- Änderungen an Rechnungsdaten werden als Revision berücksichtigt. Der Status zeigt, wenn ein PDF neu erstellt oder eine geänderte Rechnung erneut versendet werden muss.
+- „Rechnungen senden“ verarbeitet ausgewählte Rechnungen nach Vorbereitung und Freigabe. Erfolg, Warteschlange und Fehler bleiben nachvollziehbar.
+- Die gefilterten Beitragsdaten können als CSV heruntergeladen werden.
+
+„Bezahlt“ setzt einen erfassten oder zugeordneten Zahlungsvorgang voraus. Eine leere Bestätigung aus einem historischen Import belegt keinen Zahlungseingang.
+
+### Mahnungen und Versandkontrolle
+
+Über „Mahnungen senden“ können ausgewählte offene Beitragsrechnungen bearbeitet werden. Mahntext, Zahlungsfrist, Rechnungs-PDF und Vorschau werden vor der Freigabe kontrolliert. Versandstatus und Öffnung beziehungsweise Klick bleiben getrennte Informationen: Eine geöffnete Nachricht bedeutet nicht, dass die Rechnung bezahlt wurde.
+
+Die automatische Mahnlogik prüft täglich um 08:00 Uhr:
+
+- Erste Mahnung frühestens 90 Tage nach dem erfolgreichen Rechnungsversand.
+- Weitere Mahnungen jeweils nach 30 Tagen bis Mahnstufe 4.
+- Weitere 30 Tage nach der vierten Mahnung wird der Status „Vakant“ gesetzt.
+
+Bezahlte, stornierte, archivierte, nicht fällige oder für ein abgeschlossenes Jahr gesperrte Datensätze werden nicht automatisch weitergemahnt. Ein ausstehender oder fehlgeschlagener früherer Versand sowie geänderte, noch nicht korrekt neu erzeugte oder versendete Rechnungen müssen geprüft werden, bevor die automatische Folge fortgesetzt wird. Die Durchführung setzt die veröffentlichte und aktive Serverfunktion voraus.
+
+### Eingangsrechnungen
+
+Eingangs-PDFs können eingelesen und als Rechnungsdatensätze übernommen werden. Die Prüfansicht zeigt erkannte Angaben zur Kontrolle vor dem Speichern. Verwaltet werden unter anderem Lieferant, Rechnungsnummer, Rechnungsdatum, Betrag, IBAN, Fälligkeit, Beschreibung, Buchungskonto und Zahlungsstatus.
+
+Rechnungen lassen sich bearbeiten, als PDF öffnen, mit Bankbuchungen verbinden und als CSV exportieren. Hinweise unterscheiden ein fehlendes PDF, einen fehlenden Rechnungsbeleg, offene Beträge und bereits zugeordnete Zahlungen. Automatisch erkannte Angaben werden vor der Übernahme mit dem Original verglichen.
+
+### Kontoauszüge und Zahlungsverkehr
+
+Kontoauszüge werden eingelesen und ihre Buchungen in einer gemeinsamen Übersicht dargestellt. Rechnungen und Bankbuchungen können einander zugeordnet werden. Zahlungsdatum, Zuordnungsstatus und offene Beträge werden dadurch im Zusammenhang sichtbar.
+
+Der Abgleich berücksichtigt Eingangs- und Ausgangsrechnungen sowie Geschäftspartnerdaten. Automatische Zuordnungen und verbleibende Unklarheiten können kontrolliert und korrigiert werden. Fehlende Belege bleiben erkennbar. Bankgebühren können getrennt vom Rechnungsbetrag behandelt und durch interne Gebührenbelege dokumentiert werden; Bruttobetrag, Gebühr und Nettogutschrift bleiben nachvollziehbar.
+
+### Kassen- & Kontenübersicht und Exporte
+
+Jahr und Stichtag bestimmen den betrachteten Zeitraum. Die Übersicht bündelt Bankbestand, Buchungskonten, offene Rechnungen, noch nicht zugeordnete Buchungen und Planungswerte. Ein Konto kann geöffnet werden, um zugehörige Buchungen und Belege zu prüfen, PDFs aufzurufen und die Kontenzuordnung zu bearbeiten.
+
+Anlagevermögen und Abschreibungen werden für entsprechend erfasste Eingangsrechnungen berücksichtigt. Die derzeitige Webportal-Anlageberechnung verwendet eine Nutzungsdauer von 36 Monaten ab dem hinterlegten Startmonat.
+
+Die Kassen- & Kontenübersicht kann als CSV oder stichtagsbezogenes PDF ausgegeben werden. Ein zusätzlicher Gesamt-PDF-Export bündelt die Buchhaltungsdaten.
+
+### Kreditoren und Debitoren
+
+Geschäftspartner werden mit Nummer, Art, Name, IBAN und Standardkonto geführt. Neue Rechnungen können das Standardkonto übernehmen; das Konto einer einzelnen Rechnung bleibt gesondert änderbar. Partnerbezogene Buchungen und offene Salden erleichtern die Kontrolle von Lieferantenrechnungen und Mitgliedsbeiträgen.
+
+### Jahresabschluss und Schutz vor Änderungen
+
+In der Kassen- & Kontenübersicht kann ein geprüftes Vorjahr abgeschlossen werden. Das laufende Jahr kann noch nicht abgeschlossen werden. Beim ersten Abschluss wird eine sechsstellige PIN eingerichtet und bestätigt.
+
+Ein abgeschlossenes Jahr bleibt lesbar, während zugehörige schreibende Buchhaltungsvorgänge gesperrt werden. Der Schutz wird auch auf dem Server geprüft. Das Entsperren erfolgt mit PIN oder über den angebotenen SMS-Code an die hinterlegte berechtigte Mobilnummer. Der SMS-Code ist zeitlich begrenzt; eine Entsperrung hebt die Jahressperre erst nach erfolgreicher Prüfung auf.
+
+### Abschlusskontrolle der Buchhaltung
+
+- Gewähltes Jahr, Stichtag und Ordnerzuordnung stimmen.
+- Rechnungsangaben, Empfänger und PDFs sind geprüft.
+- Geänderte Rechnungen wurden bei Bedarf neu erstellt und erneut versendet.
+- Versandfehler und ausstehende Nachrichten wurden kontrolliert.
+- Bankbuchungen sind zugeordnet; fehlende Belege und Gebühren sind geklärt.
+- Offene Beiträge und Mahnstufen sind nachvollziehbar.
+- Kontenzuordnungen, Anlagewerte und Abschreibungen wurden geprüft.
+- Die Übersicht wurde vor der Sperre des Vorjahres exportiert und kontrolliert.
+
+## 25. Persönliche Dokumentenpostfächer
+
+### Ziel und Einordnung
+
+Die Plattform stellt aktiven Mitgliedern ein persönliches Dokumentenpostfach innerhalb des bestehenden Mitgliederzugangs bereit. Ein zusätzliches Benutzerkonto ist nicht erforderlich. Die Funktion ergänzt Mitgliederverwaltung, Kommunikation und Profil, ohne eine zweite Dokumentenverwaltung anzulegen.
+
+### Zustellung durch die Administration
+
+Unter Kommunikation → Postfächer und über die Cockpit-Kachel Postfachverwaltung stehen Übersicht, Dokument zustellen und Protokoll bereit. Die Übersicht und die Empfängerauswahl berücksichtigen aktive Mitglieder. Dokumententitel, Datei, optionaler Hinweis und Empfänger werden vor der Zustellung erfasst. Ein einzelnes Mitglied, mehrere Mitglieder oder alle aktiven Mitglieder können ausgewählt werden.
+
+Die Datei wird zentral einmal geschützt gespeichert. Für jeden ausgewählten Empfänger entsteht ein eigener Zustellungseintrag mit serverseitigem Zeitstempel. PDF, DOCX, XLSX, TXT, CSV, PNG und JPG werden bis 20 MB unterstützt. Der Upload zeigt den Fortschritt; unvollständige Zustellungen können über Zustellung fortsetzen abgeschlossen werden.
+
+### Persönlicher Zugriff und Profil
+
+Aktive Mitglieder öffnen ihr Postfach über den Briefumschlag oder über Mein Profil → Meine Dokumente. Beide Zugänge verwenden dieselbe Komponente, dieselben Dateien und denselben Abrufstatus. Titel, Dateiname, Hinweis, Zustellungsdatum und Status helfen bei der Auswahl. Neue Dokumente sind hervorgehoben. Öffnen stellt die Datei bereit; Herunterladen übergibt sie an den Browserdownload. Bereits abgerufene Dokumente bleiben verfügbar, solange sie nicht zurückgezogen werden.
+
+### Nachvollziehbarkeit je Datei und Mitglied
+
+Das Protokoll enthält für jeden Empfänger und jede Datei einen gesonderten Eintrag mit Dokumenten-ID, Titel, Dateiname, Mitglieds-ID, Empfänger und Zustellungszeitpunkt. Zugestellt bleibt auch nach dem Abruf sichtbar. Der erste erfolgreiche Abruf wird separat dauerhaft gespeichert und durch spätere Abrufe nicht überschrieben.
+
+Login, Listenansicht, ein bloßer Klick und ein fehlgeschlagener oder unvollständiger Download zählen nicht als erfolgreicher Abruf. Die Übertragung wird auf Vollständigkeit geprüft, bevor der Abruf bestätigt wird. Nach Mitglied, Dokument und Status kann gefiltert werden. Der CSV-Export enthält die aktuell gefilterten Protokolleinträge. Historische Zustellungsdaten bleiben auch bei später inaktiven Mitgliedern administrativ nachvollziehbar.
+
+Das Protokoll dokumentiert technische Bereitstellung und Abruf. Es ist kein Beweis tatsächlicher inhaltlicher Kenntnisnahme und kein automatisch rechtssicherer Zugangsnachweis.
+
+### Ladeanzeige und Übertragungsfortschritt
+
+Beim Öffnen des Postfachs erscheint unmittelbar ein Ladebalken. Der betätigte Abrufbutton zeigt Wird geladen. Während der Dateiübertragung wird der tatsächliche Prozentfortschritt angezeigt; Vorbereitung, Prüfung und Abrufbestätigung erhalten eigene Texthinweise und eine laufende Anzeige ohne erfundenen Prozentwert. Fehler bleiben sichtbar und werden nicht als erfolgreicher Abruf protokolliert.
+
+### Rote Zahlen und Homescreen-Symbol
+
+Die roten Zahlen im Header und im Profil zeigen die noch nicht abgerufenen Dokumente. Sie aktualisieren sich nach dem Abruf und verschwinden bei null. Die installierte WebApp überträgt die Anzahl auf unterstützten Geräten auch an das App-Symbol. Beim Öffnen und Abrufen folgt die Anzeige dem gemeinsamen Postfachstatus. Bei geschlossener App kann der nächste tägliche Push-Hinweis die Zahl aktualisieren. Auf dem iPhone sind eine installierte WebApp sowie erlaubte Mitteilungen und Kennzeichen erforderlich; die sichtbare Darstellung bleibt geräteabhängig.
+
+### Sprachansage und tägliche Hinweise
+
+Bei wartenden Dokumenten wird Sie haben Post! direkt beim App-Start angesagt, soweit die automatische Audiowiedergabe erlaubt ist. Normale Seitenwechsel wiederholen die Ansage nicht. Stummschaltung und Audioeinstellungen werden berücksichtigt. Bei einer Browsersperre erfolgt ein weiterer Versuch bei einer zulässigen Benutzerberührung, unabhängig vom Postfach-Button.
+
+Neue Dokumente lösen höchstens einen E-Mail-Hinweis und einen Push-Hinweis je aktivem Mitglied und Kalendertag in Deutschland aus. Weitere neue Zustellungen können im nächsten Tageshinweis gebündelt werden; die Dokumente selbst stehen nach ihrer Zustellung im Postfach bereit. Push setzt einen aktivierten Benachrichtigungszugang am Gerät voraus.
+
+### Zugriffsschutz und Rücknahme
+
+Mitglieder können ausschließlich ihre eigenen Zustellungen abrufen. Bestehende Authentifizierung, Rollen und serverseitige Zugriffsregeln schützen Dateien und Protokolle. Die Dateiablage enthält keine öffentlichen Dokumentenlinks. Mitglieder können Zustellungs- und Abrufprotokolle nicht selbst verändern oder löschen.
+
+Die Administration kann Dokumente mit Begründung zurückziehen. Danach sind sie nicht mehr abrufbar; ursprüngliche Ereignisse bleiben nachvollziehbar. Bereits heruntergeladene Kopien auf Endgeräten werden dadurch nicht entfernt.
+
+## 26. Weitere aktuelle Ergänzungen
+
+### Gästelistenversand an den Vorstand
+
+Die aktuelle Liste einer geöffneten Veranstaltung kann durch berechtigte Administratoren als CSV an den vorgesehenen Vorstandsempfängerkreis gegeben werden. Vor dem Versand zeigt eine Bestätigung Veranstaltung, Gästezahl und konkrete Empfänger. Die Datei enthält Vorname, Nachname, Unternehmen und die Zuordnung Gast, Mitglied, Vorstand oder Co-Gastgeber. E-Mail-Adressen, Telefonnummern und Check-in-Status sind nicht Bestandteil dieser CSV.
+
+Der Versand wird über die vorhandene Mailwarteschlange abgewickelt und in der Event-Mailliste nachvollziehbar. Zum Versand vorbereitet beschreibt einen eingereihten Auftrag, nicht bereits den Eingang beim Empfänger. Veränderungen der Liste oder des Empfängerkreises erfordern eine erneute Vorschau.
+
+### Buchhaltung und Excel-Ausgabe
+
+Die bestehende Buchhaltung bleibt Teil der Gesamtplattform. Der Zugang Buchhaltung / Excel führt zur Jahresauswahl und zur Ausgabe der Arbeitsmappe. Ein deutlicher Download-Button und eine Fortschrittsanzeige machen die Erstellung auch mobil nachvollziehbar. Die Jahresauswahl verwendet keinen Eventfilter. Ein Download verändert keine Buchhaltungsdaten.
+
+### Separate Cockpit-Anleitung und Weitergabe
+
+Die ursprüngliche Gesamtbeschreibung und die Cockpit-Bedienungsanleitung erfüllen unterschiedliche Zwecke. Diese Dokumentation beschreibt das Gesamtprojekt einschließlich Website, CMS, Mitgliedern, Redaktion, Veranstaltungen, Kommunikation, Medien, KI und Buchhaltung. Die separate Cockpit-Anleitung erläutert die einzelnen mobilen Bedienfunktionen ausführlich und bleibt im Cockpit erreichbar.
+
+Im Cockpit kann dessen eigene Anleitung als PDF heruntergeladen oder über die gerätegestützte Teilen-Auswahl weitergegeben werden. Zusätzlich steht eine eigenständige PDF dieser Gesamtprojektbeschreibung bereit. Ein geöffneter E-Mail-Entwurf oder eine Teilen-Auswahl versendet noch keine Nachricht; Empfänger und Versand werden in der gewählten Mail-App bestätigt.
+

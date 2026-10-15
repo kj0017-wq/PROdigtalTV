@@ -1,0 +1,48 @@
+{
+  "provider": "elevenlabs",
+  "voiceName": "Helmut",
+  "sourceHash": "4473ca2d4e6d667d99e25d65266076238d5a27417c75494ae5761d6b2225a69b",
+  "characters": 45873,
+  "parts": [
+    {
+      "url": "/docs/project-audio/4473ca2d4e6d/part-01.mp3",
+      "characters": 4671
+    },
+    {
+      "url": "/docs/project-audio/4473ca2d4e6d/part-02.mp3",
+      "characters": 4781
+    },
+    {
+      "url": "/docs/project-audio/4473ca2d4e6d/part-03.mp3",
+      "characters": 4675
+    },
+    {
+      "url": "/docs/project-audio/4473ca2d4e6d/part-04.mp3",
+      "characters": 4798
+    },
+    {
+      "url": "/docs/project-audio/4473ca2d4e6d/part-05.mp3",
+      "characters": 4635
+    },
+    {
+      "url": "/docs/project-audio/4473ca2d4e6d/part-06.mp3",
+      "characters": 4783
+    },
+    {
+      "url": "/docs/project-audio/4473ca2d4e6d/part-07.mp3",
+      "characters": 4604
+    },
+    {
+      "url": "/docs/project-audio/4473ca2d4e6d/part-08.mp3",
+      "characters": 4734
+    },
+    {
+      "url": "/docs/project-audio/4473ca2d4e6d/part-09.mp3",
+      "characters": 4279
+    },
+    {
+      "url": "/docs/project-audio/4473ca2d4e6d/part-10.mp3",
+      "characters": 3895
+    }
+  ]
+}

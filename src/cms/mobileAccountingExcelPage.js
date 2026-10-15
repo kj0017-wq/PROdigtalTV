@@ -1,0 +1,10 @@
+import {currentUser,isAdmin} from '../firebase/authService.js?v=477';
+import {list} from '../firebase/dataService.js?v=535';
+import {accountingExcelExportMarkup,mountAccountingExcelExport} from '../utils/accountingExcelExport.js?v=3';
+export async function mobileAccountingExcelPage(query){
+ const user=currentUser();if(!user)return '<section class="login-wrap"><div class="form-card"><h1>Login erforderlich</h1><p>Bitte als Administrator anmelden.</p><a class="button button--primary" href="#/cms/login?returnTo=%23%2Fcms%2Faccounting-excel">Anmelden</a></div></section>';
+ if(!isAdmin(user))return '<main class="mobile-live-admin"><section class="panel"><a class="button mobile-cockpit-back" href="#/cms/live">← Zurück zum Event-Cockpit</a><h1>Buchhaltung / Excel</h1><p>Dieser Bereich steht Administratoren zur Verfügung.</p></section></main>';
+ const [outgoing,incoming,statements]=await Promise.all([list('membershipContributions'),list('accountingIncomingInvoices'),list('accountingStatements')]);
+ return '<main class="mobile-live-admin" data-mobile-accounting-excel><style>[data-mobile-accounting-excel] .actions{display:flex;flex-direction:column;align-items:stretch!important;gap:12px}[data-mobile-accounting-excel] .field,[data-mobile-accounting-excel] select,[data-mobile-accounting-excel] button{width:100%;box-sizing:border-box}[data-mobile-accounting-excel] select{min-height:48px}[data-mobile-accounting-excel] [hidden]{display:none!important}</style><section class="panel"><a class="button button--small mobile-cockpit-back" data-cockpit-back href="#/cms/live">← Zurück zum Event-Cockpit</a><p class="eyebrow">Mobile CMS</p><h1>Buchhaltung / Excel</h1></section>'+accountingExcelExportMarkup([...outgoing,...incoming,...statements],Number(query?.get('year'))||null)+'<section class="panel"><p>Jahr auswählen und die Arbeitsmappe herunterladen. Danach über „In Excel öffnen / Teilen“ Excel auswählen. Falls Excel dort nicht angeboten wird, die Datei über die Downloads öffnen.</p></section></main>';
+}
+export function mountMobileAccountingExcel(){mountAccountingExcelExport();}

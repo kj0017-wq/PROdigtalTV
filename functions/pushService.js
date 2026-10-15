@@ -99,7 +99,7 @@ function createPushService({ db, messaging, FieldValue, HttpsError }) {
       try {
         await messaging.send({
           token: record.token,
-          data: { title: String(notification.title || "PROdigitalTV"), body: String(notification.body || "").slice(0, 500),
+          data: { ...(Number.isSafeInteger(notification.badgeCount) && notification.badgeCount >= 0 ? {badgeCount:String(notification.badgeCount)} : {}), title: String(notification.title || "PROdigitalTV"), body: String(notification.body || "").slice(0, 500),
             eventId: String(notification.eventId || ""), notificationId: String(notification.id || ""), link: String(notification.link || "/"), interactionId },
           webpush: { headers: { TTL: "86400", Urgency: "high" } }
         });

@@ -1,3 +1,4 @@
+const {createEventGuestListMail,eventGuestListAttachment}=require('./eventGuestListMail');
 const {createInvoiceRevisionTracker}=require('./accountingInvoiceRevision');
 const {createInvoicePdfGeneration}=require('./accountingInvoicePdfGeneration');
 const {createAutomaticAccountingReminders}=require('./automaticAccountingReminders');
@@ -561,8 +562,11 @@ async function eventNotificationTargets(eventId = "", options = {}) {
   if (recipientGroup === "test_group") return notificationTestGroupTargets();
   const includeRegistered = ["event_registered", "event_registered_speakers"].includes(recipientGroup) || options.includeRegistered === true;
   const includeSpeakers = ["event_speakers", "event_registered_speakers", "other_event_speakers"].includes(recipientGroup) || options.includeSpeakers === true;
-  const includeMembers = ["members", "members_contacts", "test_group"].includes(recipientGroup) || options.includeMembers === true;
-  const includeContacts = ["contacts", "members_contacts"].includes(recipientGroup) || options.includeContacts === true;
+  const includeMembers = ["members", "members_event_guests", "members_contacts", "test_group"].includes(recipientGroup) || options.includeMembers === true;
+  const includeContacts = ["contacts", "members_contacts", "members_event_guests"].includes(recipientGroup) || options.includeContacts === true;
+  if (recipientGroup === "members_event_guests" && !hasEvent) throw new HttpsError("invalid-argument", "Bitte eine Veranstaltung auswählen.");
+  const eventGuests = recipientGroup === "members_event_guests" ? await db.collection("eventLiveAccess").doc(eventId).get() : null;
+  const eventGuestEmails = new Set((eventGuests?.data()?.invitationGuestEmails || []).map(email => clean(email).toLowerCase()));
   const [membersSnapshot, usersSnapshot, contactsSnapshot, registrationsSnapshot, speakersSnapshot, topicsSnapshot] = await Promise.all([
     (includeMembers || hasEvent) ? db.collection("members").get() : Promise.resolve({ docs: [] }),
     (includeMembers || hasEvent) ? db.collection("users").get() : Promise.resolve({ docs: [] }),
@@ -661,6 +665,7 @@ async function eventNotificationTargets(eventId = "", options = {}) {
     if (contact.notificationOptOut === true || contact.mailingDisabled === true || contact.reminderConsent === false) return;
     const email = clean(contact.email).toLowerCase();
     if (officialMemberEmails.has(email)) return;
+    if (recipientGroup === "members_event_guests" && !eventGuestEmails.has(email)) return;
     addPerson(email, contact, "contact", [contact.phone, contact.mobile, contact.mobilePhone, contact.contactPhone]);
   });
   if (includeRegistered) {
@@ -1905,6 +1910,7 @@ function renderMail(mail, context = {}) {
     };
   }
 
+  if (mail.template === "mailbox_documents") return {subject:mail.subject,text:mail.text,html:mailHtmlShell(mail.subject,textToHtml(mail.text)+mailButton("Meine Dokumente",mail.link))};
   if (["accounting_reminder", "accounting_invoice"].includes(mail.template)) return { subject: mail.subject, text: mail.text, html: mailHtmlShell(mail.subject, textToHtml(mail.text)) };
   return {
     subject: mail.subject || "Nachricht von PROdigitalTV",
@@ -1942,7 +1948,7 @@ async function sendQueuedMail(mail) {
     replyTo: replyTo ? mailAddress(replyTo) : undefined,
     subject: stripTags(rendered.subject),
     text: rendered.text,
-    attachments: await invoiceMailAttachment(mail, getStorage().bucket(storageBucket)),
+    attachments: [...await invoiceMailAttachment(mail, getStorage().bucket(storageBucket)), ...eventGuestListAttachment(mail)],
     html: appendMailTrackingPixel(rendered.html, mail.id)
   });
 }
@@ -4767,6 +4773,13 @@ async function requireParticipantPhotoAccess(auth, eventId = "", requireEvent = 
     || profile.guestPasswordTemporary === true) {
     throw new HttpsError("permission-denied", "Bitte zuerst Ihren persönlichen Zugang aktivieren.");
   }
+  const staffRole = clean(profile.role || auth.token.role).toLowerCase();
+  if (["admin", "administrator", "owner", "editor", "redakteur", "redaktion"].includes(staffRole) && clean(eventId)) {
+    if (!/^[A-Za-z0-9_-]{1,100}$/.test(eventId)) throw new HttpsError("invalid-argument", "Ungültige Veranstaltung.");
+    const eventSnapshot = await db.collection("events").doc(eventId).get();
+    if (!eventSnapshot.exists) throw new HttpsError("not-found", "Veranstaltung wurde nicht gefunden.");
+    return new Map([[eventId, { eventId, ...eventSnapshot.data() }]]);
+  }
   const email = clean(auth.token.email).toLowerCase();
   const registrations = email ? await Promise.all([
     db.collection("registrations").where("email", "==", email).get(),
@@ -4808,6 +4821,7 @@ function participantPhotoUnread(medium, mediaId, uid, seenIds) {
 exports.listPortalParticipantPhotos = onCall({ region }, async (request) => {
   const selectedEventId = clean(request.data?.eventId);
   const access = await requireParticipantPhotoAccess(request.auth, selectedEventId);
+  const isAdmin = await requireAdmin(request).then(() => true).catch(() => false);
   const eventIds = selectedEventId ? [selectedEventId] : [...access.keys()];
   const views = await db.collection("users").doc(request.auth.uid).collection("participantPhotoViews").get();
   const seenIds = new Set(views.docs.map((doc) => doc.id));
@@ -4820,7 +4834,7 @@ exports.listPortalParticipantPhotos = onCall({ region }, async (request) => {
         id: doc.id, eventId: clean(medium.eventId),
         fileName: clean(medium.fileName), caption: clean(medium.caption || medium.note),
         uploadedByName: clean(medium.uploadedByName),
-        canDelete: medium.uploadedBy === request.auth.uid,
+        canDelete: isAdmin || medium.uploadedBy === request.auth.uid,
         unread: participantPhotoUnread(medium, doc.id, request.auth.uid, seenIds),
         uploadedAt: medium.uploadedAt?.toDate?.().toISOString() || clean(medium.uploadedAt)
       };
@@ -4849,7 +4863,8 @@ exports.deletePortalParticipantPhoto = onCall({ region }, async (request) => {
   const snapshot = await ref.get();
   const medium = snapshot.data() || {};
   if (!snapshot.exists) throw new HttpsError("not-found", "Dieses Foto wurde bereits gelöscht.");
-  if (!participantPhotoRecord(medium) || medium.eventId !== eventId || medium.uploadedBy !== request.auth.uid) {
+  const isAdmin = await requireAdmin(request).then(() => true).catch(() => false);
+  if (!participantPhotoRecord(medium) || medium.eventId !== eventId || (!isAdmin && medium.uploadedBy !== request.auth.uid)) {
     throw new HttpsError("permission-denied", "Sie können nur Ihre eigenen Fotos dieser Veranstaltung löschen.");
   }
   await requireParticipantPhotoAccess(request.auth, eventId, true);
@@ -5014,7 +5029,7 @@ exports.createEventNotification = onCall({ region }, async (request) => {
     .filter((email, index, all) => all.indexOf(email) === index);
   const testOnly = !["test_group","single_person"].includes(clean(input.recipientGroup)) && (clean(input.recipientGroup) === "test_person" || input.testOnly === true || input.testOnly === "true");
   if (testOnly && !testRecipients.length) throw new HttpsError("invalid-argument", "Bitte mindestens eine Testperson eintragen.");
-  const recipientGroup = ["members", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "other_event_speakers", "test_group", "test_person", "single_person"].includes(clean(input.recipientGroup))
+  const recipientGroup = ["members", "members_event_guests", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "other_event_speakers", "test_group", "test_person", "single_person"].includes(clean(input.recipientGroup))
     ? clean(input.recipientGroup)
     : "members_contacts";
   const includeEventSpeakers = notificationKind === "event" && !["test_group", "test_person", "single_person"].includes(recipientGroup);
@@ -5146,7 +5161,7 @@ exports.createEventNotification = onCall({ region }, async (request) => {
     testRecipients: testOnly ? testRecipients : [],
     testRecipientMobiles: testOnly ? clean(input.testRecipientMobiles).split(/[\s,;]+/).map(phoneNumber).filter(Boolean) : [],
     recipientGroup,
-    includeMembers: ["members", "members_contacts", "test_group"].includes(recipientGroup),
+    includeMembers: ["members", "members_event_guests", "members_contacts", "test_group"].includes(recipientGroup),
     includeContacts: ["contacts", "members_contacts"].includes(recipientGroup),
     includeRegistered: ["event_registered", "event_registered_speakers"].includes(recipientGroup),
     includeSpeakers: includeEventSpeakers || ["event_speakers", "event_registered_speakers"].includes(recipientGroup),
@@ -5342,7 +5357,7 @@ exports.previewEventNotification = onCall({ region, secrets: smsSecrets, timeout
     .filter((email, index, all) => all.indexOf(email) === index);
   const testOnly = !["test_group","single_person"].includes(clean(input.recipientGroup)) && (clean(input.recipientGroup) === "test_person" || input.testOnly === true || input.testOnly === "true");
   if (testOnly && !testRecipients.length) throw new HttpsError("invalid-argument", "Bitte mindestens eine Testperson eintragen.");
-  const recipientGroup = ["members", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "other_event_speakers", "test_group", "test_person", "single_person"].includes(clean(input.recipientGroup))
+  const recipientGroup = ["members", "members_event_guests", "contacts", "members_contacts", "event_registered", "event_speakers", "event_registered_speakers", "other_event_speakers", "test_group", "test_person", "single_person"].includes(clean(input.recipientGroup))
     ? clean(input.recipientGroup)
     : "members_contacts";
   const registrationStatus = ["all", "registered", "unregistered"].includes(clean(input.registrationStatus)) ? clean(input.registrationStatus) : "all";
@@ -5357,7 +5372,7 @@ exports.previewEventNotification = onCall({ region, secrets: smsSecrets, timeout
       : await eventNotificationTargets(notificationKind === "event" ? eventId : "", {
         recipientGroup,
         singleRecipientEmail: input.singleRecipientEmail,
-        includeMembers: ["members", "members_contacts"].includes(recipientGroup),
+        includeMembers: ["members", "members_event_guests", "members_contacts"].includes(recipientGroup),
         includeContacts: ["contacts", "members_contacts"].includes(recipientGroup),
         includeRegistered: ["event_registered", "event_registered_speakers"].includes(recipientGroup),
         includeSpeakers: includeEventSpeakers || ["event_speakers", "event_registered_speakers"].includes(recipientGroup),
@@ -6207,6 +6222,7 @@ exports.sendQueuedMail = onDocumentCreated({ document: "mailQueue/{mailId}", reg
   if (mail.status !== "queued") return;
   let resolvedTo = "";
   try {
+    if (mail.template === "mailbox_documents" && !await mailboxNotifications.claimMail(event.params.mailId)) return;
     if (mail.template === "accounting_invoice") {
       const invoice = (await db.collection("membershipContributions").doc(mail.contributionId).get()).data();
       if (!invoice || invoice.invoiceNeedsRegeneration || Number(invoice.invoiceRevision||0)!==Number(mail.invoiceRevision||0) || invoice.archived || invoice.paymentStatus === "cancelled" || invoice.amountCents !== mail.invoiceAmountCents) {
@@ -7969,3 +7985,43 @@ exports.applyEventMailDefaults = onDocumentWritten({ document: "events/{eventId}
 
 exports.getEventInvitationDecline = onCall({ region, invoker: "public", maxInstances: 5 }, request => eventInvitationDecline.view(request));
 exports.declineEventInvitation = onCall({ region, invoker: "public", maxInstances: 5 }, request => eventInvitationDecline.decline(request));
+
+const homescreenUsage=require("./homescreenUsage").createHomescreenUsage({db,auth:getAuth(),FieldValue,HttpsError,resolveMember:findPersonByEmail});
+exports.recordHomescreenUsage=onCall({region,invoker:"public",maxInstances:3},homescreenUsage.record);
+exports.getEventHomescreenUsage=onCall({region,invoker:"public",maxInstances:3},homescreenUsage.read);
+
+exports.exportAccountingExcel=onCall({region,timeoutSeconds:120,memory:"512MiB"},require("./accountingExcelExport").createAccountingExcelExport({db,requireAdmin,HttpsError}));
+
+const assemblyService=require('./assemblyService').createAssemblyService({db,HttpsError,bucket:getStorage().bucket(storageBucket)});
+exports.assemblyAdmin=onCall({region,timeoutSeconds:120,memory:'512MiB',maxInstances:8},assemblyService.admin);
+exports.assemblyMember=onCall({region,timeoutSeconds:60,maxInstances:12},assemblyService.member);
+exports.assemblyPresentation=onCall({region,invoker:'public',maxInstances:8},assemblyService.presentation);
+exports.assemblyExport=onCall({region,timeoutSeconds:120,memory:'512MiB',maxInstances:3},require('./assemblyExports').createAssemblyExport(assemblyService,HttpsError));
+exports.syncAssemblyEventCheckin=onDocumentWritten({document:'registrations/{id}',region},assemblyService.checkin);
+exports.assemblyApi=onRequest({region,maxInstances:3},async(req,res)=>{res.set('Cache-Control','no-store');if(req.method!=='GET')return res.status(405).send('GET erforderlich');try{const token=String(req.headers.authorization||'').replace(/^Bearer /,'');const auth=await getAuth().verifyIdToken(token,true);const {assembly}=await assemblyService.get({auth:{uid:auth.uid,token:auth},data:{assemblyId:String(req.query.assemblyId||'')}});const result=require('./assemblyDomain').aggregate(assembly);if(req.query.format==='text'){const item=result.agenda.find(r=>r.id===result.currentAgendaId);return res.type('text/plain').send([result.title,item?.title||'',item?.wording||'',item?.result?JSON.stringify(item.result):'Noch kein Ergebnis'].join('\n'));}return res.json(result);}catch(error){return res.status(error.code==='permission-denied'?403:401).json({error:'Kein gültiger authentifizierter Leitungszugang.'});}});
+exports.purgeExpiredAssemblies=onSchedule({region,schedule:'every 24 hours',timeZone:'Europe/Berlin',maxInstances:1},require('./assemblyRetention').createAssemblyRetention({db,bucket:getStorage().bucket(storageBucket)}));
+
+exports.sendEventGuestListToBoard = onCall({ region, timeoutSeconds: 120 }, createEventGuestListMail({ db, FieldValue, requireEditor, HttpsError }));
+
+// Personal document mailboxes: private storage and recipient-specific, server-owned audit records.
+const documentMailbox=require('./documentMailbox').createDocumentMailbox({db,bucket:getStorage().bucket(storageBucket),FieldValue,Timestamp,HttpsError,resolveMember:findPersonByEmail});
+for(const [name,method]of Object.entries({mailboxSelf:'self',listMailboxDocuments:'list',mailboxAdminData:'adminData',mailboxProtocol:'protocol',beginMailboxDocument:'begin',deliverMailboxDocument:'deliver',acknowledgeMailboxDocument:'acknowledge',withdrawMailboxDocument:'withdraw'})){
+ exports[name]=onCall({region,timeoutSeconds:method==='deliver'?540:60,memory:'512MiB',concurrency:method==='deliver'?2:8},request=>documentMailbox[method](request));
+}
+const {createMailboxHttp}=require('./documentMailboxHttp');
+const mailboxHttp=createMailboxHttp({service:documentMailbox,verifyToken:token=>getAuth().verifyIdToken(token,true)});
+exports.mailboxFile=onRequest({region,cors:true,timeoutSeconds:120,memory:'512MiB',concurrency:4},mailboxHttp.file);
+exports.mailboxUpload=onRequest({region,cors:true,timeoutSeconds:120,memory:'512MiB',concurrency:4},mailboxHttp.upload);
+
+
+// One document notice per member/channel and Berlin calendar day; uses existing mail and push transport.
+const mailboxNotifications=require('./documentMailboxNotifications').createMailboxNotifications({db,FieldValue,Timestamp,pushService,memberEmail:member=>{
+ const allowed=new Set(normalizedMemberEmails(member));
+ return require('./documentMailboxNotifications').contactEmail(Object.fromEntries(['contactEmail','email','contact_email','primaryEmail','profileEmail'].map(key=>[key,allowed.has(clean(member[key]).toLowerCase())?member[key]:''])));
+}});
+exports.notifyNewMailboxDocuments=onDocumentCreated({document:'mailboxDeliveries/{deliveryId}',region,retry:true,maxInstances:10,concurrency:4},event=>mailboxNotifications.processMember(event.data?.data()?.memberId));
+exports.processMailboxDocumentNotifications=onSchedule({region,schedule:'every 15 minutes',timeZone:'Europe/Berlin',timeoutSeconds:540,maxInstances:1},()=>mailboxNotifications.sweep());
+
+// One summary email per automatic mailing round, after transport processing.
+const mailingDispatchReports=require('./mailingDispatchReports').createMailingDispatchReports({db,FieldValue,Timestamp});
+exports.processMailingDispatchReports=onSchedule({region,schedule:'every 15 minutes',timeZone:'Europe/Berlin',timeoutSeconds:540,maxInstances:1},()=>mailingDispatchReports.sweep());

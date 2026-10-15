@@ -1,3 +1,4 @@
+import {mailboxIcon} from '../utils/documentMailbox.js?v=no-cockpit-icon20261015';
 import { currentUser, isAdmin } from "../firebase/authService.js?v=477";
 
 const nav = [
@@ -39,6 +40,7 @@ export function header(active) {
     <nav class="desktop-nav" aria-label="Hauptnavigation">${nav.map(navLink).join("")}</nav>
     <div class="actions">
       <button class="button button--secondary button--small theme-toggle pdtv-mobile-theme-toggle" type="button" data-theme-toggle aria-label="Tag- und Nachtansicht umschalten"><span data-theme-label>Night</span><span aria-hidden="true" data-theme-icon>☾</span></button>
+      ${user ? mailboxIcon() : ""}
       ${cmsLink}
       <a class="button button--dark button--small header-auth header-auth--member" href="#/${user ? "portal" : "login"}">${user ? "Profil" : "Login"}</a>
     </div>

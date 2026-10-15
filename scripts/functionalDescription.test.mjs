@@ -7,9 +7,9 @@ const html = readFileSync(new URL("../public/docs/funktionsbeschreibung.html", i
 
 test("Funktionsbeschreibung dokumentiert den aktuellen Event- und CMS-Stand", () => {
   for (const term of [
-    "Stand: 8. Oktober 2026", "Moderationskarten", "Namensetiketten", "Gruppenchat",
+    "Stand: 14. Oktober 2026", "Moderationskarten", "Namensetiketten", "Gruppenchat",
     "Kontaktanfragen", "Event-Fotos", "Mailing Queue", "Rückläufer", "Gastkonten", "Buchhaltung und Mitgliedsbeiträge", "Kreditoren und Debitoren",
-    "Jahresabschluss", "Moderatorenzugang", "Versandvorschau"
+    "Jahresabschluss", "Moderatorenzugang", "Versandvorschau", "Persönliche Dokumentenpostfächer", "Zum Gesamtprojekt", "separate Cockpit"
   ]) assert.match(markdown, new RegExp(term));
 });
 
@@ -17,8 +17,8 @@ test("HTML-Ausgabe enthält Navigation und alle Kapitel", () => {
   const markdownChapters = [...markdown.matchAll(/^##\s+/gm)].length;
   const htmlChapters = [...html.matchAll(/<h2\s+id=/g)].length;
   const navigationLinks = [...html.matchAll(/<a href="#[^"]+">/g)].length;
-  assert.equal(markdownChapters, 25);
-  assert.match(html, /Stand 8\. Oktober 2026<\/footer>/);
+  assert.equal(markdownChapters, 28);
+  assert.match(html, /Stand 14\. Oktober 2026<\/footer>/);
   assert.equal(htmlChapters, markdownChapters);
   assert.equal(navigationLinks, markdownChapters);
   assert.match(html, /<meta name="viewport"/);

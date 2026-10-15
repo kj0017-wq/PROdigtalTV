@@ -1,3 +1,4 @@
+import {homescreenBadge} from '../firebase/homescreenUsage.js?v=3';
 import { escapeHtml } from "./format.js?v=3";
 
 const inactive = new Set(["cancelled", "canceled", "deleted", "archived", "expired", "rejected"]);
@@ -10,18 +11,21 @@ export function cockpitCheckinRows(records, eventId, search = "") {
     .sort((a, b) => Number(a.status === "checked_in") - Number(b.status === "checked_in") || a.name.localeCompare(b.name, "de"));
   const guestCount = eventRows.reduce((sum, record) => sum + Math.max(1, Number(record.participantCount) || (record.hasCompanion || record.companion ? 2 : 1)), 0);
   const openGuestCount = eventRows.filter(record => record.status !== "checked_in").reduce((sum, record) => sum + Math.max(1, Number(record.participantCount) || (record.hasCompanion || record.companion ? 2 : 1)), 0);
-  const overview = `<div class="cockpit-checkin-overview"><strong>${openGuestCount} noch nicht eingecheckt</strong><span>${guestCount} angemeldete Gäste · ${eventRows.length} Anmeldungen</span></div>`;
+  const checkedGuestCount = guestCount - openGuestCount;
+  const overview = `<div class="cockpit-checkin-overview"><strong>${openGuestCount} noch nicht eingecheckt</strong><span class="cockpit-checkin-confirmed-count">✓ ${checkedGuestCount} bereits eingecheckt</span><span>${guestCount} angemeldete Gäste · ${eventRows.length} Anmeldungen</span></div>`;
   const result = rows.length ? rows.map((record, index) => {
     const checked = record.status === "checked_in";
     const companion = record.hasCompanion || record.companion;
     const checkIcon = checked ? "" : `<button type="button" class="cockpit-checkin-swipe-action cockpit-checkin-swipe-action--check" data-cockpit-checkin-id="${escapeHtml(record.id)}" aria-label="Check-in"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.3 4.3L19 7.2"/></svg><span>Check-in</span></button>`;
     const deleteIcon = `<button type="button" class="cockpit-checkin-swipe-action cockpit-checkin-swipe-action--delete" data-cockpit-delete-id="${escapeHtml(record.id)}" aria-label="Löschen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5"/></svg><span>Löschen</span></button>`;
-    return `<div class="cockpit-checkin-swipe${index % 2 ? " is-alt" : ""}">${checkIcon}${deleteIcon}<div class="cockpit-checkin-row" data-cockpit-registration-row="${escapeHtml(record.id)}"><div class="cockpit-checkin-person"><strong>${escapeHtml(record.name)}</strong><small>${escapeHtml([record.company, record.email].filter(Boolean).join(" · "))}</small>${companion ? "<small>Mit Begleitperson</small>" : ""}</div>${checked ? '<span class="cockpit-checkin-done">Eingecheckt</span>' : ""}<small class="cockpit-checkin-swipe-hint">→ Check-in · ← Löschen</small></div></div>`;
+    const visibleDelete = `<button type="button" data-cockpit-delete-id="${escapeHtml(record.id)}" class="cockpit-checkin-visible-delete" aria-label="${escapeHtml(record.name)} aus Gästeliste entfernen" title="Aus Gästeliste entfernen" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);width:44px;height:44px;min-height:44px;padding:10px;border:1px solid #e7b8be;border-radius:10px;background:#fff0f1;color:#c5091c;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5"/></svg></button>`;
+    const heading = index === 0 || checked !== (rows[index - 1].status === "checked_in") ? `<h3 class="cockpit-checkin-group">${checked ? "✓ Bereits eingecheckt" : "Noch nicht eingecheckt"}</h3>` : "";
+    return `${heading}<div class="cockpit-checkin-swipe${checked ? " is-checked" : ""}${index % 2 ? " is-alt" : ""}">${checkIcon}${deleteIcon}<div class="cockpit-checkin-row" style="padding-right:66px" data-cockpit-registration-row="${escapeHtml(record.id)}"><div class="cockpit-checkin-person"><strong>${escapeHtml(record.name)}</strong><small>${escapeHtml([record.company, record.email].filter(Boolean).join(" · "))}</small>${companion ? "<small>Mit Begleitperson</small>" : ""}${homescreenBadge(record)}${checked ? '<span class="cockpit-checkin-done">✓ Bereits eingecheckt</span>' : ""}</div>${visibleDelete}<small class="cockpit-checkin-swipe-hint">→ Check-in · ← Löschen</small></div></div>`;
   }).join("") : `<p class="muted">${eventRows.length ? "Keine passende Anmeldung gefunden." : "Für dieses Event sind keine aktiven Anmeldungen vorhanden."}</p>`;
   return overview + result;
 }
 
-export function wireCockpitCheckin(root, { eventSelect, load, checkIn, remove, onChanged, confirm = window.confirm.bind(window) }) {
+export function wireCockpitCheckin(root, { eventSelect, load, enrich, checkIn, remove, onChanged, confirm = window.confirm.bind(window) }) {
   if (!root || root.dataset.wired || !eventSelect) return;
   root.dataset.wired = "1";
   const search = root.querySelector("[data-cockpit-checkin-search]");
@@ -36,20 +40,24 @@ export function wireCockpitCheckin(root, { eventSelect, load, checkIn, remove, o
     const version = ++generation;
     const eventId = eventSelect.value;
     status.textContent = "Anmeldungen werden geladen ...";
-    refreshButton.disabled = true;
+    if (refreshButton) refreshButton.disabled = true;
     try {
       const result = await load();
       if (!root.isConnected || version !== generation || eventSelect.value !== eventId) return;
       records = result;
       draw();
       status.textContent = "";
+      if(enrich)Promise.resolve().then(()=>enrich(result,eventId)).then(enriched=>{
+        if(!root.isConnected||version!==generation||eventSelect.value!==eventId)return;
+        if(Array.isArray(enriched)){records=enriched;draw();}
+      }).catch(()=>{});
     } catch (error) {
       if (version === generation) { list.replaceChildren(); status.textContent = error.message || "Anmeldungen konnten nicht geladen werden."; }
-    } finally { if (version === generation) refreshButton.disabled = busy; }
+    } finally { if (version === generation && refreshButton) refreshButton.disabled = busy; }
   }
   search.addEventListener("input", draw);
   root.addEventListener("toggle", () => { if (root.open && !busy) refresh(); });
-  refreshButton.addEventListener("click", () => { if (!busy) refresh(); });
+  refreshButton?.addEventListener("click", () => { if (!busy) refresh(); });
   eventSelect.addEventListener("change", () => {
     generation++;
     records = [];
@@ -78,7 +86,7 @@ export function wireCockpitCheckin(root, { eventSelect, load, checkIn, remove, o
     busy = true;
     generation++;
     eventSelect.disabled = true;
-    refreshButton.disabled = true;
+    if (refreshButton) refreshButton.disabled = true;
     search.disabled = true;
     list.querySelectorAll("button").forEach(control => { control.disabled = true; });
     status.textContent = deleting ? "Anmeldung wird gelöscht ..." : "Check-in läuft ...";
@@ -93,7 +101,7 @@ export function wireCockpitCheckin(root, { eventSelect, load, checkIn, remove, o
     finally {
       busy = false;
       eventSelect.disabled = false;
-      refreshButton.disabled = false;
+      if (refreshButton) refreshButton.disabled = false;
       search.disabled = false;
       list.querySelectorAll("button").forEach(control => { control.disabled = false; });
     }

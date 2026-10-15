@@ -1,8 +1,20 @@
 # PROdigitalTV – Funktionsbeschreibung von Website und CMS
 
-Stand: 8. Oktober 2026
+Stand: 14. Oktober 2026
 
 Diese Dokumentation beschreibt den aktuellen Funktionsumfang der PROdigitalTV-Plattform. Sie richtet sich an Vorstand, Administration, Redaktion und Veranstaltungsteam. Sie erklärt, wo Inhalte gepflegt werden, wie die einzelnen Bereiche zusammenarbeiten und welche Schritte bei wiederkehrenden Aufgaben zu beachten sind.
+
+## Zum Gesamtprojekt
+
+PROdigitalTV bringt Menschen, Unternehmen und Themen der digitalen Medienbranche zusammen. Die digitale Plattform unterstützt diesen Austausch und bündelt Verbandsarbeit, Mitgliederbetreuung und Veranstaltungsorganisation an einem zentralen Ort.
+
+Mitglieder finden hier Veranstaltungen, Brancheninformationen und persönliche Dokumente. Für die Geschäftsstelle und berechtigte Verantwortliche bietet das CMS die passenden Werkzeuge: von der Mitgliederverwaltung über Kommunikation und Buchhaltung bis zur Planung und Begleitung von Events.
+
+Das Cockpit macht wichtige Funktionen auch unterwegs zugänglich. Gästelisten, Check-in, Präsentationen, Umfragen und geplante Nachrichten stehen im jeweiligen Veranstaltungskontext bereit. Persönliche Dokumentenpostfächer ermöglichen darüber hinaus eine gezielte, geschützte Zustellung mit nachvollziehbarem Zustellungs- und Abrufstatus.
+
+Das Gesamtprojekt wird schrittweise entlang der praktischen Anforderungen von PROdigitalTV weiterentwickelt. Im Mittelpunkt stehen einfache Bedienung, klare Berechtigungen und verlässliche Abläufe – damit mehr Zeit für die Menschen, Inhalte und gemeinsamen Ziele des Verbands bleibt.
+
+Diese Gesamtbeschreibung ergänzt die ursprüngliche Dokumentation. Die ausführliche Cockpit-Bedienungsanleitung bleibt separat über Funktionsbeschreibung im Cockpit erreichbar.
 
 ## Kurzüberblick
 
@@ -705,3 +717,66 @@ Ein abgeschlossenes Jahr bleibt lesbar, während zugehörige schreibende Buchhal
 - Offene Beiträge und Mahnstufen sind nachvollziehbar.
 - Kontenzuordnungen, Anlagewerte und Abschreibungen wurden geprüft.
 - Die Übersicht wurde vor der Sperre des Vorjahres exportiert und kontrolliert.
+
+## 25. Persönliche Dokumentenpostfächer
+
+### Ziel und Einordnung
+
+Die Plattform stellt aktiven Mitgliedern ein persönliches Dokumentenpostfach innerhalb des bestehenden Mitgliederzugangs bereit. Ein zusätzliches Benutzerkonto ist nicht erforderlich. Die Funktion ergänzt Mitgliederverwaltung, Kommunikation und Profil, ohne eine zweite Dokumentenverwaltung anzulegen.
+
+### Zustellung durch die Administration
+
+Unter Kommunikation → Postfächer und über die Cockpit-Kachel Postfachverwaltung stehen Übersicht, Dokument zustellen und Protokoll bereit. Die Übersicht und die Empfängerauswahl berücksichtigen aktive Mitglieder. Dokumententitel, Datei, optionaler Hinweis und Empfänger werden vor der Zustellung erfasst. Ein einzelnes Mitglied, mehrere Mitglieder oder alle aktiven Mitglieder können ausgewählt werden.
+
+Die Datei wird zentral einmal geschützt gespeichert. Für jeden ausgewählten Empfänger entsteht ein eigener Zustellungseintrag mit serverseitigem Zeitstempel. PDF, DOCX, XLSX, TXT, CSV, PNG und JPG werden bis 20 MB unterstützt. Der Upload zeigt den Fortschritt; unvollständige Zustellungen können über Zustellung fortsetzen abgeschlossen werden.
+
+### Persönlicher Zugriff und Profil
+
+Aktive Mitglieder öffnen ihr Postfach über den Briefumschlag oder über Mein Profil → Meine Dokumente. Beide Zugänge verwenden dieselbe Komponente, dieselben Dateien und denselben Abrufstatus. Titel, Dateiname, Hinweis, Zustellungsdatum und Status helfen bei der Auswahl. Neue Dokumente sind hervorgehoben. Öffnen stellt die Datei bereit; Herunterladen übergibt sie an den Browserdownload. Bereits abgerufene Dokumente bleiben verfügbar, solange sie nicht zurückgezogen werden.
+
+### Nachvollziehbarkeit je Datei und Mitglied
+
+Das Protokoll enthält für jeden Empfänger und jede Datei einen gesonderten Eintrag mit Dokumenten-ID, Titel, Dateiname, Mitglieds-ID, Empfänger und Zustellungszeitpunkt. Zugestellt bleibt auch nach dem Abruf sichtbar. Der erste erfolgreiche Abruf wird separat dauerhaft gespeichert und durch spätere Abrufe nicht überschrieben.
+
+Login, Listenansicht, ein bloßer Klick und ein fehlgeschlagener oder unvollständiger Download zählen nicht als erfolgreicher Abruf. Die Übertragung wird auf Vollständigkeit geprüft, bevor der Abruf bestätigt wird. Nach Mitglied, Dokument und Status kann gefiltert werden. Der CSV-Export enthält die aktuell gefilterten Protokolleinträge. Historische Zustellungsdaten bleiben auch bei später inaktiven Mitgliedern administrativ nachvollziehbar.
+
+Das Protokoll dokumentiert technische Bereitstellung und Abruf. Es ist kein Beweis tatsächlicher inhaltlicher Kenntnisnahme und kein automatisch rechtssicherer Zugangsnachweis.
+
+### Ladeanzeige und Übertragungsfortschritt
+
+Beim Öffnen des Postfachs erscheint unmittelbar ein Ladebalken. Der betätigte Abrufbutton zeigt Wird geladen. Während der Dateiübertragung wird der tatsächliche Prozentfortschritt angezeigt; Vorbereitung, Prüfung und Abrufbestätigung erhalten eigene Texthinweise und eine laufende Anzeige ohne erfundenen Prozentwert. Fehler bleiben sichtbar und werden nicht als erfolgreicher Abruf protokolliert.
+
+### Rote Zahlen und Homescreen-Symbol
+
+Die roten Zahlen im Header und im Profil zeigen die noch nicht abgerufenen Dokumente. Sie aktualisieren sich nach dem Abruf und verschwinden bei null. Die installierte WebApp überträgt die Anzahl auf unterstützten Geräten auch an das App-Symbol. Beim Öffnen und Abrufen folgt die Anzeige dem gemeinsamen Postfachstatus. Bei geschlossener App kann der nächste tägliche Push-Hinweis die Zahl aktualisieren. Auf dem iPhone sind eine installierte WebApp sowie erlaubte Mitteilungen und Kennzeichen erforderlich; die sichtbare Darstellung bleibt geräteabhängig.
+
+### Sprachansage und tägliche Hinweise
+
+Bei wartenden Dokumenten wird Sie haben Post! direkt beim App-Start angesagt, soweit die automatische Audiowiedergabe erlaubt ist. Normale Seitenwechsel wiederholen die Ansage nicht. Stummschaltung und Audioeinstellungen werden berücksichtigt. Bei einer Browsersperre erfolgt ein weiterer Versuch bei einer zulässigen Benutzerberührung, unabhängig vom Postfach-Button.
+
+Neue Dokumente lösen höchstens einen E-Mail-Hinweis und einen Push-Hinweis je aktivem Mitglied und Kalendertag in Deutschland aus. Weitere neue Zustellungen können im nächsten Tageshinweis gebündelt werden; die Dokumente selbst stehen nach ihrer Zustellung im Postfach bereit. Push setzt einen aktivierten Benachrichtigungszugang am Gerät voraus.
+
+### Zugriffsschutz und Rücknahme
+
+Mitglieder können ausschließlich ihre eigenen Zustellungen abrufen. Bestehende Authentifizierung, Rollen und serverseitige Zugriffsregeln schützen Dateien und Protokolle. Die Dateiablage enthält keine öffentlichen Dokumentenlinks. Mitglieder können Zustellungs- und Abrufprotokolle nicht selbst verändern oder löschen.
+
+Die Administration kann Dokumente mit Begründung zurückziehen. Danach sind sie nicht mehr abrufbar; ursprüngliche Ereignisse bleiben nachvollziehbar. Bereits heruntergeladene Kopien auf Endgeräten werden dadurch nicht entfernt.
+
+## 26. Weitere aktuelle Ergänzungen
+
+### Gästelistenversand an den Vorstand
+
+Die aktuelle Liste einer geöffneten Veranstaltung kann durch berechtigte Administratoren als CSV an den vorgesehenen Vorstandsempfängerkreis gegeben werden. Vor dem Versand zeigt eine Bestätigung Veranstaltung, Gästezahl und konkrete Empfänger. Die Datei enthält Vorname, Nachname, Unternehmen und die Zuordnung Gast, Mitglied, Vorstand oder Co-Gastgeber. E-Mail-Adressen, Telefonnummern und Check-in-Status sind nicht Bestandteil dieser CSV.
+
+Der Versand wird über die vorhandene Mailwarteschlange abgewickelt und in der Event-Mailliste nachvollziehbar. Zum Versand vorbereitet beschreibt einen eingereihten Auftrag, nicht bereits den Eingang beim Empfänger. Veränderungen der Liste oder des Empfängerkreises erfordern eine erneute Vorschau.
+
+### Buchhaltung und Excel-Ausgabe
+
+Die bestehende Buchhaltung bleibt Teil der Gesamtplattform. Der Zugang Buchhaltung / Excel führt zur Jahresauswahl und zur Ausgabe der Arbeitsmappe. Ein deutlicher Download-Button und eine Fortschrittsanzeige machen die Erstellung auch mobil nachvollziehbar. Die Jahresauswahl verwendet keinen Eventfilter. Ein Download verändert keine Buchhaltungsdaten.
+
+### Separate Cockpit-Anleitung und Weitergabe
+
+Die ursprüngliche Gesamtbeschreibung und die Cockpit-Bedienungsanleitung erfüllen unterschiedliche Zwecke. Diese Dokumentation beschreibt das Gesamtprojekt einschließlich Website, CMS, Mitgliedern, Redaktion, Veranstaltungen, Kommunikation, Medien, KI und Buchhaltung. Die separate Cockpit-Anleitung erläutert die einzelnen mobilen Bedienfunktionen ausführlich und bleibt im Cockpit erreichbar.
+
+Im Cockpit kann dessen eigene Anleitung als PDF heruntergeladen oder über die gerätegestützte Teilen-Auswahl weitergegeben werden. Zusätzlich steht eine eigenständige PDF dieser Gesamtprojektbeschreibung bereit. Ein geöffneter E-Mail-Entwurf oder eine Teilen-Auswahl versendet noch keine Nachricht; Empfänger und Versand werden in der gewählten Mail-App bestätigt.
+

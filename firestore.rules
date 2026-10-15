@@ -38,6 +38,37 @@ service cloud.firestore {
       allow read: if admin();
       allow write: if false;
     }
+    // Private mailboxes: clients can only observe their own server-owned deliveries.
+    function mailboxAdmin() {
+      return profileExists() && roleMatches(profile().role, "admin")
+        && !(profile().get('status', '') in ['inactive', 'disabled', 'deleted', 'archived'])
+        && profile().get('guestPasswordTemporary', false) != true;
+    }
+    function mailboxMemberActive(memberId) {
+      let data = get(/databases/$(database)/documents/members/$(memberId)).data;
+      return exists(/databases/$(database)/documents/members/$(memberId))
+        && data.get('status', '') == 'active'
+        && !(data.get('membershipAccessStatus', 'active') in ['inactive', 'cancelled']
+          && (!data.keys().hasAny(['membershipAccessEffectiveAt'])
+            || data.membershipAccessEffectiveAt <= request.time));
+    }
+    function mailboxOwner(memberId) {
+      return profileExists()
+        && profile().get('memberId', '') == memberId
+        && !(profile().get('status', '') in ['inactive', 'disabled', 'deleted', 'archived'])
+        && profile().get('guestPasswordTemporary', false) != true
+        && mailboxMemberActive(memberId);
+    }
+    match /mailboxDocuments/{id} { allow read: if mailboxAdmin(); allow write: if false; }
+    match /mailboxDeliveries/{id} { allow read: if mailboxAdmin() || mailboxOwner(resource.data.memberId); allow write: if false; }
+    match /mailboxAudit/{id} { allow read: if mailboxAdmin(); allow write: if false; }
+    match /mailboxNotificationDays/{id} { allow read: if mailboxAdmin(); allow write: if false; }
+    match /mailboxNotificationState/{id} { allow read: if mailboxAdmin(); allow write: if false; }
+    match /mailboxFetchReceipts/{id} { allow read, write: if false; }
+    // Assembly data and open individual ballots are served only through authorized functions.
+    match /assemblies/{assemblyId}/{privateDocument=**} { allow read, write: if false; }
+    match /assemblyEventClaims/{id} { allow read, write: if false; }
+    match /assembliesRetentionAudit/{id} { allow read, write: if false; }
     function signedIn() {
       return request.auth != null;
     }

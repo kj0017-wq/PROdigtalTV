@@ -5,3 +5,20 @@ functions/node_modules/
 firebase-debug.log
 .env
 .secrets/
+
+# Local work files and backup archives
+.local/
+tmp/
+tmp-*/
+backups/
+deploy/
+output/
+outputs/
+**/__pycache__/
+*.log
+* (DESKTOP-* in Konflikt stehende Kopie *).*
+public/public-snapshot.json
+phone-number-review.csv
+docs/*-build/
+*.inspect.ndjson
+services/presentation-worker/tests/live-verification.json
