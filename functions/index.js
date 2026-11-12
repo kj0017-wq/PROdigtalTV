@@ -5443,16 +5443,22 @@ exports.previewEventNotification = onCall({ region, secrets: smsSecrets, timeout
       updatedAt: FieldValue.serverTimestamp()
     });
   }
-  const previewEmail = mailAddress(profile.email || request.auth.token?.email);
-  const [directoryPerson] = await notificationTestPersonTargets(previewEmail ? [previewEmail] : []);
-  const ownNames = notificationPersonNames(profile);
-  const previewPerson = {
-    ...directoryPerson,
-    ...(ownNames.displayName ? ownNames : {}),
-    email: previewEmail,
-    company: clean(profile.company || directoryPerson?.company),
-    audienceType: "test"
-  };
+  let previewPerson;
+  if (recipientGroup === "single_person") {
+    previewPerson = targets[0] || {};
+  } else {
+    const accountEmail = mailAddress(profile.email || request.auth.token?.email);
+    const [directoryPerson] = await notificationTestPersonTargets(accountEmail ? [accountEmail] : []);
+    const ownNames = notificationPersonNames(profile);
+    previewPerson = {
+      ...directoryPerson,
+      ...(ownNames.displayName ? ownNames : {}),
+      email: accountEmail,
+      company: clean(profile.company || directoryPerson?.company),
+      audienceType: "test"
+    };
+  }
+  const previewEmail = mailAddress(previewPerson.email);
   const previewLinkEnabled = input.linkEnabled !== false && clean(input.linkEnabled) !== "false";
   const previewLink = previewLinkEnabled ? clean(input.link) || (notificationKind === "event" ? eventUrl(eventId) : publicHashUrl("members")) : "";
   const sampleNotification = {
